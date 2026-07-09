@@ -7,7 +7,7 @@ from utils.formatters import full_name
 
 auth_bp = Blueprint("auth", __name__)
 
-SESSION_IDLE_MINUTES = 30
+
 SESSION_ABSOLUTE_HOURS = 12
 
 
