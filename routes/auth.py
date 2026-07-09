@@ -30,8 +30,8 @@ def login():
         staff = conn.execute(
             """
             SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
-FROM staff
-JOIN members ON staff.member_id = members.id
+            FROM staff
+            JOIN members ON staff.member_id = members.id
             WHERE staff.username = ?
             """,
             (username,),
@@ -39,7 +39,7 @@ JOIN members ON staff.member_id = members.id
     else:
         staff = conn.execute(
             """
-            SELECT staff.*, members.name
+            SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
             FROM staff
             JOIN members ON staff.member_id = members.id
             WHERE members.barcode_id = ?
@@ -92,7 +92,12 @@ JOIN members ON staff.member_id = members.id
             {
                 "message": "Login successful",
                 "staff_id": staff["id"],
-                "name": staff["name"],
+                "name": full_name(
+                    staff["first_name"],
+                    staff["last_name"],
+                    staff["middle_name"],
+                    staff["suffix"],
+                ),
                 "role": staff["role"],
             }
         )

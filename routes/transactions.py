@@ -16,7 +16,7 @@ transactions_bp = Blueprint("transactions", __name__)
 def list_transactions():
     conn = get_db_connection()
     transactions = conn.execute("""
-        SELECT transactions.*, assets.name AS asset_name, members.name AS member_name
+        SELECT transactions.*, assets.name AS asset_name, members.first_name, members.last_name, members.middle_name, members.suffix
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         JOIN members ON transactions.member_id = members.id
@@ -31,7 +31,7 @@ def list_transactions():
 def list_overdue_transactions():
     conn = get_db_connection()
     overdue = conn.execute("""
-        SELECT transactions.*, assets.name AS asset_name, members.name AS member_name
+        SELECT transactions.*, assets.name AS asset_name, members.first_name, members.last_name, members.middle_name, members.suffix
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         JOIN members ON transactions.member_id = members.id

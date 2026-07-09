@@ -180,7 +180,7 @@ def delete_member(id):
         action="deactivated_member",
         target_table="members",
         target_id=id,
-        details=f"Deactivated member {member['name']}",
+        details=f"Deactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
 
     return jsonify({"message": "Member deactivated successfully"})
