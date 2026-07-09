@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from database import get_db_connection
 from utils.logger import log_action
 from werkzeug.security import generate_password_hash
+import sqlite3
 
 
 def seed_initial_admin():
@@ -48,28 +49,39 @@ def seed_initial_admin():
         )
         return
 
-    member_cursor = conn.execute(
-        """
-        INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, department, member_type)
-        VALUES (?, ?, ?, ?, ?, ?, 'trainer')
-        """,
-        (first_name, last_name, middle_name, suffix, barcode_id, department),
-    )
-    member_id = member_cursor.lastrowid
+    try:
+        member_cursor = conn.execute(
+            """
+            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, department, member_type)
+            VALUES (?, ?, ?, ?, ?, ?, 'trainer')
+            """,
+            (first_name, last_name, middle_name, suffix, barcode_id, department),
+        )
+        member_id = member_cursor.lastrowid
 
-    hashed_password = generate_password_hash(password)
+        hashed_password = generate_password_hash(password)
 
-    staff_cursor = conn.execute(
-        """
-        INSERT INTO staff (member_id, username, password_hash, role, is_active)
-        VALUES (?, ?, ?, 'admin', 1)
-        """,
-        (member_id, username, hashed_password),
-    )
-    staff_id = staff_cursor.lastrowid
+        staff_cursor = conn.execute(
+            """
+            INSERT INTO staff (member_id, username, password_hash, role, is_active)
+            VALUES (?, ?, ?, 'admin', 1)
+            """,
+            (member_id, username, hashed_password),
+        )
+        staff_id = staff_cursor.lastrowid
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        print(
+            "No admin account exists and initial admin could not be seeded — "
+            f"a database constraint was violated: {e}. "
+            "Check that ADMIN_USERNAME and ADMIN_BARCODE_ID in .env don't already "
+            "belong to an existing staff/member record, then restart the app."
+        )
+        return
+    finally:
+        conn.close()
 
     log_action(
         staff_id=staff_id,
