@@ -89,24 +89,28 @@ def edit_asset_submit(id):
         conn.close()
         return jsonify({"error": "Asset not found"}), 404
 
-    conn.execute(
-        """
-        UPDATE assets
-        SET name = ?, category = ?, condition = ?, notes = ?, acquired_date = ?, last_calibrated = ?
-        WHERE id = ?
-        """,
-        (
-            data.get("name", asset["name"]),
-            data.get("category", asset["category"]),
-            data.get("condition", asset["condition"]),
-            data.get("notes", asset["notes"]),
-            data.get("acquired_date", asset["acquired_date"]),
-            data.get("last_calibrated", asset["last_calibrated"]),
-            asset["id"],
-        ),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            """
+            UPDATE assets
+            SET name = ?, category = ?, condition = ?, notes = ?, acquired_date = ?, last_calibrated = ?
+            WHERE id = ?
+            """,
+            (
+                data.get("name", asset["name"]),
+                data.get("category", asset["category"]),
+                data.get("condition", asset["condition"]),
+                data.get("notes", asset["notes"]),
+                data.get("acquired_date", asset["acquired_date"]),
+                data.get("last_calibrated", asset["last_calibrated"]),
+                asset["id"],
+            ),
+        )
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -130,9 +134,14 @@ def delete_asset(id):
         return jsonify({"error": "Asset not found"}), 404
 
     deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute("UPDATE assets SET deleted_at = ? WHERE id = ?", (deleted_at, id))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE assets SET deleted_at = ? WHERE id = ?", (deleted_at, id))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],

@@ -101,26 +101,32 @@ def edit_member_submit(id):
     old_is_restricted = member["is_restricted"]
     new_is_restricted = data.get("is_restricted", member["is_restricted"])
 
-    conn.execute(
-        """
-        UPDATE members
-        SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_active = ?, is_restricted = ?, restriction_reason = ?
-        WHERE id = ?
-        """,
-        (
-            data.get("first_name", member["first_name"]),
-            data.get("last_name", member["last_name"]),
-            data.get("middle_name", member["middle_name"]),
-            data.get("suffix", member["suffix"]),
-            data.get("department", member["department"]),
-            data.get("batch", member["batch"]),
-            data.get("is_active", member["is_active"]),
-            new_is_restricted,
-            data.get("restriction_reason", member["restriction_reason"]),
-            member["id"],
-        ),
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            """
+            UPDATE members
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_active = ?, is_restricted = ?, restriction_reason = ?
+            WHERE id = ?
+            """,
+            (
+                data.get("first_name", member["first_name"]),
+                data.get("last_name", member["last_name"]),
+                data.get("middle_name", member["middle_name"]),
+                data.get("suffix", member["suffix"]),
+                data.get("department", member["department"]),
+                data.get("batch", member["batch"]),
+                data.get("is_active", member["is_active"]),
+                new_is_restricted,
+                data.get("restriction_reason", member["restriction_reason"]),
+                member["id"],
+            ),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     updated_name = full_name(
         data.get("first_name", member["first_name"]),
@@ -171,9 +177,14 @@ def delete_member(id):
         conn.close()
         return jsonify({"error": "Member not found"}), 404
 
-    conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -190,6 +201,7 @@ def delete_member(id):
 
 
 @members_bp.route("/api/v1/members/barcode/<string:barcode>")
+@login_required
 def get_member_by_barcode(barcode):
     conn = get_db_connection()
     member = conn.execute(

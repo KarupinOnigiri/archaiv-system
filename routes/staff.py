@@ -18,7 +18,10 @@ staff_bp = Blueprint("staff", __name__)
 def view_staff():
     conn = get_db_connection()
     staff = conn.execute("""
-        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix, members.barcode_id, members.department
+        SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
+               staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id, members.department
         FROM staff
         JOIN members ON staff.member_id = members.id
         """).fetchall()
@@ -32,7 +35,10 @@ def get_staff_by_id(id):
     conn = get_db_connection()
     staff = conn.execute(
         """
-        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix, members.barcode_id, members.department
+        SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
+               staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id, members.department
         FROM staff
         JOIN members ON staff.member_id = members.id
         WHERE staff.id = ?
@@ -130,21 +136,26 @@ def edit_staff_submit(id):
         conn.close()
         return jsonify({"error": "Staff not found"}), 404
 
-    conn.execute(
-        """
-        UPDATE staff
-        SET role = ?, assigned_start = ?, assigned_end = ?
-        WHERE id = ?
-        """,
-        (
-            data.get("role", staff["role"]),
-            data.get("assigned_start", staff["assigned_start"]),
-            data.get("assigned_end", staff["assigned_end"]),
-            staff["id"],
-        ),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            """
+            UPDATE staff
+            SET role = ?, assigned_start = ?, assigned_end = ?
+            WHERE id = ?
+            """,
+            (
+                data.get("role", staff["role"]),
+                data.get("assigned_start", staff["assigned_start"]),
+                data.get("assigned_end", staff["assigned_end"]),
+                staff["id"],
+            ),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -170,9 +181,14 @@ def delete_staff(id):
         conn.close()
         return jsonify({"error": "Staff not found"}), 404
 
-    conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (id,))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -193,7 +209,9 @@ def get_staff_by_barcode(barcode):
     conn = get_db_connection()
     result = conn.execute(
         """
-        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix, members.barcode_id, members.department
+        SELECT staff.id, staff.role, staff.is_active, staff.assigned_start, staff.assigned_end,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id, members.department
         FROM staff
         JOIN members ON staff.member_id = members.id
         WHERE members.barcode_id = ?

@@ -161,7 +161,7 @@ def borrow_asset():
         action="borrowed_asset",
         target_table="transactions",
         target_id=asset["id"],
-        details=f"Asset {asset['asset_id']} returned by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
+        details=f"Asset {asset['asset_id']} borrowed by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
 
     return jsonify({"message": "asset borrowed successfully"}), 201
@@ -246,7 +246,7 @@ def return_asset():
         action="returned_asset",
         target_table="transactions",
         target_id=asset["id"],
-        details=f"Asset {asset['asset_id']} borrowed by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
+        details=f"Asset {asset['asset_id']} returned by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
 
     return jsonify({"message": "asset returned successfully"}), 200
