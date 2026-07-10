@@ -124,6 +124,26 @@ def borrow_asset():
             403,
         )
 
+    session_id = data.get("session_id")
+    if session_id is not None:
+        checkout_session = conn.execute(
+            "SELECT id, member_id FROM checkout_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if checkout_session is None:
+            conn.close()
+            return (
+                jsonify(
+                    {"error": "session_id does not match an existing checkout session"}
+                ),
+                404,
+            )
+        if checkout_session["member_id"] != member["id"]:
+            conn.close()
+            return (
+                jsonify({"error": "session_id belongs to a different member"}),
+                400,
+            )
+
     try:
         claim = conn.execute(
             "UPDATE assets SET status = 'borrowed' WHERE id = ? AND status = 'available'",
@@ -285,6 +305,18 @@ def create_checkout_session():
     if not member["is_active"]:
         conn.close()
         return jsonify({"error": "This member is not active"}), 403
+
+    if check_and_restrict_overdue_member(member["id"], conn):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "This member is restricted",
+                    "reason": "Has an overdue asset that has not been returned",
+                }
+            ),
+            403,
+        )
 
     if member["is_restricted"]:
         conn.close()

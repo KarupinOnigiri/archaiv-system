@@ -81,12 +81,6 @@ def edit_asset_submit(id):
     if error:
         return error
 
-    for field in ("acquired_date", "last_calibrated"):
-        if field in data:
-            error = validate_date_string(data.get(field), field)
-            if error:
-                return error
-
     error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
 
     if error:

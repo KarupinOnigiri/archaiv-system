@@ -2,9 +2,13 @@ from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
-from utils.validators import validate_date_string, validate_date_fields
+from utils.validators import (
+    validate_date_string,
+    validate_date_fields,
+    validate_password_strength,
+)
 from utils.formatters import full_name
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 
 staff_bp = Blueprint("staff", __name__)
@@ -149,7 +153,19 @@ def add_staff_submit():
     if error:
         return error
 
+    error = validate_password_strength(data["password"])
+    if error:
+        return error
+
     conn = get_db_connection()
+
+    member = conn.execute(
+        "SELECT id FROM members WHERE id = ?", (data["member_id"],)
+    ).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "member_id does not match an existing member"}), 404
+
     hashed_password = generate_password_hash(data["password"])
     new_staff_id = None
 
@@ -242,6 +258,117 @@ def edit_staff_submit(id):
     )
 
     return jsonify({"message": "Staff updated successfully"})
+
+
+# # # PASSWORD MANAGEMENT ------------------------------------------------
+
+
+@staff_bp.route("/staff/change-password", methods=["POST"])
+@login_required
+def change_password_submit():
+    """Self-service password change. Requires the current password to
+    prove the request comes from someone who already has legitimate
+    access, not just an active hijacked session."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+
+    if not current_password or not new_password:
+        return (
+            jsonify({"error": "current_password and new_password are required"}),
+            400,
+        )
+
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    error = validate_password_strength(new_password, "new_password")
+    if error:
+        return error
+
+    new_hash = generate_password_hash(new_password)
+    current_token = request.cookies.get("session_token")
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE staff SET password_hash = ? WHERE id = ?",
+            (new_hash, g.staff["id"]),
+        )
+        # kill every other active session for this account, but keep the
+        # one making this request so the staff member isn't logged out
+        conn.execute(
+            "DELETE FROM sessions WHERE staff_id = ? AND token != ?",
+            (g.staff["id"], current_token),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="changed_own_password",
+        target_table="staff",
+        target_id=g.staff["id"],
+        details=f"Staff {g.staff['username']} changed their own password",
+    )
+
+    return jsonify({"message": "Password changed successfully"})
+
+
+@staff_bp.route("/staff/<int:id>/reset-password", methods=["POST"])
+@roles_required("admin")
+def reset_password_submit(id):
+    """Admin-initiated reset for forgotten passwords. No current password
+    needed since this is the recovery path — but every existing session
+    for the account is killed, since a reset usually means the account
+    may have been locked out or compromised."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    new_password = data.get("new_password")
+    if not new_password:
+        return jsonify({"error": "Missing required field: new_password"}), 400
+
+    error = validate_password_strength(new_password, "new_password")
+    if error:
+        return error
+
+    conn = get_db_connection()
+    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if staff is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    new_hash = generate_password_hash(new_password)
+
+    try:
+        conn.execute("UPDATE staff SET password_hash = ? WHERE id = ?", (new_hash, id))
+        conn.execute("DELETE FROM sessions WHERE staff_id = ?", (id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="reset_staff_password",
+        target_table="staff",
+        target_id=id,
+        details=f"Admin reset password for staff account: {staff['username']}",
+    )
+
+    return jsonify({"message": "Password reset successfully"})
 
 
 # # # DELETE (deactivate, admin only) ------------------------------------

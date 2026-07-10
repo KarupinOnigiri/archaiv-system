@@ -43,6 +43,24 @@ def validate_date_fields(data, field_names):
     return None
 
 
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_password_strength(password, field_name="password"):
+    """Length-only check for now — kept simple on purpose. Tighten later
+    (e.g. require a digit/letter mix) if the thesis defense calls for it."""
+    if password is None or len(password) < MIN_PASSWORD_LENGTH:
+        return (
+            jsonify(
+                {
+                    "error": f"{field_name} must be at least {MIN_PASSWORD_LENGTH} characters"
+                }
+            ),
+            400,
+        )
+    return None
+
+
 def validate_due_date(value, field_name="due_date"):
     """Format + not-in-the-past, parsing once via _parse_date."""
     if value is None:
