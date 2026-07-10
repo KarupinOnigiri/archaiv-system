@@ -3,7 +3,7 @@ from flask import request, jsonify
 import os
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "instance", "schema.sql")
-DB_PATH = "instance/toolroom.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "instance", "toolroom.db")
 
 
 def get_db_connection():

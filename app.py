@@ -31,5 +31,7 @@ def home():
     return "Flask is connected and running."
 
 
+debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=debug_mode)

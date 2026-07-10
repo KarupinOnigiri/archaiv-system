@@ -4,6 +4,7 @@ from services.auth_service import login_required
 from services.loan_service import check_and_restrict_overdue_member
 from utils.logger import log_action
 from utils.formatters import full_name
+from utils.validators import validate_date_string, validate_due_date
 
 transactions_bp = Blueprint("transactions", __name__)
 
@@ -58,6 +59,12 @@ def borrow_asset():
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    due_date = data.get("due_date")
+
+    error = validate_due_date(due_date)
+    if error:
+        return error
 
     conn = get_db_connection()
 

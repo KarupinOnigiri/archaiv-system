@@ -1,8 +1,8 @@
-from flask import Blueprint, jsonify, g
+from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
-from utils.validators import validate_date_string
+from utils.validators import validate_date_string, validate_date_fields
 from utils.formatters import full_name
 from werkzeug.security import generate_password_hash
 import sqlite3
@@ -53,6 +53,78 @@ def get_staff_by_id(id):
     return jsonify(dict(staff))
 
 
+@staff_bp.route("/audit-log")
+@login_required
+def view_audit_log():
+    """Read-only audit trail. admin can view everyone's entries and filter
+    by any staff_id. in_charge and tool_keeper can only view their own —
+    any staff_id they pass in is ignored and forced to their own id.
+    Other filters are all optional and combine with AND.
+    limit defaults to 200 and is capped at 1000 to avoid dumping the whole
+    table on a growing dataset."""
+    filters = []
+    params = []
+
+    if g.staff["role"] == "admin":
+        staff_id = request.args.get("staff_id")
+        if staff_id:
+            filters.append("audit_log.staff_id = ?")
+            params.append(staff_id)
+    else:
+        filters.append("audit_log.staff_id = ?")
+        params.append(g.staff["id"])
+
+    action = request.args.get("action")
+    if action:
+        filters.append("audit_log.action = ?")
+        params.append(action)
+
+    target_table = request.args.get("target_table")
+    if target_table:
+        filters.append("audit_log.target_table = ?")
+        params.append(target_table)
+
+    since = request.args.get("since")
+    if since:
+        error = validate_date_string(since, "since")
+        if error:
+            return error
+        filters.append("audit_log.created_at >= ?")
+        params.append(since)
+
+    until = request.args.get("until")
+    if until:
+        error = validate_date_string(until, "until")
+        if error:
+            return error
+        filters.append("audit_log.created_at <= ?")
+        params.append(until)
+
+    try:
+        limit = int(request.args.get("limit", 200))
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 1000))
+
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+    conn = get_db_connection()
+    logs = conn.execute(
+        f"""
+        SELECT audit_log.*, staff.username AS staff_username
+        FROM audit_log
+        LEFT JOIN staff ON audit_log.staff_id = staff.id
+        {where_clause}
+        ORDER BY audit_log.created_at DESC
+        LIMIT ?
+        """,
+        (*params, limit),
+    ).fetchall()
+    conn.close()
+
+    return jsonify([dict(row) for row in logs])
+
+
 # # # CREATE (admin only) ------------------------------------------------
 
 
@@ -72,6 +144,10 @@ def add_staff_submit():
         error = validate_date_string(data.get(field), field)
         if error:
             return error
+
+    error = validate_date_fields(data, ("assigned_start", "assigned_end"))
+    if error:
+        return error
 
     conn = get_db_connection()
     hashed_password = generate_password_hash(data["password"])
@@ -205,6 +281,7 @@ def delete_staff(id):
 
 
 @staff_bp.route("/api/v1/staff/barcode/<string:barcode>")
+@login_required
 def get_staff_by_barcode(barcode):
     conn = get_db_connection()
     result = conn.execute(

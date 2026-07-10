@@ -3,7 +3,7 @@ from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from datetime import datetime
-from utils.validators import validate_date_string
+from utils.validators import validate_date_string, validate_date_fields
 import sqlite3
 
 assets_bp = Blueprint("assets", __name__)
@@ -29,6 +29,11 @@ def add_asset_submit():
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
+
+    if error:
+        return error
 
     conn = get_db_connection()
     new_asset_id = None
@@ -82,6 +87,10 @@ def edit_asset_submit(id):
             if error:
                 return error
 
+    error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
+
+    if error:
+        return error
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
 
