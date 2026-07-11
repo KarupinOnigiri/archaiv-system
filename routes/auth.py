@@ -132,7 +132,7 @@ def login():
 
         token = secrets.token_hex(32)
         expires_at = (
-            datetime.now(timezone.utc) + timedelta(hours=SESSION_ABSOLUTE_HOURS)
+            datetime.now() + timedelta(hours=SESSION_ABSOLUTE_HOURS)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         session_conn.execute(

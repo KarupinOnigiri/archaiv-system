@@ -1,7 +1,7 @@
 from functools import wraps
 from database import get_db_connection
 from flask import jsonify, request, g
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 SESSION_IDLE_MINUTES = 30
 
@@ -19,13 +19,9 @@ def require_session(conn):
     if session is None:
         return None, (jsonify({"error": "Invalid or expired session"}), 401)
 
-    now = datetime.now(timezone.utc)
-    expires_at = datetime.strptime(session["expires_at"], "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
-    last_active_at = datetime.strptime(
-        session["last_active_at"], "%Y-%m-%d %H:%M:%S"
-    ).replace(tzinfo=timezone.utc)
+    now = datetime.now()
+    expires_at = datetime.strptime(session["expires_at"], "%Y-%m-%d %H:%M:%S")
+    last_active_at = datetime.strptime(session["last_active_at"], "%Y-%m-%d %H:%M:%S")
 
     if now > expires_at:
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
@@ -47,7 +43,7 @@ def require_session(conn):
         return None, (jsonify({"error": "This staff account is not active"}), 403)
 
     conn.execute(
-        "UPDATE sessions SET last_active_at = CURRENT_TIMESTAMP WHERE token = ?",
+        "UPDATE sessions SET last_active_at = datetime('now', 'localtime') WHERE token = ?",
         (token,),
     )
     conn.commit()

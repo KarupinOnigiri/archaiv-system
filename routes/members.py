@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g
+from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
@@ -102,10 +102,12 @@ def edit_member_submit(id):
     new_is_restricted = data.get("is_restricted", member["is_restricted"])
 
     try:
+        new_restriction_source = "manual" if new_is_restricted else None
+
         conn.execute(
             """
             UPDATE members
-            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_active = ?, is_restricted = ?, restriction_reason = ?
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_active = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
             WHERE id = ?
             """,
             (
@@ -118,6 +120,7 @@ def edit_member_submit(id):
                 data.get("is_active", member["is_active"]),
                 new_is_restricted,
                 data.get("restriction_reason", member["restriction_reason"]),
+                new_restriction_source,
                 member["id"],
             ),
         )
@@ -162,6 +165,108 @@ def edit_member_submit(id):
 
     conn.close()
     return jsonify({"message": "Member updated successfully"})
+
+
+# # # RESTRICTION (manual) ------------------------------------------------
+
+
+@members_bp.route("/members/<int:id>/restrict", methods=["POST"])
+@roles_required("admin", "in_charge", "tool_keeper")
+def restrict_member(id):
+    """Any front-line staff can flag a member on the spot. Requires a reason —
+    unlike unrestrict, this is a low-risk/easily-reversed action, so it's
+    deliberately easy to trigger, but always accountable."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    restriction_reason = data.get("restriction_reason")
+    if not restriction_reason:
+        return jsonify({"error": "Missing required field: restriction_reason"}), 400
+
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    if member["is_restricted"]:
+        conn.close()
+        return jsonify({"error": "Member is already restricted"}), 400
+
+    try:
+        conn.execute(
+            "UPDATE members SET is_restricted = 1, restriction_reason = ?, restriction_source = 'manual' WHERE id = ?",
+            (restriction_reason, id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
+
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
+    log_action(
+        staff_id=g.staff["id"],
+        action="restricted_member",
+        target_table="members",
+        target_id=id,
+        details=f"Restricted member {updated_name}: {restriction_reason}",
+    )
+
+    return jsonify({"message": "Member restricted successfully"})
+
+
+@members_bp.route("/members/<int:id>/unrestrict", methods=["POST"])
+@roles_required("admin", "in_charge")
+def unrestrict_member(id):
+    """Lifting a restriction re-grants borrowing access, so it deliberately
+    requires more authority than restricting — tool_keeper cannot call this."""
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    if not member["is_restricted"]:
+        conn.close()
+        return jsonify({"error": "Member is not currently restricted"}), 400
+
+    try:
+        conn.execute(
+            "UPDATE members SET is_restricted = 0, restriction_reason = NULL, restriction_source = NULL WHERE id = ?",
+            (id,),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"Database error: {str(e)}"}), 400
+    finally:
+        conn.close()
+
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
+    log_action(
+        staff_id=g.staff["id"],
+        action="unrestricted_member",
+        target_table="members",
+        target_id=id,
+        details=f"Lifted restriction on member {updated_name}",
+    )
+
+    return jsonify({"message": "Member unrestricted successfully"})
 
 
 # # # DELETE (deactivate) -----------------------------------------------
@@ -213,3 +318,36 @@ def get_member_by_barcode(barcode):
         return jsonify({"error": "Member not found"}), 404
 
     return jsonify(dict(member))
+
+
+@members_bp.route("/members/<int:id>/transactions")
+@login_required
+def get_member_transactions(id):
+    conn = get_db_connection()
+
+    member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    status_filter = request.args.get("status")
+
+    query = """
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        WHERE transactions.member_id = ?
+    """
+    params = [id]
+
+    if status_filter == "current":
+        query += " AND transactions.status = 'borrowed'"
+    elif status_filter == "returned":
+        query += " AND transactions.status = 'returned'"
+
+    query += " ORDER BY transactions.time_out DESC"
+
+    transactions = conn.execute(query, params).fetchall()
+    conn.close()
+
+    return jsonify([dict(row) for row in transactions])

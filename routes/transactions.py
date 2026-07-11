@@ -1,13 +1,18 @@
 from flask import Blueprint, jsonify, g
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required
-from services.loan_service import check_and_restrict_overdue_member
+from services.loan_service import (
+    check_and_restrict_overdue_member,
+    check_and_lift_restriction_if_resolved,
+)
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import validate_date_string, validate_due_date
+from datetime import datetime, timedelta
 
 transactions_bp = Blueprint("transactions", __name__)
 
+DEFAULT_LOAN_DAYS = 2
 
 # # # LIST / VIEW ------------------------------------------------------------
 
@@ -38,7 +43,7 @@ def list_overdue_transactions():
         JOIN members ON transactions.member_id = members.id
         WHERE transactions.status = 'borrowed'
         AND transactions.due_date IS NOT NULL
-        AND transactions.due_date < CURRENT_TIMESTAMP
+        AND transactions.due_date < datetime('now', 'localtime')
         ORDER BY transactions.due_date ASC
         """).fetchall()
     conn.close()
@@ -65,6 +70,11 @@ def borrow_asset():
     error = validate_due_date(due_date)
     if error:
         return error
+
+    if due_date is None:
+        due_date = (datetime.now() + timedelta(days=DEFAULT_LOAN_DAYS)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
     conn = get_db_connection()
 
@@ -171,7 +181,8 @@ def borrow_asset():
                 asset["id"],
                 member["id"],
                 g.staff["id"],
-                data.get("due_date"),
+                # data.get("due_date"),
+                due_date,
                 asset["condition"],
             ),
         )
@@ -263,7 +274,7 @@ def return_asset():
         conn.execute(
             """
             UPDATE transactions
-            SET time_in = CURRENT_TIMESTAMP, status = 'returned',
+            SET time_in = datetime('now', 'localtime'), status = 'returned',
                 returned_by_staff_id = ?, return_remarks = ?
             WHERE id = ?
             """,
@@ -276,6 +287,7 @@ def return_asset():
         )
 
         conn.commit()
+        check_and_lift_restriction_if_resolved(member["id"], conn)
     except Exception:
         conn.rollback()
         raise
