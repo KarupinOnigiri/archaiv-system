@@ -1,13 +1,12 @@
 from functools import wraps
 from database import get_db_connection
 from flask import jsonify, request, g
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 SESSION_IDLE_MINUTES = 30
 
 
 def require_session(conn):
-    """Returns (staff_row, error_response) — staff_row is None if session is missing/invalid/expired."""
     token = request.cookies.get("session_token")
 
     if not token:
@@ -20,9 +19,13 @@ def require_session(conn):
     if session is None:
         return None, (jsonify({"error": "Invalid or expired session"}), 401)
 
-    now = datetime.now()
-    expires_at = datetime.strptime(session["expires_at"], "%Y-%m-%d %H:%M:%S")
-    last_active_at = datetime.strptime(session["last_active_at"], "%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc)
+    expires_at = datetime.strptime(session["expires_at"], "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    last_active_at = datetime.strptime(
+        session["last_active_at"], "%Y-%m-%d %H:%M:%S"
+    ).replace(tzinfo=timezone.utc)
 
     if now > expires_at:
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))

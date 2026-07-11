@@ -1,13 +1,16 @@
 import secrets
 from database import get_db_connection, get_json_or_error
 from werkzeug.security import check_password_hash
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, jsonify, make_response, request
 from utils.formatters import full_name
+from utils.logger import log_action
 
 auth_bp = Blueprint("auth", __name__)
 
 SESSION_ABSOLUTE_HOURS = 12
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -46,13 +49,71 @@ def login():
             (barcode_id,),
         ).fetchone()
 
-    conn.close()
-
     if staff is None:
+        conn.close()
         return jsonify({"error": "Invalid credentials"}), 401
+
+    # Check lockout before even touching the password
+    if staff["locked_until"]:
+        locked_until = datetime.strptime(staff["locked_until"], "%Y-%m-%d %H:%M:%S")
+        if datetime.now() < locked_until:
+            conn.close()
+            remaining = int((locked_until - datetime.now()).total_seconds() / 60) + 1
+            return (
+                jsonify(
+                    {
+                        "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
+                    }
+                ),
+                403,
+            )
 
     if not check_password_hash(staff["password_hash"], password):
+        new_attempts = staff["failed_login_attempts"] + 1
+
+        if new_attempts >= MAX_FAILED_ATTEMPTS:
+            lockout_until = (
+                datetime.now() + timedelta(minutes=LOCKOUT_MINUTES)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE staff SET failed_login_attempts = ?, locked_until = ? WHERE id = ?",
+                (new_attempts, lockout_until, staff["id"]),
+            )
+            conn.commit()
+            conn.close()
+
+            log_action(
+                staff_id=staff["id"],
+                action="account_locked",
+                target_table="staff",
+                target_id=staff["id"],
+                details=f"Account locked after {new_attempts} failed login attempts",
+            )
+
+            return (
+                jsonify(
+                    {
+                        "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
+                    }
+                ),
+                403,
+            )
+
+        conn.execute(
+            "UPDATE staff SET failed_login_attempts = ? WHERE id = ?",
+            (new_attempts, staff["id"]),
+        )
+        conn.commit()
+        conn.close()
         return jsonify({"error": "Invalid credentials"}), 401
+
+    # Correct password — reset lockout tracking
+    conn.execute(
+        "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+        (staff["id"],),
+    )
+    conn.commit()
+    conn.close()
 
     if not staff["is_active"]:
         return jsonify({"error": "This account has been deactivated"}), 403
@@ -67,12 +128,11 @@ def login():
     session_conn = get_db_connection()
 
     try:
-        # Enforce single active session per staff — wipe any existing session first
         session_conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff["id"],))
 
         token = secrets.token_hex(32)
         expires_at = (
-            datetime.now() + timedelta(hours=SESSION_ABSOLUTE_HOURS)
+            datetime.now(timezone.utc) + timedelta(hours=SESSION_ABSOLUTE_HOURS)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         session_conn.execute(

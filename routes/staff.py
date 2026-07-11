@@ -144,11 +144,6 @@ def add_staff_submit():
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
 
-    for field in ("assigned_start", "assigned_end"):
-        error = validate_date_string(data.get(field), field)
-        if error:
-            return error
-
     error = validate_date_fields(data, ("assigned_start", "assigned_end"))
     if error:
         return error
@@ -215,11 +210,9 @@ def edit_staff_submit(id):
     if error:
         return error
 
-    for field in ("assigned_start", "assigned_end"):
-        if field in data:
-            error = validate_date_string(data.get(field), field)
-            if error:
-                return error
+    error = validate_date_fields(data, ("assigned_start", "assigned_end"))
+    if error:
+        return error
 
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()

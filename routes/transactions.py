@@ -209,6 +209,16 @@ def return_asset():
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
 
+    condition_in = data.get("condition_in")
+    valid_conditions = ("functional", "inoperable", "for_repair", "disposed")
+    if condition_in is not None and condition_in not in valid_conditions:
+        return (
+            jsonify(
+                {"error": f"condition_in must be one of: {', '.join(valid_conditions)}"}
+            ),
+            400,
+        )
+
     conn = get_db_connection()
 
     asset = conn.execute(
@@ -246,6 +256,9 @@ def return_asset():
             403,
         )
 
+    final_condition = condition_in if condition_in else asset["condition"]
+    new_status = "available" if final_condition == "functional" else "maintenance"
+
     try:
         conn.execute(
             """
@@ -258,7 +271,8 @@ def return_asset():
         )
 
         conn.execute(
-            "UPDATE assets SET status = 'available' WHERE id = ?", (asset["id"],)
+            "UPDATE assets SET status = ?, condition = ? WHERE id = ?",
+            (new_status, final_condition, asset["id"]),
         )
 
         conn.commit()
@@ -273,10 +287,23 @@ def return_asset():
         action="returned_asset",
         target_table="transactions",
         target_id=asset["id"],
-        details=f"Asset {asset['asset_id']} returned by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
+        details=(
+            f"Asset {asset['asset_id']} returned by member "
+            f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
+            f"— condition: {final_condition}"
+        ),
     )
 
-    return jsonify({"message": "asset returned successfully"}), 200
+    return (
+        jsonify(
+            {
+                "message": "asset returned successfully",
+                "condition": final_condition,
+                "status": new_status,
+            }
+        ),
+        200,
+    )
 
 
 # # # CHECKOUT SESSIONS (API action) -------------------------------------
