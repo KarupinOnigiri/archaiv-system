@@ -15,11 +15,24 @@ members_bp = Blueprint("members", __name__)
 @members_bp.route("/members")
 @login_required
 def view_members():
-    conn = get_db_connection()
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
 
-    members = conn.execute("SELECT * FROM members").fetchall()
+    conn = get_db_connection()
+    total_count = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
+    members = conn.execute(
+        "SELECT * FROM members ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
+    ).fetchall()
     conn.close()
-    return jsonify([dict(row) for row in members])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in members],
+        }
+    )
 
 
 # # # CREATE ------------------------------------------------------------
@@ -102,8 +115,12 @@ def edit_member_submit(id):
     old_is_restricted = member["is_restricted"]
     new_is_restricted = data.get("is_restricted", member["is_restricted"])
 
-    try:
+    if "is_restricted" in data and new_is_restricted != old_is_restricted:
         new_restriction_source = "manual" if new_is_restricted else None
+    else:
+        new_restriction_source = member["restriction_source"]
+
+    try:
 
         conn.execute(
             """
@@ -345,6 +362,10 @@ def get_member_by_barcode(barcode):
 @members_bp.route("/members/<int:id>/transactions")
 @login_required
 def get_member_transactions(id):
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
     conn = get_db_connection()
 
     member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
@@ -354,22 +375,36 @@ def get_member_transactions(id):
 
     status_filter = request.args.get("status")
 
-    query = """
-        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code
-        FROM transactions
-        JOIN assets ON transactions.asset_id = assets.id
-        WHERE transactions.member_id = ?
-    """
+    where_clause = "WHERE transactions.member_id = ?"
     params = [id]
 
     if status_filter == "current":
-        query += " AND transactions.status = 'borrowed'"
+        where_clause += " AND transactions.status = 'borrowed'"
     elif status_filter == "returned":
-        query += " AND transactions.status = 'returned'"
+        where_clause += " AND transactions.status = 'returned'"
 
-    query += " ORDER BY transactions.time_out DESC"
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM transactions {where_clause}", params
+    ).fetchone()["cnt"]
 
-    transactions = conn.execute(query, params).fetchall()
+    transactions = conn.execute(
+        f"""
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        {where_clause}
+        ORDER BY transactions.time_out DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, limit, offset),
+    ).fetchall()
     conn.close()
 
-    return jsonify([dict(row) for row in transactions])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in transactions],
+        }
+    )

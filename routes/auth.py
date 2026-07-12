@@ -1,16 +1,23 @@
 import secrets
 from database import get_db_connection, get_json_or_error
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import date, datetime, timedelta
 from flask import Blueprint, jsonify, make_response, request
 from utils.formatters import full_name
 from utils.logger import log_action
+from services.auth_service import login_required
 
 auth_bp = Blueprint("auth", __name__)
 
 SESSION_ABSOLUTE_HOURS = 12
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+
+# Precomputed once at import time so login() has a constant-cost hash to
+# # check against when no matching account exists — keeps response timing
+# # for "no such account" close to "wrong password", so timing alone
+# # doesn't reveal whether a username/barcode is valid.
+_DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety")
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -51,6 +58,9 @@ def login():
 
     if staff is None:
         conn.close()
+        # run a dummy hash check so response timing doesn't reveal        
+        # # whether this username/barcode belongs to a real account         
+        check_password_hash(_DUMMY_PASSWORD_HASH, password)
         return jsonify({"error": "Invalid credentials"}), 401
 
     # Check lockout before even touching the password
@@ -131,13 +141,14 @@ def login():
         session_conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff["id"],))
 
         token = secrets.token_hex(32)
+        csrf_token = secrets.token_hex(32)
         expires_at = (
             datetime.now() + timedelta(hours=SESSION_ABSOLUTE_HOURS)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         session_conn.execute(
-            "INSERT INTO sessions (token, staff_id, expires_at) VALUES (?, ?, ?)",
-            (token, staff["id"], expires_at),
+            "INSERT INTO sessions (token, csrf_token, staff_id, expires_at) VALUES (?, ?, ?, ?)",
+            (token, csrf_token, staff["id"], expires_at),
         )
         session_conn.commit()
     except Exception:
@@ -158,6 +169,7 @@ def login():
                     staff["suffix"],
                 ),
                 "role": staff["role"],
+                "csrf_token": csrf_token,
             }
         )
     )
@@ -172,6 +184,7 @@ def login():
 
 
 @auth_bp.route("/logout", methods=["POST"])
+@login_required
 def logout():
     token = request.cookies.get("session_token")
 

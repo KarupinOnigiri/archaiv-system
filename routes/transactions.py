@@ -20,6 +20,57 @@ DEFAULT_LOAN_DAYS = 2
 MAX_CONCURRENT_LOANS = 10
 SESSION_STALE_MINUTES = 20
 
+def _get_active_checkout_session(session_id, member_id, conn):
+    """Returns (session_row, error_response) for a checkout session that a
+    borrow can be attached to.
+
+    A checkout session represents one checkout episode where a member can
+    have several assets borrowed against the same session_id (badge scanned
+    once, staff scans multiple tools). It stays open until either:
+      - staff explicitly finishes it (POST .../finish), or
+      - it goes stale (no activity for SESSION_STALE_MINUTES), which this
+        function lazily closes the moment it's noticed.
+
+    error_response is None if the session exists, belongs to member_id,
+    and is still open.
+    """
+    session = conn.execute(
+        "SELECT * FROM checkout_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+
+    if session is None:
+        return None, (
+            jsonify({"error": "session_id does not match an existing checkout session"}),
+            404,
+        )
+
+    if session["member_id"] != member_id:
+        return None, (
+            jsonify({"error": "session_id belongs to a different member"}),
+            400,
+        )
+
+    if session["completed_at"] is not None:
+        return None, (
+            jsonify({"error": "This checkout session has already been finished"}),
+            409,
+        )
+
+    created_at = datetime.strptime(session["created_at"], "%Y-%m-%d %H:%M:%S")
+    if datetime.now() - created_at > timedelta(minutes=SESSION_STALE_MINUTES):
+        # lazily close it so it stops showing up as "open" going forward
+        conn.execute(
+            "UPDATE checkout_sessions SET completed_at = datetime('now', 'localtime') WHERE id = ? AND completed_at IS NULL",
+            (session_id,),
+        )
+        conn.commit()
+        return None, (
+            jsonify({"error": "This checkout session has timed out. Start a new one."}),
+            409,
+        )
+
+    return session, None
+
 # # # LIST / VIEW ------------------------------------------------------------
 
 
@@ -176,23 +227,12 @@ def borrow_asset():
 
     session_id = data.get("session_id")
     if session_id is not None:
-        checkout_session = conn.execute(
-            "SELECT id, member_id FROM checkout_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-        if checkout_session is None:
+        checkout_session, error = _get_active_checkout_session(
+            session_id, member["id"], conn
+        )
+        if error:
             conn.close()
-            return (
-                jsonify(
-                    {"error": "session_id does not match an existing checkout session"}
-                ),
-                404,
-            )
-        if checkout_session["member_id"] != member["id"]:
-            conn.close()
-            return (
-                jsonify({"error": "session_id belongs to a different member"}),
-                400,
-            )
+            return error
 
     try:
         claim = conn.execute(
@@ -225,12 +265,6 @@ def borrow_asset():
                 asset["condition"],
             ),
         )
-
-        if session_id is not None:
-            conn.execute(
-                "UPDATE checkout_sessions SET completed_at = datetime('now', 'localtime') WHERE id = ? AND completed_at IS NULL",
-                (session_id,),
-            )
 
         conn.commit()
     except Exception:
@@ -430,11 +464,38 @@ def create_checkout_session():
             403,
         )
 
+    # Lazily close any of this member's own sessions that went stale, so
+    # they don't linger as "open" — never hard-delete (they may already be
+    # referenced by transactions via checkout_session_id).
     conn.execute(
-        "DELETE FROM checkout_sessions WHERE completed_at IS NULL AND created_at < datetime('now', 'localtime', ?)",
-        (f"-{SESSION_STALE_MINUTES} minutes",),
+        """
+        UPDATE checkout_sessions
+        SET completed_at = datetime('now', 'localtime')
+        WHERE member_id = ? AND completed_at IS NULL
+        AND created_at < datetime('now', 'localtime', ?)
+        """,
+        (member["id"], f"-{SESSION_STALE_MINUTES} minutes"),
     )
     conn.commit()
+
+    # One open session per member at a time — if they still have one, send
+    # staff back to it instead of forking a second concurrent session.
+    existing_open_session = conn.execute(
+        "SELECT id FROM checkout_sessions WHERE member_id = ? AND completed_at IS NULL",
+        (member["id"],),
+    ).fetchone()
+
+    if existing_open_session is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "This member already has an open checkout session",
+                    "session_id": existing_open_session["id"],
+                }
+            ),
+            409,
+        )
 
     cursor = conn.execute(
         "INSERT INTO checkout_sessions (member_id) VALUES (?)", (member["id"],)
@@ -447,3 +508,43 @@ def create_checkout_session():
         jsonify({"message": "Checkout session created", "session_id": session_id}),
         201,
     )
+
+
+# # # CHECKOUT SESSIONS — explicit finish -------------------------------
+
+
+@transactions_bp.route("/api/v1/checkout-sessions/<int:id>/finish", methods=["POST"])
+@login_required
+def finish_checkout_session(id):
+    """Explicitly closes a checkout session once staff is done scanning
+    assets for this member. Idempotent guard: finishing an already-finished
+    session is a 400, not a silent no-op, so staff get clear feedback."""
+    conn = get_db_connection()
+    session = conn.execute(
+        "SELECT * FROM checkout_sessions WHERE id = ?", (id,)
+    ).fetchone()
+
+    if session is None:
+        conn.close()
+        return jsonify({"error": "Checkout session not found"}), 404
+
+    if session["completed_at"] is not None:
+        conn.close()
+        return jsonify({"error": "This checkout session has already been finished"}), 400
+
+    conn.execute(
+        "UPDATE checkout_sessions SET completed_at = datetime('now', 'localtime') WHERE id = ?",
+        (id,),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="finished_checkout_session",
+        target_table="checkout_sessions",
+        target_id=id,
+        details=f"Finished checkout session {id}",
+    )
+
+    return jsonify({"message": "Checkout session finished successfully"})

@@ -6,6 +6,7 @@ from utils.validators import (
     validate_date_string,
     validate_date_fields,
     validate_password_strength,
+    parse_pagination_params,
 )
 from utils.formatters import full_name
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -20,17 +21,34 @@ staff_bp = Blueprint("staff", __name__)
 @staff_bp.route("/staff")
 @login_required
 def view_staff():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
     conn = get_db_connection()
-    staff = conn.execute("""
+    total_count = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
+    staff = conn.execute(
+        """
         SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
                staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.barcode_id, members.department
         FROM staff
         JOIN members ON staff.member_id = members.id
-        """).fetchall()
+        ORDER BY staff.id
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
     conn.close()
-    return jsonify([dict(row) for row in staff])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in staff],
+        }
+    )
 
 
 @staff_bp.route("/staff/<int:id>")

@@ -2,6 +2,7 @@ from functools import wraps
 from database import get_db_connection
 from flask import jsonify, request, g
 from datetime import datetime, timedelta
+import hmac
 
 SESSION_IDLE_MINUTES = 30
 
@@ -18,6 +19,14 @@ def require_session(conn):
 
     if session is None:
         return None, (jsonify({"error": "Invalid or expired session"}), 401)
+
+    # CSRF check — only required for state-changing methods
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        submitted_csrf = request.headers.get("X-CSRF-Token")
+        if not submitted_csrf or not hmac.compare_digest(
+            submitted_csrf, session["csrf_token"] 
+        ):
+            return None, (jsonify({"error": "Invalid or missing CSRF token"}), 403)
 
     now = datetime.now()
     expires_at = datetime.strptime(session["expires_at"], "%Y-%m-%d %H:%M:%S")

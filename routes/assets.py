@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g
+from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
@@ -215,12 +215,20 @@ def get_asset_by_barcode(barcode):
 @assets_bp.route("/assets/<int:id>/history")
 @login_required
 def get_asset_history(id):
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
     conn = get_db_connection()
 
     asset = conn.execute("SELECT id FROM assets WHERE id = ?", (id,)).fetchone()
     if asset is None:
         conn.close()
         return jsonify({"error": "Asset not found"}), 404
+
+    total_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE asset_id = ?", (id,)
+    ).fetchone()["cnt"]
 
     history = conn.execute(
         """
@@ -229,9 +237,17 @@ def get_asset_history(id):
         JOIN members ON transactions.member_id = members.id
         WHERE transactions.asset_id = ?
         ORDER BY transactions.time_out DESC
+        LIMIT ? OFFSET ?
         """,
-        (id,),
+        (id, limit, offset),
     ).fetchall()
     conn.close()
 
-    return jsonify([dict(row) for row in history])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in history],
+        }
+    )
