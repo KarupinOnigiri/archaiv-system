@@ -58,8 +58,8 @@ def login():
 
     if staff is None:
         conn.close()
-        # run a dummy hash check so response timing doesn't reveal        
-        # # whether this username/barcode belongs to a real account         
+        # run a dummy hash check so response timing doesn't reveal
+        # # whether this username/barcode belongs to a real account
         check_password_hash(_DUMMY_PASSWORD_HASH, password)
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -129,12 +129,20 @@ def login():
         return jsonify({"error": "This account has been deactivated"}), 403
 
     if staff["role"] == "tool_keeper":
+        if not staff["assigned_start"] or not staff["assigned_end"]:
+            return (
+                jsonify(
+                    {
+                        "error": "No assignment period set for this account. Contact an admin."
+                    }
+                ),
+                403,
+            )
         today = date.today().isoformat()
-        if staff["assigned_start"] and today < staff["assigned_start"]:
+        if today < staff["assigned_start"]:
             return jsonify({"error": "Tool keeper assignment has not started yet"}), 403
-        if staff["assigned_end"] and today > staff["assigned_end"]:
+        if today > staff["assigned_end"]:
             return jsonify({"error": "Tool keeper assignment has expired"}), 403
-
     session_conn = get_db_connection()
 
     try:

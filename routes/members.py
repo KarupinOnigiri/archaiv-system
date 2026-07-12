@@ -80,7 +80,15 @@ def add_member_submit():
         new_member_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         conn.close()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
 
     conn.close()
 
@@ -125,7 +133,7 @@ def edit_member_submit(id):
         conn.execute(
             """
             UPDATE members
-            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_active = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
             WHERE id = ?
             """,
             (
@@ -135,7 +143,6 @@ def edit_member_submit(id):
                 data.get("suffix", member["suffix"]),
                 data.get("department", member["department"]),
                 data.get("batch", member["batch"]),
-                data.get("is_active", member["is_active"]),
                 new_is_restricted,
                 data.get("restriction_reason", member["restriction_reason"]),
                 new_restriction_source,
@@ -145,7 +152,15 @@ def edit_member_submit(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -181,7 +196,6 @@ def edit_member_submit(id):
                 details=f"Lifted restriction on member {updated_name}",
             )
 
-    conn.close()
     return jsonify({"message": "Member updated successfully"})
 
 
@@ -221,7 +235,15 @@ def restrict_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -266,7 +288,15 @@ def unrestrict_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -326,7 +356,14 @@ def delete_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -339,6 +376,48 @@ def delete_member(id):
     )
 
     return jsonify({"message": "Member deactivated successfully"})
+
+
+@members_bp.route("/members/<int:id>/reactivate", methods=["POST"])
+@roles_required("admin", "in_charge")
+def reactivate_member(id):
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    if member["is_active"]:
+        conn.close()
+        return jsonify({"error": "Member is already active"}), 400
+
+    try:
+        conn.execute("UPDATE members SET is_active = 1 WHERE id = ?", (id,))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="reactivated_member",
+        target_table="members",
+        target_id=id,
+        details=f"Reactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
+    )
+
+    return jsonify({"message": "Member reactivated successfully"})
 
 
 # # # API ROUTES (scanning lookups) ------------------------------------------

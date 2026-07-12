@@ -203,7 +203,15 @@ def add_staff_submit():
         new_staff_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         conn.close()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
 
     conn.close()
 
@@ -239,6 +247,22 @@ def edit_staff_submit(id):
         conn.close()
         return jsonify({"error": "Staff not found"}), 404
 
+    new_role = data.get("role", staff["role"])
+    if staff["role"] == "admin" and new_role != "admin":
+        remaining_admins = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
+            (id,),
+        ).fetchone()["cnt"]
+        if remaining_admins == 0:
+            conn.close()
+            return (
+                jsonify(
+                    {
+                        "error": "Cannot change role: this is the last active admin account"
+                    }
+                ),
+                403,
+            )
     try:
         conn.execute(
             """
@@ -247,7 +271,8 @@ def edit_staff_submit(id):
             WHERE id = ?
             """,
             (
-                data.get("role", staff["role"]),
+                # data.get("role", staff["role"]),
+                new_role,
                 data.get("assigned_start", staff["assigned_start"]),
                 data.get("assigned_end", staff["assigned_end"]),
                 staff["id"],
@@ -256,7 +281,15 @@ def edit_staff_submit(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -404,11 +437,22 @@ def delete_staff(id):
         return jsonify({"error": "Staff account is already deactivated"}), 400
 
     try:
-        conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (id,))
+        conn.execute(
+            "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+            (id,),
+        )
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -421,6 +465,47 @@ def delete_staff(id):
     )
 
     return jsonify({"message": "Staff deactivated successfully"})
+
+
+@staff_bp.route("/staff/<int:id>/reactivate", methods=["POST"])
+@roles_required("admin")
+def reactivate_staff(id):
+    conn = get_db_connection()
+    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if staff is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if staff["is_active"]:
+        conn.close()
+        return jsonify({"error": "Staff account is already active"}), 400
+
+    try:
+        conn.execute("UPDATE staff SET is_active = 1 WHERE id = ?", (id,))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="reactivated_staff",
+        target_table="staff",
+        target_id=id,
+        details=f"Reactivated staff account: {staff['username']}",
+    )
+
+    return jsonify({"message": "Staff reactivated successfully"})
 
 
 # # # API ROUTES (barcode-based staff lookup for login) -----------------

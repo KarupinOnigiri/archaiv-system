@@ -79,8 +79,16 @@ def add_asset_submit():
         conn.commit()
         new_asset_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
+        print(f"IntegrityError: {e}")
         conn.close()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
 
     conn.close()
 
@@ -134,7 +142,15 @@ def edit_asset_submit(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 
@@ -181,7 +197,15 @@ def delete_asset(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        return jsonify({"error": f"Database error: {str(e)}"}), 400
+        print(f"IntegrityError: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                }
+            ),
+            400,
+        )
     finally:
         conn.close()
 

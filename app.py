@@ -17,6 +17,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from services.checkout_service import cleanup_stale_checkout_sessions
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")
+
+if not app.secret_key:
+    raise RuntimeError(
+        "SECRET_KEY is not set in .env — required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
+    )
+
 
 app.register_blueprint(assets_bp)
 app.register_blueprint(members_bp)
@@ -45,5 +52,10 @@ def home():
     return "Flask is connected and running."
 
 
+# if __name__ == "__main__":
+#     app.run(debug=debug_mode)
+
 if __name__ == "__main__":
-    app.run(debug=debug_mode)
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("FLASK_PORT", 5000))
+    app.run(host=host, port=port, debug=debug_mode)

@@ -312,9 +312,7 @@ def add_item_to_session(id):
         conn.close()
         return jsonify({"error": "Checkout session not found"}), 404
 
-    checkout_session, error = _get_active_checkout_session(
-        id, session["member_id"], conn
-    )
+    _, error = _get_active_checkout_session(id, session["member_id"], conn)
     if error:
         conn.close()
         return error
@@ -751,6 +749,11 @@ def checkout_session(id):
             403,
         )
 
+    current_loan_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ? AND status = 'borrowed'",
+        (member["id"],),
+    ).fetchone()["cnt"]
+
     items = conn.execute(
         "SELECT * FROM checkout_session_items WHERE checkout_session_id = ?", (id,)
     ).fetchall()
@@ -762,6 +765,22 @@ def checkout_session(id):
                 {"error": "Cart is empty — scan at least one asset before checking out"}
             ),
             400,
+        )
+
+    if current_loan_count + len(items) > MAX_CONCURRENT_LOANS:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": (
+                        f"This checkout would put the member at {current_loan_count + len(items)} "
+                        f"concurrent loans, exceeding the maximum of {MAX_CONCURRENT_LOANS}"
+                    ),
+                    "current_loans": current_loan_count,
+                    "cart_size": len(items),
+                }
+            ),
+            403,
         )
 
     try:
