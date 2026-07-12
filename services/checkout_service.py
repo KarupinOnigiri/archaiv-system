@@ -1,7 +1,7 @@
 from database import get_db_connection
 from utils.logger import log_action
-
-SESSION_STALE_MINUTES = 20
+from database import get_db_connection
+from utils.constants import SESSION_STALE_MINUTES
 
 
 def cleanup_stale_checkout_sessions():

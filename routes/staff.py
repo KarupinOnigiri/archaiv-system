@@ -212,8 +212,8 @@ def add_staff_submit():
             ),
             400,
         )
-
-    conn.close()
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -486,6 +486,7 @@ def reactivate_staff(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
+        print(f"IntegrityError: {e}")
         return (
             jsonify(
                 {

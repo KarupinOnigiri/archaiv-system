@@ -89,7 +89,7 @@ def add_asset_submit():
             ),
             400,
         )
-
+    finally:
     conn.close()
 
     log_action(

@@ -13,13 +13,14 @@ from utils.validators import (
     parse_pagination_params,
 )
 from datetime import datetime, timedelta
+from utils.constants import SESSION_STALE_MINUTES
 import sqlite3
 
 transactions_bp = Blueprint("transactions", __name__)
 
+
 DEFAULT_LOAN_DAYS = 2
 MAX_CONCURRENT_LOANS = 10
-SESSION_STALE_MINUTES = 20
 
 
 def _get_active_checkout_session(session_id, member_id, conn):
