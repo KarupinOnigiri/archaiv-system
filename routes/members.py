@@ -89,8 +89,8 @@ def add_member_submit():
             ),
             400,
         )
-
-    conn.close()
+    finally:
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
@@ -351,11 +351,49 @@ def delete_member(id):
             409,
         )
 
+    linked_staff = conn.execute(
+        "SELECT * FROM staff WHERE member_id = ? AND is_active = 1", (id,)
+    ).fetchone()
+
+    if linked_staff is not None and g.staff["role"] != "admin":
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot deactivate member: they have an active staff account",
+                    "reason": "This member is also active staff. Only an admin can deactivate them.",
+                }
+            ),
+            403,
+        )
+
+    if linked_staff is not None and linked_staff["role"] == "admin":
+        remaining_admins = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
+            (linked_staff["id"],),
+        ).fetchone()["cnt"]
+        if remaining_admins == 0:
+            conn.close()
+            return (
+                jsonify(
+                    {
+                        "error": "Cannot deactivate member: this is the last active admin account"
+                    }
+                ),
+                403,
+            )
+
     try:
         conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))
+        if linked_staff is not None:
+            conn.execute(
+                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                (linked_staff["id"],),
+            )
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
+        print(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -374,6 +412,14 @@ def delete_member(id):
         target_id=id,
         details=f"Deactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
+    if linked_staff is not None:
+        log_action(
+            staff_id=g.staff["id"],
+            action="deactivated_staff_cascade",
+            target_table="staff",
+            target_id=linked_staff["id"],
+            details=f"Staff account {linked_staff['username']} auto-deactivated because linked member was deactivated",
+        )
 
     return jsonify({"message": "Member deactivated successfully"})
 
