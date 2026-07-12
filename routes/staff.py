@@ -377,6 +377,14 @@ def delete_staff(id):
         conn.close()
         return jsonify({"error": "Staff not found"}), 404
 
+    if staff["role"] == "admin":
+        conn.close()
+        return jsonify({"error": "Admin account/s cannot be deactivated"}), 403
+
+    if not staff["is_active"]:
+        conn.close()
+        return jsonify({"error": "Staff account is already deactivated"}), 400
+
     try:
         conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (id,))
         conn.commit()

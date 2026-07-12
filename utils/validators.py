@@ -61,6 +61,35 @@ def validate_password_strength(password, field_name="password"):
     return None
 
 
+DEFAULT_PAGE_LIMIT = 25
+MAX_PAGE_LIMIT = 100
+
+
+def parse_pagination_params(args):
+    """Parses and validates ?limit= and ?offset= query params.
+    Returns (limit, offset, error_response) — error_response is None if valid.
+    limit defaults to DEFAULT_PAGE_LIMIT and is capped at MAX_PAGE_LIMIT
+    (same safety-cap idea as the audit log route). offset defaults to 0."""
+    try:
+        limit = int(args.get("limit", DEFAULT_PAGE_LIMIT))
+    except ValueError:
+        return None, None, (jsonify({"error": "limit must be an integer"}), 400)
+
+    try:
+        offset = int(args.get("offset", 0))
+    except ValueError:
+        return None, None, (jsonify({"error": "offset must be an integer"}), 400)
+
+    if limit < 1:
+        return None, None, (jsonify({"error": "limit must be at least 1"}), 400)
+    if offset < 0:
+        return None, None, (jsonify({"error": "offset cannot be negative"}), 400)
+
+    limit = min(limit, MAX_PAGE_LIMIT)
+
+    return limit, offset, None
+
+
 def validate_due_date(value, field_name="due_date"):
     """Format + not-in-the-past, parsing once via _parse_date."""
     if value is None:

@@ -3,7 +3,11 @@ from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from datetime import datetime
-from utils.validators import validate_date_string, validate_date_fields
+from utils.validators import (
+    validate_date_string,
+    validate_date_fields,
+    parse_pagination_params,
+)
 import sqlite3
 
 assets_bp = Blueprint("assets", __name__)
@@ -12,10 +16,27 @@ assets_bp = Blueprint("assets", __name__)
 @assets_bp.route("/assets")
 @login_required
 def view_assets():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
     conn = get_db_connection()
-    assets = conn.execute("SELECT * FROM assets WHERE deleted_at IS NULL").fetchall()
+    total_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL"
+    ).fetchone()["cnt"]
+    assets = conn.execute(
+        "SELECT * FROM assets WHERE deleted_at IS NULL ORDER BY id LIMIT ? OFFSET ?",
+        (limit, offset),
+    ).fetchall()
     conn.close()
-    return jsonify([dict(row) for row in assets])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in assets],
+        }
+    )
 
 
 @assets_bp.route("/assets/add", methods=["POST"])
@@ -137,6 +158,22 @@ def delete_asset(id):
     if asset is None:
         conn.close()
         return jsonify({"error": "Asset not found"}), 404
+
+    if asset["deleted_at"] is not None:
+        conn.close()
+        return jsonify({"error": "Asset is already deleted"}), 400
+
+    if asset["status"] == "borrowed":
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot delete asset: it is currently borrowed",
+                    "reason": "This asset has an open borrow transaction. Return it first, or contact an admin.",
+                }
+            ),
+            409,
+        )
 
     deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:

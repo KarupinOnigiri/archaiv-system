@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g
+from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required
 from services.loan_service import (
@@ -7,12 +7,18 @@ from services.loan_service import (
 )
 from utils.logger import log_action
 from utils.formatters import full_name
-from utils.validators import validate_date_string, validate_due_date
+from utils.validators import (
+    validate_date_string,
+    validate_due_date,
+    parse_pagination_params,
+)
 from datetime import datetime, timedelta
 
 transactions_bp = Blueprint("transactions", __name__)
 
 DEFAULT_LOAN_DAYS = 2
+MAX_CONCURRENT_LOANS = 10
+SESSION_STALE_MINUTES = 20
 
 # # # LIST / VIEW ------------------------------------------------------------
 
@@ -20,16 +26,34 @@ DEFAULT_LOAN_DAYS = 2
 @transactions_bp.route("/transactions")
 @login_required
 def list_transactions():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
     conn = get_db_connection()
-    transactions = conn.execute("""
+    total_count = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()[
+        "cnt"
+    ]
+    transactions = conn.execute(
+        """
         SELECT transactions.*, assets.name AS asset_name, members.first_name, members.last_name, members.middle_name, members.suffix
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         JOIN members ON transactions.member_id = members.id
         ORDER BY transactions.time_out DESC
-        """).fetchall()
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
     conn.close()
-    return jsonify([dict(row) for row in transactions])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in transactions],
+        }
+    )
 
 
 @transactions_bp.route("/transactions/overdue")
@@ -134,6 +158,22 @@ def borrow_asset():
             403,
         )
 
+    current_loan_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ? AND status = 'borrowed'",
+        (member["id"],),
+    ).fetchone()["cnt"]
+
+    if current_loan_count >= MAX_CONCURRENT_LOANS:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"This member has reached the maximum of {MAX_CONCURRENT_LOANS} concurrent loans",
+                }
+            ),
+            403,
+        )
+
     session_id = data.get("session_id")
     if session_id is not None:
         checkout_session = conn.execute(
@@ -181,11 +221,16 @@ def borrow_asset():
                 asset["id"],
                 member["id"],
                 g.staff["id"],
-                # data.get("due_date"),
                 due_date,
                 asset["condition"],
             ),
         )
+
+        if session_id is not None:
+            conn.execute(
+                "UPDATE checkout_sessions SET completed_at = datetime('now', 'localtime') WHERE id = ? AND completed_at IS NULL",
+                (session_id,),
+            )
 
         conn.commit()
     except Exception:
@@ -368,6 +413,28 @@ def create_checkout_session():
             ),
             403,
         )
+
+    current_loan_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ? AND status = 'borrowed'",
+        (member["id"],),
+    ).fetchone()["cnt"]
+
+    if current_loan_count >= MAX_CONCURRENT_LOANS:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"This member has reached the maximum of {MAX_CONCURRENT_LOANS} concurrent loans",
+                }
+            ),
+            403,
+        )
+
+    conn.execute(
+        "DELETE FROM checkout_sessions WHERE completed_at IS NULL AND created_at < datetime('now', 'localtime', ?)",
+        (f"-{SESSION_STALE_MINUTES} minutes",),
+    )
+    conn.commit()
 
     cursor = conn.execute(
         "INSERT INTO checkout_sessions (member_id) VALUES (?)", (member["id"],)

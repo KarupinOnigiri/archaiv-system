@@ -3,6 +3,7 @@ from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from utils.formatters import full_name
+from utils.validators import parse_pagination_params
 import sqlite3
 
 members_bp = Blueprint("members", __name__)
@@ -281,6 +282,27 @@ def delete_member(id):
     if member is None:
         conn.close()
         return jsonify({"error": "Member not found"}), 404
+
+    if not member["is_active"]:
+        conn.close()
+        return jsonify({"error": "Member is already deactivated"}), 400
+
+    open_loan = conn.execute(
+        "SELECT id FROM transactions WHERE member_id = ? AND status = 'borrowed' LIMIT 1",
+        (id,),
+    ).fetchone()
+
+    if open_loan is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot deactivate member: they have an open borrow transaction",
+                    "reason": "This member currently has one or more tools checked out. They must be returned first, or contact an admin.",
+                }
+            ),
+            409,
+        )
 
     try:
         conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))

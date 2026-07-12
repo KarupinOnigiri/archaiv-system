@@ -1,7 +1,7 @@
 import secrets
 from database import get_db_connection, get_json_or_error
 from werkzeug.security import check_password_hash
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from flask import Blueprint, jsonify, make_response, request
 from utils.formatters import full_name
 from utils.logger import log_action
