@@ -163,7 +163,7 @@ def delete_asset(id):
         conn.close()
         return jsonify({"error": "Asset is already deleted"}), 400
 
-    if asset["status"] == "borrowed":
+    if asset["status"] in ("borrowed", "reserved"):
         conn.close()
         return (
             jsonify(
