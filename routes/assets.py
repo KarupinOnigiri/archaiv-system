@@ -80,7 +80,7 @@ def add_asset_submit():
         new_asset_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         print(f"IntegrityError: {e}")
-        conn.close()
+        conn.rollback()
         return (
             jsonify(
                 {
@@ -90,7 +90,7 @@ def add_asset_submit():
             400,
         )
     finally:
-    conn.close()
+        conn.close()
 
     log_action(
         staff_id=g.staff["id"],
