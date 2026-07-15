@@ -5,6 +5,7 @@ from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import parse_pagination_params
 import sqlite3
+from extensions import limiter
 
 members_bp = Blueprint("members", __name__)
 
@@ -355,6 +356,22 @@ def delete_member(id):
             ),
             409,
         )
+      open_session = conn.execute(
+        "SELECT id FROM checkout_sessions WHERE member_id = ? AND status = 'open'",
+        (id,),
+    ).fetchone()
+
+    if open_session is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot deactivate member: they have an open checkout session",
+                    "reason": "This member has tools scanned into an unfinished checkout. Finish or cancel that session first, or contact an admin.",
+                }
+            ),
+            409,
+        )  
 
     linked_staff = conn.execute(
         "SELECT * FROM staff WHERE member_id = ? AND is_active = 1", (id,)
@@ -432,6 +449,7 @@ def delete_member(id):
 
 @members_bp.route("/members/<int:id>/reactivate", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def reactivate_member(id):
     conn = get_db_connection()
     member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()

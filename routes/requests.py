@@ -18,6 +18,7 @@ VALID_STATUSES = ("pending", "approved", "denied")
 
 
 @requests_bp.route("/unrestriction-requests", methods=["POST"])
+@limiter.limit("20 per minute")
 @roles_required("tool_keeper")
 def create_unrestriction_request():
     """tool_keeper cannot unrestrict directly — this is the request path
@@ -103,6 +104,7 @@ def create_unrestriction_request():
 
 
 @requests_bp.route("/unrestriction-requests")
+@limiter.limit("20 per minute")
 @login_required
 def list_unrestriction_requests():
     """admin/in_charge see everyone's requests (the review queue).
@@ -189,6 +191,7 @@ def _load_pending_request(id, conn):
 
 
 @requests_bp.route("/unrestriction-requests/<int:id>/approve", methods=["POST"])
+@limiter.limit("20 per minute")
 @roles_required("admin", "in_charge")
 def approve_unrestriction_request(id):
     data, error = get_json_or_error()
