@@ -21,6 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 staff_bp = Blueprint("staff", __name__)
+VALID_ROLES = ("admin", "in_charge", "tool_keeper")
 
 
 # # # LIST / VIEW ------------------------------------------------------------
@@ -40,9 +41,10 @@ def view_staff():
         SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
                staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
                members.first_name, members.last_name, members.middle_name, members.suffix,
-               members.barcode_id, members.department
+               members.barcode_id, departments.name AS department
         FROM staff
         JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
         ORDER BY staff.id
         LIMIT ? OFFSET ?
         """,
@@ -68,9 +70,10 @@ def get_staff_by_id(id):
         SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
                staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
                members.first_name, members.last_name, members.middle_name, members.suffix,
-               members.barcode_id, members.department
+               members.barcode_id, departments.name AS department
         FROM staff
         JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
         WHERE staff.id = ?
         """,
         (id,),
@@ -134,11 +137,20 @@ def view_audit_log():
         limit = int(request.args.get("limit", 200))
     except ValueError:
         return jsonify({"error": "limit must be an integer"}), 400
+
     limit = max(1, min(limit, 1000))
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
 
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
     conn = get_db_connection()
+
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM audit_log {where_clause}", params
+    ).fetchone()["cnt"]
+
     logs = conn.execute(
         f"""
         SELECT audit_log.*, staff.username AS staff_username
@@ -146,13 +158,20 @@ def view_audit_log():
         LEFT JOIN staff ON audit_log.staff_id = staff.id
         {where_clause}
         ORDER BY audit_log.created_at DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (*params, limit),
+        (*params, limit, offset),
     ).fetchall()
     conn.close()
 
-    return jsonify([dict(row) for row in logs])
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in logs],
+        }
+    )
 
 
 # # # CREATE (admin only) ------------------------------------------------
@@ -170,6 +189,12 @@ def add_staff_submit():
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    if data["role"] not in VALID_ROLES:
+        return (
+            jsonify({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}),
+            400,
+        )
 
     error = validate_date_fields(data, ("assigned_start", "assigned_end"))
     if error:
@@ -219,7 +244,7 @@ def add_staff_submit():
     except sqlite3.IntegrityError as e:
         conn.rollback()
         conn.close()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -261,6 +286,12 @@ def edit_staff_submit(id):
     data, error = get_json_or_error()
     if error:
         return error
+
+    if "role" in data and data["role"] not in VALID_ROLES:
+        return (
+            jsonify({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}),
+            400,
+        )
 
     error = validate_date_fields(data, ("assigned_start", "assigned_end"))
     if error:
@@ -307,7 +338,7 @@ def edit_staff_submit(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -511,7 +542,7 @@ def delete_staff(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -554,7 +585,7 @@ def reactivate_staff(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -580,7 +611,7 @@ def reactivate_staff(id):
 # # # API ROUTES (barcode-based staff lookup for login) -----------------
 
 
-@staff_bp.route("/api/v1/staff/barcode/<string:barcode>")
+@staff_bp.route("/staff/barcode/<string:barcode>")
 @login_required
 @limiter.limit("40 per minute")
 def get_staff_by_barcode(barcode):
@@ -589,9 +620,10 @@ def get_staff_by_barcode(barcode):
         """
         SELECT staff.id, staff.role, staff.is_active, staff.assigned_start, staff.assigned_end,
                members.first_name, members.last_name, members.middle_name, members.suffix,
-               members.barcode_id, members.department
+               members.barcode_id, departments.name AS department
         FROM staff
         JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
         WHERE members.barcode_id = ?
         """,
         (barcode,),
@@ -692,7 +724,7 @@ def request_admin_deactivation(id):
         request_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return jsonify({"error": "A database constraint was violated."}), 400
     finally:
         conn.close()

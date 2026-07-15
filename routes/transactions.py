@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
-from services.auth_service import login_required
+from services.auth_service import login_required, roles_required
 from services.loan_service import (
     check_and_restrict_overdue_member,
     check_and_lift_restriction_if_resolved,
@@ -138,7 +138,7 @@ def list_overdue_transactions():
 # # # CHECKOUT SESSION ITEMS (the "cart") --------------------------------
 
 
-@transactions_bp.route("/api/v1/checkout-sessions/<int:id>/items/add", methods=["POST"])
+@transactions_bp.route("/checkout-sessions/<int:id>/items/add", methods=["POST"])
 @login_required
 @limiter.limit("60 per minute")
 def add_item_to_session(id):
@@ -220,7 +220,7 @@ def add_item_to_session(id):
 
 
 @transactions_bp.route(
-    "/api/v1/checkout-sessions/<int:id>/items/<int:item_id>/remove", methods=["POST"]
+    "/checkout-sessions/<int:id>/items/<int:item_id>/remove", methods=["POST"]
 )
 @login_required
 @limiter.limit("60 per minute")
@@ -263,7 +263,7 @@ def remove_item_from_session(id, item_id):
     return jsonify({"message": "Item removed from cart"})
 
 
-@transactions_bp.route("/api/v1/checkout-sessions/<int:id>")
+@transactions_bp.route("/checkout-sessions/<int:id>")
 @login_required
 @limiter.limit("20 per minute")
 def view_checkout_session(id):
@@ -304,7 +304,7 @@ def view_checkout_session(id):
 # # # RETURN (API action) -----------------------------------------------
 
 
-@transactions_bp.route("/api/v1/transactions/return", methods=["POST"])
+@transactions_bp.route("/transactions/return", methods=["POST"])
 @login_required
 @limiter.limit("20 per minute")
 def return_asset():
@@ -423,121 +423,28 @@ def return_asset():
 # # # CHECKOUT SESSIONS (API action) -------------------------------------
 
 
-@transactions_bp.route("/api/v1/checkout-sessions", methods=["POST"])
-@login_required
-@limiter.limit("30 per minute")
-def create_checkout_session():
-    data, error = get_json_or_error()
-    if error:
-        return error
-
-    if "member_barcode" not in data or not data["member_barcode"]:
-        return jsonify({"error": "Missing required field: member_barcode"}), 400
-
+@transactions_bp.route("/checkout-sessions/open")
+@roles_required("admin", "in_charge")
+def list_open_checkout_sessions():
     conn = get_db_connection()
-
-    member = conn.execute(
-        "SELECT * FROM members WHERE barcode_id = ?", (data["member_barcode"],)
-    ).fetchone()
-
-    if member is None:
-        conn.close()
-        return jsonify({"error": "Member not found"}), 404
-
-    if not member["is_active"]:
-        conn.close()
-        return jsonify({"error": "This member is not active"}), 403
-
-    if check_and_restrict_overdue_member(member["id"], conn):
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "This member is restricted",
-                    "reason": "Has an overdue asset that has not been returned",
-                }
-            ),
-            403,
-        )
-
-    if member["is_restricted"]:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "This member is restricted",
-                    "reason": member["restriction_reason"],
-                }
-            ),
-            403,
-        )
-
-    current_loan_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ? AND status = 'borrowed'",
-        (member["id"],),
-    ).fetchone()["cnt"]
-
-    if current_loan_count >= MAX_CONCURRENT_LOANS:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": f"This member has reached the maximum of {MAX_CONCURRENT_LOANS} concurrent loans",
-                }
-            ),
-            403,
-        )
-
-    # Lazily close any of this member's own sessions that went stale, so
-    # they don't linger as "open" — never hard-delete (they may already be
-    # referenced by transactions via checkout_session_id).
-    conn.execute(
-        """
-        UPDATE checkout_sessions
-        SET status = 'cancelled', completed_at = datetime('now', 'localtime')
-        WHERE member_id = ? AND status = 'open'
-        AND created_at < datetime('now', 'localtime', ?)
-        """,
-        (member["id"], f"-{SESSION_STALE_MINUTES} minutes"),
-    )
-    conn.commit()
-
-    # One open session per member at a time — if they still have one, send
-    # staff back to it instead of forking a second concurrent session.
-    existing_open_session = conn.execute(
-        "SELECT id FROM checkout_sessions WHERE member_id = ? AND status = 'open'",
-        (member["id"],),
-    ).fetchone()
-
-    if existing_open_session is not None:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "This member already has an open checkout session",
-                    "session_id": existing_open_session["id"],
-                }
-            ),
-            409,
-        )
-
-    cursor = conn.execute(
-        "INSERT INTO checkout_sessions (member_id) VALUES (?)", (member["id"],)
-    )
-    conn.commit()
-    session_id = cursor.lastrowid
+    sessions = conn.execute("""
+        SELECT checkout_sessions.*, members.first_name, members.last_name,
+               members.middle_name, members.suffix, members.barcode_id AS member_barcode,
+               (SELECT COUNT(*) FROM checkout_session_items
+                WHERE checkout_session_id = checkout_sessions.id) AS item_count
+        FROM checkout_sessions
+        JOIN members ON checkout_sessions.member_id = members.id
+        WHERE checkout_sessions.status = 'open'
+        ORDER BY checkout_sessions.created_at ASC
+        """).fetchall()
     conn.close()
-
-    return (
-        jsonify({"message": "Checkout session created", "session_id": session_id}),
-        201,
-    )
+    return jsonify([dict(row) for row in sessions])
 
 
 # # # CHECKOUT SESSIONS — explicit finish -------------------------------
 
 
-@transactions_bp.route("/api/v1/checkout-sessions/<int:id>/checkout", methods=["POST"])
+@transactions_bp.route("/checkout-sessions/<int:id>/checkout", methods=["POST"])
 @login_required
 def checkout_session(id):
     """The actual commit point. Nothing lands in `transactions` until this
@@ -696,7 +603,7 @@ def checkout_session(id):
     return jsonify({"message": "Checkout complete", "items_borrowed": len(items)}), 201
 
 
-@transactions_bp.route("/api/v1/checkout-sessions/<int:id>/cancel", methods=["POST"])
+@transactions_bp.route("/checkout-sessions/<int:id>/cancel", methods=["POST"])
 @login_required
 @limiter.limit("20 per minute")
 def cancel_checkout_session(id):

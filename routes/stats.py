@@ -71,10 +71,11 @@ def most_borrowed_assets():
 
     rows = conn.execute(
         f"""
-        SELECT assets.id, assets.asset_id, assets.name, assets.category,
+        SELECT assets.id, assets.asset_id, assets.name, categories.name AS category,
                COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
+        LEFT JOIN categories ON assets.category_id = categories.id
         {where_sql}
         GROUP BY assets.id
         ORDER BY borrow_count DESC
@@ -124,10 +125,11 @@ def least_borrowed_assets():
 
     rows = conn.execute(
         f"""
-        SELECT assets.id, assets.asset_id, assets.name, assets.category,
+        SELECT assets.id, assets.asset_id, assets.name, categories.name AS category,
                COUNT(transactions.id) AS borrow_count
         FROM assets
         LEFT JOIN transactions ON transactions.asset_id = assets.id {join_filter}
+        LEFT JOIN categories ON assets.category_id = categories.id
         WHERE assets.deleted_at IS NULL
         GROUP BY assets.id
         ORDER BY borrow_count ASC
@@ -166,9 +168,10 @@ def most_borrowed_categories():
     total_count = conn.execute(
         f"""
         SELECT COUNT(*) AS cnt FROM (
-            SELECT COALESCE(assets.category, 'Uncategorized') AS category
+            SELECT COALESCE(categories.name, 'Uncategorized') AS category
             FROM transactions
             JOIN assets ON transactions.asset_id = assets.id
+            LEFT JOIN categories ON assets.category_id = categories.id
             {where_sql}
             GROUP BY category
         )
@@ -178,10 +181,11 @@ def most_borrowed_categories():
 
     rows = conn.execute(
         f"""
-        SELECT COALESCE(assets.category, 'Uncategorized') AS category,
+        SELECT COALESCE(categories.name, 'Uncategorized') AS category,
                COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
+        LEFT JOIN categories ON assets.category_id = categories.id
         {where_sql}
         GROUP BY category
         ORDER BY borrow_count DESC
@@ -236,9 +240,9 @@ def loan_duration():
         group_clause = "assets.id"
         count_group_col = "assets.id"
     else:
-        select_group = "COALESCE(assets.category, 'Uncategorized') AS category"
+        select_group = "COALESCE(categories.name, 'Uncategorized') AS category"
         group_clause = "category"
-        count_group_col = "COALESCE(assets.category, 'Uncategorized')"
+        count_group_col = "COALESCE(categories.name, 'Uncategorized')"
 
     conn = get_db_connection()
 
@@ -248,6 +252,7 @@ def loan_duration():
             SELECT {count_group_col} AS grp
             FROM transactions
             JOIN assets ON transactions.asset_id = assets.id
+            LEFT JOIN categories ON assets.category_id = categories.id
             {where_sql}
             GROUP BY {group_clause}
         )
@@ -258,12 +263,12 @@ def loan_duration():
     rows = conn.execute(
         f"""
         SELECT {select_group},
-               COUNT(transactions.id) AS completed_loans,
                ROUND(AVG(
                    (julianday(transactions.time_in) - julianday(transactions.time_out)) * 24
                ), 2) AS avg_loan_hours
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
+        LEFT JOIN categories ON assets.category_id = categories.id
         {where_sql}
         GROUP BY {group_clause}
         ORDER BY avg_loan_hours DESC
@@ -319,10 +324,11 @@ def top_borrowers():
     rows = conn.execute(
         f"""
         SELECT members.id, members.member_code, members.first_name, members.last_name,
-               members.middle_name, members.suffix, members.department,
+               members.middle_name, members.suffix, departments.name AS department,
                COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN members ON transactions.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
         {where_sql}
         GROUP BY members.id
         ORDER BY borrow_count DESC
@@ -390,12 +396,13 @@ def overdue_frequency():
     rows = conn.execute(
         f"""
         SELECT members.id, members.member_code, members.first_name, members.last_name,
-               members.middle_name, members.suffix, members.department,
+               members.middle_name, members.suffix, departments.name AS department,
                COUNT(transactions.id) AS overdue_count,
                SUM(CASE WHEN transactions.status = 'borrowed' THEN 1 ELSE 0 END)
                    AS still_open_count
         FROM transactions
         JOIN members ON transactions.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
         {where_sql}
         GROUP BY members.id
         ORDER BY overdue_count DESC
@@ -457,9 +464,9 @@ def condition_changes():
         group_clause = "assets.id"
         count_group_col = "assets.id"
     else:
-        select_group = "COALESCE(assets.category, 'Uncategorized') AS category"
+        select_group = "COALESCE(categories.name, 'Uncategorized') AS category"
         group_clause = "category"
-        count_group_col = "COALESCE(assets.category, 'Uncategorized')"
+        count_group_col = "COALESCE(categories.name, 'Uncategorized')"
 
     rank_case = """
         CASE %s
@@ -480,6 +487,7 @@ def condition_changes():
             SELECT {count_group_col} AS grp
             FROM transactions
             JOIN assets ON transactions.asset_id = assets.id
+            LEFT JOIN categories ON assets.category_id = categories.id
             {where_sql}
             GROUP BY {group_clause}
             HAVING COUNT(transactions.id) > 0
@@ -497,6 +505,7 @@ def condition_changes():
                ) AS worsened_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
+        LEFT JOIN categories ON assets.category_id = categories.id
         {where_sql}
         GROUP BY {group_clause}
         HAVING completed_returns > 0

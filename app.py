@@ -1,12 +1,27 @@
 from dotenv import load_dotenv
 import os
+import atexit
+import logging
+from flask import Flask, jsonify
+from werkzeug.exceptions import HTTPException
+from routes.requests import requests_bp
+from routes.assets import assets_bp
+from routes.members import members_bp
+from routes.staff import staff_bp
+from routes.auth import auth_bp
+from routes.transactions import transactions_bp
+from database import init_db, get_db_connection
+from services.seed_service import seed_initial_admin
+from services.checkout_service import cleanup_stale_checkout_sessions
+from services.auth_service import cleanup_expired_sessions
+from apscheduler.schedulers.background import BackgroundScheduler
+from services.checkout_service import cleanup_stale_checkout_sessions
+from extensions import limiter
+from routes.stats import stats_bp
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
 
-import logging
-
-logger = logging.getLogger(__name__)
 
 # Configured once, here, before anything else in the app logs anything
 # (init_db() and seed_initial_admin() both run at import time below).
@@ -22,20 +37,6 @@ logging.basicConfig(
     ],
 )
 
-from flask import Flask, jsonify
-from werkzeug.exceptions import HTTPException
-from routes.requests import requests_bp
-from routes.assets import assets_bp
-from routes.members import members_bp
-from routes.staff import staff_bp
-from routes.auth import auth_bp
-from routes.transactions import transactions_bp
-from database import init_db
-from services.seed_service import seed_initial_admin
-from apscheduler.schedulers.background import BackgroundScheduler
-from services.checkout_service import cleanup_stale_checkout_sessions
-from extensions import limiter
-from routes.stats import stats_bp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -49,13 +50,13 @@ if not app.secret_key:
 
 limiter.init_app(app)
 
-app.register_blueprint(requests_bp)
-app.register_blueprint(assets_bp)
-app.register_blueprint(members_bp)
-app.register_blueprint(staff_bp)
-app.register_blueprint(auth_bp)
-app.register_blueprint(transactions_bp)
-app.register_blueprint(stats_bp)
+app.register_blueprint(requests_bp, url_prefix="/api/v1")
+app.register_blueprint(assets_bp, url_prefix="/api/v1")
+app.register_blueprint(members_bp, url_prefix="/api/v1")
+app.register_blueprint(staff_bp, url_prefix="/api/v1")
+app.register_blueprint(auth_bp, url_prefix="/api/v1")
+app.register_blueprint(transactions_bp, url_prefix="/api/v1")
+app.register_blueprint(stats_bp, url_prefix="/api/v1")
 
 
 # # # ERROR HANDLERS ---------------------------------------------------------
@@ -99,6 +100,7 @@ seed_initial_admin()
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
+scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 
@@ -107,11 +109,32 @@ debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 # you'll get every job firing twice.
 if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     scheduler.start()
+    # Ensure the background thread stops cleanly on process exit (Ctrl+C,
+    # systemd stop, etc.) instead of being left dangling.
+    atexit.register(lambda: scheduler.shutdown())
 
 
 @app.route("/")
 def home():
     return "Flask is connected and running."
+
+
+@app.route("/health")
+@limiter.exempt
+def health():
+    """Confirms the app is up AND can actually reach the database — an
+    app that's technically running but can't talk to a locked/corrupted
+    DB file is still broken. No auth required, since this is meant for a
+    watchdog script or quick manual check, not a staff-facing route.
+    Exempt from rate limiting since a watchdog may poll it frequently."""
+    try:
+        conn = get_db_connection()
+        conn.execute("SELECT 1")
+        conn.close()
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        app.logger.error(f"Health check failed: {e}")
+        return jsonify({"status": "error", "detail": "database unavailable"}), 503
 
 
 # if __name__ == "__main__":

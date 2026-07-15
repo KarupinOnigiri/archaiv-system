@@ -3,6 +3,9 @@ from database import get_db_connection
 from flask import jsonify, request, g
 from datetime import datetime, timedelta
 import hmac
+import logging
+
+logger = logging.getLogger(__name__)
 
 SESSION_IDLE_MINUTES = 30
 
@@ -24,7 +27,7 @@ def require_session(conn):
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         submitted_csrf = request.headers.get("X-CSRF-Token")
         if not submitted_csrf or not hmac.compare_digest(
-            submitted_csrf, session["csrf_token"] 
+            submitted_csrf, session["csrf_token"]
         ):
             return None, (jsonify({"error": "Invalid or missing CSRF token"}), 403)
 
@@ -58,6 +61,31 @@ def require_session(conn):
     conn.commit()
 
     return staff, None
+
+
+def cleanup_expired_sessions():
+    """Deletes session rows that are expired or have gone past the idle
+    timeout, even if nobody ever tried to use that token again. Sessions
+    are also lazily deleted the moment someone attempts to use a stale
+    token (see require_session above), but an abandoned session — browser
+    closed, kiosk terminal power-cycled mid-shift — would otherwise sit in
+    the table indefinitely. Run on a schedule so it doesn't grow unbounded."""
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """
+            DELETE FROM sessions
+            WHERE expires_at < datetime('now', 'localtime')
+            OR last_active_at < datetime('now', 'localtime', ?)
+            """,
+            (f"-{SESSION_IDLE_MINUTES} minutes",),
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning(f"Failed to clean up expired sessions: {e}")
+    finally:
+        conn.close()
 
 
 def validate_staff(staff_id, conn):

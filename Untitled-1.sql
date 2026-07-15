@@ -1,1 +1,0 @@
-SELECT username, failed_login_attempts, locked_until FROM staff WHERE username = 'admin123';

@@ -3,11 +3,15 @@ from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from utils.formatters import full_name
-from utils.validators import parse_pagination_params
+from utils.validators import parse_pagination_params, validate_lookup_id
 import sqlite3
 from extensions import limiter
+import logging
+
+logger = logging.getLogger(__name__)
 
 members_bp = Blueprint("members", __name__)
+VALID_MEMBER_TYPES = ("trainee", "trainer")
 
 
 # # # LIST / VIEW ------------------------------------------------------------
@@ -20,10 +24,42 @@ def view_members():
     if error:
         return error
 
+    where_clauses = []
+    params = []
+
+    q = request.args.get("q")
+    if q:
+        where_clauses.append(
+            "(members.first_name LIKE ? OR members.last_name LIKE ? OR members.barcode_id LIKE ? OR members.member_code LIKE ?)"
+        )
+        like = f"%{q}%"
+        params.extend([like, like, like, like])
+
+    department_id = request.args.get("department_id")
+    if department_id:
+        where_clauses.append("members.department_id = ?")
+        params.append(department_id)
+
+    is_restricted = request.args.get("is_restricted")
+    if is_restricted is not None:
+        where_clauses.append("members.is_restricted = ?")
+        params.append(1 if is_restricted.lower() in ("1", "true") else 0)
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
     conn = get_db_connection()
-    total_count = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM members {where_sql}", params
+    ).fetchone()["cnt"]
     members = conn.execute(
-        "SELECT * FROM members ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
+        f"""
+        SELECT members.*, departments.name AS department
+        FROM members
+        JOIN departments ON members.department_id = departments.id
+        {where_sql}
+        ORDER BY members.id LIMIT ? OFFSET ?
+        """,
+        params + [limit, offset],
     ).fetchall()
     conn.close()
     return jsonify(
@@ -51,7 +87,7 @@ def add_member_submit():
         "first_name",
         "last_name",
         "barcode_id",
-        "department",
+        "department_id",
         "member_type",
     ]
     for field in required_fields:
@@ -59,13 +95,21 @@ def add_member_submit():
             return jsonify({"error": f"Missing required field: {field}"}), 400
 
     conn = get_db_connection()
+
+    error = validate_lookup_id(
+        conn, "departments", data.get("department_id"), "department_id"
+    )
+    if error:
+        conn.close()
+        return error
+
     new_member_id = None
     generated_code = None
 
     try:
         cursor = conn.execute(
             """
-            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, batch, department, member_type)
+            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, batch, department_id, member_type)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -75,7 +119,7 @@ def add_member_submit():
                 data.get("suffix"),
                 data["barcode_id"],
                 data.get("batch"),
-                data["department"],
+                data["department_id"],
                 data["member_type"],
             ),
         )
@@ -89,7 +133,7 @@ def add_member_submit():
     except sqlite3.IntegrityError as e:
         conn.rollback()
         conn.close()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -139,6 +183,14 @@ def edit_member_submit(id):
         conn.close()
         return jsonify({"error": "Member not found"}), 404
 
+    if "department_id" in data:
+        error = validate_lookup_id(
+            conn, "departments", data.get("department_id"), "department_id"
+        )
+        if error:
+            conn.close()
+            return error
+
     old_is_restricted = member["is_restricted"]
     new_is_restricted = data.get("is_restricted", member["is_restricted"])
 
@@ -148,11 +200,10 @@ def edit_member_submit(id):
         new_restriction_source = member["restriction_source"]
 
     try:
-
         conn.execute(
             """
             UPDATE members
-            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department = ?, batch = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department_id = ?, batch = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
             WHERE id = ?
             """,
             (
@@ -160,7 +211,7 @@ def edit_member_submit(id):
                 data.get("last_name", member["last_name"]),
                 data.get("middle_name", member["middle_name"]),
                 data.get("suffix", member["suffix"]),
-                data.get("department", member["department"]),
+                data.get("department_id", member["department_id"]),
                 data.get("batch", member["batch"]),
                 new_is_restricted,
                 data.get("restriction_reason", member["restriction_reason"]),
@@ -171,7 +222,7 @@ def edit_member_submit(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -255,7 +306,7 @@ def restrict_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -309,7 +360,7 @@ def unrestrict_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -431,7 +482,7 @@ def delete_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -483,7 +534,7 @@ def reactivate_member(id):
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return (
             jsonify(
                 {
@@ -509,13 +560,19 @@ def reactivate_member(id):
 # # # API ROUTES (scanning lookups) ------------------------------------------
 
 
-@members_bp.route("/api/v1/members/barcode/<string:barcode>")
+@members_bp.route("/members/barcode/<string:barcode>")
 @login_required
 @limiter.limit("40 per minute")
 def get_member_by_barcode(barcode):
     conn = get_db_connection()
     member = conn.execute(
-        "SELECT * FROM members WHERE barcode_id = ?", (barcode,)
+        """
+        SELECT members.*, departments.name AS department
+        FROM members
+        JOIN departments ON members.department_id = departments.id
+        WHERE members.barcode_id = ?
+        """,
+        (barcode,),
     ).fetchone()
     conn.close()
 
@@ -628,4 +685,55 @@ def get_member_restriction_history(id):
             "restriction_events": [dict(row) for row in restriction_events],
             "unrestriction_requests": [dict(row) for row in unrestriction_requests],
         }
+    )
+
+    # # # DEPARTMENTS (lookup table) -----------------------------------------
+
+
+@members_bp.route("/departments")
+@login_required
+def view_departments():
+    conn = get_db_connection()
+    departments = conn.execute("SELECT * FROM departments ORDER BY name").fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in departments])
+
+
+@members_bp.route("/departments/add", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def add_department():
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Missing required field: name"}), 400
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("INSERT INTO departments (name) VALUES (?)", (name,))
+        conn.commit()
+        new_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "A department with this name already exists"}), 400
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="created_department",
+        target_table="departments",
+        target_id=new_id,
+        details=f"Created department: {name}",
+    )
+
+    return (
+        jsonify(
+            {"message": "Department added successfully", "id": new_id, "name": name}
+        ),
+        201,
     )

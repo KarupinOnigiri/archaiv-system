@@ -52,12 +52,23 @@ def seed_initial_admin():
         return
 
     try:
+        dept_row = conn.execute(
+            "SELECT id FROM departments WHERE name = ?", (department,)
+        ).fetchone()
+        if dept_row is None:
+            dept_cursor = conn.execute(
+                "INSERT INTO departments (name) VALUES (?)", (department,)
+            )
+            department_id = dept_cursor.lastrowid
+        else:
+            department_id = dept_row["id"]
+
         member_cursor = conn.execute(
             """
-            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, department, member_type)
+            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, department_id, member_type)
             VALUES (?, ?, ?, ?, ?, ?, 'trainer')
             """,
-            (first_name, last_name, middle_name, suffix, barcode_id, department),
+            (first_name, last_name, middle_name, suffix, barcode_id, department_id),
         )
         member_id = member_cursor.lastrowid
         conn.execute(

@@ -110,3 +110,22 @@ def validate_due_date(value, field_name="due_date"):
             400,
         )
     return None
+
+
+def validate_lookup_id(conn, table, id_value, field_name, required=False):
+    """Checks that id_value references an existing row in `table`.
+    `table` must always be a hardcoded literal from your own code — never
+    pass user input as the table name. Returns an error response, or None
+    if valid (or if not required and id_value is None)."""
+    if id_value is None:
+        if required:
+            return jsonify({"error": f"Missing required field: {field_name}"}), 400
+        return None
+
+    row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
+    if row is None:
+        return (
+            jsonify({"error": f"{field_name} does not reference an existing entry"}),
+            400,
+        )
+    return None
