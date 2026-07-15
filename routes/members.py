@@ -60,6 +60,7 @@ def add_member_submit():
 
     conn = get_db_connection()
     new_member_id = None
+    generated_code = None
 
     try:
         cursor = conn.execute(
@@ -78,9 +79,15 @@ def add_member_submit():
                 data["member_type"],
             ),
         )
-        conn.commit()
         new_member_id = cursor.lastrowid
+        generated_code = f"MBR-{new_member_id:05d}"
+        conn.execute(
+            "UPDATE members SET member_code = ? WHERE id = ?",
+            (generated_code, new_member_id),
+        )
+        conn.commit()
     except sqlite3.IntegrityError as e:
+        conn.rollback()
         conn.close()
         print(f"IntegrityError: {e}")
         return (
@@ -102,7 +109,16 @@ def add_member_submit():
         details=f"Created member {full_name(data['first_name'], data['last_name'], data.get('middle_name'), data.get('suffix'))}",
     )
 
-    return jsonify({"message": "Member added successfully", "id": new_member_id}), 201
+    return (
+        jsonify(
+            {
+                "message": "Member added successfully",
+                "id": new_member_id,
+                "member_code": generated_code,
+            }
+        ),
+        201,
+    )
 
 
 # # # UPDATE ------------------------------------------------------------
@@ -356,7 +372,7 @@ def delete_member(id):
             ),
             409,
         )
-      open_session = conn.execute(
+    open_session = conn.execute(
         "SELECT id FROM checkout_sessions WHERE member_id = ? AND status = 'open'",
         (id,),
     ).fetchone()
@@ -371,7 +387,7 @@ def delete_member(id):
                 }
             ),
             409,
-        )  
+        )
 
     linked_staff = conn.execute(
         "SELECT * FROM staff WHERE member_id = ? AND is_active = 1", (id,)
@@ -556,5 +572,60 @@ def get_member_transactions(id):
             "limit": limit,
             "offset": offset,
             "results": [dict(row) for row in transactions],
+        }
+    )
+
+
+@members_bp.route("/members/<int:id>/restriction-history")
+@login_required
+def get_member_restriction_history(id):
+    """Combines the audit trail of direct restrict/unrestrict actions with
+    the full unrestriction_requests trail for this member — the reason
+    someone was flagged, who cleared them (and how), and every request
+    filed in between. Available to any logged-in staff (including
+    tool_keeper) since they need this context to judge whether a member
+    is ready to borrow again before filing a request."""
+    conn = get_db_connection()
+
+    member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    restriction_events = conn.execute(
+        """
+        SELECT audit_log.action, audit_log.details, audit_log.created_at,
+               staff.username AS performed_by
+        FROM audit_log
+        LEFT JOIN staff ON audit_log.staff_id = staff.id
+        WHERE audit_log.target_table = 'members' AND audit_log.target_id = ?
+        AND audit_log.action IN (
+            'restricted_member', 'unrestricted_member',
+            'auto_restricted_member', 'auto_unrestricted_member'
+        )
+        ORDER BY audit_log.created_at DESC
+        """,
+        (id,),
+    ).fetchall()
+
+    unrestriction_requests = conn.execute(
+        """
+        SELECT unrestriction_requests.*,
+               requester.username AS requested_by_username,
+               reviewer.username AS reviewed_by_username
+        FROM unrestriction_requests
+        JOIN staff AS requester ON unrestriction_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
+        WHERE unrestriction_requests.member_id = ?
+        ORDER BY unrestriction_requests.created_at DESC
+        """,
+        (id,),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "restriction_events": [dict(row) for row in restriction_events],
+            "unrestriction_requests": [dict(row) for row in unrestriction_requests],
         }
     )

@@ -372,10 +372,15 @@ def return_asset():
             """
             UPDATE transactions
             SET time_in = datetime('now', 'localtime'), status = 'returned',
-                returned_by_staff_id = ?, return_remarks = ?
+                returned_by_staff_id = ?, return_remarks = ?, condition_in = ?
             WHERE id = ?
             """,
-            (g.staff["id"], data.get("return_remarks"), transaction["id"]),
+            (
+                g.staff["id"],
+                data.get("return_remarks"),
+                final_condition,
+                transaction["id"],
+            ),
         )
 
         conn.execute(

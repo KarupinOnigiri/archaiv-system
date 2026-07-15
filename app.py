@@ -16,6 +16,7 @@ from services.seed_service import seed_initial_admin
 from apscheduler.schedulers.background import BackgroundScheduler
 from services.checkout_service import cleanup_stale_checkout_sessions
 from extensions import limiter
+from routes.stats import stats_bp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -33,6 +34,7 @@ app.register_blueprint(members_bp)
 app.register_blueprint(staff_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(transactions_bp)
+app.register_blueprint(stats_bp)
 
 init_db()
 seed_initial_admin()

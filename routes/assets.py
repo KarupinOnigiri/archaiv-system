@@ -48,7 +48,7 @@ def add_asset_submit():
     if error:
         return error
 
-    required_fields = ["asset_id", "name", "barcode_id"]
+    required_fields = ["name", "barcode_id"]
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing required field: {field}"}), 400
@@ -60,26 +60,33 @@ def add_asset_submit():
 
     conn = get_db_connection()
     new_asset_id = None
+    generated_code = None
 
     try:
         cursor = conn.execute(
             """
-            INSERT INTO assets (asset_id, name, barcode_id, rfid_id, category, acquired_date, last_calibrated, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO assets (asset_id, name, barcode_id, rfid_id, category, serial_code, acquired_date, last_calibrated, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                data["asset_id"],
+                "",
                 data["name"],
                 data["barcode_id"],
                 data.get("rfid_id"),
                 data.get("category"),
+                data.get("serial_code"),
                 data.get("acquired_date"),
                 data.get("last_calibrated"),
                 data.get("notes"),
             ),
         )
-        conn.commit()
         new_asset_id = cursor.lastrowid
+        generated_code = f"AST-{new_asset_id:05d}"
+        conn.execute(
+            "UPDATE assets SET asset_id = ? WHERE id = ?",
+            (generated_code, new_asset_id),
+        )
+        conn.commit()
     except sqlite3.IntegrityError as e:
         print(f"IntegrityError: {e}")
         conn.rollback()
@@ -99,10 +106,19 @@ def add_asset_submit():
         action="created_asset",
         target_table="assets",
         target_id=new_asset_id,
-        details=f"Created asset {data['asset_id']}",
+        details=f"Created asset {generated_code}",
     )
 
-    return jsonify({"message": "Asset added successfully", "id": new_asset_id}), 201
+    return (
+        jsonify(
+            {
+                "message": "Asset added successfully",
+                "id": new_asset_id,
+                "asset_id": generated_code,
+            }
+        ),
+        201,
+    )
 
 
 @assets_bp.route("/assets/<int:id>/edit", methods=["POST"])
@@ -117,6 +133,17 @@ def edit_asset_submit(id):
 
     if error:
         return error
+
+    valid_conditions = ("functional", "inoperable", "for_repair", "disposed")
+
+    condition = data.get("condition")
+    if condition is not None and condition not in valid_conditions:
+        return (
+            jsonify(
+                {"error": f"condition must be one of: {', '.join(valid_conditions)}"}
+            ),
+            400,
+        )
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
 
@@ -124,6 +151,31 @@ def edit_asset_submit(id):
         conn.close()
         return jsonify({"error": "Asset not found"}), 404
 
+    new_status = data.get("status", asset["status"])
+
+    if new_status in ("borrowed", "reserved") and asset["status"] != new_status:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"Cannot set status to '{new_status}' directly",
+                    "reason": "This status is only set by the checkout process, not by editing the asset.",
+                }
+            ),
+            400,
+        )
+
+    if new_status != asset["status"] and asset["status"] in ("borrowed", "reserved"):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"Cannot change status: asset is currently {asset['status']}",
+                    "reason": "This asset is out with a member or in an active checkout cart. It must be returned or the cart cancelled before its status can be changed.",
+                }
+            ),
+            409,
+        )
     try:
         conn.execute(
             """
@@ -135,7 +187,7 @@ def edit_asset_submit(id):
                 data.get("name", asset["name"]),
                 data.get("category", asset["category"]),
                 data.get("condition", asset["condition"]),
-                data.get("status", asset["status"]),
+                new_status,
                 data.get("notes", asset["notes"]),
                 data.get("acquired_date", asset["acquired_date"]),
                 data.get("last_calibrated", asset["last_calibrated"]),

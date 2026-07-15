@@ -153,6 +153,7 @@ def view_audit_log():
 
 @staff_bp.route("/staff/add", methods=["POST"])
 @roles_required("admin")
+@limiter.limit("20 per minute")
 def add_staff_submit():
     data, error = get_json_or_error()
     if error:
@@ -182,6 +183,7 @@ def add_staff_submit():
 
     hashed_password = generate_password_hash(data["password"])
     new_staff_id = None
+    generated_code = None
 
     try:
         cursor = conn.execute(
@@ -200,9 +202,15 @@ def add_staff_submit():
                 g.staff["id"],
             ),
         )
-        conn.commit()
         new_staff_id = cursor.lastrowid
+        generated_code = f"STF-{new_staff_id:05d}"
+        conn.execute(
+            "UPDATE staff SET staff_code = ? WHERE id = ?",
+            (generated_code, new_staff_id),
+        )
+        conn.commit()
     except sqlite3.IntegrityError as e:
+        conn.rollback()
         conn.close()
         print(f"IntegrityError: {e}")
         return (
@@ -232,6 +240,7 @@ def add_staff_submit():
 
 @staff_bp.route("/staff/<int:id>/edit", methods=["POST"])
 @roles_required("admin")
+@limiter.limit("20 per minute")
 def edit_staff_submit(id):
     data, error = get_json_or_error()
     if error:
@@ -423,6 +432,7 @@ def reset_password_submit(id):
 
 @staff_bp.route("/staff/<int:id>/delete", methods=["POST"])
 @roles_required("admin")
+@limiter.limit("20 per minute")
 def delete_staff(id):
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
@@ -472,6 +482,7 @@ def delete_staff(id):
 
 @staff_bp.route("/staff/<int:id>/reactivate", methods=["POST"])
 @roles_required("admin")
+@limiter.limit("20 per minute")
 def reactivate_staff(id):
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()

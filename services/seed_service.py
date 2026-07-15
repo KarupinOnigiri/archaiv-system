@@ -57,6 +57,10 @@ def seed_initial_admin():
             (first_name, last_name, middle_name, suffix, barcode_id, department),
         )
         member_id = member_cursor.lastrowid
+        conn.execute(
+            "UPDATE members SET member_code = ? WHERE id = ?",
+            (f"MBR-{member_id:05d}", member_id),
+        )
 
         hashed_password = generate_password_hash(password)
 
@@ -68,6 +72,10 @@ def seed_initial_admin():
             (member_id, username, hashed_password),
         )
         staff_id = staff_cursor.lastrowid
+        conn.execute(
+            "UPDATE staff SET staff_code = ? WHERE id = ?",
+            (f"STF-{staff_id:05d}", staff_id),
+        )
 
         conn.commit()
     except sqlite3.IntegrityError as e:
