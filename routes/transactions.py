@@ -15,6 +15,7 @@ from utils.validators import (
 from datetime import datetime, timedelta
 from utils.constants import SESSION_STALE_MINUTES
 import sqlite3
+from extensions import limiter
 
 transactions_bp = Blueprint("transactions", __name__)
 
@@ -134,167 +135,12 @@ def list_overdue_transactions():
 # # # BORROW (API action) -----------------------------------------------
 
 
-# @transactions_bp.route("/api/v1/transactions/borrow", methods=["POST"])
-# @login_required
-# def borrow_asset():
-#     data, error = get_json_or_error()
-#     if error:
-#         return error
-
-#     required_fields = ["asset_code", "member_barcode"]
-#     for field in required_fields:
-#         if field not in data or not data[field]:
-#             return jsonify({"error": f"Missing required field: {field}"}), 400
-
-#     due_date = data.get("due_date")
-
-#     error = validate_due_date(due_date)
-#     if error:
-#         return error
-
-#     if due_date is None:
-#         due_date = (datetime.now() + timedelta(days=DEFAULT_LOAN_DAYS)).strftime(
-#             "%Y-%m-%d %H:%M:%S"
-#         )
-
-#     conn = get_db_connection()
-
-#     asset = conn.execute(
-#         "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
-#         (data["asset_code"], data["asset_code"]),
-#     ).fetchone()
-
-#     if asset is None:
-#         conn.close()
-#         return jsonify({"error": "Asset not found"}), 404
-
-#     if asset["status"] != "available":
-#         conn.close()
-#         return (
-#             jsonify({"error": f"Asset is currently {asset['status']}, not available"}),
-#             400,
-#         )
-
-#     if asset["condition"] == "disposed":
-#         conn.close()
-#         return jsonify({"error": "asset has been disposed and cannot be borrowed"}), 400
-
-#     member = conn.execute(
-#         "SELECT * FROM members WHERE barcode_id = ?", (data["member_barcode"],)
-#     ).fetchone()
-
-#     if member is None:
-#         conn.close()
-#         return jsonify({"error": "Member not found"}), 404
-
-#     if not member["is_active"]:
-#         conn.close()
-#         return jsonify({"error": "This Member is not active"}), 403
-
-#     if check_and_restrict_overdue_member(member["id"], conn):
-#         conn.close()
-#         return (
-#             jsonify(
-#                 {
-#                     "error": "This member is restricted",
-#                     "reason": "Has an overdue asset that has not been returned",
-#                 }
-#             ),
-#             403,
-#         )
-
-#     if member["is_restricted"]:
-#         conn.close()
-#         return (
-#             jsonify(
-#                 {
-#                     "error": "This member is restricted",
-#                     "reason": member["restriction_reason"],
-#                 }
-#             ),
-#             403,
-#         )
-
-#     current_loan_count = conn.execute(
-#         "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ? AND status = 'borrowed'",
-#         (member["id"],),
-#     ).fetchone()["cnt"]
-
-#     if current_loan_count >= MAX_CONCURRENT_LOANS:
-#         conn.close()
-#         return (
-#             jsonify(
-#                 {
-#                     "error": f"This member has reached the maximum of {MAX_CONCURRENT_LOANS} concurrent loans",
-#                 }
-#             ),
-#             403,
-#         )
-
-#     session_id = data.get("session_id")
-#     if session_id is not None:
-#         checkout_session, error = _get_active_checkout_session(
-#             session_id, member["id"], conn
-#         )
-#         if error:
-#             conn.close()
-#             return error
-
-#     try:
-#         claim = conn.execute(
-#             "UPDATE assets SET status = 'borrowed' WHERE id = ? AND status = 'available'",
-#             (asset["id"],),
-#         )
-
-#         if claim.rowcount == 0:
-#             conn.rollback()
-#             return (
-#                 jsonify(
-#                     {
-#                         "error": "asset was just claimed by another transaction. Please rescan and try again."
-#                     }
-#                 ),
-#                 409,
-#             )
-
-#         conn.execute(
-#             """
-#             INSERT INTO transactions (checkout_session_id, asset_id, member_id, borrowed_by_staff_id, due_date, condition_out, status)
-#             VALUES (?, ?, ?, ?, ?, ?, 'borrowed')
-#             """,
-#             (
-#                 data.get("session_id"),
-#                 asset["id"],
-#                 member["id"],
-#                 g.staff["id"],
-#                 due_date,
-#                 asset["condition"],
-#             ),
-#         )
-
-#         conn.commit()
-#     except Exception:
-#         conn.rollback()
-#         raise
-#     finally:
-#         conn.close()
-
-#     log_action(
-#         staff_id=g.staff["id"],
-#         action="borrowed_asset",
-#         target_table="transactions",
-#         target_id=asset["id"],
-#         details=f"Asset {asset['asset_id']} borrowed by member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
-#     )
-
-#     return jsonify({"message": "asset borrowed successfully"}), 201
-
-
 # # # CHECKOUT SESSION ITEMS (the "cart") --------------------------------
 
 
 @transactions_bp.route("/api/v1/checkout-sessions/<int:id>/items/add", methods=["POST"])
 @login_required
+@limiter.limit("60 per minute")
 def add_item_to_session(id):
     data, error = get_json_or_error()
     if error:
@@ -377,6 +223,7 @@ def add_item_to_session(id):
     "/api/v1/checkout-sessions/<int:id>/items/<int:item_id>/remove", methods=["POST"]
 )
 @login_required
+@limiter.limit("60 per minute")
 def remove_item_from_session(id, item_id):
     conn = get_db_connection()
 
@@ -418,6 +265,7 @@ def remove_item_from_session(id, item_id):
 
 @transactions_bp.route("/api/v1/checkout-sessions/<int:id>")
 @login_required
+@limiter.limit("20 per minute")
 def view_checkout_session(id):
     conn = get_db_connection()
 
@@ -458,6 +306,7 @@ def view_checkout_session(id):
 
 @transactions_bp.route("/api/v1/transactions/return", methods=["POST"])
 @login_required
+@limiter.limit("20 per minute")
 def return_asset():
     data, error = get_json_or_error()
     if error:
@@ -571,6 +420,7 @@ def return_asset():
 
 @transactions_bp.route("/api/v1/checkout-sessions", methods=["POST"])
 @login_required
+@limiter.limit("30 per minute")
 def create_checkout_session():
     data, error = get_json_or_error()
     if error:
@@ -843,6 +693,7 @@ def checkout_session(id):
 
 @transactions_bp.route("/api/v1/checkout-sessions/<int:id>/cancel", methods=["POST"])
 @login_required
+@limiter.limit("20 per minute")
 def cancel_checkout_session(id):
     conn = get_db_connection()
 

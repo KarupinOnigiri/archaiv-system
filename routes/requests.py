@@ -1,0 +1,295 @@
+from flask import Blueprint, jsonify, g, request
+from database import get_db_connection, get_json_or_error
+from services.auth_service import roles_required, login_required
+from utils.logger import log_action
+from utils.formatters import full_name
+from utils.validators import parse_pagination_params
+from datetime import datetime
+import sqlite3
+from extensions import limiter
+
+requests_bp = Blueprint("requests", __name__)
+
+
+VALID_STATUSES = ("pending", "approved", "denied")
+
+
+# # # CREATE (tool_keeper flags a restricted member for review) -----------
+
+
+@requests_bp.route("/unrestriction-requests", methods=["POST"])
+@roles_required("tool_keeper")
+def create_unrestriction_request():
+    """tool_keeper cannot unrestrict directly — this is the request path
+    instead. admin/in_charge review it via approve/deny below."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    member_id = data.get("member_id")
+    reason = data.get("reason")
+
+    if not member_id:
+        return jsonify({"error": "Missing required field: member_id"}), 400
+    if not reason:
+        return jsonify({"error": "Missing required field: reason"}), 400
+
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    if not member["is_restricted"]:
+        conn.close()
+        return jsonify({"error": "Member is not currently restricted"}), 400
+
+    existing_pending = conn.execute(
+        "SELECT id FROM unrestriction_requests WHERE member_id = ? AND status = 'pending'",
+        (member_id,),
+    ).fetchone()
+
+    if existing_pending is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "A pending unrestriction request already exists for this member",
+                    "request_id": existing_pending["id"],
+                }
+            ),
+            409,
+        )
+
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO unrestriction_requests (member_id, requested_by_staff_id, reason)
+            VALUES (?, ?, ?)
+            """,
+            (member_id, g.staff["id"], reason),
+        )
+        conn.commit()
+        request_id = cursor.lastrowid
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        print(f"IntegrityError: {e}")
+        return jsonify({"error": "A database constraint was violated."}), 400
+    finally:
+        conn.close()
+
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
+    log_action(
+        staff_id=g.staff["id"],
+        action="requested_unrestriction",
+        target_table="unrestriction_requests",
+        target_id=request_id,
+        details=f"Requested unrestriction for member {updated_name}: {reason}",
+    )
+
+    return (
+        jsonify({"message": "Unrestriction request submitted", "id": request_id}),
+        201,
+    )
+
+
+# # # LIST (the "tab") ----------------------------------------------------
+
+
+@requests_bp.route("/unrestriction-requests")
+@login_required
+def list_unrestriction_requests():
+    """admin/in_charge see everyone's requests (the review queue).
+    tool_keeper only sees their own — self-service status tracking,
+    not a window into everyone else's activity."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    status_filter = request.args.get("status")
+    if status_filter and status_filter not in VALID_STATUSES:
+        return (
+            jsonify({"error": f"status must be one of: {', '.join(VALID_STATUSES)}"}),
+            400,
+        )
+
+    conn = get_db_connection()
+
+    where_clauses = []
+    params = []
+
+    if g.staff["role"] not in ("admin", "in_charge"):
+        where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
+        params.append(g.staff["id"])
+
+    if status_filter:
+        where_clauses.append("unrestriction_requests.status = ?")
+        params.append(status_filter)
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM unrestriction_requests {where_sql}", params
+    ).fetchone()["cnt"]
+
+    rows = conn.execute(
+        f"""
+        SELECT unrestriction_requests.*,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               requester.username AS requested_by_username,
+               reviewer.username AS reviewed_by_username
+        FROM unrestriction_requests
+        JOIN members ON unrestriction_requests.member_id = members.id
+        JOIN staff AS requester ON unrestriction_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
+        {where_sql}
+        ORDER BY unrestriction_requests.created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        params + [limit, offset],
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in rows],
+        }
+    )
+
+
+# # # REVIEW (admin/in_charge only) ---------------------------------------
+
+
+def _load_pending_request(id, conn):
+    """Returns (request_row, error_response). error_response is None if
+    the request exists and is still pending."""
+    req = conn.execute(
+        "SELECT * FROM unrestriction_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        return None, (jsonify({"error": "Request not found"}), 404)
+
+    if req["status"] != "pending":
+        return None, (
+            jsonify({"error": f"This request has already been {req['status']}"}),
+            409,
+        )
+
+    return req, None
+
+
+@requests_bp.route("/unrestriction-requests/<int:id>/approve", methods=["POST"])
+@roles_required("admin", "in_charge")
+def approve_unrestriction_request(id):
+    data, error = get_json_or_error()
+    review_notes = data.get("review_notes") if not error else None
+
+    conn = get_db_connection()
+    req, error = _load_pending_request(id, conn)
+    if error:
+        conn.close()
+        return error
+
+    member = conn.execute(
+        "SELECT * FROM members WHERE id = ?", (req["member_id"],)
+    ).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member no longer exists"}), 404
+
+    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        # Same effect as the direct unrestrict_member route — approval
+        # is just that action gated behind a second set of eyes.
+        conn.execute(
+            "UPDATE members SET is_restricted = 0, restriction_reason = NULL, restriction_source = NULL WHERE id = ?",
+            (req["member_id"],),
+        )
+        conn.execute(
+            """
+            UPDATE unrestriction_requests
+            SET status = 'approved', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (g.staff["id"], review_notes, reviewed_at, id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
+    log_action(
+        staff_id=g.staff["id"],
+        action="approved_unrestriction_request",
+        target_table="unrestriction_requests",
+        target_id=id,
+        details=f"Approved unrestriction for member {updated_name}",
+    )
+
+    return jsonify({"message": "Request approved, member unrestricted"})
+
+
+@requests_bp.route("/unrestriction-requests/<int:id>/deny", methods=["POST"])
+@roles_required("admin", "in_charge")
+def deny_unrestriction_request(id):
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    review_notes = data.get("review_notes")
+    if not review_notes:
+        return jsonify({"error": "Missing required field: review_notes"}), 400
+
+    conn = get_db_connection()
+    req, error = _load_pending_request(id, conn)
+    if error:
+        conn.close()
+        return error
+
+    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        conn.execute(
+            """
+            UPDATE unrestriction_requests
+            SET status = 'denied', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (g.staff["id"], review_notes, reviewed_at, id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="denied_unrestriction_request",
+        target_table="unrestriction_requests",
+        target_id=id,
+        details=f"Denied unrestriction request: {review_notes}",
+    )
+
+    return jsonify({"message": "Request denied"})

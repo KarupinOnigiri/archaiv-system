@@ -8,6 +8,7 @@ from utils.validators import (
     validate_date_fields,
     parse_pagination_params,
 )
+from extensions import limiter
 import sqlite3
 
 assets_bp = Blueprint("assets", __name__)
@@ -41,6 +42,7 @@ def view_assets():
 
 @assets_bp.route("/assets/add", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def add_asset_submit():
     data, error = get_json_or_error()
     if error:
@@ -105,6 +107,7 @@ def add_asset_submit():
 
 @assets_bp.route("/assets/<int:id>/edit", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def edit_asset_submit(id):
     data, error = get_json_or_error()
     if error:
@@ -139,7 +142,6 @@ def edit_asset_submit(id):
                 asset["id"],
             ),
         )
-        conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
         print(f"IntegrityError: {e}")
@@ -167,6 +169,7 @@ def edit_asset_submit(id):
 
 @assets_bp.route("/assets/<int:id>/delete", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def delete_asset(id):
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
@@ -222,6 +225,7 @@ def delete_asset(id):
 
 @assets_bp.route("/api/v1/assets/barcode/<string:barcode>")
 @login_required
+@limiter.limit("40 per minute")
 def get_asset_by_barcode(barcode):
     conn = get_db_connection()
     asset = conn.execute(

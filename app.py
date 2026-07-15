@@ -5,7 +5,7 @@ root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
 
 from flask import Flask
-
+from routes.requests import requests_bp
 from routes.assets import assets_bp
 from routes.members import members_bp
 from routes.staff import staff_bp
@@ -15,6 +15,7 @@ from database import init_db
 from services.seed_service import seed_initial_admin
 from apscheduler.schedulers.background import BackgroundScheduler
 from services.checkout_service import cleanup_stale_checkout_sessions
+from extensions import limiter
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -24,7 +25,9 @@ if not app.secret_key:
         "SECRET_KEY is not set in .env — required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
     )
 
+limiter.init_app(app)
 
+app.register_blueprint(requests_bp)
 app.register_blueprint(assets_bp)
 app.register_blueprint(members_bp)
 app.register_blueprint(staff_bp)

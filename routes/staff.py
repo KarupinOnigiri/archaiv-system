@@ -11,6 +11,7 @@ from utils.validators import (
 from utils.formatters import full_name
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
+from extensions import limiter
 
 staff_bp = Blueprint("staff", __name__)
 
@@ -309,6 +310,7 @@ def edit_staff_submit(id):
 
 @staff_bp.route("/staff/change-password", methods=["POST"])
 @login_required
+@limiter.limit("10 per minute; 30 per hour")
 def change_password_submit():
     """Self-service password change. Requires the current password to
     prove the request comes from someone who already has legitimate
@@ -368,6 +370,7 @@ def change_password_submit():
 
 @staff_bp.route("/staff/<int:id>/reset-password", methods=["POST"])
 @roles_required("admin")
+@limiter.limit("10 per minute; 30 per hour")
 def reset_password_submit(id):
     """Admin-initiated reset for forgotten passwords. No current password
     needed since this is the recovery path — but every existing session
@@ -514,6 +517,7 @@ def reactivate_staff(id):
 
 @staff_bp.route("/api/v1/staff/barcode/<string:barcode>")
 @login_required
+@limiter.limit("40 per minute")
 def get_staff_by_barcode(barcode):
     conn = get_db_connection()
     result = conn.execute(

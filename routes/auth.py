@@ -5,7 +5,8 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, jsonify, make_response, request
 from utils.formatters import full_name
 from utils.logger import log_action
-from services.auth_service import login_required
+from services.auth_service import login_required, SESSION_IDLE_MINUTES
+from extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -21,6 +22,7 @@ _DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety"
 
 
 @auth_bp.route("/login", methods=["POST"])
+@limiter.limit("10 per minute; 50 per hour")
 def login():
     data, error = get_json_or_error()
     if error:
@@ -34,6 +36,46 @@ def login():
         return jsonify({"error": "Provide username or barcode_id, plus password"}), 400
 
     conn = get_db_connection()
+
+    existing_token = request.cookies.get("session_token")
+    if existing_token:
+        existing_session = conn.execute(
+            "SELECT * FROM sessions WHERE token = ?", (existing_token,)
+        ).fetchone()
+
+        if existing_session is not None:
+            now = datetime.now()
+            expires_at = datetime.strptime(
+                existing_session["expires_at"], "%Y-%m-%d %H:%M:%S"
+            )
+            last_active_at = datetime.strptime(
+                existing_session["last_active_at"], "%Y-%m-%d %H:%M:%S"
+            )
+            session_is_live = now <= expires_at and (now - last_active_at) <= timedelta(
+                minutes=SESSION_IDLE_MINUTES
+            )
+
+            if session_is_live:
+                current_staff = conn.execute(
+                    "SELECT username FROM staff WHERE id = ?",
+                    (existing_session["staff_id"],),
+                ).fetchone()
+                conn.close()
+                return (
+                    jsonify(
+                        {
+                            "error": "Another account is already logged in on this device. Please log out first.",
+                            "current_username": (
+                                current_staff["username"] if current_staff else None
+                            ),
+                        }
+                    ),
+                    409,
+                )
+            else:
+                # cookie is stale (expired/timed out) — quietly clean it up, not a real block
+                conn.execute("DELETE FROM sessions WHERE token = ?", (existing_token,))
+                conn.commit()
 
     if username:
         staff = conn.execute(

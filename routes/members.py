@@ -40,6 +40,7 @@ def view_members():
 
 @members_bp.route("/members/add", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def add_member_submit():
     data, error = get_json_or_error()
     if error:
@@ -108,6 +109,7 @@ def add_member_submit():
 
 @members_bp.route("/members/<int:id>/edit", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def edit_member_submit(id):
     data, error = get_json_or_error()
     if error:
@@ -204,6 +206,7 @@ def edit_member_submit(id):
 
 @members_bp.route("/members/<int:id>/restrict", methods=["POST"])
 @roles_required("admin", "in_charge", "tool_keeper")
+@limiter.limit("20 per minute")
 def restrict_member(id):
     """Any front-line staff can flag a member on the spot. Requires a reason —
     unlike unrestrict, this is a low-risk/easily-reversed action, so it's
@@ -266,6 +269,7 @@ def restrict_member(id):
 
 @members_bp.route("/members/<int:id>/unrestrict", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def unrestrict_member(id):
     """Lifting a restriction re-grants borrowing access, so it deliberately
     requires more authority than restricting — tool_keeper cannot call this."""
@@ -322,6 +326,7 @@ def unrestrict_member(id):
 
 @members_bp.route("/members/<int:id>/delete", methods=["POST"])
 @roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
 def delete_member(id):
     conn = get_db_connection()
     member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
@@ -412,6 +417,7 @@ def delete_member(id):
         target_id=id,
         details=f"Deactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
+
     if linked_staff is not None:
         log_action(
             staff_id=g.staff["id"],
@@ -471,6 +477,7 @@ def reactivate_member(id):
 
 @members_bp.route("/api/v1/members/barcode/<string:barcode>")
 @login_required
+@limiter.limit("40 per minute")
 def get_member_by_barcode(barcode):
     conn = get_db_connection()
     member = conn.execute(
