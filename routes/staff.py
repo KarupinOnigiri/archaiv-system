@@ -16,6 +16,9 @@ from utils.formatters import full_name
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from extensions import limiter
+import logging
+
+logger = logging.getLogger(__name__)
 
 staff_bp = Blueprint("staff", __name__)
 
@@ -438,6 +441,44 @@ def reset_password_submit(id):
     )
 
     return jsonify({"message": "Password reset successfully"})
+
+
+@staff_bp.route("/staff/<int:id>/unlock", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def unlock_staff(id):
+    """Manually clears a lockout before it would naturally expire. There's
+    no self-service/email recovery path in this offline deployment, so if
+    the one admin on shift gets locked out, someone with another admin
+    account needs a way to clear it immediately rather than waiting out
+    LOCKOUT_MINUTES (see auth.py)."""
+    conn = get_db_connection()
+    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if staff is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if not staff["locked_until"] and staff["failed_login_attempts"] == 0:
+        conn.close()
+        return jsonify({"error": "This account is not currently locked"}), 400
+
+    conn.execute(
+        "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+        (id,),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="unlocked_staff",
+        target_table="staff",
+        target_id=id,
+        details=f"Manually cleared lockout for staff account: {staff['username']}",
+    )
+
+    return jsonify({"message": "Staff account unlocked successfully"})
 
 
 # # # DELETE (deactivate, admin only) ------------------------------------

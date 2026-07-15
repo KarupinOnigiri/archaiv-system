@@ -10,6 +10,9 @@ from utils.validators import (
 )
 from extensions import limiter
 import sqlite3
+import logging
+
+logger = logging.getLogger(__name__)
 
 assets_bp = Blueprint("assets", __name__)
 

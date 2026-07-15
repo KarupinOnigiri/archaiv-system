@@ -1,4 +1,7 @@
 from database import get_db_connection
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def log_action(staff_id, action, target_table=None, target_id=None, details=None):
@@ -14,8 +17,8 @@ def log_action(staff_id, action, target_table=None, target_id=None, details=None
         )
         conn.commit()
     except Exception as e:
-        print(
-            f"WARNING: audit log write failed (action='{action}', "
+        logger.warning(
+            f"Audit log write failed (action='{action}', "
             f"target_table='{target_table}', target_id={target_id}): {e}"
         )
     finally:

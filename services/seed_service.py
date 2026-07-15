@@ -3,6 +3,9 @@ from database import get_db_connection
 from utils.logger import log_action
 from werkzeug.security import generate_password_hash
 import sqlite3
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def seed_initial_admin():
@@ -42,7 +45,7 @@ def seed_initial_admin():
 
     if missing:
         conn.close()
-        print(
+        logger.warning(
             "No admin account exists and initial admin could not be seeded — "
             f"missing .env values: {', '.join(missing)}"
         )
@@ -80,7 +83,7 @@ def seed_initial_admin():
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(
+        logger.error(
             "No admin account exists and initial admin could not be seeded — "
             f"a database constraint was violated: {e}. "
             "Check that ADMIN_USERNAME and ADMIN_BARCODE_ID in .env don't already "
@@ -98,4 +101,4 @@ def seed_initial_admin():
         details=f"Auto-seeded initial admin account: {username}",
     )
 
-    print(f"Initial admin account created: username='{username}'")
+    logger.info(f"Initial admin account created: username='{username}'")

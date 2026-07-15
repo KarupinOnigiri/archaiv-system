@@ -1,6 +1,9 @@
 import sqlite3
 from flask import request, jsonify
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 INSTANCE_DIR = os.path.join(os.path.dirname(__file__), "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "toolroom.db")
@@ -19,14 +22,12 @@ def get_db_connection():
 
 
 def _ensure_migrations_table(conn):
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS schema_migrations (
             filename TEXT PRIMARY KEY,
             applied_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
         )
-        """
-    )
+        """)
     conn.commit()
 
 
@@ -55,7 +56,9 @@ def _bootstrap_pre_migration_db(conn, applied):
         )
         conn.commit()
         applied.add(BASELINE_MIGRATION)
-        print(f"Detected pre-existing schema — recorded {BASELINE_MIGRATION} as applied.")
+        logger.info(
+            f"Detected pre-existing schema — recorded {BASELINE_MIGRATION} as applied."
+        )
 
     return applied
 
@@ -87,7 +90,7 @@ def init_db():
                 "INSERT INTO schema_migrations (filename) VALUES (?)", (filename,)
             )
             conn.commit()
-            print(f"Applied migration: {filename}")
+            logger.info(f"Applied migration: {filename}")
         except Exception as e:
             conn.rollback()
             conn.close()

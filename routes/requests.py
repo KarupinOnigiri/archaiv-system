@@ -7,6 +7,9 @@ from utils.validators import parse_pagination_params
 from datetime import datetime
 import sqlite3
 from extensions import limiter
+import logging
+
+logger = logging.getLogger(__name__)
 
 requests_bp = Blueprint("requests", __name__)
 
@@ -75,7 +78,7 @@ def create_unrestriction_request():
         request_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         conn.rollback()
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         return jsonify({"error": "A database constraint was violated."}), 400
     finally:
         conn.close()
@@ -104,7 +107,6 @@ def create_unrestriction_request():
 
 
 @requests_bp.route("/unrestriction-requests")
-@limiter.limit("20 per minute")
 @login_required
 def list_unrestriction_requests():
     """admin/in_charge see everyone's requests (the review queue).
@@ -253,6 +255,7 @@ def approve_unrestriction_request(id):
 
 
 @requests_bp.route("/unrestriction-requests/<int:id>/deny", methods=["POST"])
+@limiter.limit("20 per minute")
 @roles_required("admin", "in_charge")
 def deny_unrestriction_request(id):
     data, error = get_json_or_error()

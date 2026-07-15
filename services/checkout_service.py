@@ -1,7 +1,9 @@
 from database import get_db_connection
 from utils.logger import log_action
-from database import get_db_connection
 from utils.constants import SESSION_STALE_MINUTES
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def cleanup_stale_checkout_sessions():
@@ -42,7 +44,7 @@ def cleanup_stale_checkout_sessions():
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(f"WARNING: failed to auto-cancel stale session {session_id}: {e}")
+            logger.warning(f"Failed to auto-cancel stale session {session_id}: {e}")
             continue
 
         log_action(
