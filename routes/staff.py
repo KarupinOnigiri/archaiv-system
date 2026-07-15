@@ -1,6 +1,10 @@
 from flask import Blueprint, jsonify, g, request
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
+from services.admin_deactivation_service import (
+    determine_approval_tier,
+    finalize_if_ready,
+)
 from utils.logger import log_action
 from utils.validators import (
     validate_date_string,
@@ -232,7 +236,16 @@ def add_staff_submit():
         details=f"Created staff account: {data['username']}",
     )
 
-    return jsonify({"message": "Staff added successfully", "id": new_staff_id}), 201
+    return (
+        jsonify(
+            {
+                "message": "Staff added successfully",
+                "id": new_staff_id,
+                "staff_code": generated_code,
+            }
+        ),
+        201,
+    )
 
 
 # # # UPDATE ------------------------------------------------------------
@@ -548,3 +561,324 @@ def get_staff_by_barcode(barcode):
         return jsonify({"error": "Staff not found"}), 404
 
     return jsonify(dict(result))
+
+
+# # # ADMIN DEACTIVATION (approval-gated) ----------------------------------
+
+
+@staff_bp.route("/staff/<int:id>/request-deactivation", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def request_admin_deactivation(id):
+    """Requests deactivation of a fellow admin account instead of doing it
+    unilaterally — /staff/<id>/delete refuses this for any admin. Takes
+    effect automatically once enough approvals come in; see
+    determine_approval_tier for how many and from whom."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    reason = data.get("reason")
+    if not reason:
+        return jsonify({"error": "Missing required field: reason"}), 400
+
+    if id == g.staff["id"]:
+        return jsonify({"error": "Cannot request your own deactivation"}), 400
+
+    conn = get_db_connection()
+    target = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if target is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if target["role"] != "admin":
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "This route is only for deactivating admin accounts. Use /staff/<id>/delete for other roles."
+                }
+            ),
+            400,
+        )
+
+    if not target["is_active"]:
+        conn.close()
+        return jsonify({"error": "Staff account is already deactivated"}), 400
+
+    existing_pending = conn.execute(
+        "SELECT id FROM admin_deactivation_requests WHERE target_staff_id = ? AND status = 'pending'",
+        (id,),
+    ).fetchone()
+
+    if existing_pending is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "A pending deactivation request already exists for this admin",
+                    "request_id": existing_pending["id"],
+                }
+            ),
+            409,
+        )
+
+    tier, required_approvals = determine_approval_tier(conn, g.staff["id"], id)
+
+    if tier is None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "No eligible approvers currently exist to process this request",
+                    "reason": "Deactivating this admin requires approval from another admin, or at least 2 in_charge accounts, or at least 1 tool_keeper — none are currently available.",
+                }
+            ),
+            409,
+        )
+
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO admin_deactivation_requests
+                (target_staff_id, requested_by_staff_id, reason, required_tier, required_approvals)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (id, g.staff["id"], reason, tier, required_approvals),
+        )
+        conn.commit()
+        request_id = cursor.lastrowid
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        print(f"IntegrityError: {e}")
+        return jsonify({"error": "A database constraint was violated."}), 400
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="requested_admin_deactivation",
+        target_table="admin_deactivation_requests",
+        target_id=request_id,
+        details=(
+            f"Requested deactivation of admin {target['username']}: {reason} "
+            f"(requires {required_approvals} {tier} approval(s))"
+        ),
+    )
+
+    return (
+        jsonify(
+            {
+                "message": "Deactivation request submitted",
+                "id": request_id,
+                "required_tier": tier,
+                "required_approvals": required_approvals,
+            }
+        ),
+        201,
+    )
+
+
+@staff_bp.route("/admin-deactivation-requests/<int:id>/approve", methods=["POST"])
+@login_required
+@limiter.limit("20 per minute")
+def approve_admin_deactivation(id):
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_deactivation_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    if req["status"] != "pending":
+        conn.close()
+        return jsonify({"error": f"This request has already been {req['status']}"}), 409
+
+    if g.staff["role"] != req["required_tier"]:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"This request requires approval from {req['required_tier']} accounts"
+                }
+            ),
+            403,
+        )
+
+    if g.staff["id"] in (req["target_staff_id"], req["requested_by_staff_id"]):
+        conn.close()
+        return (
+            jsonify(
+                {"error": "You cannot approve a request you filed or are the target of"}
+            ),
+            403,
+        )
+
+    try:
+        conn.execute(
+            "INSERT INTO admin_deactivation_approvals (request_id, approver_staff_id) VALUES (?, ?)",
+            (id, g.staff["id"]),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "You have already approved this request"}), 400
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="approved_admin_deactivation",
+        target_table="admin_deactivation_requests",
+        target_id=id,
+        details=f"Approved deactivation request #{id} for staff {req['target_staff_id']}",
+    )
+
+    approval_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM admin_deactivation_approvals WHERE request_id = ?",
+        (id,),
+    ).fetchone()["cnt"]
+
+    finalized = finalize_if_ready(req, conn)
+    conn.close()
+
+    if finalized:
+        return jsonify(
+            {
+                "message": "Approval recorded — required approvals reached, admin account deactivated"
+            }
+        )
+
+    return jsonify(
+        {
+            "message": "Approval recorded",
+            "approvals_received": approval_count,
+            "approvals_required": req["required_approvals"],
+        }
+    )
+
+
+@staff_bp.route("/admin-deactivation-requests/<int:id>/deny", methods=["POST"])
+@login_required
+@limiter.limit("20 per minute")
+def deny_admin_deactivation(id):
+    """A single denial from anyone eligible to approve this request's tier
+    cancels it outright — denial doesn't need consensus the way approval
+    does. The requester can also cancel their own pending request."""
+    data, error = get_json_or_error()
+    denial_reason = data.get("denial_reason") if not error else None
+
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_deactivation_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    if req["status"] != "pending":
+        conn.close()
+        return jsonify({"error": f"This request has already been {req['status']}"}), 409
+
+    is_requester = g.staff["id"] == req["requested_by_staff_id"]
+    is_eligible_denier = g.staff["role"] == req["required_tier"] and g.staff[
+        "id"
+    ] not in (req["target_staff_id"], req["requested_by_staff_id"])
+
+    if not (is_requester or is_eligible_denier):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "You are not authorized to deny this request",
+                    "reason": f"Only the requester (to cancel it) or a {req['required_tier']} account (other than the requester or target) can deny this request",
+                }
+            ),
+            403,
+        )
+
+    new_status = "cancelled" if is_requester else "denied"
+
+    conn.execute(
+        """
+        UPDATE admin_deactivation_requests
+        SET status = ?, denied_by_staff_id = ?, denial_reason = ?, resolved_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (new_status, g.staff["id"], denial_reason, id),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action=(
+            "cancelled_admin_deactivation"
+            if is_requester
+            else "denied_admin_deactivation"
+        ),
+        target_table="admin_deactivation_requests",
+        target_id=id,
+        details=f"Request #{id} {new_status}"
+        + (f": {denial_reason}" if denial_reason else ""),
+    )
+
+    return jsonify({"message": f"Request {new_status}"})
+
+
+@staff_bp.route("/admin-deactivation-requests")
+@login_required
+def list_admin_deactivation_requests():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    valid_statuses = ("pending", "approved", "denied", "cancelled")
+    status_filter = request.args.get("status")
+    if status_filter and status_filter not in valid_statuses:
+        return (
+            jsonify({"error": f"status must be one of: {', '.join(valid_statuses)}"}),
+            400,
+        )
+
+    where_clauses = []
+    params = []
+    if status_filter:
+        where_clauses.append("admin_deactivation_requests.status = ?")
+        params.append(status_filter)
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    conn = get_db_connection()
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM admin_deactivation_requests {where_sql}", params
+    ).fetchone()["cnt"]
+
+    rows = conn.execute(
+        f"""
+        SELECT admin_deactivation_requests.*,
+               target.username AS target_username,
+               requester.username AS requested_by_username,
+               denier.username AS denied_by_username
+        FROM admin_deactivation_requests
+        JOIN staff AS target ON admin_deactivation_requests.target_staff_id = target.id
+        JOIN staff AS requester ON admin_deactivation_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS denier ON admin_deactivation_requests.denied_by_staff_id = denier.id
+        {where_sql}
+        ORDER BY admin_deactivation_requests.created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        params + [limit, offset],
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in rows],
+        }
+    )
