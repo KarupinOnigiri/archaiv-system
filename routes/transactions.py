@@ -8,7 +8,6 @@ from services.loan_service import (
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import (
-    validate_date_string,
     validate_due_date,
     parse_pagination_params,
 )
@@ -138,86 +137,121 @@ def list_overdue_transactions():
 # # # CHECKOUT SESSION ITEMS (the "cart") --------------------------------
 
 
-@transactions_bp.route("/checkout-sessions/<int:id>/items/add", methods=["POST"])
+# # # CHECKOUT SESSIONS (start) -------------------------------------------
+
+
+@transactions_bp.route("/checkout-sessions", methods=["POST"])
 @login_required
-@limiter.limit("60 per minute")
-def add_item_to_session(id):
+@limiter.limit("20 per minute")
+def create_checkout_session():
+    """Starts a new checkout session (the "cart") for a member — the entry
+    point for the borrow flow. Items get scanned into it afterward via
+    /checkout-sessions/<id>/items/add, then committed via
+    /checkout-sessions/<id>/checkout.
+
+    Accepts either member_barcode (the normal scan-first kiosk flow) or
+    member_id (e.g. starting a session from a member's profile page) —
+    same either/or pattern as /login."""
     data, error = get_json_or_error()
     if error:
         return error
 
-    if "asset_code" not in data or not data["asset_code"]:
-        return jsonify({"error": "Missing required field: asset_code"}), 400
+    member_barcode = data.get("member_barcode")
+    member_id = data.get("member_id")
+
+    if not member_barcode and not member_id:
+        return jsonify({"error": "Provide member_barcode or member_id"}), 400
 
     conn = get_db_connection()
 
-    session = conn.execute(
-        "SELECT * FROM checkout_sessions WHERE id = ?", (id,)
+    if member_id:
+        member = conn.execute(
+            "SELECT * FROM members WHERE id = ?", (member_id,)
+        ).fetchone()
+    else:
+        member = conn.execute(
+            "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+        ).fetchone()
+
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    if not member["is_active"]:
+        conn.close()
+        return jsonify({"error": "This member account is not active"}), 403
+
+    # Re-check overdue status now, not just at final commit — staff and
+    # the member shouldn't waste time scanning tools into a cart that
+    # can never be checked out.
+    check_and_restrict_overdue_member(member["id"], conn)
+    member = conn.execute(
+        "SELECT * FROM members WHERE id = ?", (member["id"],)
     ).fetchone()
 
-    if session is None:
-        conn.close()
-        return jsonify({"error": "Checkout session not found"}), 404
-
-    _, error = _get_active_checkout_session(id, session["member_id"], conn)
-    if error:
-        conn.close()
-        return error
-
-    asset = conn.execute(
-        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
-        (data["asset_code"], data["asset_code"]),
-    ).fetchone()
-
-    if asset is None:
-        conn.close()
-        return jsonify({"error": "Asset not found"}), 404
-
-    if asset["status"] != "available":
+    if member["is_restricted"]:
         conn.close()
         return (
-            jsonify({"error": f"Asset is currently {asset['status']}, not available"}),
-            400,
+            jsonify(
+                {
+                    "error": "This member is restricted",
+                    "reason": member["restriction_reason"],
+                }
+            ),
+            403,
         )
 
-    if asset["condition"] == "disposed":
+    existing_open = conn.execute(
+        "SELECT id FROM checkout_sessions WHERE member_id = ? AND status = 'open'",
+        (member["id"],),
+    ).fetchone()
+
+    if existing_open is not None:
         conn.close()
-        return jsonify({"error": "asset has been disposed and cannot be borrowed"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "This member already has an open checkout session",
+                    "checkout_session_id": existing_open["id"],
+                }
+            ),
+            409,
+        )
 
     try:
-        claim = conn.execute(
-            "UPDATE assets SET status = 'reserved' WHERE id = ? AND status = 'available'",
-            (asset["id"],),
-        )
-
-        if claim.rowcount == 0:
-            conn.rollback()
-            conn.close()
-            return (
-                jsonify(
-                    {
-                        "error": "asset was just claimed by another transaction. Please rescan and try again."
-                    }
-                ),
-                409,
-            )
-
-        conn.execute(
-            "INSERT INTO checkout_session_items (checkout_session_id, asset_id) VALUES (?, ?)",
-            (id, asset["id"]),
+        cursor = conn.execute(
+            "INSERT INTO checkout_sessions (member_id) VALUES (?)",
+            (member["id"],),
         )
         conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        conn.close()
-        return jsonify({"error": "This asset is already scanned into this cart"}), 400
+        session_id = cursor.lastrowid
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
 
-    return jsonify({"message": "Asset added to cart", "asset_id": asset["id"]}), 201
+    log_action(
+        staff_id=g.staff["id"],
+        action="started_checkout_session",
+        target_table="checkout_sessions",
+        target_id=session_id,
+        details=(
+            f"Started checkout session for member "
+            f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}"
+        ),
+    )
+
+    return (
+        jsonify(
+            {
+                "message": "Checkout session started",
+                "checkout_session_id": session_id,
+                "member_id": member["id"],
+            }
+        ),
+        201,
+    )
 
 
 @transactions_bp.route(
@@ -366,6 +400,7 @@ def return_asset():
         )
 
     final_condition = condition_in if condition_in else asset["condition"]
+    is_disposed = final_condition == "disposed"
     new_status = "available" if final_condition == "functional" else "maintenance"
 
     try:
@@ -384,10 +419,19 @@ def return_asset():
             ),
         )
 
-        conn.execute(
-            "UPDATE assets SET status = ?, condition = ? WHERE id = ?",
-            (new_status, final_condition, asset["id"]),
-        )
+        if is_disposed:
+            # Disposed is terminal — soft-delete now instead of parking it
+            # in 'maintenance', where it'd look identical to something
+            # that's coming back into service.
+            conn.execute(
+                "UPDATE assets SET status = ?, condition = ?, deleted_at = datetime('now', 'localtime') WHERE id = ?",
+                (new_status, final_condition, asset["id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE assets SET status = ?, condition = ? WHERE id = ?",
+                (new_status, final_condition, asset["id"]),
+            )
 
         conn.commit()
         check_and_lift_restriction_if_resolved(member["id"], conn)
@@ -408,6 +452,15 @@ def return_asset():
             f"— condition: {final_condition}"
         ),
     )
+
+    if is_disposed:
+        log_action(
+            staff_id=g.staff["id"],
+            action="disposed_asset",
+            target_table="assets",
+            target_id=asset["id"],
+            details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
+        )
 
     return (
         jsonify(

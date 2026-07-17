@@ -37,21 +37,13 @@ TABLES_IN_FK_ORDER = [
 
 @pytest.fixture(autouse=True)
 def _reset_db():
-    """Wipes all rows (schema stays) before every test so tests don't leak state into each other.
-    Re-seeds the initial admin afterward, since seed_initial_admin() only ever
-    creates it once (guarded by "no admin exists yet") — without this, the very
-    first reset wipes the admin created at app import time and it never comes back."""
+    """Wipes all rows (schema stays) before every test so tests don't leak state into each other."""
     conn = database.get_db_connection()
     for t in TABLES_IN_FK_ORDER:
         conn.execute(f"DELETE FROM {t}")
     conn.execute("DELETE FROM sqlite_sequence")
     conn.commit()
     conn.close()
-
-    from services.seed_service import seed_initial_admin
-
-    seed_initial_admin()
-
     yield
 
 
@@ -64,6 +56,15 @@ def db_conn():
 
 @pytest.fixture()
 def client():
+    """Only tests that request this fixture need a working login, so the
+    initial admin is reseeded here rather than in the global _reset_db
+    fixture — _reset_db wipes staff for EVERY test (including ones that
+    build their own precise admin/in_charge/tool_keeper counts, like
+    test_admin_deactivation_service.py), and reseeding there would leave
+    an extra always-present admin skewing those counts."""
+    from services.seed_service import seed_initial_admin
+
+    seed_initial_admin()
     app_module.app.config["TESTING"] = True
     with app_module.app.test_client() as c:
         yield c

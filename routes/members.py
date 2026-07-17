@@ -199,6 +199,23 @@ def edit_member_submit(id):
     else:
         new_restriction_source = member["restriction_source"]
 
+    if (
+        "is_restricted" in data
+        and old_is_restricted
+        and not new_is_restricted
+        and g.staff["member_id"] == id
+    ):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "You cannot unrestrict your own account.",
+                    "reason": "Ask another admin or in_charge to review it.",
+                }
+            ),
+            403,
+        )
+
     try:
         conn.execute(
             """
@@ -351,6 +368,18 @@ def unrestrict_member(id):
     if not member["is_restricted"]:
         conn.close()
         return jsonify({"error": "Member is not currently restricted"}), 400
+
+    if g.staff["member_id"] == id:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "You cannot unrestrict your own account.",
+                    "reason": "Ask another admin or in_charge to review it.",
+                }
+            ),
+            403,
+        )
 
     try:
         conn.execute(

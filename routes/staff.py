@@ -900,6 +900,11 @@ def deny_admin_deactivation(id):
 @staff_bp.route("/admin-deactivation-requests")
 @login_required
 def list_admin_deactivation_requests():
+    """admin/in_charge see every request — this is supervisory info.
+    tool_keeper can never be a requester or target here (only admins can
+    be either), so the only requests relevant to them are ones where
+    their tier is the one that gets to approve/deny — everything else is
+    unrelated admin-on-admin business they don't need visibility into."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -914,6 +919,11 @@ def list_admin_deactivation_requests():
 
     where_clauses = []
     params = []
+
+    if g.staff["role"] not in ("admin", "in_charge"):
+        where_clauses.append("admin_deactivation_requests.required_tier = ?")
+        params.append(g.staff["role"])
+
     if status_filter:
         where_clauses.append("admin_deactivation_requests.status = ?")
         params.append(status_filter)

@@ -350,6 +350,18 @@ def edit_asset_submit(id):
         conn.close()
         return jsonify({"error": "Asset not found"}), 404
 
+    if asset["deleted_at"] is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot edit a deleted asset",
+                    "reason": "Restore it first via /assets/<id>/restore.",
+                }
+            ),
+            400,
+        )
+
     if "category_id" in data:
         error = validate_lookup_id(
             conn, "categories", data.get("category_id"), "category_id"
@@ -357,6 +369,8 @@ def edit_asset_submit(id):
         if error:
             conn.close()
             return error
+
+    new_condition = data.get("condition", asset["condition"])
 
     new_status = data.get("status", asset["status"])
 
@@ -385,23 +399,42 @@ def edit_asset_submit(id):
         )
 
     try:
-        conn.execute(
-            """
-            UPDATE assets
-            SET name = ?, category_id = ?, condition = ?, status = ?, notes = ?, acquired_date = ?, last_calibrated = ?
-            WHERE id = ?
-            """,
-            (
-                data.get("name", asset["name"]),
-                data.get("category_id", asset["category_id"]),
-                data.get("condition", asset["condition"]),
-                new_status,
-                data.get("notes", asset["notes"]),
-                data.get("acquired_date", asset["acquired_date"]),
-                data.get("last_calibrated", asset["last_calibrated"]),
-                asset["id"],
-            ),
-        )
+        if new_condition == "disposed":
+            conn.execute(
+                """
+                UPDATE assets
+                SET name = ?, category_id = ?, condition = ?, status = ?, notes = ?, acquired_date = ?, last_calibrated = ?, deleted_at = datetime('now', 'localtime')
+                WHERE id = ?
+                """,
+                (
+                    data.get("name", asset["name"]),
+                    data.get("category_id", asset["category_id"]),
+                    new_condition,
+                    new_status,
+                    data.get("notes", asset["notes"]),
+                    data.get("acquired_date", asset["acquired_date"]),
+                    data.get("last_calibrated", asset["last_calibrated"]),
+                    asset["id"],
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE assets
+                SET name = ?, category_id = ?, condition = ?, status = ?, notes = ?, acquired_date = ?, last_calibrated = ?
+                WHERE id = ?
+                """,
+                (
+                    data.get("name", asset["name"]),
+                    data.get("category_id", asset["category_id"]),
+                    new_condition,
+                    new_status,
+                    data.get("notes", asset["notes"]),
+                    data.get("acquired_date", asset["acquired_date"]),
+                    data.get("last_calibrated", asset["last_calibrated"]),
+                    asset["id"],
+                ),
+            )
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
@@ -416,6 +449,15 @@ def edit_asset_submit(id):
         )
     finally:
         conn.close()
+
+    if new_condition == "disposed":
+        log_action(
+            staff_id=g.staff["id"],
+            action="disposed_asset",
+            target_table="assets",
+            target_id=asset["id"],
+            details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
+        )
 
     log_action(
         staff_id=g.staff["id"],
@@ -482,6 +524,81 @@ def delete_asset(id):
     )
 
     return jsonify({"message": "Asset soft deleted successfully"})
+
+
+@assets_bp.route("/assets/<int:id>/restore", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def restore_asset(id):
+    """Admin-only, deliberately tighter than delete_asset (admin/in_charge)
+    — reversing a disposal is a bigger call than making one."""
+    data, error = get_json_or_error()
+    condition = data.get("condition") if not error else None
+
+    valid_conditions = ("functional", "inoperable", "for_repair", "disposed")
+    if condition is not None and condition not in valid_conditions:
+        return (
+            jsonify(
+                {"error": f"condition must be one of: {', '.join(valid_conditions)}"}
+            ),
+            400,
+        )
+    if condition == "disposed":
+        return (
+            jsonify(
+                {
+                    "error": "Cannot restore an asset with condition 'disposed' — provide a different condition"
+                }
+            ),
+            400,
+        )
+
+    conn = get_db_connection()
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+
+    if asset is None:
+        conn.close()
+        return jsonify({"error": "Asset not found"}), 404
+
+    if asset["deleted_at"] is None:
+        conn.close()
+        return jsonify({"error": "Asset is not deleted"}), 400
+
+    if asset["condition"] == "disposed" and condition is None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "This asset's condition is 'disposed' — provide a new condition to restore it",
+                    "reason": "An active (non-deleted) asset cannot remain marked as disposed.",
+                }
+            ),
+            400,
+        )
+
+    new_condition = condition if condition is not None else asset["condition"]
+
+    try:
+        conn.execute(
+            "UPDATE assets SET deleted_at = NULL, condition = ?, status = 'available' WHERE id = ?",
+            (new_condition, id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="restored_asset",
+        target_table="assets",
+        target_id=id,
+        details=f"Restored asset {asset['asset_id']} (condition set to '{new_condition}')",
+    )
+
+    return jsonify({"message": "Asset restored successfully"})
 
 
 @assets_bp.route("/assets/barcode/<string:barcode>")

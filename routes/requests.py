@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 requests_bp = Blueprint("requests", __name__)
 
 
-VALID_STATUSES = ("pending", "approved", "denied")
+VALID_STATUSES = ("pending", "approved", "denied", "cancelled")
 
 
 # # # CREATE (tool_keeper flags a restricted member for review) -----------
@@ -101,6 +101,61 @@ def create_unrestriction_request():
         jsonify({"message": "Unrestriction request submitted", "id": request_id}),
         201,
     )
+
+
+@requests_bp.route("/unrestriction-requests/<int:id>/cancel", methods=["POST"])
+@limiter.limit("20 per minute")
+@login_required
+def cancel_unrestriction_request(id):
+    """Lets the original requester withdraw their own pending request.
+    Distinct from /deny (admin/in_charge only) since the permission check
+    here is different: it's about who filed it, not seniority."""
+    data, error = get_json_or_error()
+    review_notes = data.get("review_notes") if not error else None
+
+    conn = get_db_connection()
+    req, error = _load_pending_request(id, conn)
+    if error:
+        conn.close()
+        return error
+
+    if g.staff["id"] != req["requested_by_staff_id"]:
+        conn.close()
+        return (
+            jsonify(
+                {"error": "Only the staff member who filed this request can cancel it"}
+            ),
+            403,
+        )
+
+    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        conn.execute(
+            """
+            UPDATE unrestriction_requests
+            SET status = 'cancelled', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (g.staff["id"], review_notes, reviewed_at, id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="cancelled_unrestriction_request",
+        target_table="unrestriction_requests",
+        target_id=id,
+        details=f"Requester cancelled their own unrestriction request #{id}"
+        + (f": {review_notes}" if review_notes else ""),
+    )
+
+    return jsonify({"message": "Request cancelled"})
 
 
 # # # LIST (the "tab") ----------------------------------------------------
@@ -212,6 +267,18 @@ def approve_unrestriction_request(id):
     if member is None:
         conn.close()
         return jsonify({"error": "Member no longer exists"}), 404
+
+    if g.staff["member_id"] == req["member_id"]:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "You cannot approve an unrestriction request for your own account.",
+                    "reason": "Ask another admin or in_charge to review it.",
+                }
+            ),
+            403,
+        )
 
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 

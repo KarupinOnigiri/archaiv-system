@@ -49,13 +49,13 @@ def test_two_carts_cannot_claim_same_asset_concurrently(client, db_conn):
         r1, r2 = pool.map(add_to_session, [session_a, session_b])
 
     statuses = sorted([r1.status_code, r2.status_code])
-    assert statuses[0] in (
+    assert (
+        statuses[0] == 201
+    ), f"expected exactly one request to succeed, got {statuses}"
+    assert statuses[1] in (
         400,
         409,
     ), f"expected the losing request to be rejected (400 or 409), got {statuses}"
-    assert (
-        statuses[1] == 201
-    ), f"expected exactly one request to succeed, got {statuses}"
 
 
 def make_asset(conn, barcode):
