@@ -37,13 +37,21 @@ TABLES_IN_FK_ORDER = [
 
 @pytest.fixture(autouse=True)
 def _reset_db():
-    """Wipes all rows (schema stays) before every test so tests don't leak state into each other."""
+    """Wipes all rows (schema stays) before every test so tests don't leak state into each other.
+    Re-seeds the initial admin afterward, since seed_initial_admin() only ever
+    creates it once (guarded by "no admin exists yet") — without this, the very
+    first reset wipes the admin created at app import time and it never comes back."""
     conn = database.get_db_connection()
     for t in TABLES_IN_FK_ORDER:
         conn.execute(f"DELETE FROM {t}")
     conn.execute("DELETE FROM sqlite_sequence")
     conn.commit()
     conn.close()
+
+    from services.seed_service import seed_initial_admin
+
+    seed_initial_admin()
+
     yield
 
 
@@ -62,10 +70,20 @@ def client():
 
 
 def make_member(conn, barcode, member_type="trainer", department="Dept"):
+    dept_row = conn.execute(
+        "SELECT id FROM departments WHERE name = ?", (department,)
+    ).fetchone()
+    if dept_row is None:
+        dept_id = conn.execute(
+            "INSERT INTO departments (name) VALUES (?)", (department,)
+        ).lastrowid
+    else:
+        dept_id = dept_row["id"]
+
     cur = conn.execute(
-        "INSERT INTO members (first_name, last_name, barcode_id, department, member_type) "
+        "INSERT INTO members (first_name, last_name, barcode_id, department_id, member_type) "
         "VALUES ('Test', 'User', ?, ?, ?)",
-        (barcode, department, member_type),
+        (barcode, dept_id, member_type),
     )
     conn.commit()
     return cur.lastrowid

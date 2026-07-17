@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 instance/
+*.log
+backups/
+.pytest_cache/

@@ -192,6 +192,7 @@ def add_item_to_session(id):
 
         if claim.rowcount == 0:
             conn.rollback()
+            conn.close()
             return (
                 jsonify(
                     {

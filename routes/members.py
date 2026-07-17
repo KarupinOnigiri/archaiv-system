@@ -457,20 +457,16 @@ def delete_member(id):
         )
 
     if linked_staff is not None and linked_staff["role"] == "admin":
-        remaining_admins = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
-            (linked_staff["id"],),
-        ).fetchone()["cnt"]
-        if remaining_admins == 0:
-            conn.close()
-            return (
-                jsonify(
-                    {
-                        "error": "Cannot deactivate member: this is the last active admin account"
-                    }
-                ),
-                403,
-            )
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot deactivate member: they have an active admin account",
+                    "reason": "Admin accounts cannot be deactivated this way — use /staff/<id>/request-deactivation instead, which requires peer approval.",
+                }
+            ),
+            403,
+        )
 
     try:
         conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))

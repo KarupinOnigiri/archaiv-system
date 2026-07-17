@@ -49,7 +49,12 @@ def finalize_if_ready(request_row, conn):
     """Checks whether a pending admin-deactivation request has reached its
     required approval count, and if so, deactivates the target admin
     account and marks the request resolved. Returns True if finalized,
-    False if still waiting on more approvals."""
+    False if still waiting on more approvals.
+
+    Refuses to finalize if the target is the last active admin — approval
+    consensus governs *who* can deactivate an admin, not *whether the
+    system can be left with zero admins*, so that floor is enforced here
+    regardless of how many approvals came in."""
     approval_count = conn.execute(
         "SELECT COUNT(*) AS cnt FROM admin_deactivation_approvals WHERE request_id = ?",
         (request_row["id"],),
@@ -58,17 +63,40 @@ def finalize_if_ready(request_row, conn):
     if approval_count < request_row["required_approvals"]:
         return False
 
+    remaining_admins = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
+        (request_row["target_staff_id"],),
+    ).fetchone()["cnt"]
+
+    if remaining_admins == 0:
+        conn.execute(
+            """
+            UPDATE admin_deactivation_requests
+            SET status = 'denied', denial_reason = ?, resolved_at = datetime('now', 'localtime')
+            WHERE id = ?
+            """,
+            (
+                "Automatically denied: target is the last active admin account",
+                request_row["id"],
+            ),
+        )
+        conn.commit()
+
+        log_action(
+            staff_id=None,
+            action="admin_deactivation_auto_denied",
+            target_table="admin_deactivation_requests",
+            target_id=request_row["id"],
+            details=(
+                f"Request #{request_row['id']} auto-denied on finalization: "
+                f"target {request_row['target_staff_id']} is the last active admin"
+            ),
+        )
+        return False
+
     conn.execute(
         "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
         (request_row["target_staff_id"],),
-    )
-    conn.execute(
-        """
-        UPDATE admin_deactivation_requests
-        SET status = 'approved', resolved_at = datetime('now', 'localtime')
-        WHERE id = ?
-        """,
-        (request_row["id"],),
     )
     conn.commit()
 

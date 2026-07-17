@@ -1,4 +1,4 @@
-﻿import os
+import os
 from database import get_db_connection
 from utils.logger import log_action
 from werkzeug.security import generate_password_hash

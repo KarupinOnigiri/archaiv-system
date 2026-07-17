@@ -12,7 +12,6 @@ from utils.validators import (
     validate_password_strength,
     parse_pagination_params,
 )
-from utils.formatters import full_name
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from extensions import limiter
@@ -306,20 +305,16 @@ def edit_staff_submit(id):
 
     new_role = data.get("role", staff["role"])
     if staff["role"] == "admin" and new_role != "admin":
-        remaining_admins = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
-            (id,),
-        ).fetchone()["cnt"]
-        if remaining_admins == 0:
-            conn.close()
-            return (
-                jsonify(
-                    {
-                        "error": "Cannot change role: this is the last active admin account"
-                    }
-                ),
-                403,
-            )
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot change an admin's role directly",
+                    "reason": "Demoting or deactivating an admin requires peer approval — use /staff/<id>/request-deactivation instead.",
+                }
+            ),
+            403,
+        )
     try:
         conn.execute(
             """
