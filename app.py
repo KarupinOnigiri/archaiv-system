@@ -1,8 +1,10 @@
+# .\tools\tailwindcss.exe -i static\css\input.css -o static\css\output.css --watch
+
 from dotenv import load_dotenv
 import os
 import atexit
 import logging
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template, request, g
 from werkzeug.exceptions import HTTPException
 from routes.requests import requests_bp
 from routes.assets import assets_bp
@@ -48,6 +50,21 @@ if not app.secret_key:
     raise RuntimeError(
         "SECRET_KEY is not set in .env — required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
     )
+
+
+@app.context_processor
+def inject_csrf_token():
+    conn = get_db_connection()
+    token = request.cookies.get("session_token")
+    if token:
+        session = conn.execute(
+            "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
+        ).fetchone()
+        conn.close()
+        return {"csrf_token": session["csrf_token"] if session else ""}
+    conn.close()
+    return {"csrf_token": ""}
+
 
 limiter.init_app(app)
 
@@ -138,6 +155,11 @@ def health():
     except Exception as e:
         app.logger.error(f"Health check failed: {e}")
         return jsonify({"status": "error", "detail": "database unavailable"}), 503
+
+
+@app.route("/test")
+def test():
+    return render_template("base.html")
 
 
 # if __name__ == "__main__":
