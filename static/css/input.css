@@ -1,5 +1,44 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @source not "./tools/tailwindcss";
 @source not "./daisyui{,*}.mjs";
 @plugin "../../daisyui.mjs";
-@plugin "../../daisyui-theme.mjs";
+@plugin "../../daisyui-theme.mjs" {
+  name: "tesda";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-primary: #020381;
+  --color-primary-content: #ffffff;
+  --color-secondary: #8ed1fc;
+  --color-secondary-content: #020381;
+  --color-base-100: #ffffff;
+  --color-base-200: #f1f4fb;
+  --color-base-300: #dce3f5;
+  --color-base-content: #1a1a2e;
+}
+
+/* Hide all native browser password icons (reveal, clear, autofill contacts) so only our custom eye toggle shows */
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear {
+  display: none;
+}
+
+input[type='password']::-webkit-contacts-auto-fill-button,
+input[type='password']::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+
+/* Thinner, consistent input borders app-wide */
+.input {
+  border-width: 5px;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.input:focus {
+  box-shadow: 0 0 0 5px var(--color-primary);
+}

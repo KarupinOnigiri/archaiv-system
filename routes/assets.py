@@ -458,6 +458,18 @@ def edit_asset_submit(id):
             409,
         )
 
+    if new_condition == "disposed" and asset["status"] in ("borrowed", "reserved"):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "Cannot dispose asset: it is currently borrowed",
+                    "reason": "This asset has an open borrow transaction. Return it first, or contact an admin.",
+                }
+            ),
+            409,
+        )
+
     try:
         if new_condition == "disposed":
             conn.execute(

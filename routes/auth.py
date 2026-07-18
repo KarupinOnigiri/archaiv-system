@@ -2,7 +2,15 @@ import secrets
 from database import get_db_connection, get_json_or_error
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import date, datetime, timedelta
-from flask import Blueprint, jsonify, make_response, request
+from flask import (
+    Blueprint,
+    jsonify,
+    make_response,
+    request,
+    render_template,
+    redirect,
+    url_for,
+)
 from utils.formatters import full_name
 from utils.logger import log_action
 from services.auth_service import login_required, SESSION_IDLE_MINUTES
@@ -21,12 +29,33 @@ LOCKOUT_MINUTES = 15
 _DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety")
 
 
+def _login_response(payload, status, redirect_to=None, cookie_data=None):
+    """Returns JSON if this was a JSON request (existing API behavior,
+    untouched); redirects if it was a plain form POST from login.html."""
+    if request.is_json:
+        response = make_response(jsonify(payload), status)
+    else:
+        if redirect_to:
+            response = make_response(redirect(redirect_to))
+        else:
+            error_msg = payload.get("error", "Login failed")
+            response = make_response(
+                redirect(url_for("pages.login_page", error=error_msg))
+            )
+    if cookie_data:
+        response.set_cookie(**cookie_data)
+    return response
+
+
 @auth_bp.route("/login", methods=["POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login():
-    data, error = get_json_or_error()
-    if error:
-        return error
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
 
     username = data.get("username")
     barcode_id = data.get("barcode_id")
@@ -103,7 +132,8 @@ def login():
         # run a dummy hash check so response timing doesn't reveal
         # # whether this username/barcode belongs to a real account
         check_password_hash(_DUMMY_PASSWORD_HASH, password)
-        return jsonify({"error": "Invalid credentials"}), 401
+        # return jsonify({"error": "Invalid credentials"}), 401
+        return _login_response({"error": "Invalid credentials"}, 401)
 
     # Check lockout before even touching the password
     if staff["locked_until"]:
@@ -111,12 +141,18 @@ def login():
         if datetime.now() < locked_until:
             conn.close()
             remaining = int((locked_until - datetime.now()).total_seconds() / 60) + 1
-            return (
-                jsonify(
-                    {
-                        "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
-                    }
-                ),
+            # return (
+            #     jsonify(
+            #         {
+            #             "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
+            #         }
+            #     ),
+            #     403,
+            # )
+            return _login_response(
+                {
+                    "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
+                },
                 403,
             )
 
@@ -142,12 +178,18 @@ def login():
                 details=f"Account locked after {new_attempts} failed login attempts",
             )
 
-            return (
-                jsonify(
-                    {
-                        "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
-                    }
-                ),
+            # return (
+            #     jsonify(
+            #         {
+            #             "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
+            #         }
+            #     ),
+            #     403,
+            # )
+            return _login_response(
+                {
+                    "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
+                },
                 403,
             )
 
@@ -157,7 +199,8 @@ def login():
         )
         conn.commit()
         conn.close()
-        return jsonify({"error": "Invalid credentials"}), 401
+        # return jsonify({"error": "Invalid credentials"}), 401
+        return _login_response({"error": "Invalid credentials"}, 401)
 
     # Correct password — reset lockout tracking
     conn.execute(
@@ -168,23 +211,23 @@ def login():
     conn.close()
 
     if not staff["is_active"]:
-        return jsonify({"error": "This account has been deactivated"}), 403
+        return _login_response({"error": "This account has been deactivated"}, 403)
 
     if staff["role"] == "tool_keeper":
         if not staff["assigned_start"] or not staff["assigned_end"]:
-            return (
-                jsonify(
-                    {
-                        "error": "No assignment period set for this account. Contact an admin."
-                    }
-                ),
+            return _login_response(
+                {
+                    "error": "No assignment period set for this account. Contact an admin."
+                },
                 403,
             )
         today = date.today().isoformat()
         if today < staff["assigned_start"]:
-            return jsonify({"error": "Tool keeper assignment has not started yet"}), 403
+            return _login_response(
+                {"error": "Tool keeper assignment has not started yet"}, 403
+            )
         if today > staff["assigned_end"]:
-            return jsonify({"error": "Tool keeper assignment has expired"}), 403
+            return _login_response({"error": "Tool keeper assignment has expired"}, 403)
     session_conn = get_db_connection()
 
     try:
@@ -207,21 +250,21 @@ def login():
     finally:
         session_conn.close()
 
-    response = make_response(
-        jsonify(
-            {
-                "message": "Login successful",
-                "staff_id": staff["id"],
-                "name": full_name(
-                    staff["first_name"],
-                    staff["last_name"],
-                    staff["middle_name"],
-                    staff["suffix"],
-                ),
-                "role": staff["role"],
-                "csrf_token": csrf_token,
-            }
-        )
+    response = _login_response(
+        {
+            "message": "Login successful",
+            "staff_id": staff["id"],
+            "name": full_name(
+                staff["first_name"],
+                staff["last_name"],
+                staff["middle_name"],
+                staff["suffix"],
+            ),
+            "role": staff["role"],
+            "csrf_token": csrf_token,
+        },
+        200,
+        redirect_to=url_for("home"),
     )
     response.set_cookie(
         "session_token",

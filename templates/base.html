@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="tesda" class="h-full bg-base-200">
 <head>
   <meta charset="UTF-8">
   <meta name="csrf-token" content="{{ csrf_token }}">
@@ -8,7 +8,7 @@
   <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </head>
-<body>
+<body class="m-0 h-full overflow-hidden bg-base-200">
   {% block content %}{% endblock %}
 </body>
 </html>

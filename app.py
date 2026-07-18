@@ -7,6 +7,7 @@ import logging
 from flask import Flask, jsonify, render_template, request, g
 from werkzeug.exceptions import HTTPException
 from routes.requests import requests_bp
+from routes.pages import pages_bp
 from routes.assets import assets_bp
 from routes.members import members_bp
 from routes.staff import staff_bp
@@ -76,6 +77,7 @@ app.register_blueprint(auth_bp, url_prefix="/api/v1")
 app.register_blueprint(transactions_bp, url_prefix="/api/v1")
 app.register_blueprint(stats_bp, url_prefix="/api/v1")
 app.register_blueprint(setup_bp, url_prefix="/api/v1")
+app.register_blueprint(pages_bp)
 
 
 # # # ERROR HANDLERS ---------------------------------------------------------
