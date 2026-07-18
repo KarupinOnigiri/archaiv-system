@@ -34,11 +34,11 @@ input[type='password']::-webkit-credentials-auto-fill-button {
 
 /* Thinner, consistent input borders app-wide */
 .input {
-  border-width: 5px;
+  border-width: 1px;
   box-shadow: none;
   -webkit-appearance: none;
   appearance: none;
 }
 .input:focus {
-  box-shadow: 0 0 0 5px var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }

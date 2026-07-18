@@ -17,6 +17,7 @@
     --text-2xl: 1.5rem;
     --text-2xl--line-height: calc(2 / 1.5);
     --font-weight-bold: 700;
+    --radius-xl: 0.75rem;
     --radius-2xl: 1rem;
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
@@ -7872,6 +7873,9 @@
   .rounded-selector {
     border-radius: var(--radius-selector);
   }
+  .rounded-xl {
+    border-radius: var(--radius-xl);
+  }
   .rounded-t-box {
     border-top-left-radius: var(--radius-box);
     border-top-right-radius: var(--radius-box);
@@ -7959,6 +7963,10 @@
   .border {
     border-style: var(--tw-border-style);
     border-width: 1px;
+  }
+  .border-2 {
+    border-style: var(--tw-border-style);
+    border-width: 2px;
   }
   .border-4 {
     border-style: var(--tw-border-style);
@@ -8053,6 +8061,9 @@
       background-image: none;
       border-color: currentColor;
     }
+  }
+  .border-base-300 {
+    border-color: var(--color-base-300);
   }
   .border-primary {
     border-color: var(--color-primary);
@@ -9752,13 +9763,13 @@ input[type='password']::-webkit-contacts-auto-fill-button, input[type='password'
   right: 0;
 }
 .input {
-  border-width: 5px;
+  border-width: 1px;
   box-shadow: none;
   -webkit-appearance: none;
   appearance: none;
 }
 .input:focus {
-  box-shadow: 0 0 0 5px var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 @layer base {
   :where(:root),:root:has(input.theme-controller[value=light]:checked),[data-theme=light] {
