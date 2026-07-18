@@ -91,9 +91,9 @@ def view_audit_log():
     """Read-only audit trail. admin can view everyone's entries and filter
     by any staff_id. in_charge and tool_keeper can only view their own —
     any staff_id they pass in is ignored and forced to their own id.
-    Other filters are all optional and combine with AND.
-    limit defaults to 200 and is capped at 1000 to avoid dumping the whole
-    table on a growing dataset."""
+    Other filters are all optional and combine with AND. Pagination uses
+    the shared limit/offset helper (default 25, capped at 100 — same as
+    every other paginated route), not a route-specific limit."""
     filters = []
     params = []
 
@@ -132,12 +132,6 @@ def view_audit_log():
         filters.append("audit_log.created_at <= ?")
         params.append(until)
 
-    try:
-        limit = int(request.args.get("limit", 200))
-    except ValueError:
-        return jsonify({"error": "limit must be an integer"}), 400
-
-    limit = max(1, min(limit, 1000))
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error

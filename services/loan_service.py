@@ -1,4 +1,5 @@
 from utils.logger import log_action
+from database import get_db_connection
 
 
 def check_and_lift_restriction_if_resolved(member_id, conn):
@@ -62,3 +63,35 @@ def check_and_restrict_overdue_member(member_id, conn):
         )
         return True
     return False
+
+
+def sweep_overdue_members():
+    """Proactively runs the overdue check across every member who
+    currently has an open ('borrowed') loan, instead of relying on
+    check_and_restrict_overdue_member only ever being triggered
+    opportunistically (at checkout-session start/commit). Without this,
+    a member can sit overdue and unrestricted — invisible as "restricted"
+    anywhere in the UI — for as long as nobody happens to try checking
+    something else out to them.
+
+    Meant to be run on a schedule (see app.py, alongside
+    cleanup_stale_checkout_sessions and cleanup_expired_sessions), not
+    tied to any particular request. Opens its own connection for that
+    reason — same pattern as cleanup_stale_checkout_sessions in
+    checkout_service.py — rather than taking one as a parameter like the
+    two request-triggered functions above."""
+    conn = get_db_connection()
+    try:
+        overdue_member_ids = conn.execute("""
+            SELECT DISTINCT transactions.member_id FROM transactions
+            JOIN members ON members.id = transactions.member_id
+            WHERE transactions.status = 'borrowed'
+            AND transactions.due_date IS NOT NULL
+            AND transactions.due_date < datetime('now', 'localtime')
+            AND members.is_restricted = 0
+            """).fetchall()
+
+        for row in overdue_member_ids:
+            check_and_restrict_overdue_member(row["member_id"], conn)
+    finally:
+        conn.close()

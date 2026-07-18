@@ -1,4 +1,5 @@
 from utils.logger import log_action
+from services.seed_service import seed_initial_admin
 
 
 def determine_approval_tier(conn, requester_id, target_id):
@@ -64,7 +65,7 @@ def finalize_if_ready(request_row, conn):
         return False
 
     remaining_admins = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND id != ?",
+        "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND is_system_seeded = 0 AND id != ?",
         (request_row["target_staff_id"],),
     ).fetchone()["cnt"]
 
@@ -110,4 +111,10 @@ def finalize_if_ready(request_row, conn):
             f"{request_row['required_tier']} approval(s) (request #{request_row['id']})"
         ),
     )
+
+    # If that deactivation just left the system with zero active real
+    # admins, seed the temporary setup admin immediately rather than
+    # waiting for the next app restart.
+    seed_initial_admin()
+
     return True

@@ -15,9 +15,10 @@ from services.seed_service import seed_initial_admin
 from services.checkout_service import cleanup_stale_checkout_sessions
 from services.auth_service import cleanup_expired_sessions
 from apscheduler.schedulers.background import BackgroundScheduler
-from services.checkout_service import cleanup_stale_checkout_sessions
 from extensions import limiter
 from routes.stats import stats_bp
+from routes.setup import setup_bp
+from services.loan_service import sweep_overdue_members
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
@@ -57,6 +58,7 @@ app.register_blueprint(staff_bp, url_prefix="/api/v1")
 app.register_blueprint(auth_bp, url_prefix="/api/v1")
 app.register_blueprint(transactions_bp, url_prefix="/api/v1")
 app.register_blueprint(stats_bp, url_prefix="/api/v1")
+app.register_blueprint(setup_bp, url_prefix="/api/v1")
 
 
 # # # ERROR HANDLERS ---------------------------------------------------------
@@ -101,6 +103,7 @@ seed_initial_admin()
 scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
+scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 
