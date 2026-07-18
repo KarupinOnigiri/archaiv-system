@@ -123,6 +123,45 @@ def add_category():
     )
 
 
+@assets_bp.route("/categories/<int:id>/edit", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def edit_category(id):
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Missing required field: name"}), 400
+
+    conn = get_db_connection()
+    category = conn.execute("SELECT * FROM categories WHERE id = ?", (id,)).fetchone()
+    if category is None:
+        conn.close()
+        return jsonify({"error": "Category not found"}), 404
+
+    try:
+        conn.execute("UPDATE categories SET name = ? WHERE id = ?", (name, id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "A category with this name already exists"}), 400
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="renamed_category",
+        target_table="categories",
+        target_id=id,
+        details=f"Renamed category '{category['name']}' to '{name}'",
+    )
+
+    return jsonify({"message": "Category renamed successfully"})
+
+
 @assets_bp.route("/assets/add", methods=["POST"])
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
@@ -321,6 +360,27 @@ def import_assets_csv():
     ), (201 if created else 400)
 
 
+@assets_bp.route("/assets/<int:id>")
+@login_required
+def get_asset(id):
+    conn = get_db_connection()
+    asset = conn.execute(
+        """
+        SELECT assets.*, categories.name AS category_name
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        WHERE assets.id = ? AND assets.deleted_at IS NULL
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if asset is None:
+        return jsonify({"error": "Asset not found"}), 404
+
+    return jsonify(dict(asset))
+
+
 @assets_bp.route("/assets/<int:id>/edit", methods=["POST"])
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
@@ -450,6 +510,14 @@ def edit_asset_submit(id):
     finally:
         conn.close()
 
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_asset",
+        target_table="assets",
+        target_id=asset["id"],
+        details=f"Updated asset {asset['asset_id']}",
+    )
+
     if new_condition == "disposed":
         log_action(
             staff_id=g.staff["id"],
@@ -458,14 +526,6 @@ def edit_asset_submit(id):
             target_id=asset["id"],
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
-
-    log_action(
-        staff_id=g.staff["id"],
-        action="updated_asset",
-        target_table="assets",
-        target_id=asset["id"],
-        details=f"Updated asset {asset['asset_id']}",
-    )
 
     return jsonify({"message": "Asset updated successfully"})
 

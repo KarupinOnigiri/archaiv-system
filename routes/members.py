@@ -762,3 +762,44 @@ def add_department():
         ),
         201,
     )
+
+
+@members_bp.route("/departments/<int:id>/edit", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def edit_department(id):
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Missing required field: name"}), 400
+
+    conn = get_db_connection()
+    department = conn.execute(
+        "SELECT * FROM departments WHERE id = ?", (id,)
+    ).fetchone()
+    if department is None:
+        conn.close()
+        return jsonify({"error": "Department not found"}), 404
+
+    try:
+        conn.execute("UPDATE departments SET name = ? WHERE id = ?", (name, id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "A department with this name already exists"}), 400
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="renamed_department",
+        target_table="departments",
+        target_id=id,
+        details=f"Renamed department '{department['name']}' to '{name}'",
+    )
+
+    return jsonify({"message": "Department renamed successfully"})

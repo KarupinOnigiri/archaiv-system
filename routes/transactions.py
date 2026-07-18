@@ -254,6 +254,114 @@ def create_checkout_session():
     )
 
 
+@transactions_bp.route("/checkout-sessions/<int:id>/items/add", methods=["POST"])
+@login_required
+@limiter.limit("60 per minute")
+def add_item_to_session(id):
+    """Scans one asset into an open checkout session (the "cart"). Mirrors
+    the reservation pattern used at final checkout: claim the asset
+    atomically by flipping status available -> reserved, and only insert
+    the cart row if that claim actually landed."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    asset_code = data.get("asset_code")
+    if not asset_code:
+        return jsonify({"error": "Missing required field: asset_code"}), 400
+
+    conn = get_db_connection()
+
+    session_probe = conn.execute(
+        "SELECT member_id FROM checkout_sessions WHERE id = ?", (id,)
+    ).fetchone()
+
+    if session_probe is None:
+        conn.close()
+        return jsonify({"error": "Checkout session not found"}), 404
+
+    session, error = _get_active_checkout_session(id, session_probe["member_id"], conn)
+    if error:
+        conn.close()
+        return error
+
+    asset = conn.execute(
+        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
+        (asset_code, asset_code),
+    ).fetchone()
+
+    if asset is None:
+        conn.close()
+        return jsonify({"error": "Asset not found"}), 404
+
+    already_in_cart = conn.execute(
+        "SELECT id FROM checkout_session_items WHERE checkout_session_id = ? AND asset_id = ?",
+        (id, asset["id"]),
+    ).fetchone()
+
+    if already_in_cart is not None:
+        conn.close()
+        return jsonify({"error": "This asset is already in the cart"}), 409
+
+    if asset["status"] != "available":
+        conn.close()
+        return (
+            jsonify(
+                {"error": f"Asset is not available (current status: {asset['status']})"}
+            ),
+            409,
+        )
+
+    try:
+        claim = conn.execute(
+            "UPDATE assets SET status = 'reserved' WHERE id = ? AND status = 'available'",
+            (asset["id"],),
+        )
+        if claim.rowcount == 0:
+            conn.rollback()
+            return (
+                jsonify(
+                    {"error": "Asset was just claimed by another session — try again"}
+                ),
+                409,
+            )
+
+        cursor = conn.execute(
+            "INSERT INTO checkout_session_items (checkout_session_id, asset_id) VALUES (?, ?)",
+            (id, asset["id"]),
+        )
+        conn.commit()
+        item_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return jsonify({"error": "This asset is already in the cart"}), 409
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="added_item_to_checkout_session",
+        target_table="checkout_session_items",
+        target_id=item_id,
+        details=f"Added asset {asset['asset_id']} to checkout session {id}",
+    )
+
+    return (
+        jsonify(
+            {
+                "message": "Item added to cart",
+                "item_id": item_id,
+                "asset_id": asset["id"],
+                "asset_name": asset["name"],
+            }
+        ),
+        201,
+    )
+
+
 @transactions_bp.route(
     "/checkout-sessions/<int:id>/items/<int:item_id>/remove", methods=["POST"]
 )
