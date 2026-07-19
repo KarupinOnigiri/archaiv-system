@@ -1,0 +1,68 @@
+﻿<table class="table w-full">
+  <thead>
+    <tr class="text-left text-xs text-base-content/50 tracking-wide border-b border-base-300">
+      <th class="py-2 font-semibold">ASSET ID</th>
+      <th class="py-2 font-semibold">NAME</th>
+      <th class="py-2 font-semibold">CATEGORY</th>
+      <th class="py-2 font-semibold">STATUS</th>
+      <th class="py-2 font-semibold">CONDITION</th>
+      <th class="py-2 font-semibold">BARCODE</th>
+      <th class="py-2 font-semibold text-right">ACTIONS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for asset in assets %}
+    <tr class="border-b border-base-200 hover:bg-base-200/40">
+      <td class="py-3 text-sm text-base-content/60">{{ asset.asset_id }}</td>
+      <td class="py-3 font-medium">{{ asset.name }}</td>
+      <td class="py-3 text-sm">{{ asset.category or "—" }}</td>
+      <td class="py-3">
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium
+          {% if asset.status == 'available' %}bg-success/15 text-success
+          {% elif asset.status == 'borrowed' %}bg-info/15 text-info
+          {% elif asset.status == 'maintenance' %}bg-error/15 text-error
+          {% else %}bg-warning/15 text-warning{% endif %}">
+          {{ asset.status | capitalize }}
+        </span>
+      </td>
+      <td class="py-3 text-sm">{{ asset.condition | capitalize }}</td>
+      <td class="py-3 text-sm text-base-content/50">{{ asset.barcode_id }}</td>
+      <td class="py-3 text-right">
+        <button class="btn btn-xs btn-ghost"
+                hx-get="/api/v1/assets/{{ asset.id }}/edit-form"
+                hx-target="#modal-container"
+                hx-swap="innerHTML">
+          Edit
+        </button>
+        <button class="btn btn-xs btn-ghost text-error"
+                hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm"
+                hx-target="#modal-container"
+                hx-swap="innerHTML">
+          Delete
+        </button>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="7" class="text-center py-10 text-base-content/50">No assets found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="flex justify-between items-center mt-4 pt-3 border-t border-base-200">
+  <p class="text-sm text-base-content/50">SHOWING {{ offset + 1 if total_count > 0 else 0 }}-{{ offset + assets|length }} OF {{ total_count }} ASSETS</p>
+  <div class="join">
+    <button class="join-item btn btn-sm {% if offset == 0 %}btn-disabled{% endif %}"
+            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
+            hx-target="#asset-table-container" hx-swap="innerHTML">
+      Previous
+    </button>
+    <button class="join-item btn btn-sm {% if offset + limit >= total_count %}btn-disabled{% endif %}"
+            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset + limit }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
+            hx-target="#asset-table-container" hx-swap="innerHTML">
+      Next
+    </button>
+  </div>
+</div>
+

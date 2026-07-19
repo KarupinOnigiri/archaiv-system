@@ -1,0 +1,58 @@
+﻿<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+    <h3 class="font-bold text-lg mb-4">Edit Asset</h3>
+
+    <form hx-post="/api/v1/assets/{{ asset.id }}/edit" hx-target="#modal-container" hx-swap="innerHTML">
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text">Name *</span></label>
+        <input type="text" name="name" required value="{{ asset.name }}" class="input input-bordered w-full">
+      </div>
+
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text">Category</span></label>
+        <select name="category_id" class="select select-bordered w-full">
+          <option value="">— None —</option>
+          {% for category in categories %}
+          <option value="{{ category.id }}" {% if asset.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text">Condition</span></label>
+        <select name="condition" class="select select-bordered w-full">
+          {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
+          <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {% if asset.status not in ["borrowed", "reserved"] %}
+      <div class="form-control mb-3">
+        <label class="label"><span class="label-text">Status</span></label>
+        <select name="status" class="select select-bordered w-full">
+          {% for s in ["available", "maintenance"] %}
+          <option value="{{ s }}" {% if asset.status == s %}selected{% endif %}>{{ s | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <p class="text-sm text-base-content/50 mb-3">Status: <strong>{{ asset.status | capitalize }}</strong> — cannot be changed here while the asset is checked out.</p>
+      {% endif %}
+
+      <div class="form-control mb-4">
+        <label class="label"><span class="label-text">Notes</span></label>
+        <textarea name="notes" class="textarea textarea-bordered w-full">{{ asset.notes or "" }}</textarea>
+      </div>
+
+      {% if error %}
+      <p class="text-error text-sm mb-3">{{ error }}</p>
+      {% endif %}
+
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -9,6 +9,112 @@
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </head>
 <body class="m-0 h-full overflow-hidden bg-base-200">
-  {% block content %}{% endblock %}
+
+  <div class="flex h-full">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-64 shrink-0">
+
+      <div class="flex items-center gap-3 px-5 py-5 border-b border-base-300">
+        <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center shrink-0">
+          <span class="text-primary-content text-lg font-bold">T</span>
+        </div>
+        <span id="sidebar-title" class="font-bold text-lg whitespace-nowrap overflow-hidden">Toolroom</span>
+        <button id="sidebar-toggle" class="ml-auto text-base-content/50 hover:text-base-content shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        {% set nav_items = [
+          ("Dashboard", "/", "grid"),
+          ("Inventory", "/assets", "box"),
+          ("Borrowers", "/members", "users"),
+          ("Borrow & Return", "/transactions", "swap"),
+          ("Approvals", "/requests", "check")
+        ] %}
+        {% for label, href, icon in nav_items %}
+        <a href="{{ href }}"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == href %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            {% if icon == "grid" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            {% elif icon == "box" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            {% elif icon == "users" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            {% elif icon == "swap" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            {% elif icon == "check" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            {% endif %}
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
+        </a>
+        {% endfor %}
+
+        {% if staff and staff.role in ["admin", "in_charge"] %}
+        <a href="/staff"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Staff</span>
+        </a>
+        {% endif %}
+
+        {% if staff and staff.role == "admin" %}
+        <a href="/audit-log"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Activity Log</span>
+        </a>
+        {% endif %}
+      </nav>
+
+      {% if staff %}
+      <div class="border-t border-base-300 p-3">
+        <button hx-post="/api/v1/logout" hx-redirect="/login"
+                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-error hover:bg-error/10">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Log out</span>
+        </button>
+      </div>
+      {% endif %}
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+      {% block content %}{% endblock %}
+    </main>
+
+  </div>
+
+<style>
+#sidebar.collapsed {
+  width: 4.5rem;
+}
+#sidebar.collapsed .sidebar-label,
+#sidebar.collapsed #sidebar-title {
+  display: none;
+}
+#sidebar.collapsed #sidebar-toggle svg {
+  transform: rotate(180deg);
+}
+</style>
+
+<script>
+document.getElementById('sidebar-toggle').addEventListener('click', function() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+});
+</script>
+
 </body>
 </html>

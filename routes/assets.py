@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request
+﻿from flask import Blueprint, jsonify, g, redirect, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
@@ -64,13 +64,12 @@ def view_assets():
         params + [limit, offset],
     ).fetchall()
     conn.close()
-    return jsonify(
-        {
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset,
-            "results": [dict(row) for row in assets],
-        }
+    return render_template(
+        "assets/_table.html",
+        assets=assets,
+        total_count=total_count,
+        limit=limit,
+        offset=offset,
     )
 
     # # # CATEGORIES (lookup table) -------------------------------------------
@@ -162,18 +161,43 @@ def edit_category(id):
     return jsonify({"message": "Category renamed successfully"})
 
 
+@assets_bp.route("/assets/add-form")
+@roles_required("admin", "in_charge")
+def add_asset_form():
+    conn = get_db_connection()
+    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    conn.close()
+    return render_template("assets/_add_modal.html", categories=categories, error=None)
+
+
 @assets_bp.route("/assets/add", methods=["POST"])
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def add_asset_submit():
-    data, error = get_json_or_error()
-    if error:
-        return error
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
 
     required_fields = ["name", "barcode_id"]
     for field in required_fields:
         if field not in data or not data[field]:
-            return jsonify({"error": f"Missing required field: {field}"}), 400
+            error_msg = f"Missing required field: {field}"
+            if request.is_json:
+                return jsonify({"error": error_msg}), 200
+            conn = get_db_connection()
+            categories = conn.execute(
+                "SELECT * FROM categories ORDER BY name"
+            ).fetchall()
+            conn.close()
+            return (
+                render_template(
+                    "assets/_add_modal.html", categories=categories, error=error_msg
+                ),
+                400,
+            )
 
     error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
     if error:
@@ -219,13 +243,17 @@ def add_asset_submit():
     except sqlite3.IntegrityError as e:
         print(f"IntegrityError: {e}")
         conn.rollback()
+        error_msg = "A database constraint was violated. Check for duplicate barcode/serial/ID values."
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        conn2 = get_db_connection()
+        categories = conn2.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        conn2.close()
         return (
-            jsonify(
-                {
-                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
-                }
+            render_template(
+                "assets/_add_modal.html", categories=categories, error=error_msg
             ),
-            400,
+            200,
         )
     finally:
         conn.close()
@@ -238,16 +266,20 @@ def add_asset_submit():
         details=f"Created asset {generated_code}",
     )
 
-    return (
-        jsonify(
-            {
-                "message": "Asset added successfully",
-                "id": new_asset_id,
-                "asset_id": generated_code,
-            }
-        ),
-        201,
-    )
+    if request.is_json:
+        return (
+            jsonify(
+                {
+                    "message": "Asset added successfully",
+                    "id": new_asset_id,
+                    "asset_id": generated_code,
+                }
+            ),
+            201,
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/assets"
+    return response
 
 
 REQUIRED_CSV_COLUMNS = ("name", "barcode_id")
@@ -381,13 +413,31 @@ def get_asset(id):
     return jsonify(dict(asset))
 
 
+@assets_bp.route("/assets/<int:id>/edit-form")
+@roles_required("admin", "in_charge")
+def edit_asset_form(id):
+    conn = get_db_connection()
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+    if asset is None:
+        conn.close()
+        return jsonify({"error": "Asset not found"}), 404
+    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    conn.close()
+    return render_template(
+        "assets/_edit_modal.html", asset=asset, categories=categories, error=None
+    )
+
+
 @assets_bp.route("/assets/<int:id>/edit", methods=["POST"])
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def edit_asset_submit(id):
-    data, error = get_json_or_error()
-    if error:
-        return error
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
 
     error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
     if error:
@@ -539,7 +589,22 @@ def edit_asset_submit(id):
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
-    return jsonify({"message": "Asset updated successfully"})
+    if request.is_json:
+        return jsonify({"message": "Asset updated successfully"})
+    response = redirect("/assets")
+    response.headers["HX-Redirect"] = "/assets"
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/delete-confirm")
+@roles_required("admin", "in_charge")
+def delete_asset_confirm(id):
+    conn = get_db_connection()
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+    conn.close()
+    if asset is None:
+        return jsonify({"error": "Asset not found"}), 404
+    return render_template("assets/_delete_modal.html", asset=asset, error=None)
 
 
 @assets_bp.route("/assets/<int:id>/delete", methods=["POST"])
@@ -555,17 +620,29 @@ def delete_asset(id):
 
     if asset["deleted_at"] is not None:
         conn.close()
-        return jsonify({"error": "Asset is already deleted"}), 400
+        error_msg = "Asset is already deleted"
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template("assets/_delete_modal.html", asset=asset, error=error_msg),
+            400,
+        )
 
     if asset["status"] in ("borrowed", "reserved"):
         conn.close()
+        error_msg = "Cannot delete asset: it is currently borrowed. Return it first, or contact an admin."
+        if request.is_json:
+            return (
+                jsonify(
+                    {
+                        "error": "Cannot delete asset: it is currently borrowed",
+                        "reason": "This asset has an open borrow transaction. Return it first, or contact an admin.",
+                    }
+                ),
+                409,
+            )
         return (
-            jsonify(
-                {
-                    "error": "Cannot delete asset: it is currently borrowed",
-                    "reason": "This asset has an open borrow transaction. Return it first, or contact an admin.",
-                }
-            ),
+            render_template("assets/_delete_modal.html", asset=asset, error=error_msg),
             409,
         )
 
@@ -595,7 +672,11 @@ def delete_asset(id):
         details=f"Soft-deleted asset {asset['asset_id']}",
     )
 
-    return jsonify({"message": "Asset soft deleted successfully"})
+    if request.is_json:
+        return jsonify({"message": "Asset soft deleted successfully"})
+    response = redirect("/assets")
+    response.headers["HX-Redirect"] = "/assets"
+    return response
 
 
 @assets_bp.route("/assets/<int:id>/restore", methods=["POST"])
@@ -603,7 +684,7 @@ def delete_asset(id):
 @limiter.limit("20 per minute")
 def restore_asset(id):
     """Admin-only, deliberately tighter than delete_asset (admin/in_charge)
-    — reversing a disposal is a bigger call than making one."""
+    â€” reversing a disposal is a bigger call than making one."""
     data, error = get_json_or_error()
     condition = data.get("condition") if not error else None
 
@@ -619,7 +700,7 @@ def restore_asset(id):
         return (
             jsonify(
                 {
-                    "error": "Cannot restore an asset with condition 'disposed' — provide a different condition"
+                    "error": "Cannot restore an asset with condition 'disposed' â€” provide a different condition"
                 }
             ),
             400,
@@ -641,7 +722,7 @@ def restore_asset(id):
         return (
             jsonify(
                 {
-                    "error": "This asset's condition is 'disposed' — provide a new condition to restore it",
+                    "error": "This asset's condition is 'disposed' â€” provide a new condition to restore it",
                     "reason": "An active (non-deleted) asset cannot remain marked as disposed.",
                 }
             ),
@@ -734,3 +815,7 @@ def get_asset_history(id):
             "results": [dict(row) for row in history],
         }
     )
+
+
+
+

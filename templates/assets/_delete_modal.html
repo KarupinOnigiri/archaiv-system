@@ -1,0 +1,19 @@
+﻿<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-2">Delete Asset</h3>
+    <p class="text-sm text-base-content/70 mb-4">
+      Are you sure you want to delete <strong>{{ asset.name }}</strong>? This can be undone later by restoring it.
+    </p>
+
+    {% if error %}
+    <p class="text-error text-sm mb-3">{{ error }}</p>
+    {% endif %}
+
+    <form hx-post="/api/v1/assets/{{ asset.id }}/delete" hx-target="#modal-container" hx-swap="innerHTML">
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-error">Delete</button>
+      </div>
+    </form>
+  </div>
+</div>
