@@ -1,0 +1,9 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="min-h-screen flex flex-col items-center justify-center gap-4 bg-base-200">
+  <p class="text-lg">Logged in as <strong>{{ staff.username }}</strong> ({{ staff.role }}).</p>
+  <button hx-post="/api/v1/logout" hx-redirect="/login" class="btn btn-primary rounded-full">
+    Log out
+  </button>
+</div>
+{% endblock %}

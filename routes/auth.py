@@ -31,7 +31,11 @@ _DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety"
 
 def _login_response(payload, status, redirect_to=None, cookie_data=None):
     """Returns JSON if this was a JSON request (existing API behavior,
-    untouched); redirects if it was a plain form POST from login.html."""
+    untouched); redirects if it was a plain form POST from login.html.
+    On error redirects, echoes back whatever identifier the user typed
+    (username or barcode_id) so the field isn't cleared on reload —
+    password is deliberately never echoed back, for the same reason
+    browsers never resubmit a password into a visible field."""
     if request.is_json:
         response = make_response(jsonify(payload), status)
     else:
@@ -39,9 +43,21 @@ def _login_response(payload, status, redirect_to=None, cookie_data=None):
             response = make_response(redirect(redirect_to))
         else:
             error_msg = payload.get("error", "Login failed")
-            response = make_response(
-                redirect(url_for("pages.login_page", error=error_msg))
+            typed_username = (
+                request.form.get("username") or request.form.get("barcode_id") or ""
             )
+            if typed_username:
+                response = make_response(
+                    redirect(
+                        url_for(
+                            "pages.login_page", error=error_msg, username=typed_username
+                        )
+                    )
+                )
+            else:
+                response = make_response(
+                    redirect(url_for("pages.login_page", error=error_msg))
+                )
     if cookie_data:
         response.set_cookie(**cookie_data)
     return response
@@ -90,15 +106,13 @@ def login():
                     (existing_session["staff_id"],),
                 ).fetchone()
                 conn.close()
-                return (
-                    jsonify(
-                        {
-                            "error": "Another account is already logged in on this device. Please log out first.",
-                            "current_username": (
-                                current_staff["username"] if current_staff else None
-                            ),
-                        }
-                    ),
+                return _login_response(
+                    {
+                        "error": "Another account is already logged in on this device. Please log out first.",
+                        "current_username": (
+                            current_staff["username"] if current_staff else None
+                        ),
+                    },
                     409,
                 )
             else:
@@ -288,6 +302,7 @@ def logout():
         conn.close()
 
     response = make_response(jsonify({"message": "Logged out successfully"}))
+    response.headers["HX-Redirect"] = "/login"
     response.set_cookie(
         "session_token",
         "",

@@ -1,38 +1,34 @@
 ﻿{% extends "base.html" %}
 {% block content %}
 
-<!--
-  BACKGROUND CONTAINER — currently plain color, ready for an image later.
-  To add a background image in the future:
-    1. Put the image file in: static/images/your-background.jpg
-    2. Change the class below from "bg-base-200" to nothing, and add this
-       inline style instead:
-       style="background-image: url('{{ url_for('static', filename='images/your-background.jpg') }}'); background-size: cover; background-position: center;"
--->
-<div id="bg-container" class="h-full w-full relative overflow-hidden bg-base-200">
+<div id="bg-container" class="fixed inset-0 overflow-hidden" style="background-image: url('{{ url_for('static', filename='images/bglogin.jpg') }}'); background-size: cover; background-position: center;">
+
+  <div class="absolute inset-0" style="background-color: #f1f4fb; opacity: 0.60;"></div>
 
   <div id="login-card"
-       class="fixed w-full max-w-sm bg-base-100 border-2 border-primary rounded-xl shadow-2xl p-8 cursor-grab select-none">
+       class="fixed w-full max-w-sm bg-base-100 border-primary rounded-lg shadow-2xl p-8 cursor-grab select-none">
 
-    <div class="flex justify-center mb-6">
-      <div class="w-14 h-14 rounded-xl bg-primary flex items-center justify-center pointer-events-none">
+    <div class="flex justify-center mb-5">
+      <div class="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center pointer-events-none">
         <span class="text-primary-content text-2xl font-bold">T</span>
       </div>
     </div>
 
     <h1 class="text-2xl font-bold text-center mb-8 pointer-events-none">Sign in</h1>
 
-    <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate class="space-y-1">
+    <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate style="display: flex; flex-direction: column; gap: 20px;">
 
       <div>
-        <input
-          type="text"
-          name="username"
-          id="username-field"
-          placeholder="Username"
-          autofocus
-          class="input w-full border border-base-300 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary {% if error %}input-error{% endif %}"
-        >
+        <div class="fb-field">
+          <input
+            type="text"
+            name="username"
+            id="username-field"
+            value="{{ username or '' }}"
+            class="fb-input {% if error %}fb-input-error{% endif %}"
+          >
+          <label id="username-label" for="username-field" class="fb-label">Username</label>
+        </div>
         <p id="username-empty-msg" class="hidden text-error text-xs mt-1 items-center gap-1">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
@@ -41,19 +37,20 @@
         </p>
       </div>
 
-      <div class="pt-2">
-        <div class="relative">
+      <div>
+        <div class="fb-field">
           <input
             type="password"
             name="password"
             id="password-field"
-            placeholder="Password"
-            class="input w-full border border-base-300 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary pr-10 {% if error %}input-error{% endif %}"
+            class="fb-input pr-10 {% if error %}fb-input-error{% endif %}"
           >
+          <label id="password-label" for="password-field" class="fb-label">Password</label>
           <button
             type="button"
+            id="toggle-password-btn"
             onclick="togglePassword()"
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/50 hover:text-base-content"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/50 hover:text-base-content scale-90 hidden"
           >
             <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
@@ -70,30 +67,101 @@
           </svg>
           Please enter your password.
         </p>
+        {% if error %}
+        <p class="flex items-start gap-1.5 text-error text-xs mt-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
+          </svg>
+          <span>{{ error }}</span>
+        </p>
+        {% endif %}
       </div>
 
-      {% if error %}
-      <div class="flex items-start gap-1.5 text-error text-xs mt-2">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
-        </svg>
-        <span>{{ error }}</span>
-      </div>
-      {% endif %}
-
-      <button type="submit" class="btn btn-primary w-full rounded-full mt-4">
+      <button type="submit" class="btn btn-primary w-full rounded-full">
         Sign in
       </button>
     </form>
 
-    <p class="text-center text-sm text-base-content/60 mt-4 pointer-events-none">
+    <p class="text-center text-sm text-base-content/60 mt-7 pointer-events-none">
       Forgot your password? Contact your administrator.
     </p>
 
   </div>
 </div>
 
+<style>
+.fb-field {
+  position: relative;
+}
+.fb-input {
+  width: 100%;
+  height: 3.375rem;
+  padding: 1.25rem 0.875rem 0.4rem 0.875rem;
+  font-size: 0.95rem;
+  border: 1px solid #ccd0d5;
+  border-radius: 0.5rem;
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  outline: none;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+.fb-input:hover {
+  border-color: #b0b3b8;
+}
+.fb-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+.fb-input-error {
+  border-color: #e41e3f !important;
+}
+.fb-input-error:focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, #e41e3f 20%, transparent);
+}
+.fb-label {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.95rem;
+  color: #65676b;
+  pointer-events: none;
+  transition: top 0.1s ease, font-size 0.1s ease, transform 0.1s ease;
+}
+.fb-label.floated {
+  top: 0.55rem;
+  transform: translateY(0);
+  font-size: 0.68rem;
+  color: #65676b;
+}
+.fb-input:focus + .fb-label {
+  color: var(--color-primary);
+}
+</style>
+
 <script>
+if (window.location.search.includes('error=')) {
+  history.replaceState(null, '', '/login');
+}
+
+function setupFloatingLabel(inputId, labelId) {
+  const input = document.getElementById(inputId);
+  const label = document.getElementById(labelId);
+  function updateLabel() {
+    if (document.activeElement === input || input.value.length > 0) {
+      label.classList.add('floated');
+    } else {
+      label.classList.remove('floated');
+    }
+  }
+  input.addEventListener('focus', updateLabel);
+  input.addEventListener('blur', updateLabel);
+  input.addEventListener('input', updateLabel);
+  updateLabel();
+}
+setupFloatingLabel('username-field', 'username-label');
+setupFloatingLabel('password-field', 'password-label');
+
 function togglePassword() {
   const field = document.getElementById('password-field');
   const eyeOpen = document.getElementById('eye-open');
@@ -109,38 +177,39 @@ function togglePassword() {
   }
 }
 
-// Strip ?error=... from the address bar after showing it once, so a
-// manual refresh lands on clean /login instead of re-showing the same error.
-if (window.location.search.includes('error=')) {
-  history.replaceState(null, '', '/login');
-}
+document.getElementById('password-field').addEventListener('input', function() {
+  const toggleBtn = document.getElementById('toggle-password-btn');
+  if (this.value.length > 0) {
+    toggleBtn.classList.remove('hidden');
+  } else {
+    toggleBtn.classList.add('hidden');
+  }
+});
 
-// --- Inline empty-field validation, no browser popup ---
 document.getElementById('login-form').addEventListener('submit', function(e) {
   const username = document.getElementById('username-field');
   const password = document.getElementById('password-field');
   const usernameMsg = document.getElementById('username-empty-msg');
   const passwordMsg = document.getElementById('password-empty-msg');
-
   let hasEmpty = false;
 
   if (!username.value.trim()) {
-    username.classList.add('input-error');
+    username.classList.add('fb-input-error');
     usernameMsg.classList.remove('hidden');
     usernameMsg.classList.add('flex');
     hasEmpty = true;
   } else {
-    username.classList.remove('input-error');
+    username.classList.remove('fb-input-error');
     usernameMsg.classList.add('hidden');
   }
 
   if (!password.value.trim()) {
-    password.classList.add('input-error');
+    password.classList.add('fb-input-error');
     passwordMsg.classList.remove('hidden');
     passwordMsg.classList.add('flex');
     hasEmpty = true;
   } else {
-    password.classList.remove('input-error');
+    password.classList.remove('fb-input-error');
     passwordMsg.classList.add('hidden');
   }
 
@@ -149,13 +218,11 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
   }
 });
 
-// --- Draggable login card (position: fixed) ---
 (function() {
   const card = document.getElementById('login-card');
   let isDragging = false;
   let offsetX = 0;
   let offsetY = 0;
-
   const NON_DRAG_TAGS = ['INPUT', 'BUTTON', 'A', 'LABEL'];
 
   function isInteractive(target) {
@@ -200,18 +267,10 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
   card.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY, e.target));
   window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
   window.addEventListener('mouseup', endDrag);
-
-  card.addEventListener('touchstart', (e) => {
-    const t = e.touches[0];
-    startDrag(t.clientX, t.clientY, e.target);
-  });
-  window.addEventListener('touchmove', (e) => {
-    const t = e.touches[0];
-    moveDrag(t.clientX, t.clientY);
-  });
+  card.addEventListener('touchstart', (e) => { const t = e.touches[0]; startDrag(t.clientX, t.clientY, e.target); });
+  window.addEventListener('touchmove', (e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); });
   window.addEventListener('touchend', endDrag);
 })();
 </script>
 {% endblock %}
-
 

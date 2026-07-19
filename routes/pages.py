@@ -6,4 +6,5 @@ pages_bp = Blueprint("pages", __name__)
 @pages_bp.route("/login")
 def login_page():
     error = request.args.get("error")
-    return render_template("login.html", error=error)
+    username = request.args.get("username", "")
+    return render_template("login.html", error=error, username=username)

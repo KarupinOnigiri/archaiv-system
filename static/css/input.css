@@ -17,12 +17,11 @@
   --color-base-content: #1a1a2e;
 }
 
-/* Hide all native browser password icons (reveal, clear, autofill contacts) so only our custom eye toggle shows */
+/* Hide native browser password icons so only our custom eye toggle shows */
 input[type='password']::-ms-reveal,
 input[type='password']::-ms-clear {
   display: none;
 }
-
 input[type='password']::-webkit-contacts-auto-fill-button,
 input[type='password']::-webkit-credentials-auto-fill-button {
   visibility: hidden;
@@ -32,7 +31,7 @@ input[type='password']::-webkit-credentials-auto-fill-button {
   right: 0;
 }
 
-/* Thinner, consistent input borders app-wide */
+/* Thin, consistent input borders app-wide, no stray inset shadow */
 .input {
   border-width: 1px;
   box-shadow: none;
@@ -41,4 +40,5 @@ input[type='password']::-webkit-credentials-auto-fill-button {
 }
 .input:focus {
   box-shadow: 0 0 0 1px var(--color-primary);
+  outline: none;
 }
