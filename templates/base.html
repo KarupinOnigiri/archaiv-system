@@ -1,40 +1,51 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" data-theme="tesda" class="h-full bg-base-200">
 <head>
   <meta charset="UTF-8">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>Toolroom</title>
+  <title>InvenTransit</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
   <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </head>
 <body class="m-0 h-full overflow-hidden bg-base-200">
 
+  {% set nav_items = [
+    ("Dashboard", "/", "grid"),
+    ("Inventory", "/assets", "box"),
+    ("Borrowers", "/members", "users"),
+    ("Borrow & Return", "/transactions", "swap"),
+    ("Approvals", "/requests", "check")
+  ] %}
+
+  <!-- Resolve a breadcrumb label for whatever route is currently active.
+       A plain "set" assigned inside a "for" loop doesn't persist to the
+       outer scope in Jinja, so this uses a namespace object instead. -->
+  {% set ns = namespace(current_label="Dashboard") %}
+  {% for label, href, icon in nav_items %}
+    {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
+  {% endfor %}
+  {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
+  {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
+
   <div class="flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-64 shrink-0">
+    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-56 shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+      <script>
+      if (localStorage.getItem('sidebar-collapsed') === '1') {
+        document.getElementById('sidebar').classList.add('collapsed');
+      }
+      </script>
 
-      <div class="flex items-center gap-3 px-5 py-5 border-b border-base-300">
-        <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center shrink-0">
-          <span class="text-primary-content text-lg font-bold">T</span>
-        </div>
-        <span id="sidebar-title" class="font-bold text-lg whitespace-nowrap overflow-hidden">Toolroom</span>
-        <button id="sidebar-toggle" class="ml-auto text-base-content/50 hover:text-base-content shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
-        </button>
+      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 h-14 px-6 shrink-0">
+        <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+          <img src="{{ url_for('static', filename='images/logo.png') }}" alt="InvenTransit" class="w-13 h-13 shrink-0 object-contain max-w-none">
+        </span>
+        <span id="sidebar-title" class="font-bold text-lg whitespace-nowrap overflow-hidden">InvenTransit</span>
       </div>
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {% set nav_items = [
-          ("Dashboard", "/", "grid"),
-          ("Inventory", "/assets", "box"),
-          ("Borrowers", "/members", "users"),
-          ("Borrow & Return", "/transactions", "swap"),
-          ("Approvals", "/requests", "check")
-        ] %}
         {% for label, href, icon in nav_items %}
         <a href="{{ href }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
@@ -53,6 +64,9 @@
             {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
+          {% if label == "Approvals" and pending_approvals_count %}
+          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          {% endif %}
         </a>
         {% endfor %}
 
@@ -76,24 +90,103 @@
         </a>
         {% endif %}
       </nav>
-
-      {% if staff %}
-      <div class="border-t border-base-300 p-3">
-        <button hx-post="/api/v1/logout" hx-redirect="/login"
-                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-error hover:bg-error/10">
-          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-          </span>
-          <span class="sidebar-label whitespace-nowrap overflow-hidden">Log out</span>
-        </button>
-      </div>
-      {% endif %}
     </aside>
 
-    <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-y-auto">
-      {% block content %}{% endblock %}
-    </main>
+    <!-- MAIN COLUMN -->
+    <div class="flex-1 flex flex-col h-full min-w-0">
+
+      {% if staff %}
+      <!-- TOP BAR -->
+      <header class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-14 flex items-center justify-between gap-4">
+
+        <div class="flex items-center gap-1.5 text-sm text-base-content/50 min-w-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+          </svg>
+          <span>Home</span>
+          <span>/</span>
+          <span class="text-base-content font-medium truncate">{{ ns.current_label }}</span>
+        </div>
+
+        <div class="flex items-center gap-3 shrink-0">
+
+          <!-- Notifications -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+              {% if unread_notifications_count %}
+              <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+              {% endif %}
+            </label>
+            <div tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow border border-base-300 mt-3 w-72 p-3 z-50">
+              <p class="text-sm font-semibold px-1 pb-2">Notifications</p>
+              {% if notifications %}
+                {% for n in notifications %}
+                <div class="px-1 py-2 border-t border-base-200 text-sm">
+                  <p>{{ n.message }}</p>
+                  <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
+                </div>
+                {% endfor %}
+              {% else %}
+              <p class="text-sm text-base-content/50 px-1 py-4 text-center">You're all caught up.</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Account menu -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm avatar placeholder">
+              <div class="bg-primary text-primary-content rounded-full w-8 h-8 flex items-center justify-center">
+                <span class="text-xs font-semibold">{{ staff.username[0] | upper }}</span>
+              </div>
+            </label>
+            <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-3 w-52 p-2 z-50">
+              <li class="px-2 pt-1 pb-2">
+                <p class="text-sm font-medium text-base-content leading-tight">{{ staff.username }}</p>
+                <p class="text-xs text-base-content/50 leading-tight">{{ staff.role | capitalize }}</p>
+              </li>
+              <div class="border-t border-base-200 my-1"></div>
+              <li>
+                <button type="button" onclick="document.getElementById('logout-confirm-modal').showModal()" class="text-error">
+                  Log out
+                </button>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+      </header>
+
+      <!-- Logout confirmation. A native <dialog>, not another hx-fetched
+           modal like the ones in assets/ -- there's no data to load, so a
+           static dialog already in the DOM (with built-in backdrop, ESC-
+           to-close, and focus trapping) is simpler than the htmx round trip
+           the other modals need. -->
+      <dialog id="logout-confirm-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-2">Log out?</h3>
+          <p class="text-sm text-base-content/70 mb-4">You'll need to sign in again to continue.</p>
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn">Cancel</button>
+            </form>
+            <button type="button" hx-post="/api/v1/logout" hx-redirect="/login" class="btn btn-error">
+              Log out
+            </button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      {% endif %}
+
+      <!-- PAGE CONTENT -->
+      <main class="flex-1 overflow-y-auto">
+        {% block content %}{% endblock %}
+      </main>
+
+    </div>
 
   </div>
 
@@ -110,15 +203,28 @@
 #sidebar.collapsed #sidebar-title {
   display: none;
 }
-#sidebar.collapsed #sidebar-toggle svg {
-  transform: rotate(180deg);
-}
 </style>
 
 <script>
-document.getElementById('sidebar-toggle').addEventListener('click', function() {
-  document.getElementById('sidebar').classList.toggle('collapsed');
-});
+(function() {
+  const sidebar = document.getElementById('sidebar');
+
+  // The early inline script (right after <aside> opens) already restored
+  // the 'collapsed' class from localStorage before this ran -- this just
+  // syncs aria-expanded to match that on page load.
+  sidebar.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
+
+  sidebar.addEventListener('click', function(e) {
+    // Clicking a nav link (or anything inside one, like its icon) should
+    // navigate as normal, not toggle the sidebar -- only clicks on the
+    // logo/header or the sidebar's own background do that.
+    if (e.target.closest('a')) return;
+
+    const collapsed = sidebar.classList.toggle('collapsed');
+    sidebar.setAttribute('aria-expanded', String(!collapsed));
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+  });
+})();
 
 const TOAST_DEFAULT_DURATION_MS = 4000;
 const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
