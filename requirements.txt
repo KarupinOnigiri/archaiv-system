@@ -10,3 +10,4 @@ Werkzeug==3.1.8
 APScheduler==3.11.0
 Flask-Limiter==4.1
 waitress==3.0.2
+Pillow==12.3.0

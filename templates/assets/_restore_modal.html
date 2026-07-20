@@ -1,0 +1,37 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-2">Restore Asset</h3>
+    <p class="text-sm text-base-content/70 mb-4">
+      Restore <strong>{{ asset.name }}</strong> ({{ asset.asset_id }}) back to active inventory.
+      Its status will be set to <strong>available</strong>.
+    </p>
+
+    {% if error %}
+    <p class="text-error text-sm mb-3">{{ error }}</p>
+    {% endif %}
+
+    <form hx-post="/api/v1/assets/{{ asset.id }}/restore" hx-target="#modal-container" hx-swap="innerHTML">
+      <div class="form-control mb-2">
+        <label class="label">
+          <span class="label-text">Condition</span>
+          {% if asset.condition == 'disposed' %}
+          <span class="label-text-alt text-error">Required &mdash; this asset was disposed</span>
+          {% endif %}
+        </label>
+        <select name="condition" class="select select-bordered w-full">
+          {% if asset.condition != 'disposed' %}
+          <option value="">&mdash; Keep current ({{ asset.condition | capitalize }}) &mdash;</option>
+          {% endif %}
+          {% for c in ["functional", "inoperable", "for_repair"] %}
+          <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-primary">Restore</button>
+      </div>
+    </form>
+  </div>
+</div>

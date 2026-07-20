@@ -1,0 +1,59 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Import Assets from CSV</h3>
+        <p class="text-sm text-base-content/50 mt-1">Bulk-add inventory items from a spreadsheet export.</p>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
+              class="text-base-content/40 hover:text-base-content">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
+    {% endif %}
+
+    <div class="bg-base-200/50 rounded-xl p-4 mb-5 text-sm">
+      <p class="font-semibold mb-1.5">Expected columns</p>
+      <p class="text-base-content/70">
+        Required: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">barcode_id</code>
+      </p>
+      <p class="text-base-content/70 mt-1">
+        Optional: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">rfid_id</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">category</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">serial_code</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">acquired_date</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">last_calibrated</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">notes</code>
+      </p>
+      <p class="text-base-content/50 text-xs mt-2">First row must be a header row. File must be UTF-8 encoded. A category name that doesn't exist yet will be created automatically.</p>
+    </div>
+
+    <form id="import-asset-form"
+          hx-post="/api/v1/assets/import"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#import-spinner">
+
+      <div class="border-2 border-dashed border-base-300 rounded-xl p-6 flex flex-col items-center text-center bg-base-200/30">
+        <div class="w-12 h-12 rounded-full bg-base-300/50 flex items-center justify-center mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        </div>
+        <p class="font-semibold text-sm">Choose a CSV file</p>
+        <p class="text-xs text-base-content/50 mt-1 mb-3">Only .csv files are accepted.</p>
+        <input type="file" name="file" accept=".csv,text/csv" required
+               class="file-input file-input-bordered file-input-sm w-full max-w-xs bg-base-100">
+      </div>
+
+      <div class="modal-action flex justify-end items-center gap-2 mt-6">
+        <span id="import-spinner" class="htmx-indicator loading loading-spinner loading-sm"></span>
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-primary">Upload &amp; Import</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.htmx-indicator { opacity: 0; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>

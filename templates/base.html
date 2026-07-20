@@ -97,6 +97,11 @@
 
   </div>
 
+  <!-- Toast notifications: any response can trigger one via the HX-Trigger
+       header, e.g. HX-Trigger: {"show-toast": {"message": "...", "type": "success"}}
+       "type" is optional and defaults to "success" ("error"/"info" also supported). -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
+
 <style>
 #sidebar.collapsed {
   width: 4.5rem;
@@ -114,6 +119,129 @@
 document.getElementById('sidebar-toggle').addEventListener('click', function() {
   document.getElementById('sidebar').classList.toggle('collapsed');
 });
+
+const TOAST_DEFAULT_DURATION_MS = 4000;
+const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
+
+/**
+ * message  — text to show
+ * type     — 'success' (default) | 'error' | 'info'
+ * action   — optional {
+ *              label: 'Undo',
+ *              url: '/api/v1/assets/5/undo-delete',   // endpoint to call
+ *              method: 'POST',                        // default POST
+ *              successMessage: 'Delete undone',        // toast shown after a successful call
+ *              refreshTarget: '#asset-table-container',// selector to re-fetch on success
+ *              refreshUrl: '/api/v1/assets'            // GET url for the refresh (defaults to current path)
+ *            }
+ * duration — optional override in ms
+ */
+function showToast(message, type, action, duration) {
+  const container = document.getElementById('toast-container');
+  if (!container || !message) return;
+
+  const typeClass = type === 'error' ? 'alert-error' : type === 'info' ? 'alert-info' : 'alert-success';
+  const toast = document.createElement('div');
+  toast.className = `alert ${typeClass} shadow-lg text-sm py-2.5 px-4 pointer-events-auto flex items-center gap-3
+                      transition-all duration-300 ease-out opacity-0 translate-x-6`;
+
+  const messageSpan = document.createElement('span');
+  messageSpan.className = 'flex-1';
+  messageSpan.textContent = message;
+  toast.appendChild(messageSpan);
+
+  let dismissTimer;
+  function dismiss() {
+    clearTimeout(dismissTimer);
+    toast.classList.add('opacity-0', 'translate-x-6');
+    setTimeout(() => toast.remove(), 300);
+  }
+
+  if (action && action.label) {
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'font-semibold underline underline-offset-2 hover:opacity-80 shrink-0';
+    actionBtn.textContent = action.label;
+    actionBtn.addEventListener('click', () => {
+      if (action.url) {
+        fetch(action.url, {
+          method: action.method || 'POST',
+          headers: {
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+          },
+        }).then((res) => {
+          if (res.ok) {
+            // Full reload instead of the old htmx partial swap. That code
+            // defaulted refreshUrl to window.location.pathname (the whole
+            // page) whenever a route didn't set one explicitly, which
+            // dumped the entire <html> -- sidebar and all -- into the
+            // small #asset-table-container div. A reload sidesteps that
+            // class of bug entirely.
+            if (action.successMessage) {
+              sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
+            }
+            window.location.reload();
+          } else {
+            showToast("That action couldn't be undone", 'error');
+          }
+        }).catch(() => showToast("That action couldn't be undone", 'error'));
+      }
+      dismiss();
+    });
+    toast.appendChild(actionBtn);
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.className = 'shrink-0 opacity-60 hover:opacity-100 text-lg leading-none';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.addEventListener('click', dismiss);
+  toast.appendChild(closeBtn);
+
+  container.appendChild(toast);
+
+  // Force a reflow so the enter transition actually plays instead of
+  // the element appearing already in its final state.
+  requestAnimationFrame(() => {
+    toast.classList.remove('opacity-0', 'translate-x-6');
+  });
+
+  const effectiveDuration = duration || (action ? TOAST_ACTION_DURATION_MS : TOAST_DEFAULT_DURATION_MS);
+  dismissTimer = setTimeout(dismiss, effectiveDuration);
+
+  // Pause the countdown while the person is hovering/reading it.
+  toast.addEventListener('mouseenter', () => clearTimeout(dismissTimer));
+  toast.addEventListener('mouseleave', () => {
+    dismissTimer = setTimeout(dismiss, TOAST_DEFAULT_DURATION_MS);
+  });
+}
+
+// htmx dispatches HX-Trigger events on the element that made the request,
+// and they bubble -- listening on body catches them regardless of which
+// tab/form fired them, so any route in the app can trigger a toast this way.
+// Example header from a Flask route:
+//   HX-Trigger: {"show-toast": {"message": "Asset deleted", "type": "success",
+//                "action": {"label": "Undo", "url": "/api/v1/assets/5/restore",
+//                "successMessage": "Delete undone", "refreshTarget": "#asset-table-container"}}}
+document.body.addEventListener('show-toast', function (evt) {
+  const detail = evt.detail || {};
+  showToast(detail.message, detail.type, detail.action, detail.duration);
+});
+
+// Picks up the toast stashed in sessionStorage right before a reload
+// triggered by a toast action (e.g. clicking "Undo"), so the confirmation
+// still shows up on the fresh page instead of silently disappearing.
+(function () {
+  const pending = sessionStorage.getItem('pending-toast');
+  if (pending) {
+    sessionStorage.removeItem('pending-toast');
+    try {
+      const { message, type } = JSON.parse(pending);
+      showToast(message, type);
+    } catch (e) { /* ignore malformed payload */ }
+  }
+})();
 </script>
 
 </body>

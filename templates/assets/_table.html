@@ -1,22 +1,52 @@
-﻿<table class="table w-full">
+﻿{% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
+<table class="table w-full">
   <thead>
     <tr class="text-left text-xs text-base-content/50 tracking-wide border-b border-base-300">
-      <th class="py-2 font-semibold">ASSET ID</th>
-      <th class="py-2 font-semibold">NAME</th>
-      <th class="py-2 font-semibold">CATEGORY</th>
-      <th class="py-2 font-semibold">STATUS</th>
-      <th class="py-2 font-semibold">CONDITION</th>
-      <th class="py-2 font-semibold">BARCODE</th>
-      <th class="py-2 font-semibold text-right">ACTIONS</th>
+      {% if can_bulk_act %}
+      <th class="py-3 w-8">
+        <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm">
+      </th>
+      {% endif %}
+      <th class="py-3 w-12"></th>
+      <th class="py-3 font-semibold">ASSET ID</th>
+      <th class="py-3 font-semibold">NAME</th>
+      <th class="py-3 font-semibold">CATEGORY</th>
+      {% if show_archived %}
+      <th class="py-3 font-semibold">DELETED</th>
+      {% else %}
+      <th class="py-3 font-semibold">STATUS</th>
+      {% endif %}
+      <th class="py-3 font-semibold">CONDITION</th>
+      <th class="py-3 font-semibold">BARCODE</th>
+      <th class="py-3 font-semibold text-right">ACTIONS</th>
     </tr>
   </thead>
   <tbody>
     {% for asset in assets %}
     <tr class="border-b border-base-200 hover:bg-base-200/40">
-      <td class="py-3 text-sm text-base-content/60">{{ asset.asset_id }}</td>
-      <td class="py-3 font-medium">{{ asset.name }}</td>
-      <td class="py-3 text-sm">{{ asset.category or "—" }}</td>
-      <td class="py-3">
+      {% if can_bulk_act %}
+      <td class="py-3.5">
+        <input type="checkbox" class="asset-row-checkbox checkbox checkbox-sm"
+               value="{{ asset.id }}" data-name="{{ asset.name }}" data-asset-code="{{ asset.asset_id }}">
+      </td>
+      {% endif %}
+      <td class="py-3.5">
+        {% if asset.image_path %}
+        <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
+             class="w-10 h-10 rounded-lg object-cover border border-base-300">
+        {% else %}
+        <div class="w-10 h-10 rounded-lg bg-base-200 flex items-center justify-center border border-base-300">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        </div>
+        {% endif %}
+      </td>
+      <td class="py-3.5 text-sm text-base-content/60">{{ asset.asset_id }}</td>
+      <td class="py-3.5 font-medium">{{ asset.name }}</td>
+      <td class="py-3.5 text-sm">{{ asset.category or "—" }}</td>
+      {% if show_archived %}
+      <td class="py-3.5 text-sm text-base-content/50">{{ asset.deleted_at }}</td>
+      {% else %}
+      <td class="py-3.5">
         <span class="px-2.5 py-1 rounded-full text-xs font-medium
           {% if asset.status == 'available' %}bg-success/15 text-success
           {% elif asset.status == 'borrowed' %}bg-info/15 text-info
@@ -25,14 +55,29 @@
           {{ asset.status | capitalize }}
         </span>
       </td>
-      <td class="py-3 text-sm">{{ asset.condition | capitalize }}</td>
-      <td class="py-3 text-sm text-base-content/50">{{ asset.barcode_id }}</td>
-      <td class="py-3 text-right">
+      {% endif %}
+      <td class="py-3.5 text-sm">{{ asset.condition | capitalize }}</td>
+      <td class="py-3.5 text-sm text-base-content/50">{{ asset.barcode_id }}</td>
+      <td class="py-3.5 text-right">
+        {% if show_archived %}
         <button class="btn btn-xs btn-ghost"
-                hx-get="/api/v1/assets/{{ asset.id }}/edit-form"
+                hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
                 hx-target="#modal-container"
                 hx-swap="innerHTML">
-          Edit
+          Details
+        </button>
+        <button class="btn btn-xs btn-primary"
+                hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm"
+                hx-target="#modal-container"
+                hx-swap="innerHTML">
+          Restore
+        </button>
+        {% else %}
+        <button class="btn btn-xs btn-ghost"
+                hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
+                hx-target="#modal-container"
+                hx-swap="innerHTML">
+          Details
         </button>
         <button class="btn btn-xs btn-ghost text-error"
                 hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm"
@@ -40,26 +85,29 @@
                 hx-swap="innerHTML">
           Delete
         </button>
+        {% endif %}
       </td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="7" class="text-center py-10 text-base-content/50">No assets found.</td>
+      <td colspan="{{ 9 if can_bulk_act else 8 }}" class="text-center py-10 text-base-content/50">
+        {% if show_archived %}No archived assets found.{% else %}No assets found.{% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 
 <div class="flex justify-between items-center mt-4 pt-3 border-t border-base-200">
-  <p class="text-sm text-base-content/50">SHOWING {{ offset + 1 if total_count > 0 else 0 }}-{{ offset + assets|length }} OF {{ total_count }} ASSETS</p>
+  <p class="text-sm text-base-content/50">SHOWING {{ offset + 1 if total_count > 0 else 0 }}-{{ offset + assets|length }} OF {{ total_count }} {% if show_archived %}ARCHIVED {% endif %}ASSETS</p>
   <div class="join">
     <button class="join-item btn btn-sm {% if offset == 0 %}btn-disabled{% endif %}"
-            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
+            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}&show_archived={{ '1' if show_archived else '0' }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
             hx-target="#asset-table-container" hx-swap="innerHTML">
       Previous
     </button>
     <button class="join-item btn btn-sm {% if offset + limit >= total_count %}btn-disabled{% endif %}"
-            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset + limit }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
+            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset + limit }}&show_archived={{ '1' if show_archived else '0' }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
             hx-target="#asset-table-container" hx-swap="innerHTML">
       Next
     </button>

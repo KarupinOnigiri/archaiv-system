@@ -22,6 +22,7 @@ from extensions import limiter
 from routes.stats import stats_bp
 from routes.setup import setup_bp
 from services.loan_service import sweep_overdue_members
+from utils.formatters import full_name
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
@@ -45,7 +46,11 @@ logging.basicConfig(
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
-app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB request body cap
+app.config["MAX_CONTENT_LENGTH"] = 18 * 1024 * 1024  # 18 MB request body cap
+# (bumped from 6MB to fit a main asset image plus up to 2 additional
+# images -- 3 x 5MB + form fields/multipart overhead; applies to every
+# request, not just image uploads — still small enough to be a
+# reasonable ceiling everywhere else.)
 
 if not app.secret_key:
     raise RuntimeError(
@@ -66,6 +71,8 @@ def inject_csrf_token():
     conn.close()
     return {"csrf_token": ""}
 
+
+app.jinja_env.globals["full_name"] = full_name
 
 limiter.init_app(app)
 

@@ -1,0 +1,185 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-3xl">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Asset Details</h3>
+        <p class="text-sm text-base-content/50 mt-1">{{ asset.asset_id }}</p>
+      </div>
+      <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
+              class="text-base-content/40 hover:text-base-content">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-3 gap-6">
+
+      <!-- Left: read-only info (2 cols wide) -->
+      <div class="col-span-2 bg-base-200/50 rounded-xl p-5 space-y-4">
+
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME</p>
+            <p class="text-sm font-medium mt-0.5">{{ asset.name }}</p>
+          </div>
+          {% if asset.deleted_at %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-base-300 text-base-content/60 shrink-0">Archived</span>
+          {% else %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium shrink-0
+            {% if asset.status == 'available' %}bg-success/15 text-success
+            {% elif asset.status == 'borrowed' %}bg-info/15 text-info
+            {% elif asset.status == 'maintenance' %}bg-error/15 text-error
+            {% else %}bg-warning/15 text-warning{% endif %}">
+            {{ asset.status | capitalize }}
+          </span>
+          {% endif %}
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</p>
+            <p class="text-sm mt-0.5">{{ asset.barcode_id }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">RFID ID</p>
+            <p class="text-sm mt-0.5">{{ asset.rfid_id or "—" }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">CATEGORY</p>
+            <p class="text-sm mt-0.5">{{ asset.category or "—" }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">SERIAL CODE</p>
+            <p class="text-sm mt-0.5">{{ asset.serial_code or "—" }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">CONDITION</p>
+            <p class="text-sm mt-0.5">{{ asset.condition | capitalize }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACQUIRED DATE</p>
+            <p class="text-sm mt-0.5">{{ asset.acquired_date or "—" }}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">LAST CALIBRATED</p>
+            <p class="text-sm mt-0.5">{{ asset.last_calibrated or "—" }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">DATE ADDED</p>
+            <p class="text-sm mt-0.5">{{ asset.created_at or "—" }}</p>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">INTERNAL NOTES</p>
+          <p class="text-sm mt-0.5 whitespace-pre-wrap">{{ asset.notes or "—" }}</p>
+        </div>
+
+        {% if asset.deleted_at %}
+        <div class="pt-2 border-t border-base-300">
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">DELETED</p>
+          <p class="text-sm mt-0.5">{{ asset.deleted_at }}</p>
+        </div>
+        {% endif %}
+
+      </div>
+
+      <!-- Right: image + live status -->
+      <div class="col-span-1 space-y-3">
+        <div class="rounded-xl overflow-hidden border border-base-300 bg-base-200/30 aspect-square flex items-center justify-center">
+          {% if asset.image_path %}
+          <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}" class="w-full h-full object-cover">
+          {% else %}
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          {% endif %}
+        </div>
+
+        {% if additional_images and (additional_images.get(1) or additional_images.get(2)) %}
+        <div class="grid grid-cols-2 gap-2">
+          {% for slot in [1, 2] %}
+          {% set img = additional_images.get(slot) %}
+          {% if img %}
+          <a href="{{ url_for('static', filename=img.image_path) }}" target="_blank" rel="noopener"
+             class="block rounded-lg overflow-hidden border border-base-300 aspect-square hover:opacity-80 transition-opacity">
+            <img src="{{ url_for('static', filename=img.image_path) }}" alt="{{ asset.name }} additional image {{ slot }}" class="w-full h-full object-cover">
+          </a>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if current_loan %}
+        <div class="bg-info/10 rounded-lg p-3">
+          <p class="text-xs font-semibold text-info tracking-wide mb-1">CURRENTLY BORROWED BY</p>
+          <p class="text-sm font-medium">{{ full_name(current_loan.first_name, current_loan.last_name, current_loan.middle_name, current_loan.suffix) }}</p>
+          <p class="text-xs text-base-content/60 mt-1">Out: {{ current_loan.time_out }}</p>
+          <p class="text-xs text-base-content/60">Due: {{ current_loan.due_date or "—" }}</p>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- Recent activity teaser -->
+    <div class="mt-6">
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">RECENT ACTIVITY</p>
+        {% if history_total_count > 0 %}
+        <button type="button" class="text-xs font-medium text-primary hover:underline"
+                hx-get="/api/v1/assets/{{ asset.id }}/history-modal"
+                hx-target="#modal-container"
+                hx-swap="innerHTML">
+          View Full History ({{ history_total_count }}) &rarr;
+        </button>
+        {% endif %}
+      </div>
+
+      {% if recent_history %}
+      <div class="space-y-2">
+        {% for h in recent_history %}
+        <div class="border border-base-300 rounded-lg px-3 py-2 flex justify-between items-center">
+          <div>
+            <p class="text-sm font-medium">{{ full_name(h.first_name, h.last_name, h.middle_name, h.suffix) }}</p>
+            <p class="text-xs text-base-content/50">Out {{ h.time_out }}{% if h.time_in %} &middot; In {{ h.time_in }}{% endif %}</p>
+          </div>
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium
+            {% if h.status == 'returned' %}bg-success/15 text-success{% else %}bg-info/15 text-info{% endif %}">
+            {{ h.status | capitalize }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-base-content/50 py-3 text-center bg-base-200/30 rounded-lg">No borrow history yet for this asset.</p>
+      {% endif %}
+    </div>
+
+    <div class="modal-action flex justify-end gap-2 mt-6">
+      {% if asset.deleted_at %}
+      <button type="button" class="btn btn-primary"
+              hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Restore
+      </button>
+      {% else %}
+      <button type="button" class="btn btn-primary"
+              hx-get="/api/v1/assets/{{ asset.id }}/edit-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Edit
+      </button>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
