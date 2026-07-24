@@ -1,5 +1,38 @@
-﻿{% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
-<table class="table w-full">
+{% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
+
+{% macro sort_header(label, col) %}
+{% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
+<th class="py-3 font-semibold">
+  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content"
+          hx-get="/api/v1/assets"
+          hx-target="#asset-table-container"
+          hx-swap="innerHTML"
+          hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+          hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
+    {{ label }}
+    {% if sort_by == col %}
+      {% if sort_dir == "asc" %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      {% endif %}
+    {% endif %}
+  </button>
+</th>
+{% endmacro %}
+
+<table class="table w-full table-fixed">
+  <colgroup>
+    {% if can_bulk_act %}<col style="width: 2.5rem">{% endif %}
+    <col style="width: 3.5rem">
+    <col style="width: 14%">
+    <col style="width: 24%">
+    <col style="width: 16%">
+    <col style="width: 14%">
+    <col style="width: 12%">
+    <col style="width: 14%">
+    <col style="width: 5rem">
+  </colgroup>
   <thead>
     <tr class="text-left text-xs text-base-content/50 tracking-wide border-b border-base-300">
       {% if can_bulk_act %}
@@ -8,16 +41,16 @@
       </th>
       {% endif %}
       <th class="py-3 w-12"></th>
-      <th class="py-3 font-semibold">ASSET ID</th>
-      <th class="py-3 font-semibold">NAME</th>
-      <th class="py-3 font-semibold">CATEGORY</th>
+      {{ sort_header("ASSET ID", "asset_id") }}
+      {{ sort_header("NAME", "name") }}
+      {{ sort_header("CATEGORY", "category") }}
       {% if show_archived %}
-      <th class="py-3 font-semibold">DELETED</th>
+      {{ sort_header("DELETED", "deleted_at") }}
       {% else %}
-      <th class="py-3 font-semibold">STATUS</th>
+      {{ sort_header("STATUS", "status") }}
       {% endif %}
-      <th class="py-3 font-semibold">CONDITION</th>
-      <th class="py-3 font-semibold">BARCODE</th>
+      {{ sort_header("CONDITION", "condition") }}
+      {{ sort_header("BARCODE", "barcode_id") }}
       <th class="py-3 font-semibold text-right">ACTIONS</th>
     </tr>
   </thead>
@@ -32,17 +65,19 @@
       {% endif %}
       <td class="py-3.5">
         {% if asset.image_path %}
-        <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
-             class="w-10 h-10 rounded-lg object-cover border border-base-300">
+        <div class="w-10 h-10 rounded-lg border border-base-300 overflow-hidden shrink-0">
+          <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
+               class="w-full h-full object-cover block">
+        </div>
         {% else %}
-        <div class="w-10 h-10 rounded-lg bg-base-200 flex items-center justify-center border border-base-300">
+        <div class="w-10 h-10 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         </div>
         {% endif %}
       </td>
-      <td class="py-3.5 text-sm text-base-content/60">{{ asset.asset_id }}</td>
-      <td class="py-3.5 font-medium">{{ asset.name }}</td>
-      <td class="py-3.5 text-sm">{{ asset.category or "—" }}</td>
+      <td class="py-3.5 text-sm text-base-content/60 truncate">{{ asset.asset_id }}</td>
+      <td class="py-3.5 font-medium truncate">{{ asset.name }}</td>
+      <td class="py-3.5 text-sm truncate">{{ asset.category or "—" }}</td>
       {% if show_archived %}
       <td class="py-3.5 text-sm text-base-content/50">{{ asset.deleted_at }}</td>
       {% else %}
@@ -57,35 +92,27 @@
       </td>
       {% endif %}
       <td class="py-3.5 text-sm">{{ asset.condition | capitalize }}</td>
-      <td class="py-3.5 text-sm text-base-content/50">{{ asset.barcode_id }}</td>
+      <td class="py-3.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
       <td class="py-3.5 text-right">
-        {% if show_archived %}
-        <button class="btn btn-xs btn-ghost"
-                hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
-                hx-target="#modal-container"
-                hx-swap="innerHTML">
-          Details
-        </button>
-        <button class="btn btn-xs btn-primary"
-                hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm"
-                hx-target="#modal-container"
-                hx-swap="innerHTML">
-          Restore
-        </button>
-        {% else %}
-        <button class="btn btn-xs btn-ghost"
-                hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
-                hx-target="#modal-container"
-                hx-swap="innerHTML">
-          Details
-        </button>
-        <button class="btn btn-xs btn-ghost text-error"
-                hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm"
-                hx-target="#modal-container"
-                hx-swap="innerHTML">
-          Delete
-        </button>
-        {% endif %}
+        <div class="dropdown dropdown-end">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </label>
+          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-40 p-2 z-50">
+            <li>
+              <a hx-get="/api/v1/assets/{{ asset.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">Details</a>
+            </li>
+            {% if show_archived %}
+            <li>
+              <a class="text-primary" hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm" hx-target="#modal-container" hx-swap="innerHTML">Restore</a>
+            </li>
+            {% else %}
+            <li>
+              <a class="text-error" hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">Delete</a>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
       </td>
     </tr>
     {% else %}
@@ -98,19 +125,50 @@
   </tbody>
 </table>
 
-<div class="flex justify-between items-center mt-4 pt-3 border-t border-base-200">
-  <p class="text-sm text-base-content/50">SHOWING {{ offset + 1 if total_count > 0 else 0 }}-{{ offset + assets|length }} OF {{ total_count }} {% if show_archived %}ARCHIVED {% endif %}ASSETS</p>
-  <div class="join">
-    <button class="join-item btn btn-sm {% if offset == 0 %}btn-disabled{% endif %}"
-            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}&show_archived={{ '1' if show_archived else '0' }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
-            hx-target="#asset-table-container" hx-swap="innerHTML">
-      Previous
+<!-- Pagination footer -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            hx-get="/api/v1/assets"
+            hx-trigger="change"
+            hx-target="#asset-table-container"
+            hx-swap="innerHTML"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+            name="limit"
+            hx-vals='{"offset": 0, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span>Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span>
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }} {% if show_archived %}archived {% endif %}items
+    </span>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <span class="text-sm text-base-content/60">
+      Page {{ (offset // limit) + 1 }} of {{ ((total_count - 1) // limit) + 1 if total_count > 0 else 1 }}
+    </span>
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            hx-get="/api/v1/assets"
+            hx-target="#asset-table-container"
+            hx-swap="innerHTML"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
-    <button class="join-item btn btn-sm {% if offset + limit >= total_count %}btn-disabled{% endif %}"
-            hx-get="/api/v1/assets?limit={{ limit }}&offset={{ offset + limit }}&show_archived={{ '1' if show_archived else '0' }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}"
-            hx-target="#asset-table-container" hx-swap="innerHTML">
-      Next
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            hx-get="/api/v1/assets"
+            hx-target="#asset-table-container"
+            hx-swap="innerHTML"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
     </button>
   </div>
-</div>
 
+</div>

@@ -1,0 +1,112 @@
+<dialog id="add-member-modal" class="modal" open>
+  <div class="modal-box max-w-lg">
+    <h3 class="text-lg font-bold">Add New Member</h3>
+    <p class="text-sm text-base-content/50 mt-1 mb-5">A member code and starting status are generated automatically.</p>
+
+    <form id="add-member-form" class="space-y-4">
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">First Name *</span></label>
+          <input type="text" name="first_name" required class="input input-bordered w-full">
+        </div>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">Last Name *</span></label>
+          <input type="text" name="last_name" required class="input input-bordered w-full">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">Middle Name</span></label>
+          <input type="text" name="middle_name" class="input input-bordered w-full">
+        </div>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">Suffix</span></label>
+          <input type="text" name="suffix" placeholder="Jr., III, etc." class="input input-bordered w-full">
+        </div>
+      </div>
+
+      <div class="form-control">
+        <label class="label py-1"><span class="label-text text-xs font-medium">Barcode ID *</span></label>
+        <input type="text" name="barcode_id" required class="input input-bordered w-full">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">Department *</span></label>
+          <select name="department_id" required class="select select-bordered w-full">
+            <option value="" disabled selected>Select department</option>
+            {% for dept in departments %}
+            <option value="{{ dept.id }}">{{ dept.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs font-medium">Member Type *</span></label>
+          <select name="member_type" required class="select select-bordered w-full">
+            <option value="" disabled selected>Select type</option>
+            <option value="trainee">Trainee</option>
+            <option value="trainer">Trainer</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-control">
+        <label class="label py-1"><span class="label-text text-xs font-medium">Batch</span></label>
+        <input type="text" name="batch" class="input input-bordered w-full">
+      </div>
+
+    </form>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('add-member-modal').close(); document.getElementById('add-member-modal').remove();">Cancel</button>
+      <button type="button" id="add-member-submit" class="btn btn-primary btn-sm rounded-full">Add Member</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script>
+(function () {
+  const modal = document.getElementById('add-member-modal');
+  const form = document.getElementById('add-member-form');
+  const submitBtn = document.getElementById('add-member-submit');
+
+  submitBtn.addEventListener('click', async function () {
+    if (!form.reportValidity()) return;
+
+    const data = Object.fromEntries(new FormData(form).entries());
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Adding...';
+
+    try {
+      const res = await fetch('/api/v1/members/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+        },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        showToast(result.error || "Couldn't add member", 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add Member';
+        return;
+      }
+
+      modal.close();
+      modal.remove();
+      sessionStorage.setItem('pending-toast', JSON.stringify({ message: `${result.member_code} added successfully`, type: 'success' }));
+      window.location.reload();
+    } catch (err) {
+      showToast("Couldn't add member", 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Add Member';
+    }
+  });
+})();
+</script>

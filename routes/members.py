@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request
+from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
@@ -24,7 +24,8 @@ def view_members():
     if error:
         return error
 
-    where_clauses = []
+    show_inactive = request.args.get("show_inactive") == "1"
+    where_clauses = [] if show_inactive else ["members.is_active = 1"]
     params = []
 
     q = request.args.get("q")
@@ -62,6 +63,17 @@ def view_members():
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    if request.headers.get("HX-Request") == "true":
+        return render_template(
+            "members/_table.html",
+            members=members,
+            total_count=total_count,
+            limit=limit,
+            offset=offset,
+            show_inactive=show_inactive,
+        )
+
     return jsonify(
         {
             "total_count": total_count,
@@ -70,6 +82,15 @@ def view_members():
             "results": [dict(row) for row in members],
         }
     )
+
+
+@members_bp.route("/members/add-form")
+@roles_required("admin", "in_charge")
+def add_member_form():
+    conn = get_db_connection()
+    departments = conn.execute("SELECT * FROM departments ORDER BY name").fetchall()
+    conn.close()
+    return render_template("members/_add_modal.html", departments=departments)
 
 
 # # # CREATE ------------------------------------------------------------
@@ -166,6 +187,21 @@ def add_member_submit():
 
 
 # # # UPDATE ------------------------------------------------------------
+
+
+@members_bp.route("/members/<int:id>/edit-form")
+@roles_required("admin", "in_charge")
+def edit_member_form(id):
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+    departments = conn.execute("SELECT * FROM departments ORDER BY name").fetchall()
+    conn.close()
+    return render_template(
+        "members/_edit_modal.html", member=member, departments=departments
+    )
 
 
 @members_bp.route("/members/<int:id>/edit", methods=["POST"])
@@ -287,6 +323,17 @@ def edit_member_submit(id):
 
 
 # # # RESTRICTION (manual) ------------------------------------------------
+
+
+@members_bp.route("/members/<int:id>/restrict-form")
+@roles_required("admin", "in_charge", "tool_keeper")
+def restrict_member_form(id):
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+    conn.close()
+    if member is None:
+        return jsonify({"error": "Member not found"}), 404
+    return render_template("members/_restrict_modal.html", member=member)
 
 
 @members_bp.route("/members/<int:id>/restrict", methods=["POST"])

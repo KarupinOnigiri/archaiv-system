@@ -78,7 +78,9 @@
   <!-- Toolbar + table -->
   <div class="bg-base-100 rounded-xl border border-base-300 p-5">
 
-    <div class="flex flex-wrap items-center gap-3 mb-5">
+    <div class="relative mb-5" style="position: relative;">
+
+    <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
       <label class="input input-bordered flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -109,7 +111,7 @@
 
     {% set can_bulk_act = (not show_archived and staff.role in ["admin", "in_charge"]) or (show_archived and staff.role == "admin") %}
     {% if can_bulk_act %}
-    <div id="bulk-actions-bar" class="hidden items-center gap-3 mb-4 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20">
+    <div id="bulk-actions-bar" class="pointer-events-none flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
       <span id="bulk-selected-count" class="text-sm font-medium text-primary">0 selected</span>
       <button type="button" id="bulk-clear-btn" class="btn btn-ghost btn-xs">Clear</button>
       <div class="ml-auto flex items-center gap-2">
@@ -121,6 +123,8 @@
       </div>
     </div>
     {% endif %}
+
+    </div>
 
     <div id="asset-table-container">
       {% include "assets/_table.html" %}
@@ -136,6 +140,7 @@
 (function() {
   const container = document.getElementById('asset-table-container');
   const bar = document.getElementById('bulk-actions-bar');
+  const filterRow = document.getElementById('filter-row');
   const countEl = document.getElementById('bulk-selected-count');
   const clearBtn = document.getElementById('bulk-clear-btn');
   const deleteBtn = document.getElementById('bulk-delete-btn');
@@ -146,13 +151,15 @@
   }
 
   function showBar() {
-    bar.classList.remove('hidden');
-    bar.classList.add('flex');
+    bar.style.visibility = 'visible';
+    bar.classList.remove('pointer-events-none');
+    filterRow.style.visibility = 'hidden';
   }
 
   function hideBar() {
-    bar.classList.add('hidden');
-    bar.classList.remove('flex');
+    bar.style.visibility = 'hidden';
+    bar.classList.add('pointer-events-none');
+    filterRow.style.visibility = 'visible';
   }
 
   function updateBar() {
@@ -256,4 +263,28 @@
 })();
 </script>
 {% endif %}
+
+<script>
+// Workaround: the filter row / bulk-actions-bar area renders with an extra
+// gap above the table on a cold page load, but re-triggers correctly to
+// the right spacing after any htmx swap of #asset-table-container (e.g.
+// toggling "Show archived" on then off). Rather than chase the underlying
+// cause, just replay that exact same swap once, automatically, right after
+// load -- using htmx's own request/swap path so it's a real fix, not a
+// visual trick.
+document.addEventListener('DOMContentLoaded', function () {
+  var params = new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: '{{ offset }}',
+    show_archived: '{{ "1" if show_archived else "0" }}'
+  });
+  {% if request.args.get('q') %}
+  params.set('q', {{ request.args.get('q') | tojson }});
+  {% endif %}
+  htmx.ajax('GET', '/api/v1/assets?' + params.toString(), {
+    target: '#asset-table-container',
+    swap: 'innerHTML'
+  });
+});
+</script>
 {% endblock %}

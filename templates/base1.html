@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="tesda" class="h-full bg-base-200">
+<head>
+  <meta charset="UTF-8">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>flowBox</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+  <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body class="m-0 h-full overflow-hidden bg-base-200">
+
+  {% set nav_items = [
+    ("Dashboard", "/", "grid"),
+    ("Inventory", "/assets", "box"),
+    ("Borrowers", "/members", "users"),
+    ("Borrow & Return", "/transactions", "swap"),
+    ("Approvals", "/requests", "check")
+  ] %}
+
+  <!-- Resolve a breadcrumb label for whatever route is currently active.
+       A plain "set" assigned inside a "for" loop doesn't persist to the
+       outer scope in Jinja, so this uses a namespace object instead. -->
+  {% set ns = namespace(current_label="Dashboard") %}
+  {% for label, href, icon in nav_items %}
+    {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
+  {% endfor %}
+  {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
+  {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
+
+  <div class="flex h-full">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-56 shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+      <script>
+      if (localStorage.getItem('sidebar-collapsed') === '1') {
+        document.getElementById('sidebar').classList.add('collapsed');
+      }
+      </script>
+
+      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 h-20 px-6 shrink-0">
+        <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="w-10 h-10 shrink-0 object-contain max-w-none">
+        </span>
+        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0">
+      </div>
+
+      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        {% for label, href, icon in nav_items %}
+        <a href="{{ href }}"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == href %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            {% if icon == "grid" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            {% elif icon == "box" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            {% elif icon == "users" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            {% elif icon == "swap" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            {% elif icon == "check" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            {% endif %}
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
+          {% if label == "Approvals" and pending_approvals_count %}
+          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+
+        {% if staff and staff.role in ["admin", "in_charge"] %}
+        <a href="/staff"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Staff</span>
+        </a>
+        {% endif %}
+
+        {% if staff and staff.role == "admin" %}
+        <a href="/audit-log"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Activity Log</span>
+        </a>
+        {% endif %}
+      </nav>
+    </aside>
+
+    <!-- MAIN COLUMN -->
+    <div class="flex-1 flex flex-col h-full min-w-0">
+
+      {% if staff %}
+      <!-- TOP BAR -->
+      <header class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-14 flex items-center justify-between gap-4">
+
+        <div class="flex items-center gap-1.5 text-sm text-base-content/50 min-w-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+          </svg>
+          <span>Home</span>
+          <span>/</span>
+          <span class="text-base-content font-medium truncate">{{ ns.current_label }}</span>
+        </div>
+
+        <div class="flex items-center gap-3 shrink-0">
+
+          <!-- Notifications -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+              {% if unread_notifications_count %}
+              <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+              {% endif %}
+            </label>
+            <div tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow border border-base-300 mt-3 w-72 p-3 z-50">
+              <p class="text-sm font-semibold px-1 pb-2">Notifications</p>
+              {% if notifications %}
+                {% for n in notifications %}
+                <div class="px-1 py-2 border-t border-base-200 text-sm">
+                  <p>{{ n.message }}</p>
+                  <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
+                </div>
+                {% endfor %}
+              {% else %}
+              <p class="text-sm text-base-content/50 px-1 py-4 text-center">You're all caught up.</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Account menu -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm avatar placeholder">
+              <div class="bg-primary text-primary-content rounded-full w-8 h-8 flex items-center justify-center">
+                <span class="text-xs font-semibold">{{ staff.username[0] | upper }}</span>
+              </div>
+            </label>
+            <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-3 w-52 p-2 z-50">
+              <li class="px-2 pt-1 pb-2">
+                <p class="text-sm font-medium text-base-content leading-tight">{{ staff.username }}</p>
+                <p class="text-xs text-base-content/50 leading-tight">{{ staff.role | capitalize }}</p>
+              </li>
+              <div class="border-t border-base-200 my-1"></div>
+              <li>
+                <button type="button" onclick="document.getElementById('logout-confirm-modal').showModal()" class="text-error">
+                  Log out
+                </button>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+      </header>
+
+      <!-- Logout confirmation. A native <dialog>, not another hx-fetched
+           modal like the ones in assets/ -- there's no data to load, so a
+           static dialog already in the DOM (with built-in backdrop, ESC-
+           to-close, and focus trapping) is simpler than the htmx round trip
+           the other modals need. -->
+      <dialog id="logout-confirm-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-2">Log out?</h3>
+          <p class="text-sm text-base-content/70 mb-4">You'll need to sign in again to continue.</p>
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn">Cancel</button>
+            </form>
+            <button type="button" hx-post="/api/v1/logout" hx-redirect="/login" class="btn btn-error">
+              Log out
+            </button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      {% endif %}
+
+      <!-- PAGE CONTENT -->
+      <main class="flex-1 overflow-y-auto" style="scrollbar-gutter: stable;">
+        {% block content %}{% endblock %}
+      </main>
+
+    </div>
+
+  </div>
+
+  <!-- Toast notifications: any response can trigger one via the HX-Trigger
+       header, e.g. HX-Trigger: {"show-toast": {"message": "...", "type": "success"}}
+       "type" is optional and defaults to "success" ("error"/"info" also supported). -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
+
+<style>
+#sidebar.collapsed {
+  width: 4.25rem;
+}
+#sidebar.collapsed .sidebar-label,
+#sidebar.collapsed #sidebar-title {
+  display: none;
+}
+</style>
+
+<script>
+(function() {
+  const sidebar = document.getElementById('sidebar');
+
+  // The early inline script (right after <aside> opens) already restored
+  // the 'collapsed' class from localStorage before this ran -- this just
+  // syncs aria-expanded to match that on page load.
+  sidebar.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
+
+  sidebar.addEventListener('click', function(e) {
+    // Clicking a nav link (or anything inside one, like its icon) should
+    // navigate as normal, not toggle the sidebar -- only clicks on the
+    // logo/header or the sidebar's own background do that.
+    if (e.target.closest('a')) return;
+
+    const collapsed = sidebar.classList.toggle('collapsed');
+    sidebar.setAttribute('aria-expanded', String(!collapsed));
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+  });
+})();
+
+const TOAST_DEFAULT_DURATION_MS = 4000;
+const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
+
+/**
+ * message  — text to show
+ * type     — 'success' (default) | 'error' | 'info'
+ * action   — optional {
+ *              label: 'Undo',
+ *              url: '/api/v1/assets/5/undo-delete',   // endpoint to call
+ *              method: 'POST',                        // default POST
+ *              successMessage: 'Delete undone',        // toast shown after a successful call
+ *              refreshTarget: '#asset-table-container',// selector to re-fetch on success
+ *              refreshUrl: '/api/v1/assets'            // GET url for the refresh (defaults to current path)
+ *            }
+ * duration — optional override in ms
+ */
+function showToast(message, type, action, duration) {
+  const container = document.getElementById('toast-container');
+  if (!container || !message) return;
+
+  const typeClass = type === 'error' ? 'alert-error' : type === 'info' ? 'alert-info' : 'alert-success';
+  const toast = document.createElement('div');
+  toast.className = `alert ${typeClass} shadow-lg text-sm py-2.5 px-4 pointer-events-auto flex items-center gap-3
+                      transition-all duration-300 ease-out opacity-0 translate-x-6`;
+
+  const messageSpan = document.createElement('span');
+  messageSpan.className = 'flex-1';
+  messageSpan.textContent = message;
+  toast.appendChild(messageSpan);
+
+  let dismissTimer;
+  function dismiss() {
+    clearTimeout(dismissTimer);
+    toast.classList.add('opacity-0', 'translate-x-6');
+    setTimeout(() => toast.remove(), 300);
+  }
+
+  if (action && action.label) {
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'font-semibold underline underline-offset-2 hover:opacity-80 shrink-0';
+    actionBtn.textContent = action.label;
+    actionBtn.addEventListener('click', () => {
+      if (action.url) {
+        fetch(action.url, {
+          method: action.method || 'POST',
+          headers: {
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+          },
+        }).then((res) => {
+          if (res.ok) {
+            // Full reload instead of the old htmx partial swap. That code
+            // defaulted refreshUrl to window.location.pathname (the whole
+            // page) whenever a route didn't set one explicitly, which
+            // dumped the entire <html> -- sidebar and all -- into the
+            // small #asset-table-container div. A reload sidesteps that
+            // class of bug entirely.
+            if (action.successMessage) {
+              sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
+            }
+            window.location.reload();
+          } else {
+            showToast("That action couldn't be undone", 'error');
+          }
+        }).catch(() => showToast("That action couldn't be undone", 'error'));
+      }
+      dismiss();
+    });
+    toast.appendChild(actionBtn);
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.className = 'shrink-0 opacity-60 hover:opacity-100 text-lg leading-none';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.addEventListener('click', dismiss);
+  toast.appendChild(closeBtn);
+
+  container.appendChild(toast);
+
+  // Force a reflow so the enter transition actually plays instead of
+  // the element appearing already in its final state.
+  requestAnimationFrame(() => {
+    toast.classList.remove('opacity-0', 'translate-x-6');
+  });
+
+  const effectiveDuration = duration || (action ? TOAST_ACTION_DURATION_MS : TOAST_DEFAULT_DURATION_MS);
+  dismissTimer = setTimeout(dismiss, effectiveDuration);
+
+  // Pause the countdown while the person is hovering/reading it.
+  toast.addEventListener('mouseenter', () => clearTimeout(dismissTimer));
+  toast.addEventListener('mouseleave', () => {
+    dismissTimer = setTimeout(dismiss, TOAST_DEFAULT_DURATION_MS);
+  });
+}
+
+// htmx dispatches HX-Trigger events on the element that made the request,
+// and they bubble -- listening on body catches them regardless of which
+// tab/form fired them, so any route in the app can trigger a toast this way.
+// Example header from a Flask route:
+//   HX-Trigger: {"show-toast": {"message": "Asset deleted", "type": "success",
+//                "action": {"label": "Undo", "url": "/api/v1/assets/5/restore",
+//                "successMessage": "Delete undone", "refreshTarget": "#asset-table-container"}}}
+document.body.addEventListener('show-toast', function (evt) {
+  const detail = evt.detail || {};
+  showToast(detail.message, detail.type, detail.action, detail.duration);
+});
+
+// Picks up the toast stashed in sessionStorage right before a reload
+// triggered by a toast action (e.g. clicking "Undo"), so the confirmation
+// still shows up on the fresh page instead of silently disappearing.
+(function () {
+  const pending = sessionStorage.getItem('pending-toast');
+  if (pending) {
+    sessionStorage.removeItem('pending-toast');
+    try {
+      const { message, type } = JSON.parse(pending);
+      showToast(message, type);
+    } catch (e) { /* ignore malformed payload */ }
+  }
+})();
+</script>
+
+</body>
+</html>

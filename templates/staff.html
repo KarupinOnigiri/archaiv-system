@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 lg:p-8 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Staff</h1>
+      <p class="text-sm text-base-content/50 mt-1">Everyone with system access &mdash; roles, assignments, and account status.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if staff.role == "admin" %}
+      <button type="button" class="btn btn-primary btn-sm rounded-full"
+              hx-get="/api/v1/staff/add-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add New Staff
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALL STAFF</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_all }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACTIVE</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_active }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">LOCKED</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_locked }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">INACTIVE</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_inactive }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toolbar + table -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div id="filter-row" class="flex flex-wrap items-center gap-3 mb-5">
+
+      <label class="input input-bordered flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="staff-search" name="q" placeholder="Search by name, username, or staff code..."
+               class="grow"
+               hx-get="/api/v1/staff"
+               hx-trigger="keyup changed delay:400ms, search"
+               hx-target="#staff-table-container"
+               hx-swap="innerHTML"
+               hx-include="#role-filter, #department-filter, #show-inactive-toggle"
+               hx-vals='{"limit": 20, "offset": 0}'>
+      </label>
+
+      <select id="role-filter" name="role"
+              class="select select-bordered select-sm w-40"
+              hx-get="/api/v1/staff"
+              hx-trigger="change"
+              hx-target="#staff-table-container"
+              hx-swap="innerHTML"
+              hx-include="#staff-search, #department-filter, #show-inactive-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Roles</option>
+        <option value="admin">Admin</option>
+        <option value="in_charge">In Charge</option>
+        <option value="tool_keeper">Tool Keeper</option>
+      </select>
+
+      <select id="department-filter" name="department_id"
+              class="select select-bordered select-sm w-44"
+              hx-get="/api/v1/staff"
+              hx-trigger="change"
+              hx-target="#staff-table-container"
+              hx-swap="innerHTML"
+              hx-include="#staff-search, #role-filter, #show-inactive-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Departments</option>
+        {% for dept in departments %}
+        <option value="{{ dept.id }}">{{ dept.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="flex items-center gap-2 text-sm text-base-content/70 cursor-pointer select-none ml-auto">
+        <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
+               value="1"
+               class="toggle toggle-sm"
+               hx-get="/api/v1/staff"
+               hx-trigger="change"
+               hx-target="#staff-table-container"
+               hx-swap="innerHTML"
+               hx-include="#staff-search, #role-filter, #department-filter"
+               hx-vals='{"limit": 20, "offset": 0}'>
+        Show inactive
+      </label>
+
+    </div>
+
+    <div id="staff-table-container">
+      {% include "staff/_table.html" %}
+    </div>
+
+  </div>
+</div>
+
+<div id="modal-container"></div>
+
+<script>
+// Mirrors memberAction() on the Members page: several staff actions
+// (unlock, deactivate, reactivate) hit routes that return plain JSON,
+// not HTML, so they can't be wired as htmx hx-post targeting the table
+// container the way a list refresh can.
+async function staffAction(url, confirmMessage, successMessage) {
+  if (confirmMessage && !confirm(confirmMessage)) return;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That action couldn't be completed", 'error');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showToast("That action couldn't be completed", 'error');
+  }
+}
+
+// Admin accounts can't be deactivated directly (see /staff/<id>/delete) --
+// it takes a reason and routes through the peer-approval flow instead.
+async function requestStaffDeactivation(id) {
+  const reason = prompt("Why should this admin account be deactivated? This request will need peer approval.");
+  if (!reason) return;
+
+  try {
+    const res = await fetch(`/api/v1/staff/${id}/request-deactivation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ reason }),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That request couldn't be submitted", 'error');
+      return;
+    }
+
+    showToast("Deactivation request submitted", 'success');
+  } catch (err) {
+    showToast("That request couldn't be submitted", 'error');
+  }
+}
+</script>
+
+<script>
+// Mirrors the same cold-load spacing workaround used on Inventory/Members:
+// replay the initial swap through htmx's own request path once, so the
+// filter row settles into the same spacing it has after any later swap.
+document.addEventListener('DOMContentLoaded', function () {
+  var params = new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: '{{ offset }}',
+    show_inactive: '{{ "1" if show_inactive else "0" }}'
+  });
+  {% if request.args.get('q') %}
+  params.set('q', {{ request.args.get('q') | tojson }});
+  {% endif %}
+  {% if request.args.get('role') %}
+  params.set('role', {{ request.args.get('role') | tojson }});
+  {% endif %}
+  {% if request.args.get('department_id') %}
+  params.set('department_id', {{ request.args.get('department_id') | tojson }});
+  {% endif %}
+  htmx.ajax('GET', '/api/v1/staff?' + params.toString(), {
+    target: '#staff-table-container',
+    swap: 'innerHTML'
+  });
+});
+</script>
+{% endblock %}

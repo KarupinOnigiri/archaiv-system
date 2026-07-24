@@ -90,9 +90,51 @@
                hx-trigger="keyup changed delay:400ms, search"
                hx-target="#asset-table-container"
                hx-swap="innerHTML"
-               hx-include="#show-archived-toggle"
+               hx-include="#category-filter, #status-filter, #condition-filter, #show-archived-toggle"
                hx-vals='{"limit": 20, "offset": 0}'>
       </label>
+
+      <select id="category-filter" name="category_id"
+              class="select select-bordered select-sm w-44"
+              hx-get="/api/v1/assets"
+              hx-trigger="change"
+              hx-target="#asset-table-container"
+              hx-swap="innerHTML"
+              hx-include="#asset-search, #status-filter, #condition-filter, #show-archived-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Categories</option>
+        {% for cat in categories %}
+        <option value="{{ cat.id }}" {% if category_id == cat.id | string %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+
+      <select id="status-filter" name="status"
+              class="select select-bordered select-sm w-40"
+              hx-get="/api/v1/assets"
+              hx-trigger="change"
+              hx-target="#asset-table-container"
+              hx-swap="innerHTML"
+              hx-include="#asset-search, #category-filter, #condition-filter, #show-archived-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Statuses</option>
+        {% for s in ["available", "borrowed", "reserved", "maintenance"] %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | capitalize }}</option>
+        {% endfor %}
+      </select>
+
+      <select id="condition-filter" name="condition"
+              class="select select-bordered select-sm w-40"
+              hx-get="/api/v1/assets"
+              hx-trigger="change"
+              hx-target="#asset-table-container"
+              hx-swap="innerHTML"
+              hx-include="#asset-search, #category-filter, #status-filter, #show-archived-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Conditions</option>
+        {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
+        <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | capitalize | replace("_", " ") }}</option>
+        {% endfor %}
+      </select>
 
       <label class="flex items-center gap-2 text-sm text-base-content/70 cursor-pointer select-none ml-auto">
         <input type="checkbox" id="show-archived-toggle" name="show_archived"
@@ -102,7 +144,7 @@
                hx-trigger="change"
                hx-target="#asset-table-container"
                hx-swap="innerHTML"
-               hx-include="#asset-search"
+               hx-include="#asset-search, #category-filter, #status-filter, #condition-filter"
                hx-vals='{"limit": 20, "offset": 0}'>
         Show archived
       </label>
@@ -126,7 +168,13 @@
 
     </div>
 
-    <div id="asset-table-container">
+    <div id="asset-table-container"
+         hx-get="/api/v1/assets"
+         hx-trigger="assets-refreshed from:body"
+         hx-target="#asset-table-container"
+         hx-swap="innerHTML"
+         hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+         hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       {% include "assets/_table.html" %}
     </div>
 
@@ -276,10 +324,21 @@ document.addEventListener('DOMContentLoaded', function () {
   var params = new URLSearchParams({
     limit: '{{ limit }}',
     offset: '{{ offset }}',
-    show_archived: '{{ "1" if show_archived else "0" }}'
+    show_archived: '{{ "1" if show_archived else "0" }}',
+    sort_by: '{{ sort_by }}',
+    sort_dir: '{{ sort_dir }}'
   });
   {% if request.args.get('q') %}
   params.set('q', {{ request.args.get('q') | tojson }});
+  {% endif %}
+  {% if request.args.get('category_id') %}
+  params.set('category_id', {{ request.args.get('category_id') | tojson }});
+  {% endif %}
+  {% if request.args.get('status') %}
+  params.set('status', {{ request.args.get('status') | tojson }});
+  {% endif %}
+  {% if request.args.get('condition') %}
+  params.set('condition', {{ request.args.get('condition') | tojson }});
   {% endif %}
   htmx.ajax('GET', '/api/v1/assets?' + params.toString(), {
     target: '#asset-table-container',

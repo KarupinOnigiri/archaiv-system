@@ -7,14 +7,35 @@
   default: true;
   prefersdark: false;
   color-scheme: light;
-  --color-primary: #020381;
+
+  /* Brand palette, from the logo:
+     Dark Navy Blue #1C3B61 (primary) / Sky Blue #45AAE0 / Golden Orange #F7B626 */
+  /* --color-primary: #1c3b61; */
+  --color-primary: #1C3B61;
   --color-primary-content: #ffffff;
-  --color-secondary: #8ed1fc;
-  --color-secondary-content: #020381;
+  --color-secondary: #45aae0;
+  --color-secondary-content: #0f2942;
+  --color-accent: #f7b626;
+  --color-accent-content: #0f2942;
+  --color-neutral: #14263f;
+  --color-neutral-content: #eaf2fb;
+
   --color-base-100: #ffffff;
-  --color-base-200: #f1f4fb;
-  --color-base-300: #dce3f5;
-  --color-base-content: #1a1a2e;
+  --color-base-200: #eff5fb;
+  --color-base-300: #d7e6f5;
+  --color-base-content: #14263f;
+
+  /* Status colors tied back into the brand rather than generic defaults:
+     info/warning reuse the brand blue and orange, success/error stay
+     conventional green/red so status meaning is still instantly readable. */
+  --color-info: #45aae0;
+  --color-info-content: #0f2942;
+  --color-success: #1e9e6b;
+  --color-success-content: #ffffff;
+  --color-warning: #f7b626;
+  --color-warning-content: #0f2942;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
 }
 
 /* Hide native browser password icons so only our custom eye toggle shows */

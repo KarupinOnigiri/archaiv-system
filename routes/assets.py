@@ -44,6 +44,18 @@ def _fetch_asset_images(asset_id, conn):
     return by_slot
 
 
+SORTABLE_COLUMNS = {
+    "asset_id": "assets.asset_id",
+    "name": "assets.name",
+    "category": "categories.name",
+    "status": "assets.status",
+    "deleted_at": "assets.deleted_at",
+    "condition": "assets.condition",
+    "barcode_id": "assets.barcode_id",
+    "created_at": "assets.created_at",
+}
+
+
 @assets_bp.route("/assets")
 @login_required
 def view_assets():
@@ -77,11 +89,35 @@ def view_assets():
         where_clauses.append("assets.status = ?")
         params.append(status_filter)
 
+    condition_filter = request.args.get("condition")
+    if condition_filter:
+        where_clauses.append("assets.condition = ?")
+        params.append(condition_filter)
+
     where_sql = f"WHERE {' AND '.join(where_clauses)}"
+
+    sort_by = request.args.get("sort_by", "created_at")
+    if sort_by not in SORTABLE_COLUMNS:
+        return (
+            jsonify(
+                {"error": f"sort_by must be one of: {', '.join(SORTABLE_COLUMNS)}"}
+            ),
+            400,
+        )
+    sort_dir = request.args.get("sort_dir", "desc").lower()
+    if sort_dir not in ("asc", "desc"):
+        return jsonify({"error": "sort_dir must be 'asc' or 'desc'"}), 400
+    sort_column = SORTABLE_COLUMNS[sort_by]
 
     conn = get_db_connection()
     total_count = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM assets {where_sql}", params
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        {where_sql}
+        """,
+        params,
     ).fetchone()["cnt"]
     assets = conn.execute(
         f"""
@@ -89,7 +125,8 @@ def view_assets():
         FROM assets
         LEFT JOIN categories ON assets.category_id = categories.id
         {where_sql}
-        ORDER BY assets.id LIMIT ? OFFSET ?
+        ORDER BY {sort_column} {sort_dir.upper()}, assets.id {sort_dir.upper()}
+        LIMIT ? OFFSET ?
         """,
         params + [limit, offset],
     ).fetchall()
@@ -101,6 +138,8 @@ def view_assets():
         limit=limit,
         offset=offset,
         show_archived=show_archived,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
     # # # CATEGORIES (lookup table) -------------------------------------------

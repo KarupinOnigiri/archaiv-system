@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>InvenTransit</title>
+  <title>flowBox</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo-icon-hex.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
   <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
@@ -31,18 +33,18 @@
   <div class="flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-56 shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
       <script>
       if (localStorage.getItem('sidebar-collapsed') === '1') {
         document.getElementById('sidebar').classList.add('collapsed');
       }
       </script>
 
-      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 h-14 px-6 shrink-0">
+      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 h-20 px-6 shrink-0">
         <span class="w-5 h-5 shrink-0 flex items-center justify-center">
-          <img src="{{ url_for('static', filename='images/logo.png') }}" alt="InvenTransit" class="w-13 h-13 shrink-0 object-contain max-w-none">
+          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="w-10 h-10 shrink-0 object-contain max-w-none">
         </span>
-        <span id="sidebar-title" class="font-bold text-lg whitespace-nowrap overflow-hidden">InvenTransit</span>
+        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0">
       </div>
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
@@ -182,7 +184,7 @@
       {% endif %}
 
       <!-- PAGE CONTENT -->
-      <main class="flex-1 overflow-y-auto">
+      <main class="flex-1 overflow-y-auto" style="scrollbar-gutter: stable;">
         {% block content %}{% endblock %}
       </main>
 
@@ -197,7 +199,7 @@
 
 <style>
 #sidebar.collapsed {
-  width: 4.5rem;
+  width: 4.25rem;
 }
 #sidebar.collapsed .sidebar-label,
 #sidebar.collapsed #sidebar-title {

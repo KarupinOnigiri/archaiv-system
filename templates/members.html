@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-6 lg:p-8 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Members</h1>
+      <p class="text-sm text-base-content/50 mt-1">Everyone who can borrow tools &mdash; trainees, trainers, and their current standing.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if staff.role in ["admin", "in_charge"] %}
+      <button type="button" class="btn btn-outline btn-sm"
+              hx-get="/api/v1/departments/manage-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Manage Departments
+      </button>
+      <button type="button" class="btn btn-primary btn-sm rounded-full"
+              hx-get="/api/v1/members/add-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Add New Member
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALL MEMBERS</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_all }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACTIVE</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_active }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">RESTRICTED</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_restricted }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">INACTIVE</p>
+        <p class="text-2xl font-bold mt-1">{{ stat_inactive }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toolbar + table -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div id="filter-row" class="flex flex-wrap items-center gap-3 mb-5">
+
+      <label class="input input-bordered flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="member-search" name="q" placeholder="Search by name, barcode, or code..."
+               class="grow"
+               hx-get="/api/v1/members"
+               hx-trigger="keyup changed delay:400ms, search"
+               hx-target="#member-table-container"
+               hx-swap="innerHTML"
+               hx-include="#department-filter, #restricted-filter, #show-inactive-toggle"
+               hx-vals='{"limit": 20, "offset": 0}'>
+      </label>
+
+      <select id="department-filter" name="department_id"
+              class="select select-bordered select-sm w-44"
+              hx-get="/api/v1/members"
+              hx-trigger="change"
+              hx-target="#member-table-container"
+              hx-swap="innerHTML"
+              hx-include="#member-search, #restricted-filter, #show-inactive-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">All Departments</option>
+        {% for dept in departments %}
+        <option value="{{ dept.id }}">{{ dept.name }}</option>
+        {% endfor %}
+      </select>
+
+      <select id="restricted-filter" name="is_restricted"
+              class="select select-bordered select-sm w-40"
+              hx-get="/api/v1/members"
+              hx-trigger="change"
+              hx-target="#member-table-container"
+              hx-swap="innerHTML"
+              hx-include="#member-search, #department-filter, #show-inactive-toggle"
+              hx-vals='{"limit": 20, "offset": 0}'>
+        <option value="">Any Standing</option>
+        <option value="1">Restricted only</option>
+        <option value="0">Not restricted</option>
+      </select>
+
+      <label class="flex items-center gap-2 text-sm text-base-content/70 cursor-pointer select-none ml-auto">
+        <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
+               value="1"
+               class="toggle toggle-sm"
+               hx-get="/api/v1/members"
+               hx-trigger="change"
+               hx-target="#member-table-container"
+               hx-swap="innerHTML"
+               hx-include="#member-search, #department-filter, #restricted-filter"
+               hx-vals='{"limit": 20, "offset": 0}'>
+        Show inactive
+      </label>
+
+    </div>
+
+    <div id="member-table-container">
+      {% include "members/_table.html" %}
+    </div>
+
+  </div>
+</div>
+
+<div id="modal-container"></div>
+
+<script>
+// Deactivate / Reactivate / Lift Restriction all hit routes that return
+// plain JSON (not HTML), unlike the GET /api/v1/members list route -- so
+// these can't be wired as htmx hx-post targeting the table container the
+// way the assets bulk actions are. Same fetch-then-reload shape the modal
+// submit handlers already use elsewhere on this page.
+async function memberAction(url, confirmMessage, successMessage) {
+  if (confirmMessage && !confirm(confirmMessage)) return;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That action couldn't be completed", 'error');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showToast("That action couldn't be completed", 'error');
+  }
+}
+</script>
+
+<script>
+// Mirrors the same cold-load spacing workaround used on the Inventory page:
+// replay the initial swap through htmx's own request path once, so the
+// filter row settles into the same spacing it has after any later swap.
+document.addEventListener('DOMContentLoaded', function () {
+  var params = new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: '{{ offset }}',
+    show_inactive: '{{ "1" if show_inactive else "0" }}'
+  });
+  {% if request.args.get('q') %}
+  params.set('q', {{ request.args.get('q') | tojson }});
+  {% endif %}
+  {% if request.args.get('department_id') %}
+  params.set('department_id', {{ request.args.get('department_id') | tojson }});
+  {% endif %}
+  {% if request.args.get('is_restricted') is not none %}
+  params.set('is_restricted', {{ request.args.get('is_restricted') | tojson }});
+  {% endif %}
+  htmx.ajax('GET', '/api/v1/members?' + params.toString(), {
+    target: '#member-table-container',
+    swap: 'innerHTML'
+  });
+});
+</script>
+{% endblock %}

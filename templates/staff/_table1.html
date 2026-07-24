@@ -1,0 +1,167 @@
+{% set can_manage = g.staff.role == "admin" %}
+
+<div class="overflow-x-auto">
+  <table class="table w-full">
+    <thead>
+      <tr class="border-b border-base-300 text-xs font-semibold text-base-content/50 tracking-wide">
+        <th class="text-left font-semibold py-3">Staff</th>
+        <th class="text-left font-semibold py-3">Username</th>
+        <th class="text-left font-semibold py-3">Staff Code</th>
+        <th class="text-left font-semibold py-3">Role</th>
+        <th class="text-left font-semibold py-3">Department</th>
+        <th class="text-left font-semibold py-3">Assigned Period</th>
+        <th class="text-left font-semibold py-3">Status</th>
+        <th class="text-right font-semibold py-3">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in staff_list %}
+      <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40">
+
+        <td class="py-3">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <span class="text-xs font-semibold text-primary">{{ m.first_name[0] | upper }}</span>
+            </div>
+            <div class="min-w-0">
+              <p class="font-medium truncate">{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}</p>
+            </div>
+          </div>
+        </td>
+
+        <td class="py-3 text-base-content/70">{{ m.username }}</td>
+        <td class="py-3 text-base-content/70">{{ m.staff_code or "—" }}</td>
+
+        <td class="py-3">
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium
+                       {% if m.role == 'admin' %}bg-primary/10 text-primary
+                       {% elif m.role == 'in_charge' %}bg-secondary/10 text-secondary
+                       {% else %}bg-base-300 text-base-content/70{% endif %}">
+            {{ m.role | replace('_', ' ') | capitalize }}
+          </span>
+        </td>
+
+        <td class="py-3 text-base-content/70">{{ m.department }}</td>
+
+        <td class="py-3 text-base-content/70">
+          {% if m.assigned_start or m.assigned_end %}
+            {{ m.assigned_start or "—" }} &ndash; {{ m.assigned_end or "—" }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+
+        <td class="py-3">
+          {% if not m.is_active %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
+          {% elif m.locked_until %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-error/10 text-error">Locked</span>
+          {% else %}
+          <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-success/10 text-success">Active</span>
+          {% endif %}
+        </td>
+
+        <td class="py-3 text-right">
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            </label>
+            <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-52 p-2 z-50">
+              <li>
+                <a hx-get="/api/v1/staff/{{ m.id }}/profile" hx-target="#modal-container" hx-swap="innerHTML">View Profile</a>
+              </li>
+              {% if can_manage %}
+              <li>
+                <a hx-get="/api/v1/staff/{{ m.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">Edit Details</a>
+              </li>
+              <li>
+                <a hx-get="/api/v1/staff/{{ m.id }}/reset-password-form" hx-target="#modal-container" hx-swap="innerHTML">Reset Password</a>
+              </li>
+              {% if m.locked_until %}
+              <li>
+                <a class="text-warning" href="javascript:void(0)"
+                   onclick="staffAction('/api/v1/staff/{{ m.id }}/unlock', 'Clear the lockout on this account?', 'Account unlocked')">Unlock Account</a>
+              </li>
+              {% endif %}
+              {% if m.is_active %}
+                {% if m.role != 'admin' %}
+                <li>
+                  <a class="text-error" href="javascript:void(0)"
+                     onclick="staffAction('/api/v1/staff/{{ m.id }}/delete', 'Deactivate this staff account? They won\'t be able to log in until reactivated.', 'Staff deactivated')">Deactivate</a>
+                </li>
+                {% elif m.id != g.staff.id %}
+                <li>
+                  <a class="text-warning" href="javascript:void(0)"
+                     onclick="requestStaffDeactivation({{ m.id }})">Request Deactivation</a>
+                </li>
+                {% endif %}
+              {% else %}
+                <li>
+                  <a class="text-success" href="javascript:void(0)"
+                     onclick="staffAction('/api/v1/staff/{{ m.id }}/reactivate', null, 'Staff reactivated')">Reactivate</a>
+                </li>
+              {% endif %}
+              {% endif %}
+            </ul>
+          </div>
+        </td>
+
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" class="py-12 text-center text-sm text-base-content/50">
+          No staff match these filters.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination footer -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            hx-get="/api/v1/staff"
+            hx-trigger="change"
+            hx-target="#staff-table-container"
+            hx-swap="innerHTML"
+            hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
+            name="limit"
+            hx-vals='{"offset": 0}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span>Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span>
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }} items
+    </span>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <span class="text-sm text-base-content/60">
+      Page {{ (offset // limit) + 1 }} of {{ ((total_count - 1) // limit) + 1 if total_count > 0 else 1 }}
+    </span>
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            hx-get="/api/v1/staff"
+            hx-target="#staff-table-container"
+            hx-swap="innerHTML"
+            hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            hx-get="/api/v1/staff"
+            hx-target="#staff-table-container"
+            hx-swap="innerHTML"
+            hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>
