@@ -9,6 +9,15 @@
       <p class="text-sm text-base-content/50 mt-1">Every tool in the shop &mdash; what's available, what's out, and what needs attention.</p>
     </div>
     <div class="flex items-center gap-2">
+      {% if staff.role in ["admin", "in_charge"] %}
+      <button type="button" class="btn btn-outline btn-sm"
+              hx-get="/api/v1/categories/manage-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+        Manage Categories
+      </button>
+      {% endif %}
       <button type="button" class="btn btn-outline btn-sm"
               hx-get="/api/v1/assets/import-form"
               hx-target="#modal-container"
@@ -16,10 +25,14 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Import CSV
       </button>
-      <a href="/api/v1/assets/export{% if request.args.get('show_archived') %}?show_archived={{ request.args.get('show_archived') }}{% endif %}" class="btn btn-outline btn-sm">
+      <button type="button" class="btn btn-outline btn-sm"
+              hx-get="/api/v1/assets/export-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              hx-include="#show-archived-toggle">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export Data
-      </a>
+      </button>
       <button type="button" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/assets/add-form"
               hx-target="#modal-container"
@@ -31,136 +44,184 @@
   </div>
 
   <!-- Stat cards -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALL INVENTORY</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_all }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">AVAILABLE</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_available }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">CURRENTLY BORROWED</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_borrowed }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">NEEDS ATTENTION</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_maintenance }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-      </div>
-    </div>
-
+  <!-- Clicking a card jumps the table to the matching status filter (and switches off
+       "Show archived" first, since status filtering only applies to the active view). -->
+  <div id="stat-cards-container"
+       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+       hx-get="/api/v1/assets/stat-cards"
+       hx-trigger="assets-refreshed from:body"
+       hx-target="this"
+       hx-swap="innerHTML">
+    {% include "assets/_stat_cards.html" %}
   </div>
 
   <!-- Toolbar + table -->
-  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+  <div id="assets-card" class="bg-base-100 rounded-xl border p-5 transition-colors {% if show_archived %}border-warning/70{% else %}border-base-300{% endif %}">
 
     <div class="relative mb-5" style="position: relative;">
 
     <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-      <label class="input input-bordered flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input type="search" id="asset-search" name="q" placeholder="Search by ID or name..."
-               class="grow"
+      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </div>
+        <input type="search" id="asset-search" name="q" placeholder="Search by ID, name, or barcode..."
+               aria-label="Search assets by ID, name, or barcode"
+               class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                hx-get="/api/v1/assets"
                hx-trigger="keyup changed delay:400ms, search"
                hx-target="#asset-table-container"
                hx-swap="innerHTML"
-               hx-include="#category-filter, #status-filter, #condition-filter, #show-archived-toggle"
+               hx-indicator="#table-spinner"
+               hx-include="#category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
                hx-vals='{"limit": 20, "offset": 0}'>
-      </label>
+        <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
+                aria-label="Clear search" title="Clear search" onclick="clearSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+      </div>
 
-      <select id="category-filter" name="category_id"
-              class="select select-bordered select-sm w-44"
-              hx-get="/api/v1/assets"
-              hx-trigger="change"
-              hx-target="#asset-table-container"
-              hx-swap="innerHTML"
-              hx-include="#asset-search, #status-filter, #condition-filter, #show-archived-toggle"
-              hx-vals='{"limit": 20, "offset": 0}'>
-        <option value="">All Categories</option>
-        {% for cat in categories %}
-        <option value="{{ cat.id }}" {% if category_id == cat.id | string %}selected{% endif %}>{{ cat.name }}</option>
-        {% endfor %}
-      </select>
+      <div id="category-filter-wrap" class="join rounded-lg transition-shadow" title="Category"
+           hx-get="/api/v1/categories/options"
+           hx-trigger="categories-changed from:body"
+           hx-target="#category-filter"
+           hx-swap="innerHTML">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <select id="category-filter" name="category_id"
+                aria-label="Filter by category"
+                class="select select-bordered select-sm join-item w-40"
+                hx-get="/api/v1/assets"
+                hx-trigger="change"
+                hx-target="#asset-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#asset-search, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+                hx-vals='{"limit": 20, "offset": 0}'>
+          <option value="">Category</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if category_id == cat.id | string %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <select id="status-filter" name="status"
-              class="select select-bordered select-sm w-40"
-              hx-get="/api/v1/assets"
-              hx-trigger="change"
-              hx-target="#asset-table-container"
-              hx-swap="innerHTML"
-              hx-include="#asset-search, #category-filter, #condition-filter, #show-archived-toggle"
-              hx-vals='{"limit": 20, "offset": 0}'>
-        <option value="">All Statuses</option>
-        {% for s in ["available", "borrowed", "reserved", "maintenance"] %}
-        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | capitalize }}</option>
-        {% endfor %}
-      </select>
+      <div id="condition-filter-wrap" class="join rounded-lg transition-shadow" title="Condition">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </div>
+        <select id="condition-filter" name="condition"
+                aria-label="Filter by condition"
+                class="select select-bordered select-sm join-item w-36"
+                hx-get="/api/v1/assets"
+                hx-trigger="change"
+                hx-target="#asset-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#asset-search, #category-filter, #status-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+                hx-vals='{"limit": 20, "offset": 0}'>
+          <option value="">Condition</option>
+          {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
+          <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | capitalize | replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <select id="condition-filter" name="condition"
-              class="select select-bordered select-sm w-40"
-              hx-get="/api/v1/assets"
-              hx-trigger="change"
-              hx-target="#asset-table-container"
-              hx-swap="innerHTML"
-              hx-include="#asset-search, #category-filter, #status-filter, #show-archived-toggle"
-              hx-vals='{"limit": 20, "offset": 0}'>
-        <option value="">All Conditions</option>
-        {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
-        <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | capitalize | replace("_", " ") }}</option>
-        {% endfor %}
-      </select>
+      <div id="status-filter-wrap" class="join rounded-lg transition-shadow {% if show_archived %}hidden{% endif %}" title="Status">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <select id="status-filter" name="status"
+                aria-label="Filter by status"
+                class="select select-bordered select-sm join-item w-32"
+                hx-get="/api/v1/assets"
+                hx-trigger="change"
+                hx-target="#asset-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#asset-search, #category-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+                hx-vals='{"limit": 20, "offset": 0}'>
+          <option value="">Status</option>
+          {% for s in ["available", "borrowed", "reserved", "maintenance"] %}
+          <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <label class="flex items-center gap-2 text-sm text-base-content/70 cursor-pointer select-none ml-auto">
-        <input type="checkbox" id="show-archived-toggle" name="show_archived"
-               value="1"
-               class="toggle toggle-sm"
+      <div id="archived-date-filters" class="join rounded-lg transition-shadow {% if not show_archived %}hidden{% endif %}" title="Deleted date range">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+        </div>
+        <input type="date" id="deleted-from-filter" name="deleted_from"
+               aria-label="Deleted from date"
+               class="input input-bordered input-sm join-item w-32"
+               value="{{ deleted_from or '' }}"
+               title="Deleted from"
                hx-get="/api/v1/assets"
                hx-trigger="change"
                hx-target="#asset-table-container"
                hx-swap="innerHTML"
-               hx-include="#asset-search, #category-filter, #status-filter, #condition-filter"
+               hx-indicator="#table-spinner"
+               hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-to-filter, #show-archived-toggle"
                hx-vals='{"limit": 20, "offset": 0}'>
-        Show archived
+        <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+        <input type="date" id="deleted-to-filter" name="deleted_to"
+               aria-label="Deleted to date"
+               class="input input-bordered input-sm join-item w-32"
+               value="{{ deleted_to or '' }}"
+               title="Deleted to"
+               hx-get="/api/v1/assets"
+               hx-trigger="change"
+               hx-target="#asset-table-container"
+               hx-swap="innerHTML"
+               hx-indicator="#table-spinner"
+               hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #show-archived-toggle"
+               hx-vals='{"limit": 20, "offset": 0}'>
+      </div>
+
+      <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" title="Clear filters" aria-label="Clear filters">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+      </button>
+
+      <label id="archived-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+        <input type="checkbox" id="show-archived-toggle" name="show_archived"
+               value="1"
+               class="toggle toggle-sm {% if show_archived %}toggle-warning{% endif %}"
+               {% if show_archived %}checked{% endif %}
+               hx-get="/api/v1/assets"
+               hx-trigger="change"
+               hx-target="#asset-table-container"
+               hx-swap="innerHTML"
+               hx-indicator="#table-spinner"
+               hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter"
+               hx-vals='{"limit": 20, "offset": 0}'>
+        <span id="archived-toggle-text">{% if show_archived %}Viewing archived{% else %}Show archived{% endif %}</span>
       </label>
 
     </div>
 
-    {% set can_bulk_act = (not show_archived and staff.role in ["admin", "in_charge"]) or (show_archived and staff.role == "admin") %}
+    <!-- can_bulk_act here is intentionally role-only (not show_archived-aware like _table.html's
+         copy of this check). This bar and its JS wiring are rendered once on initial page load,
+         but "Show archived" is toggled client-side afterwards without a page reload -- so this
+         check has to cover both states up front, or the bar/JS would be missing entirely after
+         switching modes. _table.html re-renders per request and can safely be state-aware since
+         the server already knows the current show_archived value on every htmx swap. -->
+    {% set can_bulk_delete = staff.role in ["admin", "in_charge"] %}
+    {% set can_bulk_restore = staff.role == "admin" %}
+    {% set can_bulk_act = can_bulk_delete or can_bulk_restore %}
     {% if can_bulk_act %}
     <div id="bulk-actions-bar" class="pointer-events-none flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
       <span id="bulk-selected-count" class="text-sm font-medium text-primary">0 selected</span>
+      <button type="button" id="bulk-select-all-match-btn" class="btn btn-link btn-xs px-0 hidden">Select all matching filters</button>
       <button type="button" id="bulk-clear-btn" class="btn btn-ghost btn-xs">Clear</button>
       <div class="ml-auto flex items-center gap-2">
-        {% if show_archived %}
-        <button type="button" id="bulk-restore-btn" class="btn btn-primary btn-sm">Restore Selected</button>
-        {% else %}
-        <button type="button" id="bulk-delete-btn" class="btn btn-error btn-sm">Delete Selected</button>
+        {% if can_bulk_restore %}
+        <button type="button" id="bulk-restore-btn" class="btn btn-primary btn-xs {% if not show_archived %}hidden{% endif %}">Restore Selected</button>
+        {% endif %}
+        {% if can_bulk_delete %}
+        <button type="button" id="bulk-delete-btn" class="btn btn-error btn-xs {% if show_archived %}hidden{% endif %}">Delete Selected</button>
         {% endif %}
       </div>
     </div>
@@ -168,20 +229,31 @@
 
     </div>
 
-    <div id="asset-table-container"
-         hx-get="/api/v1/assets"
-         hx-trigger="assets-refreshed from:body"
-         hx-target="#asset-table-container"
-         hx-swap="innerHTML"
-         hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #show-archived-toggle"
-         hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
-      {% include "assets/_table.html" %}
+    <div class="relative">
+      <div id="table-spinner" class="htmx-indicator absolute inset-0 z-10 flex items-center justify-center bg-base-100/60 rounded-lg">
+        <span class="loading loading-spinner loading-md text-primary"></span>
+      </div>
+      <div id="asset-table-container"
+           hx-get="/api/v1/assets"
+           hx-trigger="assets-refreshed from:body"
+           hx-target="#asset-table-container"
+           hx-swap="innerHTML"
+           hx-indicator="#table-spinner"
+           hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+           hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+        {% include "assets/_table.html" %}
+      </div>
     </div>
 
   </div>
 </div>
 
 <div id="modal-container"></div>
+
+<!-- Standalone folder-picker popup, independent of #modal-container above, so it can
+     stack on top of whatever modal is currently open (e.g. the export modal) without
+     being wiped out or re-created when that modal opens/closes. -->
+{% include "assets/_export_folder_browser_modal.html" %}
 
 {% if can_bulk_act %}
 <script>
@@ -190,12 +262,27 @@
   const bar = document.getElementById('bulk-actions-bar');
   const filterRow = document.getElementById('filter-row');
   const countEl = document.getElementById('bulk-selected-count');
+  const matchLink = document.getElementById('bulk-select-all-match-btn');
   const clearBtn = document.getElementById('bulk-clear-btn');
   const deleteBtn = document.getElementById('bulk-delete-btn');
   const restoreBtn = document.getElementById('bulk-restore-btn');
 
+  // When true, a bulk action should act on matchedAllIds (every item matching
+  // the current filters, gathered across every page) instead of just the
+  // checkboxes visible on screen. Set by selectAllMatching() below, and
+  // cleared the moment the person touches any checkbox again or the table
+  // reloads, since either invalidates the previously-fetched id list.
+  let selectAllMatched = false;
+  let matchedAllIds = [];
+
   function getSelectedIds() {
+    if (selectAllMatched) return matchedAllIds;
     return Array.from(container.querySelectorAll('.asset-row-checkbox:checked')).map(cb => cb.value);
+  }
+
+  function getTotalCount() {
+    const table = container.querySelector('table');
+    return table ? parseInt(table.dataset.totalCount || '0', 10) : 0;
   }
 
   function showBar() {
@@ -208,13 +295,29 @@
     bar.style.visibility = 'hidden';
     bar.classList.add('pointer-events-none');
     filterRow.style.visibility = 'visible';
+    selectAllMatched = false;
+    matchedAllIds = [];
+    if (matchLink) matchLink.classList.add('hidden');
   }
 
   function updateBar() {
-    const ids = getSelectedIds();
-    if (ids.length > 0) {
-      countEl.textContent = `${ids.length} selected`;
+    if (selectAllMatched) return; // count/link already set by selectAllMatching()
+    const pageIds = Array.from(container.querySelectorAll('.asset-row-checkbox:checked')).map(cb => cb.value);
+    if (pageIds.length > 0) {
+      countEl.textContent = `${pageIds.length} selected`;
       showBar();
+
+      // Every row on this page is checked, and there are more matching rows
+      // on other pages -- offer to extend the selection to all of them
+      // rather than silently capping bulk actions at one page's worth.
+      const totalOnPage = container.querySelectorAll('.asset-row-checkbox').length;
+      const totalCount = getTotalCount();
+      if (matchLink && pageIds.length === totalOnPage && totalCount > totalOnPage) {
+        matchLink.textContent = `Select all ${totalCount} matching filters`;
+        matchLink.classList.remove('hidden');
+      } else if (matchLink) {
+        matchLink.classList.add('hidden');
+      }
     } else {
       hideBar();
     }
@@ -230,6 +333,60 @@
     }
   }
 
+  // Reads the filter controls directly (rather than relying on hx-include,
+  // which only fires on an actual htmx request) so selectAllMatching() can
+  // ask the server for every id matching what's currently on screen.
+  function currentFilterParams() {
+    const params = new URLSearchParams();
+    const q = document.getElementById('asset-search').value.trim();
+    const category = document.getElementById('category-filter').value;
+    const condition = document.getElementById('condition-filter').value;
+    const status = document.getElementById('status-filter').value;
+    const archived = document.getElementById('show-archived-toggle').checked;
+    const deletedFrom = document.getElementById('deleted-from-filter').value;
+    const deletedTo = document.getElementById('deleted-to-filter').value;
+    if (q) params.set('q', q);
+    if (category) params.set('category_id', category);
+    if (condition) params.set('condition', condition);
+    if (!archived && status) params.set('status', status);
+    if (archived && deletedFrom) params.set('deleted_from', deletedFrom);
+    if (archived && deletedTo) params.set('deleted_to', deletedTo);
+    params.set('show_archived', archived ? '1' : '0');
+    return params;
+  }
+
+  // Fetches every id matching the current filters (not just this page) by
+  // re-requesting the same table endpoint with limit set to the total count,
+  // then reading the checkbox values back out of the returned markup --
+  // reusing the existing /api/v1/assets contract rather than needing a new
+  // endpoint. If that ever stops working (e.g. the server caps `limit`),
+  // this fails safely back to the on-page selection instead of silently
+  // acting on the wrong set of items.
+  async function selectAllMatching() {
+    const totalCount = getTotalCount();
+    const params = currentFilterParams();
+    params.set('limit', totalCount);
+    params.set('offset', 0);
+    try {
+      const res = await fetch('/api/v1/assets?' + params.toString());
+      if (!res.ok) throw new Error('bad status');
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const ids = Array.from(doc.querySelectorAll('.asset-row-checkbox')).map(cb => cb.value);
+      if (ids.length < totalCount) throw new Error('incomplete');
+      matchedAllIds = ids;
+      selectAllMatched = true;
+      countEl.textContent = `${ids.length} selected (all matching filters)`;
+      matchLink.classList.add('hidden');
+    } catch (e) {
+      showToast("Couldn't select every matching item — only what's on this page is selected.", 'error');
+    }
+  }
+
+  if (matchLink) {
+    matchLink.addEventListener('click', selectAllMatching);
+  }
+
   // Delegated on the container (not the checkboxes themselves) because
   // htmx replaces the table's innerHTML on every search/pagination/
   // archive-toggle -- direct listeners would be destroyed along with the
@@ -237,10 +394,12 @@
   // against whatever checkboxes currently exist inside it.
   container.addEventListener('change', function(e) {
     if (e.target.id === 'select-all-checkbox') {
+      selectAllMatched = false;
       const checked = e.target.checked;
       container.querySelectorAll('.asset-row-checkbox').forEach(cb => { cb.checked = checked; });
       updateBar();
     } else if (e.target.classList.contains('asset-row-checkbox')) {
+      selectAllMatched = false;
       syncSelectAll();
       updateBar();
     }
@@ -302,8 +461,78 @@
     }
   }
 
+  // A quick escape hatch for text dropped into the confirm dialog below --
+  // asset names come from the server, so this keeps them from being
+  // interpreted as markup when set via innerHTML.
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Deleting is destructive and, unlike the single-row delete flow, bulk
+  // delete used to fire immediately on click with no confirmation at all --
+  // one misclick could wipe out an entire selection. This mirrors the
+  // single-row "delete-confirm" modal's intent using a small self-contained
+  // dialog (no server round-trip needed just to ask "are you sure").
+  function confirmBulkDelete(ids, names, onConfirm) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+
+    const maxNames = 5;
+    const shown = names.slice(0, maxNames).map(n => `<li class="truncate">&bull; ${escapeHtml(n)}</li>`).join('');
+    const more = names.length > maxNames
+      ? `<li class="text-base-content/50">&hellip; and ${names.length - maxNames} more</li>`
+      : '';
+
+    backdrop.innerHTML = `
+      <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="bulk-delete-confirm-title">
+        <div class="flex items-start gap-3">
+          <div class="w-9 h-9 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h3 id="bulk-delete-confirm-title" class="font-semibold">Delete ${ids.length} item${ids.length === 1 ? '' : 's'}?</h3>
+            <p class="text-sm text-base-content/60 mt-1">This action can be reversed later from the archived view.</p>
+            <ul class="text-sm mt-3 space-y-0.5">${shown}${more}</ul>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+          <button type="button" id="bulk-delete-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="button" id="bulk-delete-confirm-btn" class="btn btn-error btn-sm">Delete ${ids.length}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+
+    function close() {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop) close();
+    });
+    backdrop.querySelector('#bulk-delete-cancel-btn').addEventListener('click', close);
+    backdrop.querySelector('#bulk-delete-confirm-btn').addEventListener('click', function () {
+      close();
+      onConfirm();
+    });
+    backdrop.querySelector('#bulk-delete-confirm-btn').focus();
+  }
+
   if (deleteBtn) {
-    deleteBtn.addEventListener('click', () => runBulkAction('/api/v1/assets/bulk-delete', 'deleted'));
+    deleteBtn.addEventListener('click', () => {
+      const ids = getSelectedIds();
+      if (ids.length === 0) return;
+      const names = selectAllMatched
+        ? [] // names aren't available for the fetched-across-all-pages set; dialog just shows the count
+        : Array.from(container.querySelectorAll('.asset-row-checkbox:checked'))
+            .map(cb => cb.dataset.name || cb.dataset.assetCode || 'Unnamed item');
+      confirmBulkDelete(ids, names, () => runBulkAction('/api/v1/assets/bulk-delete', 'deleted'));
+    });
   }
   if (restoreBtn) {
     restoreBtn.addEventListener('click', () => runBulkAction('/api/v1/assets/bulk-restore', 'restored'));
@@ -311,6 +540,217 @@
 })();
 </script>
 {% endif %}
+
+<script>
+// Swap between the "deleted between" date filters (archived view) and the
+// Status filter (active view) -- using 'hidden' so whichever one is
+// switched off is fully removed from the flex row's layout, letting the
+// remaining filters collapse leftward toward the search box rather than
+// leaving a gap. The date inputs stay in the DOM regardless (so hx-include
+// on the other controls doesn't have to change), but the server already
+// ignores deleted_from/deleted_to whenever show_archived is off, so hiding
+// them here is purely cosmetic -- no risk of a stale date value silently
+// filtering the active-items table.
+//
+// Same live-swap treatment for the bulk-action button: an admin gets both
+// Delete and Restore rendered (one hidden at a time) so the button always
+// matches whichever mode is currently on screen, instead of the label
+// being fixed to whatever show_archived was at the initial page load.
+document.getElementById('show-archived-toggle').addEventListener('change', function (e) {
+  const isArchived = e.target.checked;
+
+  document.getElementById('archived-date-filters').classList.toggle('hidden', !isArchived);
+  document.getElementById('status-filter-wrap').classList.toggle('hidden', isArchived);
+
+  const restoreBtn = document.getElementById('bulk-restore-btn');
+  const deleteBtn = document.getElementById('bulk-delete-btn');
+  if (restoreBtn) restoreBtn.classList.toggle('hidden', !isArchived);
+  if (deleteBtn) deleteBtn.classList.toggle('hidden', isArchived);
+
+  // Highlight the archived state: toggle color, pill label, and card border.
+  e.target.classList.toggle('toggle-warning', isArchived);
+
+  const toggleLabel = document.getElementById('archived-toggle-label');
+  toggleLabel.classList.toggle('text-warning', isArchived);
+  toggleLabel.classList.toggle('font-semibold', isArchived);
+  toggleLabel.classList.toggle('bg-warning/10', isArchived);
+  toggleLabel.classList.toggle('text-base-content/70', !isArchived);
+
+  document.getElementById('archived-toggle-text').textContent = isArchived ? 'Viewing archived' : 'Show archived';
+
+  const card = document.getElementById('assets-card');
+  card.classList.toggle('border-warning/70', isArchived);
+  card.classList.toggle('border-base-300', !isArchived);
+
+  updateFilterUI();
+});</script>
+
+<script>
+// Active-filter highlighting + "Clear filters" + search clear (x) + stat-card
+// quick filters. All of this is purely client-side UI state; every control
+// still drives the table through its own existing hx-get, this just keeps
+// the surrounding chrome (rings, clear button, clear icon) in sync with it.
+function updateFilterUI() {
+  const search = document.getElementById('asset-search');
+  const category = document.getElementById('category-filter');
+  const condition = document.getElementById('condition-filter');
+  const status = document.getElementById('status-filter');
+  const dateFrom = document.getElementById('deleted-from-filter');
+  const dateTo = document.getElementById('deleted-to-filter');
+  const archived = document.getElementById('show-archived-toggle').checked;
+
+  const searchActive = search.value.trim().length > 0;
+  const categoryActive = category.value !== '';
+  const conditionActive = condition.value !== '';
+  const statusActive = !archived && status.value !== '';
+  const dateActive = archived && (dateFrom.value !== '' || dateTo.value !== '');
+
+  document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
+  document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
+  document.getElementById('search-clear-btn').classList.toggle('hidden', !searchActive);
+
+  document.getElementById('category-filter-wrap').classList.toggle('ring-2', categoryActive);
+  document.getElementById('category-filter-wrap').classList.toggle('ring-primary/40', categoryActive);
+
+  document.getElementById('condition-filter-wrap').classList.toggle('ring-2', conditionActive);
+  document.getElementById('condition-filter-wrap').classList.toggle('ring-primary/40', conditionActive);
+
+  document.getElementById('status-filter-wrap').classList.toggle('ring-2', statusActive);
+  document.getElementById('status-filter-wrap').classList.toggle('ring-primary/40', statusActive);
+
+  document.getElementById('archived-date-filters').classList.toggle('ring-2', dateActive);
+  document.getElementById('archived-date-filters').classList.toggle('ring-primary/40', dateActive);
+
+  const anyActive = searchActive || categoryActive || conditionActive || statusActive || dateActive;
+  const activeCount = [searchActive, categoryActive, conditionActive, statusActive, dateActive].filter(Boolean).length;
+  const clearBtn = document.getElementById('clear-filters-btn');
+  clearBtn.classList.toggle('hidden', !anyActive);
+  document.getElementById('clear-filters-count').textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+
+  updateStatCardUI(archived, status.value);
+}
+
+// Keeps the stat cards' ring/border highlight in sync with whichever status
+// they represent. "All Inventory" (data-status="") is considered active
+// whenever no status filter is set -- but only in the active (non-archived)
+// view, since status filtering doesn't apply to archived items.
+const STAT_CARD_ACCENTS = {
+  '': 'ring-primary/40 border-primary/40',
+  'available': 'ring-success/40 border-success/40',
+  'borrowed': 'ring-info/40 border-info/40',
+  'maintenance': 'ring-error/40 border-error/40',
+};
+
+function updateStatCardUI(archived, currentStatus) {
+  document.querySelectorAll('[data-status]').forEach(function (card) {
+    const isActive = !archived && card.dataset.status === currentStatus;
+    const accentClasses = STAT_CARD_ACCENTS[card.dataset.status].split(' ');
+    card.classList.toggle('ring-2', isActive);
+    card.classList.toggle('shadow-md', isActive);
+    accentClasses.forEach(function (cls) { card.classList.toggle(cls, isActive); });
+
+    // Status filters don't apply to the archived view, so the cards
+    // shouldn't be clickable (or focusable) while it's on.
+    card.classList.toggle('opacity-50', archived);
+    card.classList.toggle('pointer-events-none', archived);
+    card.classList.toggle('cursor-pointer', !archived);
+    card.setAttribute('aria-disabled', archived ? 'true' : 'false');
+    card.tabIndex = archived ? -1 : 0;
+  });
+}
+
+// Keeps the address bar in sync with whatever combination of search, filters,
+// sort, and paging is currently on screen. Every control that changes the
+// table -- typed search, the four filter dropdowns/dates, sort-header clicks,
+// pagination, the per-page select, and the archived toggle -- ultimately
+// issues an htmx GET targeting #asset-table-container, whether via an
+// hx-get attribute or via htmx.ajax() (filterByStatus, clearAllFilters). Both
+// paths fire htmx:configRequest, and htmx.ajax() calls without an explicit
+// "source" fire it on document.body rather than the container itself, so this
+// listens on body and checks evt.detail.target to only react to requests
+// actually bound for the table -- otherwise unrelated htmx requests (opening
+// the add/edit/delete modals, which target #modal-container) would leak their
+// own params into the URL. evt.detail.parameters is htmx's fully-resolved set
+// of request params for that specific call (hx-vals merged with hx-include),
+// which is exactly the state we want reflected -- reading the DOM controls
+// directly wouldn't work since sort_by/sort_dir/limit/offset live only in
+// each control's hx-vals, not in any persistent element.
+document.body.addEventListener('htmx:configRequest', function (evt) {
+  const tableContainer = document.getElementById('asset-table-container');
+  if (evt.detail.target !== tableContainer) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['q', 'category_id', 'status', 'condition', 'deleted_from', 'deleted_to',
+     'show_archived', 'limit', 'offset', 'sort_by', 'sort_dir'].forEach(function (key) {
+      url.searchParams.delete(key);
+    });
+    Object.keys(params).forEach(function (key) {
+      const value = params[key];
+      if (value !== '' && value !== null && value !== undefined) {
+        url.searchParams.set(key, value);
+      }
+    });
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // URL sync is a non-critical enhancement -- never let it break the actual request.
+  }
+});
+
+['asset-search', 'category-filter', 'condition-filter', 'status-filter', 'deleted-from-filter', 'deleted-to-filter'].forEach(function (id) {
+  const el = document.getElementById(id);
+  el.addEventListener('input', updateFilterUI);
+  el.addEventListener('change', updateFilterUI);
+});
+document.addEventListener('DOMContentLoaded', updateFilterUI);
+
+function clearSearch() {
+  const search = document.getElementById('asset-search');
+  search.value = '';
+  updateFilterUI();
+  // Dispatching a native "search" event (rather than just clearing the value)
+  // is what actually satisfies this input's hx-trigger and fires the refetch.
+  search.dispatchEvent(new Event('search'));
+}
+
+function clearAllFilters() {
+  document.getElementById('asset-search').value = '';
+  document.getElementById('category-filter').value = '';
+  document.getElementById('condition-filter').value = '';
+  document.getElementById('status-filter').value = '';
+  document.getElementById('deleted-from-filter').value = '';
+  document.getElementById('deleted-to-filter').value = '';
+  updateFilterUI();
+  htmx.ajax('GET', '/api/v1/assets?' + new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: 0,
+    show_archived: document.getElementById('show-archived-toggle').checked ? '1' : '0',
+    sort_by: '{{ sort_by }}',
+    sort_dir: '{{ sort_dir }}'
+  }).toString(), { target: '#asset-table-container', swap: 'innerHTML' });
+}
+
+function filterByStatus(status) {
+  const archivedToggle = document.getElementById('show-archived-toggle');
+  // Stat cards represent status filters, which don't apply to the archived
+  // view -- they're visually disabled there, and this is the same guard
+  // server-side triggers or keyboard activation would otherwise bypass.
+  if (archivedToggle.checked) return;
+  document.getElementById('status-filter').value = status;
+  updateFilterUI();
+  htmx.ajax('GET', '/api/v1/assets?' + new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: 0,
+    show_archived: '0',
+    status: status,
+    sort_by: '{{ sort_by }}',
+    sort_dir: '{{ sort_dir }}'
+  }).toString(), { target: '#asset-table-container', swap: 'innerHTML' });
+}
+</script>
 
 <script>
 // Workaround: the filter row / bulk-actions-bar area renders with an extra
@@ -339,6 +779,12 @@ document.addEventListener('DOMContentLoaded', function () {
   {% endif %}
   {% if request.args.get('condition') %}
   params.set('condition', {{ request.args.get('condition') | tojson }});
+  {% endif %}
+  {% if deleted_from %}
+  params.set('deleted_from', {{ deleted_from | tojson }});
+  {% endif %}
+  {% if deleted_to %}
+  params.set('deleted_to', {{ deleted_to | tojson }});
   {% endif %}
   htmx.ajax('GET', '/api/v1/assets?' + params.toString(), {
     target: '#asset-table-container',

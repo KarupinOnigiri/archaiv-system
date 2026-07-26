@@ -13,6 +13,9 @@
       <div class="bg-success/10 rounded-xl p-4">
         <p class="text-xs font-semibold text-success/80 tracking-wide">CREATED</p>
         <p class="text-2xl font-bold text-success">{{ created_count }}</p>
+        {% if archived_count %}
+        <p class="text-xs text-success/70 mt-0.5">{{ archived_count }} added as archived</p>
+        {% endif %}
       </div>
       <div class="bg-error/10 rounded-xl p-4">
         <p class="text-xs font-semibold text-error/80 tracking-wide">FAILED ROWS</p>
@@ -47,6 +50,21 @@
     <p class="text-sm text-base-content/50">No rows were imported.</p>
     {% endif %}
 
+    {% if created_ids and created_count > 0 %}
+    <div id="import-undo-section" class="mb-2">
+      <button type="button" id="import-undo-trigger-btn" class="btn btn-ghost btn-xs text-error">
+        Undo this import
+      </button>
+      <div id="import-undo-confirm" class="hidden mt-2 p-3 rounded-lg border border-error/30 bg-error/5 text-sm">
+        <p>This will archive the {{ created_count }} item{{ '' if created_count == 1 else 's' }} this import just created. You can restore them again from the archived view if you change your mind.</p>
+        <div class="flex justify-end gap-2 mt-3">
+          <button type="button" id="import-undo-cancel-btn" class="btn btn-ghost btn-xs">Never mind</button>
+          <button type="button" id="import-undo-confirm-btn" class="btn btn-error btn-xs">Archive {{ created_count }} Item{{ '' if created_count == 1 else 's' }}</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="modal-action flex justify-end gap-2 mt-6">
       <button type="button" class="btn btn-outline"
               hx-get="/api/v1/assets/import-form"
@@ -60,3 +78,57 @@
     </div>
   </div>
 </div>
+
+{% if created_ids and created_count > 0 %}
+<script>
+(function () {
+  const triggerBtn = document.getElementById('import-undo-trigger-btn');
+  const confirmPanel = document.getElementById('import-undo-confirm');
+  const cancelBtn = document.getElementById('import-undo-cancel-btn');
+  const confirmBtn = document.getElementById('import-undo-confirm-btn');
+  if (!triggerBtn) return;
+
+  triggerBtn.addEventListener('click', function () {
+    confirmPanel.classList.remove('hidden');
+    triggerBtn.classList.add('hidden');
+  });
+  cancelBtn.addEventListener('click', function () {
+    confirmPanel.classList.add('hidden');
+    triggerBtn.classList.remove('hidden');
+  });
+
+  // Reuses the existing bulk-delete endpoint (soft-delete/archive) rather than
+  // a dedicated "undo import" route -- an undone import lands in the archived
+  // view exactly like any other delete, and can be restored from there the
+  // same way, so there's no need for separate backend plumbing.
+  confirmBtn.addEventListener('click', async function () {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Undoing…';
+    try {
+      const res = await fetch('/api/v1/assets/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+        },
+        body: JSON.stringify({ ids: {{ created_ids | tojson }} }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Couldn't undo the import", 'error');
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Archive {{ created_count }} Item{{ "" if created_count == 1 else "s" }}';
+        return;
+      }
+      const doneCount = data.deleted_count ?? 0;
+      showToast(`Import undone — ${doneCount} item${doneCount === 1 ? '' : 's'} archived`, 'success');
+      window.location.reload();
+    } catch (err) {
+      showToast("Couldn't undo the import", 'error');
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Archive {{ created_count }} Item{{ "" if created_count == 1 else "s" }}';
+    }
+  });
+})();
+</script>
+{% endif %}

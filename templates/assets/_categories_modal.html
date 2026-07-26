@@ -1,0 +1,639 @@
+<dialog id="manage-categories-modal" class="modal" aria-labelledby="manage-categories-title" aria-describedby="manage-categories-desc">
+  <div class="modal-box max-w-md">
+    <h3 id="manage-categories-title" class="text-lg font-bold">Manage Categories</h3>
+    <p id="manage-categories-desc" class="text-sm text-base-content/50 mt-1 mb-4">
+      Add, rename, reorder, or remove categories. Drag <span class="inline-block align-middle">&#9776;</span> or use the arrows to reorder, then click Save Order.
+    </p>
+
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs font-semibold text-base-content/40 tracking-wide">CATEGORIES</span>
+      <div class="flex items-center gap-2">
+        <span id="cat-order-status" class="text-xs text-base-content/40 transition-opacity duration-300 opacity-0" aria-hidden="true">Saved</span>
+        <button type="button" id="sort-az-btn" class="btn btn-ghost btn-xs" title="Sort categories alphabetically">Sort A&rarr;Z</button>
+        <button type="button" id="save-order-btn" class="btn btn-primary btn-xs" disabled>Save Order</button>
+      </div>
+    </div>
+
+    <div class="space-y-1 h-64 overflow-y-auto overflow-x-hidden mb-5" id="category-list" role="list">
+      {% for cat in categories %}
+      <div class="flex items-center gap-1.5 py-1 px-1 -mx-1 rounded-lg cat-row transition-all duration-300" role="listitem"
+           data-cat-id="{{ cat.id }}" data-cat-name="{{ cat.name }}" draggable="true">
+
+        <button type="button" class="cat-drag-handle shrink-0 p-1 rounded text-base-content/30 hover:text-base-content/60 hover:bg-base-200 cursor-grab active:cursor-grabbing"
+                aria-label="Drag to reorder {{ cat.name }}" title="Drag to reorder">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/>
+            <circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>
+          </svg>
+        </button>
+
+        <div class="flex flex-col shrink-0 -my-1">
+          <button type="button" class="cat-move-up-btn p-0.5 text-base-content/30 hover:text-primary disabled:opacity-20 disabled:pointer-events-none leading-none"
+                  aria-label="Move {{ cat.name }} up">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
+          </button>
+          <button type="button" class="cat-move-down-btn p-0.5 text-base-content/30 hover:text-primary disabled:opacity-20 disabled:pointer-events-none leading-none"
+                  aria-label="Move {{ cat.name }} down">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+        </div>
+
+        <input type="text" value="{{ cat.name }}" maxlength="100"
+               aria-label="Category name"
+               class="input input-bordered input-sm flex-1 min-w-0 cat-name-input">
+
+        <button type="button" class="btn btn-outline btn-sm cat-rename-btn" disabled>Save</button>
+
+        <button type="button" class="btn btn-ghost btn-sm btn-square text-error/70 hover:text-error hover:bg-error/10 cat-delete-btn"
+                aria-label="Delete {{ cat.name }}" title="Delete category"
+                data-asset-count="{{ cat.asset_count | default(0) }}">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+          </svg>
+        </button>
+      </div>
+      {% else %}
+      <div class="h-full flex items-center justify-center">
+        <p class="text-sm text-base-content/40">No categories yet &mdash; add one below.</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Screen-reader-only live region announcing reorder results, since a
+         move action has no other perceivable feedback for someone who can't
+         see the list visually reshuffle. -->
+    <div id="cat-reorder-announcer" class="sr-only" aria-live="polite"></div>
+
+    <div class="divider my-2"></div>
+
+    <div class="form-control">
+      <label class="label py-1"><span class="label-text text-xs font-medium">New Category</span></label>
+      <div class="flex gap-2">
+        <input type="text" id="new-category-name" maxlength="100" class="input input-bordered input-sm flex-1" placeholder="e.g. Power Tools">
+        <button type="button" id="add-category-btn" class="btn btn-primary btn-sm">Add</button>
+      </div>
+    </div>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-ghost btn-sm" data-close-categories-modal>Close</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script>
+(function () {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  const dialogEl = document.getElementById('manage-categories-modal');
+  const list = document.getElementById('category-list');
+  const announcer = document.getElementById('cat-reorder-announcer');
+  const orderStatus = document.getElementById('cat-order-status');
+
+  // Use showModal() rather than a static `open` attribute -- it's what
+  // actually gives this dialog focus trapping, a real ::backdrop (so the
+  // click-outside-to-close <form method="dialog"> below actually works),
+  // and native Escape-to-close. A plain `open` attribute provides none of
+  // that; it just makes the element visible.
+  if (typeof dialogEl.showModal === 'function') {
+    dialogEl.showModal();
+  } else {
+    dialogEl.setAttribute('open', '');
+  }
+
+  // Whatever closes the dialog -- the Close button, clicking the backdrop,
+  // or pressing Escape -- should also remove it from the DOM. Previously
+  // only the Close button's onclick did this, so an Escape-key close left
+  // a hidden orphan <dialog> behind.
+  dialogEl.addEventListener('close', function () {
+    dialogEl.remove();
+  });
+  document.querySelector('[data-close-categories-modal]').addEventListener('click', function () {
+    if (!saveOrderBtn.disabled) {
+      confirmDiscardOrder(function () { dialogEl.close(); });
+    } else {
+      dialogEl.close();
+    }
+  });
+
+  // Notifies the rest of the page (currently just the category filter
+  // dropdown -- see its hx-trigger="categories-changed from:body" in
+  // assets/index.html) that category data changed, so it can refetch itself
+  // via htmx. Fired the moment an add or reorder-save actually succeeds,
+  // not deferred until the modal closes -- so a dropdown left open in
+  // another tab, or just visible behind the modal, updates live instead
+  // of requiring a full page reload.
+  function notifyCategoriesChanged() {
+    document.body.dispatchEvent(new CustomEvent('categories-changed', { bubbles: true }));
+  }
+
+  // ---------------------------------------------------------------------
+  // Add / rename: same fetch -> pending-toast -> full reload shape used by
+  // every other modal in this app (see _add_modal.html, assetAction in
+  // assets/index.html). A reload also re-populates the category filter
+  // dropdown and the add/edit asset forms with the new/renamed/removed
+  // category, which a partial swap inside this modal alone wouldn't do.
+  // Returns false on failure (so the caller can re-enable its own inputs);
+  // on success the page is already on its way to reloading, so there's
+  // nothing left for the caller to do.
+  async function submitCategory(url, body, successMessage) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken,
+        },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        showToast(result.error || "That action couldn't be completed", 'error');
+        return false;
+      }
+
+      sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
+      window.location.reload();
+      return true;
+    } catch (err) {
+      showToast("That action couldn't be completed", 'error');
+      return false;
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function currentNames(excludeId) {
+    return Array.from(list.querySelectorAll('.cat-row'))
+      .filter(function (row) { return row.getAttribute('data-cat-id') !== excludeId; })
+      .map(function (row) { return row.querySelector('.cat-name-input').value.trim().toLowerCase(); });
+  }
+
+  // ---- Add ---------------------------------------------------------------
+  const addBtn = document.getElementById('add-category-btn');
+  const newNameInput = document.getElementById('new-category-name');
+
+  function handleAdd() {
+    const name = newNameInput.value.trim();
+    if (!name) {
+      showToast('Enter a category name', 'error');
+      newNameInput.focus();
+      return;
+    }
+    // Client-side duplicate check is just a fast, friendly first pass --
+    // the server is still the source of truth and re-validates on save.
+    if (currentNames(null).indexOf(name.toLowerCase()) !== -1) {
+      showToast(`"${name}" already exists`, 'error');
+      newNameInput.focus();
+      return;
+    }
+    addBtn.disabled = true;
+    newNameInput.disabled = true;
+
+    fetch('/api/v1/categories/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ name: name }),
+    })
+      .then(function (res) {
+        return res.json().then(function (result) { return { ok: res.ok, result: result }; });
+      })
+      .then(function (data) {
+        if (!data.ok) {
+          showToast((data.result && data.result.error) || "That action couldn't be completed", 'error');
+          addBtn.disabled = false;
+          newNameInput.disabled = false;
+          newNameInput.focus();
+          return;
+        }
+
+        // Rather than guessing what shape /add responds with and faking a
+        // row/id client-side (that caused real bugs: a made-up id doesn't
+        // exist in the categories table, so Save Order failed the moment
+        // it tried to persist an order containing it), re-fetch this same
+        // modal fresh from the server. That guarantees the new row has its
+        // real id and sits in whatever order the backend actually put it in.
+        //
+        // The dialog itself is never touched here -- only the *contents* of
+        // #category-list are replaced, by parsing the fetched HTML and
+        // pulling out just that element. Swapping the whole modal (or even
+        // the whole #modal-container) forces the <dialog> to be torn down
+        // and rebuilt, which replays its open animation/backdrop from
+        // scratch -- that's the flicker. Updating just the rows means the
+        // dialog stays mounted and open the entire time; only the list
+        // content changes underneath it.
+        showToast(`Category "${name}" added`, 'success');
+        notifyCategoriesChanged();
+        return fetch('/api/v1/categories/manage-form')
+          .then(function (res) { return res.text(); })
+          .then(function (html) {
+            const freshList = new DOMParser().parseFromString(html, 'text/html').getElementById('category-list');
+            if (freshList) {
+              list.innerHTML = freshList.innerHTML;
+            }
+            list.querySelectorAll('.cat-row').forEach(wireRow);
+            refreshMoveButtons();
+            savedOrder = currentOrderIds();
+            syncSaveOrderButton();
+
+            // Soft highlight on the row that was just added, so "it's still
+            // here, nothing broke" is visible rather than the row just
+            // silently appearing in the list.
+            const newRow = Array.from(list.querySelectorAll('.cat-row'))
+              .find(function (row) { return row.getAttribute('data-cat-name') === name; });
+            if (newRow) {
+              newRow.classList.add('bg-success/10');
+              setTimeout(function () { newRow.classList.remove('bg-success/10'); }, 900);
+            }
+
+            newNameInput.value = '';
+            addBtn.disabled = false;
+            newNameInput.disabled = false;
+            newNameInput.focus();
+          });
+      })
+      .catch(function () {
+        showToast("That action couldn't be completed", 'error');
+        addBtn.disabled = false;
+        newNameInput.disabled = false;
+        newNameInput.focus();
+      });
+  }
+
+  addBtn.addEventListener('click', handleAdd);
+  newNameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+  });
+
+  // ---- Delete confirm dialog ----------------------------------------------
+  // Self-contained, no server round-trip just to ask "are you sure" --
+  // mirrors confirmBulkDelete in assets/index.html.
+  function confirmDeleteCategory(name, assetCount, onConfirm) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4';
+
+    const warning = assetCount > 0
+      ? `<p class="text-sm text-warning mt-2">${assetCount} asset${assetCount === 1 ? '' : 's'} currently in this category will need to be reassigned.</p>`
+      : '';
+
+    backdrop.innerHTML = `
+      <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="cat-delete-confirm-title">
+        <div class="flex items-start gap-3">
+          <div class="w-9 h-9 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h3 id="cat-delete-confirm-title" class="font-semibold">Delete "${escapeHtml(name)}"?</h3>
+            <p class="text-sm text-base-content/60 mt-1">This can't be undone.</p>
+            ${warning}
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+          <button type="button" id="cat-delete-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="button" id="cat-delete-confirm-btn" class="btn btn-error btn-sm">Delete</button>
+        </div>
+      </div>`;
+    // See the matching comment in confirmDiscardOrder above -- appending to
+    // the dialog itself keeps this in the same top-layer stacking context
+    // instead of being hidden behind the dialog's own backdrop.
+    dialogEl.appendChild(backdrop);
+
+    function close() {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop) close();
+    });
+    backdrop.querySelector('#cat-delete-cancel-btn').addEventListener('click', close);
+    backdrop.querySelector('#cat-delete-confirm-btn').addEventListener('click', function () {
+      close();
+      onConfirm();
+    });
+    backdrop.querySelector('#cat-delete-confirm-btn').focus();
+  }
+
+  // ---- Reorder -------------------------------------------------------------
+  // Reordering is staged locally (drag or arrow clicks just rearrange the
+  // DOM) and only sent to the server when the person explicitly clicks
+  // "Save Order" -- no request fires just from picking something up and
+  // dropping it back where it started, and nothing is persisted without
+  // an explicit confirmation step.
+  const saveOrderBtn = document.getElementById('save-order-btn');
+  let savedOrder = currentOrderIds();
+
+  function currentOrderIds() {
+    return Array.from(list.querySelectorAll('.cat-row')).map(function (row) {
+      return row.getAttribute('data-cat-id');
+    });
+  }
+
+  function ordersEqual(a, b) {
+    return a.length === b.length && a.every(function (id, i) { return id === b[i]; });
+  }
+
+  function syncSaveOrderButton() {
+    saveOrderBtn.disabled = ordersEqual(currentOrderIds(), savedOrder);
+  }
+
+  saveOrderBtn.addEventListener('click', function () {
+    saveOrderBtn.disabled = true;
+    orderStatus.textContent = 'Saving\u2026';
+    orderStatus.classList.remove('opacity-0');
+    orderStatus.setAttribute('aria-hidden', 'false');
+
+    fetch('/api/v1/categories/reorder', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ order: currentOrderIds() }),
+    })
+      .then(function (res) {
+        return res.text().then(function (text) {
+          let parsed = null;
+          try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* not JSON */ }
+          if (!res.ok) {
+            // Surfacing the real status + server message here instead of a
+            // generic "couldn't save" -- swallowing it made this
+            // impossible to diagnose. Check the browser console for this
+            // log if the toast message alone isn't enough to tell what's
+            // wrong (e.g. a 403 means a permissions/CSRF problem, a 400
+            // usually means the server didn't like the payload shape,
+            // a 500 is a server-side error to check your logs for).
+            console.error('Reorder failed:', res.status, text);
+            const serverMessage = parsed && parsed.error ? parsed.error : null;
+            throw new Error(serverMessage || `Server responded ${res.status}`);
+          }
+          savedOrder = currentOrderIds();
+          orderStatus.textContent = 'Saved';
+          showToast('Category order saved', 'success');
+          notifyCategoriesChanged();
+        });
+      })
+      .catch(function (err) {
+        orderStatus.textContent = "Couldn't save";
+        showToast(`Couldn't save the new category order: ${err.message}`, 'error');
+      })
+      .finally(function () {
+        syncSaveOrderButton();
+        setTimeout(function () {
+          orderStatus.classList.add('opacity-0');
+          orderStatus.setAttribute('aria-hidden', 'true');
+        }, 1500);
+      });
+  });
+
+  // Guard against accidentally losing a staged (unsaved) reorder when the
+  // modal is closed -- via the Close button, clicking the backdrop, or
+  // pressing Escape. The dialog's native "cancel" event fires for both
+  // Escape and the backdrop <form method="dialog"> before the dialog
+  // actually closes, so a single listener here covers every close path
+  // except the explicit Close button, which is handled separately below.
+  function confirmDiscardOrder(onConfirm) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4';
+    backdrop.innerHTML = `
+      <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="discard-order-title">
+        <h3 id="discard-order-title" class="font-semibold">Discard unsaved order?</h3>
+        <p class="text-sm text-base-content/60 mt-1">You've reordered categories but haven't saved yet. Closing now will discard that change.</p>
+        <div class="flex justify-end gap-2 mt-5">
+          <button type="button" id="discard-order-cancel-btn" class="btn btn-ghost btn-sm">Keep Editing</button>
+          <button type="button" id="discard-order-confirm-btn" class="btn btn-error btn-sm">Discard</button>
+        </div>
+      </div>`;
+    // Appended inside the <dialog> (not document.body): a dialog shown via
+    // showModal() renders in the browser's "top layer", which sits above
+    // every ordinary element on the page regardless of z-index. A prompt
+    // appended to document.body while the dialog is still open would be
+    // stuck behind the dialog's own backdrop -- invisible, but still
+    // dimming the screen, which is exactly the "close just darkens the
+    // background" symptom. Living inside the dialog's own subtree puts it
+    // in that same top layer, on top of the dialog's backdrop and content.
+    dialogEl.appendChild(backdrop);
+
+    function close() {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+    backdrop.addEventListener('click', function (e) { if (e.target === backdrop) close(); });
+    backdrop.querySelector('#discard-order-cancel-btn').addEventListener('click', close);
+    backdrop.querySelector('#discard-order-confirm-btn').addEventListener('click', function () {
+      close();
+      onConfirm();
+    });
+    backdrop.querySelector('#discard-order-confirm-btn').focus();
+  }
+
+  dialogEl.addEventListener('cancel', function (e) {
+    if (!saveOrderBtn.disabled) {
+      e.preventDefault();
+      confirmDiscardOrder(function () { dialogEl.close(); });
+    }
+  });
+
+  function refreshMoveButtons() {
+    const rows = Array.from(list.querySelectorAll('.cat-row'));
+    rows.forEach(function (row, i) {
+      row.querySelector('.cat-move-up-btn').disabled = (i === 0);
+      row.querySelector('.cat-move-down-btn').disabled = (i === rows.length - 1);
+    });
+  }
+
+  function rowName(row) {
+    return row.querySelector('.cat-name-input').value.trim() || 'Category';
+  }
+
+  // ---- wire up a single row: rename, delete, drag, and move-button reorder
+  function wireRow(row) {
+    const input = row.querySelector('.cat-name-input');
+    const saveBtn = row.querySelector('.cat-rename-btn');
+    const deleteBtn = row.querySelector('.cat-delete-btn');
+    const originalName = input.value;
+
+    function syncDirty() {
+      const trimmed = input.value.trim();
+      saveBtn.disabled = (trimmed === '' || trimmed === originalName.trim());
+    }
+    input.addEventListener('input', syncDirty);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !saveBtn.disabled) { e.preventDefault(); saveBtn.click(); }
+    });
+
+    saveBtn.addEventListener('click', function () {
+      const id = row.getAttribute('data-cat-id');
+      const name = input.value.trim();
+      if (!name) {
+        showToast('Category name cannot be empty', 'error');
+        return;
+      }
+      if (currentNames(id).indexOf(name.toLowerCase()) !== -1) {
+        showToast(`"${name}" already exists`, 'error');
+        return;
+      }
+      saveBtn.disabled = true;
+      input.disabled = true;
+      submitCategory(`/api/v1/categories/${id}/edit`, { name: name }, 'Category renamed').then(function (ok) {
+        if (!ok) {
+          input.disabled = false;
+          syncDirty();
+        }
+      });
+    });
+
+    deleteBtn.addEventListener('click', function () {
+      const id = row.getAttribute('data-cat-id');
+      const name = row.getAttribute('data-cat-name') || input.value;
+      const assetCount = parseInt(deleteBtn.getAttribute('data-asset-count') || '0', 10);
+      confirmDeleteCategory(name, assetCount, function () {
+        deleteBtn.disabled = true;
+        input.disabled = true;
+        fetch(`/api/v1/categories/${id}/delete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({}),
+        })
+          .then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (result) {
+              return { ok: res.ok, result: result };
+            });
+          })
+          .then(function (data) {
+            if (!data.ok) {
+              showToast((data.result && data.result.error) || "That action couldn't be completed", 'error');
+              deleteBtn.disabled = false;
+              input.disabled = false;
+              return;
+            }
+
+            showToast(`Category "${name}" deleted`, 'success');
+            notifyCategoriesChanged();
+
+            // Same "dialog stays open, only the row changes" idea as Add --
+            // collapse the row's height/opacity/margins down to nothing
+            // instead of yanking it out (or reloading the whole page) so
+            // its neighbors slide up smoothly rather than jumping.
+            row.style.overflow = 'hidden';
+            row.style.maxHeight = row.offsetHeight + 'px';
+            requestAnimationFrame(function () {
+              row.classList.add('opacity-0');
+              row.style.maxHeight = '0px';
+              row.style.marginTop = '0px';
+              row.style.marginBottom = '0px';
+              row.style.paddingTop = '0px';
+              row.style.paddingBottom = '0px';
+            });
+            row.addEventListener('transitionend', function onDone(e) {
+              if (e.propertyName !== 'opacity') return;
+              row.removeEventListener('transitionend', onDone);
+              row.remove();
+              savedOrder = currentOrderIds();
+              refreshMoveButtons();
+              syncSaveOrderButton();
+              if (!list.querySelector('.cat-row')) {
+                list.innerHTML = '<div class="h-full flex items-center justify-center"><p class="text-sm text-base-content/40">No categories yet — add one below.</p></div>';
+              }
+            });
+          })
+          .catch(function () {
+            showToast("That action couldn't be completed", 'error');
+            deleteBtn.disabled = false;
+            input.disabled = false;
+          });
+      });
+    });
+
+    // Drag-and-drop reordering (mouse/touch). Kept alongside the move
+    // buttons below rather than instead of them, since drag-and-drop alone
+    // isn't keyboard- or screen-reader-accessible.
+    row.addEventListener('dragstart', function (e) {
+      row.classList.add('opacity-40');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.getAttribute('data-cat-id'));
+    });
+    row.addEventListener('dragend', function () {
+      row.classList.remove('opacity-40');
+      refreshMoveButtons();
+      syncSaveOrderButton();
+    });
+    row.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      const dragging = list.querySelector('.cat-row.opacity-40');
+      if (!dragging || dragging === row) return;
+      const rect = row.getBoundingClientRect();
+      const putBefore = (e.clientY - rect.top) < rect.height / 2;
+      list.insertBefore(dragging, putBefore ? row : row.nextSibling);
+    });
+
+    row.querySelector('.cat-move-up-btn').addEventListener('click', function () {
+      const prev = row.previousElementSibling;
+      if (!prev) return;
+      list.insertBefore(row, prev);
+      announcer.textContent = `${rowName(row)} moved up`;
+      refreshMoveButtons();
+      syncSaveOrderButton();
+      row.querySelector('.cat-move-up-btn').focus();
+    });
+    row.querySelector('.cat-move-down-btn').addEventListener('click', function () {
+      const next = row.nextElementSibling;
+      if (!next) return;
+      list.insertBefore(next, row);
+      announcer.textContent = `${rowName(row)} moved down`;
+      refreshMoveButtons();
+      syncSaveOrderButton();
+      row.querySelector('.cat-move-down-btn').focus();
+    });
+  }
+
+  list.querySelectorAll('.cat-row').forEach(wireRow);
+  refreshMoveButtons();
+
+  // ---- Sort A→Z / Z→A ----------------------------------------------------
+  // Alphabetizes the list client-side only -- like drag/arrow reordering,
+  // this just stages a new order in the DOM. Nothing is persisted until
+  // "Save Order" is clicked, so a mis-click here is a no-op you can undo
+  // by just not saving (or by closing the modal, which now asks first
+  // since it discards an unsaved order same as any other reorder).
+  //
+  // Clicking again reverses direction. The button label always names the
+  // direction the *next* click will produce (mirrors the sort arrows on
+  // the asset table's), so it reads correctly right after either
+  // an alphabetical sort or a manual drag/arrow reorder.
+  const sortAzBtn = document.getElementById('sort-az-btn');
+  let sortAscending = true;
+  sortAzBtn.addEventListener('click', function () {
+    const rows = Array.from(list.querySelectorAll('.cat-row'));
+    if (rows.length < 2) return;
+    rows
+      .sort(function (a, b) {
+        const cmp = rowName(a).localeCompare(rowName(b), undefined, { sensitivity: 'base' });
+        return sortAscending ? cmp : -cmp;
+      })
+      .forEach(function (row) { list.appendChild(row); });
+    announcer.textContent = sortAscending ? 'Categories sorted A to Z' : 'Categories sorted Z to A';
+    sortAzBtn.textContent = sortAscending ? 'Sort Z\u2192A' : 'Sort A\u2192Z';
+    sortAscending = !sortAscending;
+    refreshMoveButtons();
+    syncSaveOrderButton();
+  });
+})();
+</script>

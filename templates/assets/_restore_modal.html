@@ -10,7 +10,8 @@
     <p class="text-error text-sm mb-3">{{ error }}</p>
     {% endif %}
 
-    <form hx-post="/api/v1/assets/{{ asset.id }}/restore" hx-target="#modal-container" hx-swap="innerHTML">
+    <form hx-post="/api/v1/assets/{{ asset.id }}/restore" hx-target="closest .modal" hx-swap="outerHTML">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
       <div class="form-control mb-2">
         <label class="label">
           <span class="label-text">Condition</span>
@@ -29,7 +30,7 @@
       </div>
 
       <div class="modal-action">
-        <button type="button" class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
         <button type="submit" class="btn btn-primary">Restore</button>
       </div>
     </form>

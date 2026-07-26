@@ -1,0 +1,20 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-2">Deactivate Member</h3>
+    <p class="text-sm text-base-content/70 mb-4">
+      Are you sure you want to deactivate <strong>{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</strong>?
+      They won't be able to borrow tools until reactivated.
+    </p>
+
+    {% if error %}
+    <p class="text-error text-sm mb-3">{{ error }}</p>
+    {% endif %}
+
+    <form hx-post="/api/v1/members/{{ member.id }}/delete" hx-target="closest .modal" hx-swap="outerHTML">
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" class="btn btn-error">Deactivate</button>
+      </div>
+    </form>
+  </div>
+</div>

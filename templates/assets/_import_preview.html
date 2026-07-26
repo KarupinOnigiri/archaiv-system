@@ -1,0 +1,81 @@
+<!-- Swapped into #import-step-content, which lives inside <form id="import-asset-form">
+     in _import_modal.html. The file input itself lives outside this div (as a sibling,
+     earlier in that form) specifically so it survives this swap -- Confirm Import below
+     submits through that same enclosing form and needs the original file still attached. -->
+
+<div class="bg-base-200/50 rounded-xl p-4 mb-4 text-sm">
+  <p class="font-semibold mb-1">Nothing has been saved yet</p>
+  <p class="text-base-content/70">Here's what will happen if you confirm this import.</p>
+</div>
+
+<div class="grid grid-cols-2 gap-3 mb-4">
+  <div class="bg-success/10 rounded-xl p-4">
+    <p class="text-xs font-semibold text-success/80 tracking-wide">WILL BE CREATED</p>
+    <p class="text-2xl font-bold text-success">{{ rows_to_create }}</p>
+    {% if rows_to_archive %}
+    <p class="text-xs text-success/70 mt-0.5">{{ rows_to_archive }} added as archived</p>
+    {% endif %}
+  </div>
+  <div class="bg-error/10 rounded-xl p-4">
+    <p class="text-xs font-semibold text-error/80 tracking-wide">WILL FAIL</p>
+    <p class="text-2xl font-bold text-error">{{ errors|length }}</p>
+  </div>
+</div>
+
+{% if new_categories %}
+<div class="text-sm mb-4">
+  <p class="font-semibold mb-1.5">New categories that will be created</p>
+  <div class="flex flex-wrap gap-1.5">
+    {% for cat in new_categories %}
+    <span class="px-2 py-0.5 rounded-full bg-base-200 text-xs">{{ cat }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="mb-2">
+  <p class="text-sm font-semibold mb-2">Rows that would fail</p>
+  <div class="max-h-40 overflow-y-auto border border-base-300 rounded-lg">
+    <table class="table table-sm w-full">
+      <thead>
+        <tr class="text-xs text-base-content/50">
+          <th class="py-1.5">ROW</th>
+          <th class="py-1.5">REASON</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in errors %}
+        <tr class="border-t border-base-200">
+          <td class="py-1.5 text-sm">{{ e.row }}</td>
+          <td class="py-1.5 text-sm text-error/80">{{ e.error }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-base-content/50 mt-2">These rows will be skipped automatically. You can still import the rest, then fix and re-upload just these separately.</p>
+</div>
+{% elif rows_to_create == 0 %}
+<p class="text-sm text-base-content/50 mb-2">No valid rows found in this file.</p>
+{% endif %}
+
+<div class="modal-action flex justify-end items-center gap-2 mt-6">
+  <span id="import-spinner" class="htmx-indicator loading loading-spinner loading-sm"></span>
+  <button type="button" class="btn btn-outline"
+          hx-get="/api/v1/assets/import-form"
+          hx-target="#modal-container"
+          hx-swap="innerHTML">
+    Choose a Different File
+  </button>
+  <button type="button" class="btn btn-primary"
+          {% if rows_to_create == 0 %}disabled{% endif %}
+          hx-post="/api/v1/assets/import"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#import-spinner"
+          hx-vals='{"mode": "commit"}'>
+    Confirm Import{% if rows_to_create %} ({{ rows_to_create }}){% endif %}
+  </button>
+</div>

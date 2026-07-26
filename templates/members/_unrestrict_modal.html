@@ -1,0 +1,22 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-2">Lift Restriction</h3>
+    <p class="text-sm text-base-content/70 mb-4">
+      Lift the borrowing restriction on <strong>{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</strong>?
+      {% if member.restriction_reason %}
+      <span class="block mt-2 text-xs text-base-content/50">Current reason: {{ member.restriction_reason }}</span>
+      {% endif %}
+    </p>
+
+    {% if error %}
+    <p class="text-error text-sm mb-3">{{ error }}</p>
+    {% endif %}
+
+    <form hx-post="/api/v1/members/{{ member.id }}/unrestrict" hx-target="closest .modal" hx-swap="outerHTML">
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" class="btn btn-success">Lift Restriction</button>
+      </div>
+    </form>
+  </div>
+</div>

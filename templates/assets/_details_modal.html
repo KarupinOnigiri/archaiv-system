@@ -166,16 +166,28 @@
     <div class="modal-action flex justify-end gap-2 mt-6">
       {% if asset.deleted_at %}
       <button type="button" class="btn btn-primary"
-              hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm"
+              hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm?return_to=details"
               hx-target="#modal-container"
-              hx-swap="innerHTML">
+              hx-swap="beforeend">
         Restore
       </button>
-      {% else %}
-      <button type="button" class="btn btn-primary"
-              hx-get="/api/v1/assets/{{ asset.id }}/edit-form"
+      <button type="button" class="btn btn-outline"
+              hx-get="/api/v1/assets/{{ asset.id }}/edit-form?return_to=details"
               hx-target="#modal-container"
-              hx-swap="innerHTML">
+              hx-swap="beforeend">
+        Edit
+      </button>
+      {% else %}
+      <button type="button" class="btn btn-error btn-outline"
+              hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm?return_to=details"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Delete
+      </button>
+      <button type="button" class="btn btn-primary"
+              hx-get="/api/v1/assets/{{ asset.id }}/edit-form?return_to=details"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
         Edit
       </button>
       {% endif %}

@@ -6,7 +6,7 @@
         <h3 class="font-bold text-xl">Edit Inventory Item</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ asset.asset_id }} &middot; Update this asset's details.</p>
       </div>
-      <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
+      <button type="button" onclick="this.closest('.modal').remove()"
               class="text-base-content/40 hover:text-base-content">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
       </button>
@@ -16,8 +16,9 @@
     <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
     {% endif %}
 
-    <form id="edit-asset-form" hx-post="/api/v1/assets/{{ asset.id }}/edit" hx-target="#modal-container" hx-swap="innerHTML"
+    <form id="edit-asset-form" hx-post="/api/v1/assets/{{ asset.id }}/edit" hx-target="closest .modal" hx-swap="outerHTML"
           hx-encoding="multipart/form-data">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
       <div class="grid grid-cols-3 gap-6">
 
         <!-- Left: form fields (2 cols wide) -->
@@ -180,10 +181,7 @@
       </div>
 
       <div class="modal-action flex justify-end gap-2 mt-6">
-        <button type="button" class="btn btn-outline"
-                hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
-                hx-target="#modal-container"
-                hx-swap="innerHTML">
+        <button type="button" class="btn btn-outline" onclick="this.closest('.modal').remove()">
           Cancel
         </button>
         <button type="submit" class="btn btn-primary">Save Changes</button>

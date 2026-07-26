@@ -1,0 +1,6 @@
+﻿Asset ID,Name,Barcode ID,RFID ID,Category,Status,Condition,Serial Code,Acquired Date,Last Calibrated,Notes
+AST-00001,Ingco Compact Brushless 20V,AST00001,,Power Tools,available,functional,TOOLS00001,2025-11-19,2026-07-01,
+AST-00002,Ingco Compact Brushless,AST00010,,Equipment,available,inoperable,TOOLS00010,2025-11-18,2026-07-01,
+AST-00003,Ingco Compact Brushless,AST00011,,Power Tools,maintenance,for_repair,TOOLS00011,2025-11-18,2026-07-01,
+AST-00007,Ingco Compact Brushless,AST00020,,Power Tools,available,functional,TOOLS00020,2025-11-18,2026-07-01,
+AST-00008,Vernier Caliper,AST01000,,Measuring Instruments,available,functional,TOOL01000,2025-11-18,2026-07-01,

@@ -6,6 +6,7 @@ from flask import (
     request,
     render_template,
     make_response,
+    current_app,
 )
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
@@ -13,6 +14,7 @@ from utils.logger import log_action
 from datetime import datetime
 from utils.validators import (
     validate_date_fields,
+    validate_date_string,
     parse_pagination_params,
     validate_lookup_id,
 )
@@ -23,12 +25,54 @@ import logging
 import csv
 import io
 import json
+import re
+import os
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
 
 assets_bp = Blueprint("assets", __name__)
 
 ADDITIONAL_IMAGE_SLOTS = (1, 2)
+
+
+def _ensure_category_sort_order_column():
+    """One-time, idempotent migration: the categories table predates the
+    Manage Categories reordering UI and has no sort_order column, so
+    everything currently sorts alphabetically (ORDER BY name) everywhere in
+    this file. Manage Departments already relies on such a column existing
+    on `departments`; this brings `categories` up to the same shape so
+    drag/arrow reordering + Save Order can persist an order the same way.
+
+    Runs once at import time (module-level call below), wrapped so a
+    column that already exists (e.g. after a restart, or if a real
+    migration system adds it later) is a silent no-op rather than an
+    error. Existing rows get sequential sort_order values based on their
+    current alphabetical order, so nothing visually jumps around the
+    first time this runs -- only *subsequent* reordering changes it.
+    """
+    conn = get_db_connection()
+    try:
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(categories)").fetchall()}
+        if "sort_order" not in existing_cols:
+            conn.execute("ALTER TABLE categories ADD COLUMN sort_order INTEGER")
+            rows = conn.execute("SELECT id FROM categories ORDER BY name").fetchall()
+            for position, row in enumerate(rows):
+                conn.execute(
+                    "UPDATE categories SET sort_order = ? WHERE id = ?", (position, row["id"])
+                )
+            conn.commit()
+            logger.info("Added categories.sort_order and backfilled %d row(s)", len(rows))
+    except sqlite3.Error:
+        conn.rollback()
+        logger.exception("Failed to ensure categories.sort_order column")
+    finally:
+        conn.close()
+
+
+_ensure_category_sort_order_column()
 
 
 def _fetch_asset_images(asset_id, conn):
@@ -56,14 +100,26 @@ SORTABLE_COLUMNS = {
 }
 
 
-@assets_bp.route("/assets")
-@login_required
-def view_assets():
-    limit, offset, error = parse_pagination_params(request.args)
-    if error:
-        return error
+def get_assets_table_context(args):
+    """Builds everything _table.html needs (assets, total_count, limit,
+    offset, show_archived, sort_by, sort_dir) from a request.args-like
+    object. Shared by view_assets() (the htmx partial endpoint) and
+    assets_page() in routes/pages.py (the full page load) so the two
+    can't quietly drift out of sync on what the template requires --
+    which is exactly what happened before this function existed:
+    _table.html needed 'offset' and pages.py never supplied it.
 
-    show_archived = request.args.get("show_archived") == "1"
+    Returns (context_dict, None) on success, or (None, error_response)
+    on a bad query param -- callers should return the error response
+    as-is for an API/htmx caller, or fall back to defaults for a full
+    page load where a stray bad query string shouldn't 500/400 the
+    whole page.
+    """
+    limit, offset, error = parse_pagination_params(args)
+    if error:
+        return None, error
+
+    show_archived = args.get("show_archived") == "1"
 
     if show_archived:
         where_clauses = ["assets.deleted_at IS NOT NULL"]
@@ -71,7 +127,7 @@ def view_assets():
         where_clauses = ["assets.deleted_at IS NULL"]
     params = []
 
-    q = request.args.get("q")
+    q = args.get("q")
     if q:
         where_clauses.append(
             "(assets.name LIKE ? OR assets.barcode_id LIKE ? OR assets.asset_id LIKE ?)"
@@ -79,34 +135,55 @@ def view_assets():
         like = f"%{q}%"
         params.extend([like, like, like])
 
-    category_id = request.args.get("category_id")
+    category_id = args.get("category_id")
     if category_id:
         where_clauses.append("assets.category_id = ?")
         params.append(category_id)
 
-    status_filter = request.args.get("status")
+    status_filter = args.get("status")
     if status_filter:
         where_clauses.append("assets.status = ?")
         params.append(status_filter)
 
-    condition_filter = request.args.get("condition")
+    condition_filter = args.get("condition")
     if condition_filter:
         where_clauses.append("assets.condition = ?")
         params.append(condition_filter)
 
+    # Only meaningful when viewing archived items -- deleted_at is NULL for
+    # everything else, and guarding on show_archived here (rather than just
+    # relying on the date inputs being hidden client-side) means a leftover
+    # date value can't ever silently empty out the active-items table if
+    # the toggle gets flipped off without the fields being cleared.
+    deleted_from = args.get("deleted_from")
+    if show_archived and deleted_from:
+        error = validate_date_string(deleted_from, "deleted_from")
+        if error:
+            return None, error
+        where_clauses.append("date(assets.deleted_at) >= ?")
+        params.append(deleted_from)
+
+    deleted_to = args.get("deleted_to")
+    if show_archived and deleted_to:
+        error = validate_date_string(deleted_to, "deleted_to")
+        if error:
+            return None, error
+        where_clauses.append("date(assets.deleted_at) <= ?")
+        params.append(deleted_to)
+
     where_sql = f"WHERE {' AND '.join(where_clauses)}"
 
-    sort_by = request.args.get("sort_by", "created_at")
+    sort_by = args.get("sort_by", "created_at")
     if sort_by not in SORTABLE_COLUMNS:
-        return (
+        return None, (
             jsonify(
                 {"error": f"sort_by must be one of: {', '.join(SORTABLE_COLUMNS)}"}
             ),
             400,
         )
-    sort_dir = request.args.get("sort_dir", "desc").lower()
+    sort_dir = args.get("sort_dir", "desc").lower()
     if sort_dir not in ("asc", "desc"):
-        return jsonify({"error": "sort_dir must be 'asc' or 'desc'"}), 400
+        return None, (jsonify({"error": "sort_dir must be 'asc' or 'desc'"}), 400)
     sort_column = SORTABLE_COLUMNS[sort_by]
 
     conn = get_db_connection()
@@ -121,9 +198,10 @@ def view_assets():
     ).fetchone()["cnt"]
     assets = conn.execute(
         f"""
-        SELECT assets.*, categories.name AS category
+        SELECT assets.*, categories.name AS category, staff.username AS deleted_by_username
         FROM assets
         LEFT JOIN categories ON assets.category_id = categories.id
+        LEFT JOIN staff ON assets.deleted_by = staff.id
         {where_sql}
         ORDER BY {sort_column} {sort_dir.upper()}, assets.id {sort_dir.upper()}
         LIMIT ? OFFSET ?
@@ -131,15 +209,54 @@ def view_assets():
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    return {
+        "assets": assets,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "show_archived": show_archived,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
+    }, None
+
+
+@assets_bp.route("/assets")
+@login_required
+def view_assets():
+    context, error = get_assets_table_context(request.args)
+    if error:
+        return error
+    return render_template("assets/_table.html", **context)
+
+
+@assets_bp.route("/assets/stat-cards")
+@login_required
+def asset_stat_cards():
+    """Returns just the 4 stat-card numbers as HTML. Listened to via the
+    'assets-refreshed' HX-Trigger event (see #stat-cards-container in
+    assets/index.html) so the cards stay in sync with the table after
+    delete/restore/import -- those flows don't do a full page reload the
+    way add/edit's HX-Redirect does, so without this the cards go stale."""
+    conn = get_db_connection()
+    counts = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS all_count,
+            SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS available_count,
+            SUM(CASE WHEN status = 'borrowed' THEN 1 ELSE 0 END) AS borrowed_count,
+            SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) AS maintenance_count
+        FROM assets
+        WHERE deleted_at IS NULL
+        """
+    ).fetchone()
+    conn.close()
     return render_template(
-        "assets/_table.html",
-        assets=assets,
-        total_count=total_count,
-        limit=limit,
-        offset=offset,
-        show_archived=show_archived,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
+        "assets/_stat_cards.html",
+        stat_all=counts["all_count"],
+        stat_available=counts["available_count"] or 0,
+        stat_borrowed=counts["borrowed_count"] or 0,
+        stat_maintenance=counts["maintenance_count"] or 0,
     )
 
     # # # CATEGORIES (lookup table) -------------------------------------------
@@ -149,9 +266,44 @@ def view_assets():
 @login_required
 def view_categories():
     conn = get_db_connection()
-    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     conn.close()
     return jsonify([dict(row) for row in categories])
+
+
+@assets_bp.route("/categories/manage-form")
+@roles_required("admin", "in_charge")
+def manage_categories_form():
+    conn = get_db_connection()
+    # LEFT JOIN + COUNT (restricted to non-archived assets, same
+    # deleted_at IS NULL convention used everywhere else in this file) so
+    # dept.asset_count in _categories_modal.html reflects assets that would
+    # actually block a delete -- a category whose only assets are already
+    # archived should still be deletable.
+    categories = conn.execute(
+        """
+        SELECT categories.*, COUNT(assets.id) AS asset_count
+        FROM categories
+        LEFT JOIN assets ON assets.category_id = categories.id AND assets.deleted_at IS NULL
+        GROUP BY categories.id
+        ORDER BY categories.sort_order, categories.name
+        """
+    ).fetchall()
+    conn.close()
+    return render_template("assets/_categories_modal.html", categories=categories)
+
+
+@assets_bp.route("/categories/options")
+@login_required
+def category_options():
+    """Returns just the <option> tags for the category filter dropdown on
+    the Inventory page, in the current custom order. Fetched on demand
+    whenever the Manage Categories modal fires a `categories-changed`
+    event (add, reorder, or delete), mirroring department_options()."""
+    conn = get_db_connection()
+    categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
+    conn.close()
+    return render_template("assets/_category_options.html", categories=categories)
 
 
 @assets_bp.route("/categories/add", methods=["POST"])
@@ -168,7 +320,15 @@ def add_category():
 
     conn = get_db_connection()
     try:
-        cursor = conn.execute("INSERT INTO categories (name) VALUES (?)", (name,))
+        # New categories land at the end of the custom order by default --
+        # COALESCE handles the very first category ever created, when
+        # MAX(sort_order) is NULL. Matches add_department's behavior.
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories"
+        ).fetchone()["next_order"]
+        cursor = conn.execute(
+            "INSERT INTO categories (name, sort_order) VALUES (?, ?)", (name, next_order)
+        )
         conn.commit()
         new_id = cursor.lastrowid
     except sqlite3.IntegrityError:
@@ -231,11 +391,125 @@ def edit_category(id):
     return jsonify({"message": "Category renamed successfully"})
 
 
+@assets_bp.route("/categories/reorder", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def reorder_categories():
+    """Persists the category order set in the Manage Categories modal.
+    Expects {"order": [id, id, ...]} -- every category id, listed in the
+    new top-to-bottom order. Mirrors reorder_departments exactly."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    order = data.get("order")
+    if not isinstance(order, list) or not order:
+        return jsonify({"error": "order must be a non-empty list of category ids"}), 400
+
+    try:
+        ordered_ids = [int(cat_id) for cat_id in order]
+    except (TypeError, ValueError):
+        return jsonify({"error": "order must contain only category ids"}), 400
+
+    if len(set(ordered_ids)) != len(ordered_ids):
+        return jsonify({"error": "order contains duplicate category ids"}), 400
+
+    conn = get_db_connection()
+    existing_ids = {
+        row["id"] for row in conn.execute("SELECT id FROM categories").fetchall()
+    }
+
+    if set(ordered_ids) != existing_ids:
+        conn.close()
+        return (
+            jsonify({"error": "order must include exactly the current set of categories"}),
+            400,
+        )
+
+    try:
+        for position, cat_id in enumerate(ordered_ids):
+            conn.execute(
+                "UPDATE categories SET sort_order = ? WHERE id = ?", (position, cat_id)
+            )
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        conn.close()
+        logger.exception("Failed to save category order")
+        return jsonify({"error": "Failed to save category order"}), 500
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="reordered_categories",
+        target_table="categories",
+        target_id=None,
+        details=f"Reordered categories: {', '.join(str(i) for i in ordered_ids)}",
+    )
+
+    return jsonify({"message": "Category order saved successfully"})
+
+
+@assets_bp.route("/categories/<int:id>/delete", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def delete_category(id):
+    """Deletes a category, as long as no non-archived asset currently
+    belongs to it. Mirrors delete_department: refuses outright and asks
+    for assets to be reassigned first rather than silently nulling out
+    category_id or letting a foreign-key error leak through as a 500."""
+    conn = get_db_connection()
+    category = conn.execute("SELECT * FROM categories WHERE id = ?", (id,)).fetchone()
+    if category is None:
+        conn.close()
+        return jsonify({"error": "Category not found"}), 404
+
+    asset_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM assets WHERE category_id = ? AND deleted_at IS NULL",
+        (id,),
+    ).fetchone()["cnt"]
+    if asset_count > 0:
+        conn.close()
+        noun = "asset" if asset_count == 1 else "assets"
+        return (
+            jsonify(
+                {
+                    "error": f"Can't delete \"{category['name']}\" -- {asset_count} {noun} still assigned to it. Reassign them to another category first."
+                }
+            ),
+            400,
+        )
+
+    try:
+        conn.execute("DELETE FROM categories WHERE id = ?", (id,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return (
+            jsonify({"error": "This category can't be deleted because assets are still assigned to it"}),
+            400,
+        )
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="deleted_category",
+        target_table="categories",
+        target_id=id,
+        details=f"Deleted category: {category['name']}",
+    )
+
+    return jsonify({"message": "Category deleted successfully"})
+
+
 @assets_bp.route("/assets/add-form")
 @roles_required("admin", "in_charge")
 def add_asset_form():
     conn = get_db_connection()
-    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     conn.close()
     return render_template("assets/_add_modal.html", categories=categories, error=None)
 
@@ -259,7 +533,7 @@ def add_asset_submit():
                 return jsonify({"error": error_msg}), 200
             conn = get_db_connection()
             categories = conn.execute(
-                "SELECT * FROM categories ORDER BY name"
+                "SELECT * FROM categories ORDER BY sort_order, name"
             ).fetchall()
             conn.close()
             return (
@@ -285,7 +559,7 @@ def add_asset_submit():
                 return jsonify({"error": img_error}), 200
             conn = get_db_connection()
             categories = conn.execute(
-                "SELECT * FROM categories ORDER BY name"
+                "SELECT * FROM categories ORDER BY sort_order, name"
             ).fetchall()
             conn.close()
             return (
@@ -308,7 +582,7 @@ def add_asset_submit():
                     return jsonify({"error": img_error}), 200
                 conn = get_db_connection()
                 categories = conn.execute(
-                    "SELECT * FROM categories ORDER BY name"
+                    "SELECT * FROM categories ORDER BY sort_order, name"
                 ).fetchall()
                 conn.close()
                 return (
@@ -369,7 +643,7 @@ def add_asset_submit():
                     return jsonify({"error": img_error}), 200
                 conn2 = get_db_connection()
                 categories = conn2.execute(
-                    "SELECT * FROM categories ORDER BY name"
+                    "SELECT * FROM categories ORDER BY sort_order, name"
                 ).fetchall()
                 conn2.close()
                 return (
@@ -397,7 +671,7 @@ def add_asset_submit():
                     return jsonify({"error": img_error}), 200
                 conn2 = get_db_connection()
                 categories = conn2.execute(
-                    "SELECT * FROM categories ORDER BY name"
+                    "SELECT * FROM categories ORDER BY sort_order, name"
                 ).fetchall()
                 conn2.close()
                 return (
@@ -424,7 +698,7 @@ def add_asset_submit():
         if request.is_json:
             return jsonify({"error": error_msg}), 400
         conn2 = get_db_connection()
-        categories = conn2.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        categories = conn2.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
         conn2.close()
         return (
             render_template(
@@ -480,10 +754,46 @@ def import_assets_form():
 
 def _import_error_response(error_msg, status):
     """Mirrors the other _*_error_response helpers: JSON for API callers,
-    the modal re-rendered with an inline error for htmx/form callers."""
+    the modal re-rendered with an inline error for htmx/form callers.
+
+    HX-Retarget/HX-Reswap force the swap back onto #modal-container
+    regardless of what the triggering request declared as its target.
+    That matters here specifically because the initial (preview-step)
+    submit targets the inner #import-step-content div, not the modal
+    itself -- without this override, this full modal re-render would
+    get nested inside that inner div instead of replacing the modal."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
-    return render_template("assets/_import_modal.html", error=error_msg), 200
+    response = make_response(
+        render_template("assets/_import_modal.html", error=error_msg), 200
+    )
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+
+def _parse_import_deleted_at(raw):
+    """Best-practice rule for the archive/active split on import: a row is
+    archived if (and only if) its deleted_at cell is non-blank, active
+    otherwise -- so importing is a data-driven mirror of the delete/restore
+    actions rather than needing a separate "import as archived" toggle.
+
+    Accepts either a bare date (YYYY-MM-DD, easy to type/hand-edit) or a
+    full timestamp (YYYY-MM-DD HH:MM:SS, what a round-tripped export of the
+    archived view actually contains -- see delete_asset, which stores
+    deleted_at in that exact format). Normalizes to the same
+    "%Y-%m-%d %H:%M:%S" format used everywhere else deleted_at is written,
+    so an archived row imported this way is indistinguishable from one
+    archived through the UI. Returns None if raw is unparseable in either
+    format -- the caller treats that as a row-level error rather than
+    silently falling back to "active", since guessing wrong here would
+    quietly un-archive something the CSV clearly intended to keep archived."""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    return None
 
 
 @assets_bp.route("/assets/import", methods=["POST"])
@@ -497,24 +807,63 @@ def import_assets_csv():
     if not file.filename:
         return _import_error_response("No file selected", 400)
 
+    mode = request.form.get("mode", "commit")
+    if mode not in ("preview", "commit"):
+        return _import_error_response("mode must be 'preview' or 'commit'", 400)
+    dry_run = mode == "preview"
+
     try:
         content = file.stream.read().decode("utf-8-sig")
     except UnicodeDecodeError:
         return _import_error_response("File must be UTF-8 encoded CSV", 400)
 
     reader = csv.DictReader(io.StringIO(content))
-    missing_cols = [
-        c for c in REQUIRED_CSV_COLUMNS if c not in (reader.fieldnames or [])
-    ]
+    raw_fieldnames = reader.fieldnames or []
+
+    # Import used to only accept the canonical snake_case keys (name,
+    # barcode_id, ...), but Export writes human-readable labels (Name,
+    # Barcode ID, ...) via EXPORT_FIELD_LABELS -- so re-importing the app's
+    # own export, or the archived view's export (which is exactly what the
+    # import modal's help text describes as a supported workflow), failed
+    # immediately on "missing required column(s)". This maps either form
+    # back to the canonical key so both work; an unrecognized header is
+    # just lowercased/underscored and, if it doesn't match anything the
+    # loop below reads, silently ignored -- same as an unknown column
+    # always was.
+    reverse_labels = {label.lower(): key for key, label in EXPORT_FIELD_LABELS.items()}
+    header_map = {}
+    for h in raw_fieldnames:
+        normalized = (h or "").strip()
+        header_map[h] = reverse_labels.get(
+            normalized.lower(), normalized.lower().replace(" ", "_")
+        )
+    canonical_fieldnames = list(header_map.values())
+
+    missing_cols = [c for c in REQUIRED_CSV_COLUMNS if c not in canonical_fieldnames]
     if missing_cols:
         return _import_error_response(
             f"CSV missing required column(s): {', '.join(missing_cols)}", 400
         )
 
     conn = get_db_connection()
-    created, errors = [], []
+    # Manual transaction control for this connection only (doesn't affect
+    # any other request/route): Python's sqlite3 wrapper, in its default
+    # mode, silently COMMITs any open transaction before executing a
+    # statement it doesn't recognize as INSERT/UPDATE/DELETE/SELECT --
+    # which includes the raw SAVEPOINT/RELEASE/ROLLBACK TO statements
+    # below. Left in that default mode, every row's SAVEPOINT would
+    # implicitly commit the *previous* row to disk before it even started,
+    # so preview mode's rollback-the-whole-batch-at-the-end had nothing
+    # left to roll back -- rows were getting permanently created except
+    # the ones that errored. isolation_level=None hands full control to
+    # the explicit BEGIN/COMMIT/ROLLBACK calls below instead.
+    conn.isolation_level = None
+    conn.execute("BEGIN")
+    created, errors, new_categories = [], [], []
+    seen_category_names = set()
 
-    for row_num, row in enumerate(reader, start=2):  # row 1 is the header
+    for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
+        row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         name = (row.get("name") or "").strip()
         barcode_id = (row.get("barcode_id") or "").strip()
         if not name or not barcode_id:
@@ -526,6 +875,24 @@ def import_assets_csv():
             errors.append({"row": row_num, "error": "invalid date format"})
             continue
 
+        # Blank/missing deleted_at -> active; a non-blank value archives the
+        # row on import. See _parse_import_deleted_at for why an unparseable
+        # (rather than blank) value is a hard error instead of a silent
+        # fallback to active.
+        deleted_at_raw = (row.get("deleted_at") or "").strip()
+        deleted_at = None
+        if deleted_at_raw:
+            deleted_at = _parse_import_deleted_at(deleted_at_raw)
+            if deleted_at is None:
+                errors.append(
+                    {
+                        "row": row_num,
+                        "error": "invalid deleted_at format (expected YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)",
+                    }
+                )
+                continue
+
+        conn.execute("SAVEPOINT row_import")
         try:
             category_name = (row.get("category") or "").strip()
             category_id = None
@@ -537,13 +904,16 @@ def import_assets_csv():
                     category_id = conn.execute(
                         "INSERT INTO categories (name) VALUES (?)", (category_name,)
                     ).lastrowid
+                    if category_name not in seen_category_names:
+                        seen_category_names.add(category_name)
+                        new_categories.append(category_name)
                 else:
                     category_id = cat_row["id"]
 
             cursor = conn.execute(
                 """
-                INSERT INTO assets (asset_id, name, barcode_id, rfid_id, category_id, serial_code, acquired_date, last_calibrated, notes)
-                VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assets (asset_id, name, barcode_id, rfid_id, category_id, serial_code, acquired_date, last_calibrated, notes, deleted_at, deleted_by)
+                VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -554,6 +924,8 @@ def import_assets_csv():
                     row.get("acquired_date") or None,
                     row.get("last_calibrated") or None,
                     row.get("notes") or None,
+                    deleted_at,
+                    g.staff["id"] if deleted_at is not None else None,
                 ),
             )
             new_id = cursor.lastrowid
@@ -561,21 +933,54 @@ def import_assets_csv():
                 "UPDATE assets SET asset_id = ? WHERE id = ?",
                 (f"AST-{new_id:05d}", new_id),
             )
-            conn.commit()
-            created.append({"row": row_num, "id": new_id, "barcode_id": barcode_id})
+            conn.execute("RELEASE row_import")
+            created.append(
+                {
+                    "row": row_num,
+                    "id": new_id,
+                    "barcode_id": barcode_id,
+                    "archived": deleted_at is not None,
+                }
+            )
         except sqlite3.IntegrityError as e:
-            conn.rollback()
+            conn.execute("ROLLBACK TO row_import")
+            conn.execute("RELEASE row_import")
             errors.append(
                 {"row": row_num, "error": f"duplicate or constraint violation: {e}"}
             )
 
+    # Preview mode runs every row for real -- including auto-created
+    # categories and actual UNIQUE-constraint checks against both the DB
+    # and the rest of the same file -- so it can't disagree with what a
+    # real commit would do (e.g. two rows in the same file sharing a
+    # barcode). It just discards the whole batch here instead of keeping
+    # it, so nothing from a preview is ever actually persisted.
+    if dry_run:
+        conn.execute("ROLLBACK")
+    else:
+        conn.execute("COMMIT")
     conn.close()
 
+    archived_count = sum(1 for c in created if c["archived"])
+
+    if dry_run:
+        # Nothing was persisted (rolled back above), so this deliberately
+        # doesn't call log_action -- an audit trail entry for an import that
+        # never happened would be misleading.
+        return render_template(
+            "assets/_import_preview.html",
+            rows_to_create=len(created),
+            rows_to_archive=archived_count,
+            errors=errors,
+            new_categories=new_categories,
+        )
+
+    detail_suffix = f" ({archived_count} archived)" if archived_count else ""
     log_action(
         staff_id=g.staff["id"],
         action="bulk_imported_assets",
         target_table="assets",
-        details=f"Imported {len(created)} asset(s) via CSV, {len(errors)} error(s)",
+        details=f"Imported {len(created)} asset(s) via CSV{detail_suffix}, {len(errors)} error(s)",
     )
 
     if request.is_json:
@@ -588,11 +993,333 @@ def import_assets_csv():
             "assets/_import_results.html",
             created_count=len(created),
             created=created,
+            created_ids=[c["id"] for c in created],
             errors=errors,
+            archived_count=archived_count,
         )
     )
     if created:
         response.headers["HX-Trigger"] = "assets-refreshed"
+    return response
+
+
+# Columns match REQUIRED_CSV_COLUMNS/OPTIONAL_CSV_COLUMNS above (plus
+# read-only status/condition, and deleted_at when exporting the archived
+# view) so a round trip through export -> edit -> import stays consistent.
+EXPORT_CSV_COLUMNS = (
+    "asset_id",
+    "name",
+    "barcode_id",
+    "rfid_id",
+    "category",
+    "status",
+    "condition",
+    "serial_code",
+    "acquired_date",
+    "last_calibrated",
+    "notes",
+)
+
+# Human-readable labels for the export modal's field checklist. Keys mirror
+# EXPORT_CSV_COLUMNS (+ deleted_at, archived-only) so the checklist and the
+# actual export columns can never drift out of sync with each other.
+EXPORT_FIELD_LABELS = {
+    "asset_id": "Asset ID",
+    "name": "Name",
+    "barcode_id": "Barcode ID",
+    "rfid_id": "RFID ID",
+    "category": "Category",
+    "status": "Status",
+    "condition": "Condition",
+    "serial_code": "Serial Code",
+    "acquired_date": "Acquired Date",
+    "last_calibrated": "Last Calibrated",
+    "notes": "Notes",
+    "deleted_at": "Deleted At",
+}
+
+
+def _default_export_basename(show_archived):
+    return (
+        f"assets_{'archived' if show_archived else 'active'}_"
+        f"{datetime.now().strftime('%Y%m%d')}"
+    )
+
+
+def _default_export_dir():
+    """<app root>/export -- current_app.root_path is the folder app.py
+    lives in, i.e. what the person means by "the root folder of the
+    system" here (this is a self-hosted internal tool, not a shared public
+    host, so exposing/using that folder is the intended behavior)."""
+    return os.path.join(current_app.root_path, "export")
+
+
+# Only safe filename characters survive; anything else (path separators,
+# quotes, whitespace, etc.) becomes an underscore. Extension is stripped
+# too, since the export format -- not whatever the user typed -- decides
+# it, so ".exe" or a mismatched ".csv" typed while Excel is selected can't
+# sneak through into the actual downloaded filename.
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_\-]+")
+_FILENAME_EXT_RE = re.compile(r"\.(csv|xlsx?)$", re.IGNORECASE)
+
+
+def _sanitize_export_filename(raw, fallback):
+    raw = (raw or "").strip()
+    if not raw:
+        return fallback
+    raw = _FILENAME_EXT_RE.sub("", raw).strip()
+    raw = _FILENAME_SAFE_RE.sub("_", raw).strip("_")
+    return raw or fallback
+
+
+def _resolve_within_root(raw_path, default_dir):
+    """Resolves raw_path to an absolute path that's guaranteed to stay
+    inside the app root -- a relative path (e.g. "export" or "export/2026")
+    is resolved against the app root, and an absolute path is only honored
+    if it's already inside the app root; anything that would escape it
+    (e.g. "../../etc", or an unrelated absolute path) falls back to
+    default_dir instead. Returns (resolved_dir, was_clamped). Shared by the
+    final export save-path resolution and the folder browser below, so
+    both enforce exactly the same boundary."""
+    app_root = os.path.realpath(current_app.root_path)
+
+    raw_path = (raw_path or "").strip()
+    if not raw_path:
+        return default_dir, False
+
+    candidate = raw_path if os.path.isabs(raw_path) else os.path.join(app_root, raw_path)
+    resolved = os.path.realpath(candidate)
+
+    try:
+        inside_root = os.path.commonpath([resolved, app_root]) == app_root
+    except ValueError:
+        # e.g. different drives on Windows -- definitely not inside app_root
+        inside_root = False
+
+    if not inside_root:
+        return default_dir, True
+    return resolved, False
+
+
+def _resolve_export_dir(raw_path):
+    """Resolves the user-entered save folder for an actual export. Falls
+    back silently (no error surfaced) since this runs as a side effect of
+    a file download and there's no good way to show a validation error
+    mid-download; see _resolve_within_root for the boundary rule itself."""
+    return _resolve_within_root(raw_path, _default_export_dir())
+
+
+_FOLDER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+@assets_bp.route("/assets/export/browse")
+@login_required
+def browse_export_folders():
+    """Lists subfolders under the app root so the export modal's folder
+    picker can let staff click through the server's real directory
+    structure instead of typing a path by hand. Read-only (just
+    os.listdir) and scoped to the app root the same way the final export
+    save-path is clamped, so this can't be used to peek at the rest of the
+    server's filesystem -- only login_required, since it doesn't reveal
+    anything the export route's own save-path clamping wouldn't already
+    let a logged-in user reach anyway."""
+    app_root = os.path.realpath(current_app.root_path)
+    resolved, _ = _resolve_within_root(request.args.get("path", ""), app_root)
+
+    if not os.path.isdir(resolved):
+        resolved = app_root
+
+    try:
+        folders = sorted(
+            entry
+            for entry in os.listdir(resolved)
+            if os.path.isdir(os.path.join(resolved, entry)) and not entry.startswith(".")
+        )
+    except OSError as e:
+        return jsonify({"error": f"Could not list folder: {e}"}), 400
+
+    def _rel(p):
+        rel = os.path.relpath(p, app_root)
+        return "" if rel == "." else rel.replace(os.sep, "/")
+
+    parent_path = None
+    if resolved != app_root:
+        parent_path = _rel(os.path.dirname(resolved))
+
+    return jsonify({"path": _rel(resolved), "parent_path": parent_path, "folders": folders})
+
+
+@assets_bp.route("/assets/export/browse/mkdir", methods=["POST"])
+@login_required
+def create_export_folder():
+    """Creates a subfolder from within the folder picker, e.g. so staff can
+    make "export/2026" on the fly instead of needing someone with server
+    access to create it first. Same app-root boundary as everything else
+    here; the folder name itself is restricted to a safe character set
+    (not just sanitized) since, unlike the export filename, there's no
+    sensible fallback to silently substitute for a bad folder name."""
+    app_root = os.path.realpath(current_app.root_path)
+    resolved, _ = _resolve_within_root(request.form.get("path", ""), app_root)
+    if not os.path.isdir(resolved):
+        resolved = app_root
+
+    name = (request.form.get("name") or "").strip()
+    if not name or not _FOLDER_NAME_RE.match(name):
+        return jsonify(
+            {"error": "Folder name can only contain letters, numbers, hyphens, and underscores"}
+        ), 400
+
+    new_dir = os.path.join(resolved, name)
+    try:
+        os.makedirs(new_dir, exist_ok=True)
+    except OSError as e:
+        return jsonify({"error": f"Could not create folder: {e}"}), 400
+
+    return jsonify({"path": os.path.relpath(new_dir, app_root).replace(os.sep, "/")})
+
+
+@assets_bp.route("/assets/export-form")
+@login_required
+def export_assets_form():
+    """Opens the export modal (fields, filename, format, save folder) into
+    #modal-container -- read-only like the export route's GET path, so any
+    logged-in staff can see it. show_archived is passed through the same
+    way the page's other modals get it, so the modal's default filename,
+    field list, and description match whichever table view (active/
+    archived) the user was looking at."""
+    show_archived = request.args.get("show_archived") == "1"
+    fields = list(EXPORT_CSV_COLUMNS)
+    if show_archived:
+        fields.append("deleted_at")
+    return render_template(
+        "assets/_export_modal.html",
+        show_archived=show_archived,
+        default_filename=_default_export_basename(show_archived),
+        default_export_dir=_default_export_dir(),
+        fields=[(col, EXPORT_FIELD_LABELS[col]) for col in fields],
+    )
+
+
+@assets_bp.route("/assets/export", methods=["GET", "POST"])
+@login_required
+def export_assets():
+    """Read-only for GET, so any logged-in staff can use it -- deliberately
+    not roles_required like add/import, since exporting doesn't mutate
+    anything. Mirrors the current table view: respects show_archived the
+    same way the Export Data button's link already passes it, rather than
+    always dumping every asset regardless of what's on screen. Supports
+    CSV (default, for round-tripping back through Import CSV) and Excel, a
+    user-chosen subset of columns, and a user-chosen filename.
+
+    POST (used by the export modal, via fetch so it can also read the
+    response headers below) additionally writes a copy of the export to a
+    folder on the server -- this is the one side effect this route has, so
+    it's gated to POST specifically to keep the plain-link GET path free of
+    side effects and to get CSRF protection on the part that touches disk.
+    request.values covers both request.args (GET) and request.form (POST)
+    so the rest of this function doesn't need to branch on method."""
+    show_archived = request.values.get("show_archived") == "1"
+    export_format = request.values.get("format", "csv").lower()
+    if export_format not in ("csv", "xlsx"):
+        export_format = "csv"
+
+    available_columns = list(EXPORT_CSV_COLUMNS)
+    if show_archived:
+        available_columns.append("deleted_at")
+
+    selected = request.values.getlist("fields")
+    if selected:
+        columns = [c for c in available_columns if c in selected]
+        if not columns:  # everything requested was invalid/unknown -- don't export a blank file
+            columns = available_columns
+    else:
+        columns = available_columns
+
+    conn = get_db_connection()
+    where_clause = (
+        "assets.deleted_at IS NOT NULL" if show_archived else "assets.deleted_at IS NULL"
+    )
+    assets = conn.execute(
+        f"""
+        SELECT assets.*, categories.name AS category
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        WHERE {where_clause}
+        ORDER BY assets.asset_id
+        """
+    ).fetchall()
+    conn.close()
+
+    basename = _sanitize_export_filename(
+        request.values.get("filename"), _default_export_basename(show_archived)
+    )
+
+    if export_format == "xlsx":
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Archived Assets" if show_archived else "Assets"
+
+        header_font = Font(bold=True)
+        ws.append([EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for cell in ws[1]:
+            cell.font = header_font
+
+        for asset in assets:
+            ws.append([asset[col] if asset[col] is not None else "" for col in columns])
+
+        # Autosize columns roughly to their content, since Excel opens
+        # every column at a fixed narrow default width otherwise.
+        for i, col in enumerate(columns, start=1):
+            longest = max(
+                [len(col)] + [len(str(asset[col] or "")) for asset in assets]
+            )
+            ws.column_dimensions[get_column_letter(i)].width = min(
+                max(longest + 2, 10), 40
+            )
+        ws.freeze_panes = "A2"
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        file_bytes = buf.getvalue()
+        content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        export_format = "csv"
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for asset in assets:
+            writer.writerow([asset[col] if asset[col] is not None else "" for col in columns])
+        # utf-8-sig (BOM) so Excel opens accented/special characters correctly
+        # when double-clicking the CSV directly, matching how the CSV import
+        # side already expects/tolerates a BOM.
+        file_bytes = output.getvalue().encode("utf-8-sig")
+        content_type = "text/csv"
+
+    filename = f"{basename}.{export_format}"
+
+    response = make_response(file_bytes)
+    response.headers["Content-Type"] = content_type
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+
+    if request.method == "POST":
+        save_dir, was_clamped = _resolve_export_dir(request.values.get("save_path"))
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            saved_path = os.path.join(save_dir, filename)
+            with open(saved_path, "wb") as f:
+                f.write(file_bytes)
+            response.headers["X-Export-Saved-Path"] = saved_path
+            if was_clamped:
+                response.headers["X-Export-Warning"] = (
+                    "The folder entered was outside the app directory, "
+                    "so the export was saved to the default export folder instead."
+                )
+        except OSError as e:
+            logger.warning(f"Could not save export copy to disk: {e}")
+            response.headers["X-Export-Warning"] = (
+                "Could not save a copy on the server; your download still completed."
+            )
+
     return response
 
 
@@ -627,20 +1354,28 @@ def edit_asset_form(id):
         if request.is_json:
             return jsonify({"error": "Asset not found"}), 404
         return jsonify({"error": "Asset not found"}), 404
-    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     additional_images = _fetch_asset_images(id, conn)
     conn.close()
+    # Where to send the user on Cancel: back to the Details modal if that's
+    # where Edit was opened from, or just close (back to the table) if it
+    # was opened directly from a row action. Defaults to 'table' so an
+    # unrecognized/missing value fails toward the safer "just close" option.
+    return_to = request.args.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
     return render_template(
         "assets/_edit_modal.html",
         asset=asset,
         categories=categories,
         additional_images=additional_images,
         error=None,
+        return_to=return_to,
     )
 
 
 def _edit_error_response(
-    payload_or_msg, status, asset=None, categories=None, asset_id=None
+    payload_or_msg, status, asset=None, categories=None, asset_id=None, return_to="table"
 ):
     """Returns JSON if this was a JSON request; renders the edit modal
     with an inline error if it was an htmx/form request."""
@@ -652,7 +1387,7 @@ def _edit_error_response(
             "SELECT * FROM assets WHERE id = ?", (asset_id,)
         ).fetchone()
     if categories is None:
-        categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     additional_images = _fetch_asset_images(asset["id"], conn)
     conn.close()
     error_msg = (
@@ -660,6 +1395,8 @@ def _edit_error_response(
         if isinstance(payload_or_msg, dict)
         else payload_or_msg
     )
+    if return_to not in ("table", "details"):
+        return_to = "table"
     return (
         render_template(
             "assets/_edit_modal.html",
@@ -667,6 +1404,7 @@ def _edit_error_response(
             categories=categories,
             additional_images=additional_images,
             error=error_msg,
+            return_to=return_to,
         ),
         200,
     )
@@ -683,6 +1421,13 @@ def edit_asset_submit(id):
     else:
         data = request.form
 
+    # Carried through from the hidden field the edit form sets on load, so
+    # Cancel still routes correctly (back to Details, or just closes) if
+    # this submit fails validation and the modal has to be re-rendered.
+    return_to = data.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
+
     error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
     if error:
         return error
@@ -694,6 +1439,7 @@ def edit_asset_submit(id):
             {"error": f"condition must be one of: {', '.join(valid_conditions)}"},
             400,
             asset_id=id,
+            return_to=return_to,
         )
 
     conn = get_db_connection()
@@ -714,6 +1460,7 @@ def edit_asset_submit(id):
             400,
             asset=asset,
             asset_id=id,
+            return_to=return_to,
         )
 
     if "category_id" in data:
@@ -738,7 +1485,7 @@ def edit_asset_submit(id):
         if img_error:
             conn.close()
             return _edit_error_response(
-                {"error": img_error}, 400, asset=asset, asset_id=id
+                {"error": img_error}, 400, asset=asset, asset_id=id, return_to=return_to
             )
     elif remove_image and asset["image_path"]:
         old_image_to_delete = asset["image_path"]
@@ -760,7 +1507,7 @@ def edit_asset_submit(id):
             if img_error:
                 conn.close()
                 return _edit_error_response(
-                    {"error": img_error}, 400, asset=asset, asset_id=id
+                    {"error": img_error}, 400, asset=asset, asset_id=id, return_to=return_to
                 )
             additional_actions[slot] = {
                 "action": "replace",
@@ -843,7 +1590,7 @@ def edit_asset_submit(id):
             saved_path, img_error = save_asset_image(image_file, asset["asset_id"])
             if img_error:
                 return _edit_error_response(
-                    {"error": img_error}, 400, asset=asset, asset_id=id
+                    {"error": img_error}, 400, asset=asset, asset_id=id, return_to=return_to
                 )
             old_image_to_delete = asset["image_path"]
             new_image_path = saved_path
@@ -855,7 +1602,7 @@ def edit_asset_submit(id):
                 )
                 if img_error:
                     return _edit_error_response(
-                        {"error": img_error}, 400, asset=asset, asset_id=id
+                        {"error": img_error}, 400, asset=asset, asset_id=id, return_to=return_to
                     )
                 saved_additional_paths[slot] = saved_path
                 if act["old_path"]:
@@ -943,13 +1690,14 @@ def edit_asset_submit(id):
         for p in saved_additional_paths.values():
             delete_asset_image(p)
         logger.error(f"IntegrityError: {e}")
-        return (
-            jsonify(
-                {
-                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
-                }
-            ),
+        return _edit_error_response(
+            {
+                "error": "A database constraint was violated. Check for duplicate barcode/RFID/serial values."
+            },
             400,
+            asset=asset,
+            asset_id=id,
+            return_to=return_to,
         )
     finally:
         conn.close()
@@ -994,13 +1742,29 @@ def delete_asset_confirm(id):
     conn.close()
     if asset is None:
         return jsonify({"error": "Asset not found"}), 404
-    return render_template("assets/_delete_modal.html", asset=asset, error=None)
+    return_to = request.args.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
+    return render_template(
+        "assets/_delete_modal.html", asset=asset, error=None, return_to=return_to
+    )
 
 
 @assets_bp.route("/assets/<int:id>/delete", methods=["POST"])
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def delete_asset(id):
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    return_to = data.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
+
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
 
@@ -1016,7 +1780,12 @@ def delete_asset(id):
         if request.is_json:
             return jsonify({"error": error_msg}), 400
         return (
-            render_template("assets/_delete_modal.html", asset=asset, error=error_msg),
+            render_template(
+                "assets/_delete_modal.html",
+                asset=asset,
+                error=error_msg,
+                return_to=return_to,
+            ),
             200,
         )
 
@@ -1034,24 +1803,36 @@ def delete_asset(id):
                 409,
             )
         return (
-            render_template("assets/_delete_modal.html", asset=asset, error=error_msg),
+            render_template(
+                "assets/_delete_modal.html",
+                asset=asset,
+                error=error_msg,
+                return_to=return_to,
+            ),
             200,
         )
 
     deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        conn.execute("UPDATE assets SET deleted_at = ? WHERE id = ?", (deleted_at, id))
+        conn.execute(
+            "UPDATE assets SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+            (deleted_at, g.staff["id"], id),
+        )
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
         logger.error(f"IntegrityError: {e}")
+        error_msg = "A database constraint was violated. Check for duplicate barcode/username/ID values."
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
         return (
-            jsonify(
-                {
-                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
-                }
+            render_template(
+                "assets/_delete_modal.html",
+                asset=asset,
+                error=error_msg,
+                return_to=return_to,
             ),
-            400,
+            200,
         )
     finally:
         conn.close()
@@ -1067,6 +1848,8 @@ def delete_asset(id):
     if request.is_json:
         return jsonify({"message": "Asset soft deleted successfully"})
     response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
     response.headers["HX-Trigger"] = json.dumps(
         {
             "assets-refreshed": True,
@@ -1118,7 +1901,7 @@ def undo_delete_asset(id):
 
     try:
         conn.execute(
-            "UPDATE assets SET deleted_at = NULL, status = 'available' WHERE id = ?",
+            "UPDATE assets SET deleted_at = NULL, deleted_by = NULL, status = 'available' WHERE id = ?",
             (id,),
         )
         conn.commit()
@@ -1193,7 +1976,8 @@ def bulk_delete_assets():
 
         try:
             conn.execute(
-                "UPDATE assets SET deleted_at = ? WHERE id = ?", (deleted_at, asset_id)
+                "UPDATE assets SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+                (deleted_at, g.staff["id"], asset_id),
             )
             conn.commit()
             deleted.append({"id": asset_id, "asset_id": asset["asset_id"]})
@@ -1285,7 +2069,7 @@ def bulk_restore_assets():
 
         try:
             conn.execute(
-                "UPDATE assets SET deleted_at = NULL, status = 'available' WHERE id = ?",
+                "UPDATE assets SET deleted_at = NULL, deleted_by = NULL, status = 'available' WHERE id = ?",
                 (asset_id,),
             )
             conn.commit()
@@ -1330,10 +2114,15 @@ def restore_asset_confirm(id):
         return jsonify({"error": "Asset not found"}), 404
     if asset["deleted_at"] is None:
         return jsonify({"error": "Asset is not deleted"}), 400
-    return render_template("assets/_restore_modal.html", asset=asset, error=None)
+    return_to = request.args.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
+    return render_template(
+        "assets/_restore_modal.html", asset=asset, error=None, return_to=return_to
+    )
 
 
-def _restore_error_response(error_msg, status, asset_id):
+def _restore_error_response(error_msg, status, asset_id, return_to="table"):
     """Mirrors _edit_error_response: JSON for API callers, a re-rendered
     modal with the error inline for htmx/form callers."""
     if request.is_json:
@@ -1341,7 +2130,14 @@ def _restore_error_response(error_msg, status, asset_id):
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     conn.close()
-    return render_template("assets/_restore_modal.html", asset=asset, error=error_msg), 200
+    if return_to not in ("table", "details"):
+        return_to = "table"
+    return (
+        render_template(
+            "assets/_restore_modal.html", asset=asset, error=error_msg, return_to=return_to
+        ),
+        200,
+    )
 
 
 @assets_bp.route("/assets/<int:id>/restore", methods=["POST"])
@@ -1358,17 +2154,24 @@ def restore_asset(id):
         data = request.form
 
     condition = data.get("condition") or None
+    return_to = data.get("return_to", "table")
+    if return_to not in ("table", "details"):
+        return_to = "table"
 
     valid_conditions = ("functional", "inoperable", "for_repair", "disposed")
     if condition is not None and condition not in valid_conditions:
         return _restore_error_response(
-            f"condition must be one of: {', '.join(valid_conditions)}", 400, id
+            f"condition must be one of: {', '.join(valid_conditions)}",
+            400,
+            id,
+            return_to=return_to,
         )
     if condition == "disposed":
         return _restore_error_response(
             "Cannot restore an asset with condition 'disposed' -- choose a different condition",
             400,
             id,
+            return_to=return_to,
         )
 
     conn = get_db_connection()
@@ -1380,7 +2183,7 @@ def restore_asset(id):
 
     if asset["deleted_at"] is None:
         conn.close()
-        return _restore_error_response("Asset is not deleted", 400, id)
+        return _restore_error_response("Asset is not deleted", 400, id, return_to=return_to)
 
     if asset["condition"] == "disposed" and condition is None:
         conn.close()
@@ -1388,13 +2191,14 @@ def restore_asset(id):
             "This asset's condition is 'disposed' -- choose a new condition to restore it",
             400,
             id,
+            return_to=return_to,
         )
 
     new_condition = condition if condition is not None else asset["condition"]
 
     try:
         conn.execute(
-            "UPDATE assets SET deleted_at = NULL, condition = ?, status = 'available' WHERE id = ?",
+            "UPDATE assets SET deleted_at = NULL, deleted_by = NULL, condition = ?, status = 'available' WHERE id = ?",
             (new_condition, id),
         )
         conn.commit()
@@ -1415,6 +2219,8 @@ def restore_asset(id):
     if request.is_json:
         return jsonify({"message": "Asset restored successfully"})
     response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
     response.headers["HX-Trigger"] = json.dumps(
         {
             "assets-refreshed": True,
@@ -1435,6 +2241,9 @@ def restore_asset(id):
         }
     )
     return response
+
+
+@assets_bp.route("/assets/barcode/<barcode>")
 @login_required
 @limiter.limit("40 per minute")
 def get_asset_by_barcode(barcode):

@@ -1,10 +1,10 @@
-from flask import Blueprint, render_template, request, g
-from services.auth_service import login_required
+﻿from flask import Blueprint, render_template, request, g
 from database import get_db_connection
+from services.auth_service import login_required
+from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
+from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
 
 pages_bp = Blueprint("pages", __name__)
-
-DEFAULT_LIMIT = 20
 
 
 @pages_bp.route("/login")
@@ -18,7 +18,6 @@ def login_page():
 @login_required
 def assets_page():
     conn = get_db_connection()
-
     stat_all = conn.execute(
         "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL"
     ).fetchone()["cnt"]
@@ -31,78 +30,41 @@ def assets_page():
     stat_maintenance = conn.execute(
         "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'maintenance'"
     ).fetchone()["cnt"]
-
-    categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
-
-    # Same filters _table.html's own pagination links already expect
-    # (q, category_id, status, show_archived) so the initial render and
-    # subsequent htmx swaps stay consistent with each other.
-    show_archived = request.args.get("show_archived") == "1"
-    q = request.args.get("q", "").strip()
-    category_id = request.args.get("category_id")
-    status_filter = request.args.get("status")
-    condition_filter = request.args.get("condition")
-    try:
-        limit = int(request.args.get("limit", DEFAULT_LIMIT))
-    except ValueError:
-        limit = DEFAULT_LIMIT
-    try:
-        offset = int(request.args.get("offset", 0))
-    except ValueError:
-        offset = 0
-
-    where = ["deleted_at IS NOT NULL" if show_archived else "deleted_at IS NULL"]
-    params = []
-    if q:
-        where.append("(name LIKE ? OR asset_id LIKE ?)")
-        params.extend([f"%{q}%", f"%{q}%"])
-    if category_id:
-        where.append("category_id = ?")
-        params.append(category_id)
-    if status_filter:
-        where.append("status = ?")
-        params.append(status_filter)
-    if condition_filter:
-        where.append("condition = ?")
-        params.append(condition_filter)
-    where_clause = " AND ".join(where)
-
-    # Keep in sync with SORTABLE_COLUMNS in routes/assets.py -- this is the
-    # initial page render, view_assets() is every later htmx swap, and both
-    # need to agree on which columns are sortable and what they map to.
-    sortable_columns = {
-        "asset_id": "assets.asset_id",
-        "name": "assets.name",
-        "category": "categories.name",
-        "status": "assets.status",
-        "deleted_at": "assets.deleted_at",
-        "condition": "assets.condition",
-        "barcode_id": "assets.barcode_id",
-        "created_at": "assets.created_at",
-    }
-    sort_by = request.args.get("sort_by", "created_at")
-    if sort_by not in sortable_columns:
-        sort_by = "created_at"
-    sort_dir = request.args.get("sort_dir", "desc").lower()
-    if sort_dir not in ("asc", "desc"):
-        sort_dir = "desc"
-    sort_column = sortable_columns[sort_by]
-
-    total_count = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM assets WHERE {where_clause}", params
-    ).fetchone()["cnt"]
-
-    assets = conn.execute(
-        f"""SELECT assets.*, categories.name AS category
-            FROM assets
-            LEFT JOIN categories ON categories.id = assets.category_id
-            WHERE {where_clause}
-            ORDER BY {sort_column} {sort_dir.upper()}, assets.id {sort_dir.upper()}
-            LIMIT ? OFFSET ?""",
-        params + [limit, offset],
+    # Previously missing entirely -- assets/index.html's category filter
+    # loops over `categories`, but nothing ever supplied it on a full page
+    # load (get_assets_table_context() only returns table/pagination state,
+    # not lookup data), so the dropdown silently rendered with just the
+    # "Category" placeholder until an htmx swap happened to refresh it.
+    # Matches how members_page() already fetches and passes `departments`.
+    categories = conn.execute(
+        "SELECT * FROM categories ORDER BY sort_order, name"
     ).fetchall()
-
     conn.close()
+
+    # Reuses the exact same query logic view_assets() uses for htmx partial
+    # requests, so this page can never again be missing something
+    # _table.html needs (that mismatch is what caused the 'offset' crash).
+    # It also means a hard refresh on a URL with ?q=...&sort_by=...&show_archived=1
+    # (the kind the client-side URL-sync fix now produces) renders that same
+    # state server-side too, instead of silently falling back to page 1 /
+    # defaults and only *looking* right after the JS re-syncs the filter
+    # controls a moment later.
+    table_context, error = get_assets_table_context(request.args)
+    if error:
+        # A bad/stale query string shouldn't take down the whole page --
+        # an API caller gets a 400 from view_assets() for the same
+        # situation, but a full page load falls back to sane defaults
+        # instead (empty state fully respects those defaults too, so it's
+        # equivalent to landing on /assets with no query string at all).
+        table_context = {
+            "assets": [],
+            "total_count": 0,
+            "limit": 20,
+            "offset": 0,
+            "show_archived": False,
+            "sort_by": "created_at",
+            "sort_dir": "desc",
+        }
 
     return render_template(
         "assets/index.html",
@@ -112,114 +74,7 @@ def assets_page():
         stat_borrowed=stat_borrowed,
         stat_maintenance=stat_maintenance,
         categories=categories,
-        assets=assets,
-        show_archived=show_archived,
-        category_id=category_id,
-        status_filter=status_filter,
-        condition_filter=condition_filter,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
-        limit=limit,
-        offset=offset,
-        total_count=total_count,
-    )
-
-
-@pages_bp.route("/staff")
-@login_required
-def staff_page():
-    conn = get_db_connection()
-
-    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
-    stat_active = conn.execute(
-        """SELECT COUNT(*) AS cnt FROM staff
-           WHERE is_active = 1
-             AND (locked_until IS NULL OR locked_until <= datetime('now', 'localtime'))"""
-    ).fetchone()["cnt"]
-    stat_locked = conn.execute(
-        """SELECT COUNT(*) AS cnt FROM staff
-           WHERE is_active = 1
-             AND locked_until IS NOT NULL
-             AND locked_until > datetime('now', 'localtime')"""
-    ).fetchone()["cnt"]
-    stat_inactive = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM staff WHERE is_active = 0"
-    ).fetchone()["cnt"]
-
-    departments = conn.execute("SELECT * FROM departments ORDER BY name").fetchall()
-
-    # Same filters _table.html's own pagination links and the filter row
-    # in staff.html expect (q, role, department_id, show_inactive), so the
-    # initial render and subsequent htmx swaps into #staff-table-container
-    # stay consistent with each other.
-    show_inactive = request.args.get("show_inactive") == "1"
-    q = request.args.get("q", "").strip()
-    role = request.args.get("role")
-    department_id = request.args.get("department_id")
-    try:
-        limit = int(request.args.get("limit", DEFAULT_LIMIT))
-    except ValueError:
-        limit = DEFAULT_LIMIT
-    try:
-        offset = int(request.args.get("offset", 0))
-    except ValueError:
-        offset = 0
-
-    where = [] if show_inactive else ["staff.is_active = 1"]
-    params = []
-    if q:
-        where.append(
-            "(staff.username LIKE ? OR staff.staff_code LIKE ? OR members.first_name LIKE ? OR members.last_name LIKE ?)"
-        )
-        like = f"%{q}%"
-        params.extend([like, like, like, like])
-    if role:
-        where.append("staff.role = ?")
-        params.append(role)
-    if department_id:
-        where.append("members.department_id = ?")
-        params.append(department_id)
-    where_clause = f"WHERE {' AND '.join(where)}" if where else ""
-
-    total_count = conn.execute(
-        f"""SELECT COUNT(*) AS cnt FROM staff
-            JOIN members ON staff.member_id = members.id
-            {where_clause}""",
-        params,
-    ).fetchone()["cnt"]
-
-    staff_list = conn.execute(
-        f"""
-        SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
-               staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
-               staff.failed_login_attempts, staff.created_by_staff_id, staff.created_at,
-               members.first_name, members.last_name, members.middle_name, members.suffix,
-               members.barcode_id, departments.name AS department
-        FROM staff
-        JOIN members ON staff.member_id = members.id
-        JOIN departments ON members.department_id = departments.id
-        {where_clause}
-        ORDER BY staff.id
-        LIMIT ? OFFSET ?
-        """,
-        params + [limit, offset],
-    ).fetchall()
-
-    conn.close()
-
-    return render_template(
-        "staff.html",
-        staff=g.staff,
-        stat_all=stat_all,
-        stat_active=stat_active,
-        stat_locked=stat_locked,
-        stat_inactive=stat_inactive,
-        departments=departments,
-        staff_list=staff_list,
-        show_inactive=show_inactive,
-        limit=limit,
-        offset=offset,
-        total_count=total_count,
+        **table_context,
     )
 
 
@@ -227,7 +82,6 @@ def staff_page():
 @login_required
 def members_page():
     conn = get_db_connection()
-
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
     stat_active = conn.execute(
         "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 0"
@@ -238,53 +92,32 @@ def members_page():
     stat_inactive = conn.execute(
         "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 0"
     ).fetchone()["cnt"]
-
-    departments = conn.execute("SELECT * FROM departments ORDER BY name").fetchall()
-
-    show_inactive = request.args.get("show_inactive") == "1"
-    q = request.args.get("q", "").strip()
-    department_id = request.args.get("department_id")
-    is_restricted = request.args.get("is_restricted")
-    try:
-        limit = int(request.args.get("limit", DEFAULT_LIMIT))
-    except ValueError:
-        limit = DEFAULT_LIMIT
-    try:
-        offset = int(request.args.get("offset", 0))
-    except ValueError:
-        offset = 0
-
-    where = [] if show_inactive else ["members.is_active = 1"]
-    params = []
-    if q:
-        where.append(
-            "(members.first_name LIKE ? OR members.last_name LIKE ? OR members.barcode_id LIKE ? OR members.member_code LIKE ?)"
-        )
-        like = f"%{q}%"
-        params.extend([like, like, like, like])
-    if department_id:
-        where.append("members.department_id = ?")
-        params.append(department_id)
-    if is_restricted in ("0", "1"):
-        where.append("members.is_restricted = ?")
-        params.append(int(is_restricted))
-    where_clause = f"WHERE {' AND '.join(where)}" if where else ""
-
-    total_count = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM members {where_clause}", params
-    ).fetchone()["cnt"]
-
-    members = conn.execute(
-        f"""SELECT members.*, departments.name AS department
-            FROM members
-            JOIN departments ON members.department_id = departments.id
-            {where_clause}
-            ORDER BY members.id LIMIT ? OFFSET ?""",
-        params + [limit, offset],
+    departments = conn.execute(
+        "SELECT * FROM departments ORDER BY sort_order, name"
     ).fetchall()
-
     conn.close()
 
+    # Same reasoning as assets_page: reuse the exact query logic
+    # view_members() uses for htmx partial requests, so this page can never
+    # be missing something members/_table.html needs, and a hard refresh on
+    # a filtered URL (?q=...&department_id=...&show_inactive=1) renders
+    # that same state server-side instead of silently falling back to
+    # page 1 / defaults.
+    table_context, error = get_members_table_context(request.args)
+    if error:
+        table_context = {
+            "members": [],
+            "total_count": 0,
+            "limit": 20,
+            "offset": 0,
+            "show_inactive": False,
+            "sort_by": "name",
+            "sort_dir": "asc",
+        }
+
+    # NOTE: this matches templates/members.html (top-level, no subfolder) --
+    # your partials live in templates/members/ but the main page itself does
+    # not.
     return render_template(
         "members.html",
         staff=g.staff,
@@ -293,9 +126,5 @@ def members_page():
         stat_restricted=stat_restricted,
         stat_inactive=stat_inactive,
         departments=departments,
-        members=members,
-        show_inactive=show_inactive,
-        limit=limit,
-        offset=offset,
-        total_count=total_count,
+        **table_context,
     )

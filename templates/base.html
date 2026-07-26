@@ -17,7 +17,8 @@
     ("Inventory", "/assets", "box"),
     ("Borrowers", "/members", "users"),
     ("Borrow & Return", "/transactions", "swap"),
-    ("Approvals", "/requests", "check")
+    ("Approvals", "/requests", "check"),
+    ("Reports", "/reports", "chart")
   ] %}
 
   <!-- Resolve a breadcrumb label for whatever route is currently active.
@@ -33,18 +34,23 @@
   <div class="flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+    <aside id="sidebar" class="relative bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
       <script>
       if (localStorage.getItem('sidebar-collapsed') === '1') {
         document.getElementById('sidebar').classList.add('collapsed');
       }
       </script>
 
-      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 h-20 px-6 shrink-0">
-        <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+      <button type="button" id="sidebar-toggle" class="absolute top-2 right-2 z-10 shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
+              aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+
+      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 px-6 pt-16 pb-4 shrink-0">
+        <span class="w-5 h-7 shrink-0 flex items-center justify-center">
           <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="w-10 h-10 shrink-0 object-contain max-w-none">
         </span>
-        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0">
+        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0 ml-3">
       </div>
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
@@ -63,6 +69,8 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
             {% elif icon == "check" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            {% elif icon == "chart" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>
             {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
@@ -120,18 +128,33 @@
               <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
               {% endif %}
             </label>
-            <div tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow border border-base-300 mt-3 w-72 p-3 z-50">
-              <p class="text-sm font-semibold px-1 pb-2">Notifications</p>
-              {% if notifications %}
-                {% for n in notifications %}
-                <div class="px-1 py-2 border-t border-base-200 text-sm">
-                  <p>{{ n.message }}</p>
-                  <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
-                </div>
-                {% endfor %}
-              {% else %}
-              <p class="text-sm text-base-content/50 px-1 py-4 text-center">You're all caught up.</p>
-              {% endif %}
+            <div tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow border border-base-300 mt-3 w-80 p-0 z-50 overflow-hidden">
+              <div class="flex items-center justify-between px-3 py-2.5 border-b border-base-200">
+                <p class="text-sm font-semibold">Notifications</p>
+                {% if unread_notifications_count %}
+                <button type="button" class="text-xs text-primary font-medium hover:underline" onclick="markAllNotificationsRead()">
+                  Mark all as read
+                </button>
+                {% endif %}
+              </div>
+              <div class="max-h-80 overflow-y-auto">
+                {% if notifications %}
+                  {% for n in notifications %}
+                  <div class="flex items-start gap-2 px-3 py-2.5 border-b border-base-100 last:border-0 text-sm {% if not n.is_read %}bg-primary/5{% endif %}">
+                    <span class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 {% if not n.is_read %}bg-primary{% endif %}"></span>
+                    <div class="min-w-0">
+                      <p class="{% if not n.is_read %}font-medium{% endif %} text-base-content">{{ n.message }}</p>
+                      <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
+                    </div>
+                  </div>
+                  {% endfor %}
+                {% else %}
+                <p class="text-sm text-base-content/50 px-3 py-6 text-center">You're all caught up.</p>
+                {% endif %}
+              </div>
+              <a href="/notifications" class="block text-center text-xs font-medium text-primary py-2.5 border-t border-base-200 hover:bg-base-200">
+                View all notifications
+              </a>
             </div>
           </div>
 
@@ -205,16 +228,33 @@
 #sidebar.collapsed #sidebar-title {
   display: none;
 }
+#sidebar.collapsed #sidebar-toggle {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+#sidebar-header,
+#sidebar nav {
+  transition: none;
+}
 </style>
 
 <script>
 (function() {
   const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('sidebar-toggle');
+
+  function syncToggleState() {
+    const collapsed = sidebar.classList.contains('collapsed');
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    toggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  }
 
   // The early inline script (right after <aside> opens) already restored
   // the 'collapsed' class from localStorage before this ran -- this just
   // syncs aria-expanded to match that on page load.
   sidebar.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
+  syncToggleState();
 
   sidebar.addEventListener('click', function(e) {
     // Clicking a nav link (or anything inside one, like its icon) should
@@ -224,9 +264,29 @@
 
     const collapsed = sidebar.classList.toggle('collapsed');
     sidebar.setAttribute('aria-expanded', String(!collapsed));
+    syncToggleState();
     localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
   });
 })();
+
+// Marks every notification read server-side, then reloads so the badge,
+// list styling, and "Mark all as read" button all reflect the new state
+// at once -- same fetch+CSRF+reload pattern the toast "Undo" action uses,
+// rather than trying to hand-patch the dropdown's DOM in place.
+function markAllNotificationsRead() {
+  fetch('/api/v1/notifications/mark-all-read', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+  }).then((res) => {
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      showToast("Couldn't mark notifications as read", 'error');
+    }
+  }).catch(() => showToast("Couldn't mark notifications as read", 'error'));
+}
 
 const TOAST_DEFAULT_DURATION_MS = 4000;
 const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
@@ -335,6 +395,23 @@ function showToast(message, type, action, duration) {
 document.body.addEventListener('show-toast', function (evt) {
   const detail = evt.detail || {};
   showToast(detail.message, detail.type, detail.action, detail.duration);
+});
+
+// App-wide safety net for htmx requests. Individual hand-rolled fetch() calls
+// (bulk actions, mark-all-read, toast undo) already have their own .catch()
+// with a toast, but htmx-driven requests -- search, filters, sort, pagination,
+// modal loads -- had no equivalent, so a failed request just left the page
+// looking unchanged with zero feedback. These two listeners on <body> catch
+// every htmx request on every page, regardless of which element triggered it.
+document.body.addEventListener('htmx:responseError', function (evt) {
+  const status = evt.detail && evt.detail.xhr ? evt.detail.xhr.status : null;
+  const message = status === 403
+    ? "You don't have permission to do that."
+    : "Something went wrong. Please try again.";
+  showToast(message, 'error');
+});
+document.body.addEventListener('htmx:sendError', function () {
+  showToast("Network error — check your connection and try again.", 'error');
 });
 
 // Picks up the toast stashed in sessionStorage right before a reload
