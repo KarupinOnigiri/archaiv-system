@@ -61,8 +61,20 @@ def get_members_table_context(args):
         where_clauses.append("members.department_id = ?")
         params.append(department_id)
 
+    # Truthiness check (not "is not None") because the filter <select>'s
+    # unset/placeholder option submits as an empty string, not an absent
+    # param -- and hx-include on the sort/page/limit controls sends that
+    # empty string on every request, not just ones where this filter was
+    # actually touched. Falling through to "is not None" here would silently
+    # apply "is_restricted = 0" on every sort/page/limit action, hiding
+    # restricted members whenever nothing was actually chosen in the filter.
     is_restricted = args.get("is_restricted")
-    if is_restricted is not None:
+    if is_restricted:
+        if is_restricted.lower() not in ("0", "1", "true", "false"):
+            return None, (
+                jsonify({"error": "is_restricted must be '0' or '1'"}),
+                400,
+            )
         where_clauses.append("members.is_restricted = ?")
         params.append(1 if is_restricted.lower() in ("1", "true") else 0)
 

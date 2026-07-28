@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="tesda" class="h-full bg-base-200">
+<head>
+  <meta charset="UTF-8">
+  <!-- Must run before the stylesheet below is even requested, so the very
+       first style/layout pass already knows the sidebar is collapsed --
+       no flash of "expanded" to transition away from. Doing this later
+       (e.g. from a script inside #sidebar itself, in <body>) is too late:
+       by then the head's CSS + blocking scripts have already given the
+       browser a chance to paint the default expanded state once, and the
+       sidebar's transition-all then animates that correction, producing
+       a visible open-then-snap-shut flash on every navigation. -->
+  <script>
+    if (localStorage.getItem('sidebar-collapsed') === '1') {
+      document.documentElement.classList.add('sidebar-collapsed-init');
+    }
+  </script>
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>flowBox</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo-icon-hex.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+  <!-- These collapsed-sidebar rules used to live in an inline <style> block
+       near the bottom of <body>, well after #sidebar itself is parsed. That
+       meant the rule making 'collapsed' (or the html-level init class) do
+       anything didn't exist in the CSSOM until the browser parsed all the
+       way down there -- so the sidebar could still get one paint at its
+       default expanded width before this rule ever arrived and snapped it
+       shut. Living in <head>, ahead of <body>, guarantees the rule is
+       already in place for the very first paint. -->
+  <style>
+  #sidebar.collapsed,
+  html.sidebar-collapsed-init #sidebar {
+    width: 4.25rem;
+  }
+  #sidebar.collapsed .sidebar-label,
+  #sidebar.collapsed #sidebar-title,
+  html.sidebar-collapsed-init #sidebar .sidebar-label,
+  html.sidebar-collapsed-init #sidebar #sidebar-title {
+    display: none;
+  }
+  #sidebar.collapsed #sidebar-toggle,
+  html.sidebar-collapsed-init #sidebar #sidebar-toggle {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+  #sidebar-header,
+  #sidebar nav {
+    transition: none;
+  }
+  </style>
+  <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body class="m-0 h-full overflow-hidden bg-base-200">
+
+  <!-- Viewport gate: this app's fixed sidebar + data tables need real
+       screen width to be usable (see earlier discussion -- this isn't a
+       "make it responsive" fix, the whole shell assumes a wide layout).
+       Rather than let the layout break silently on a phone, show an
+       honest message below the `lg` breakpoint (1024px) and hide the app
+       shell entirely until the viewport is wide enough. Pure CSS via
+       Tailwind's responsive classes (hidden lg:flex / flex lg:hidden) --
+       no JS involved, so there's no flash of broken layout while a script
+       loads, and it reacts live if someone resizes the window instead of
+       only checking once on page load. -->
+  <div class="flex lg:hidden fixed inset-0 z-[100] bg-base-200 flex-col items-center justify-center gap-4 px-8 text-center">
+    <span class="w-14 h-14 rounded-full bg-base-100 border border-base-300 flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </span>
+    <p class="text-lg font-semibold text-base-content">flowBox works best on a larger screen</p>
+    <p class="text-sm text-base-content/60 max-w-xs">Please open this on a desktop or laptop. If you're already on one, try widening the browser window.</p>
+  </div>
+
+  {% set nav_items = [
+    ("Dashboard", "/", "grid"),
+    ("Inventory", "/assets", "box"),
+    ("Borrowers", "/members", "users"),
+    ("Borrow & Return", "/transactions", "swap"),
+    ("Approvals", "/requests", "check"),
+    ("Reports", "/reports", "chart")
+  ] %}
+
+  <!-- Resolve a breadcrumb label for whatever route is currently active.
+       A plain "set" assigned inside a "for" loop doesn't persist to the
+       outer scope in Jinja, so this uses a namespace object instead. -->
+  {% set ns = namespace(current_label="Dashboard") %}
+  {% for label, href, icon in nav_items %}
+    {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
+  {% endfor %}
+  {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
+  {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
+
+  <div class="hidden lg:flex h-full">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="relative bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+      <button type="button" id="sidebar-toggle" class="absolute top-2 right-2 z-10 shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
+              aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+
+      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 px-6 pt-16 pb-4 shrink-0">
+        <span class="w-5 h-7 shrink-0 flex items-center justify-center">
+          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="w-10 h-10 shrink-0 object-contain max-w-none">
+        </span>
+        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0 ml-3">
+      </div>
+
+      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        {% for label, href, icon in nav_items %}
+        <a href="{{ href }}"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == href %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            {% if icon == "grid" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            {% elif icon == "box" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            {% elif icon == "users" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            {% elif icon == "swap" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            {% elif icon == "check" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            {% elif icon == "chart" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>
+            {% endif %}
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
+          {% if label == "Approvals" and pending_approvals_count %}
+          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+
+        {% if staff and staff.role in ["admin", "in_charge"] %}
+        <a href="/staff"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Staff</span>
+        </a>
+        {% endif %}
+
+        {% if staff and staff.role == "admin" %}
+        <a href="/audit-log"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Activity Log</span>
+        </a>
+        {% endif %}
+      </nav>
+    </aside>
+
+    <!-- MAIN COLUMN -->
+    <div class="flex-1 flex flex-col h-full min-w-0">
+
+      {% if staff %}
+      <!-- TOP BAR -->
+      <header class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-14 flex items-center justify-between gap-4">
+
+        {% if request.path == '/' %}
+        <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
+        {% else %}
+        <div class="flex items-center gap-1.5 min-w-0">
+          <a href="/" class="flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+            </svg>
+            <span>Dashboard</span>
+          </a>
+          <span class="text-base-content/30 text-sm shrink-0">/</span>
+          <h1 class="text-lg font-semibold text-base-content truncate min-w-0">{{ ns.current_label }}</h1>
+        </div>
+        {% endif %}
+
+        <div class="flex items-center gap-3 shrink-0">
+
+          <!-- Notifications -- restyled after Facebook's notifications
+               popup: bold header with a settings placeholder (same
+               "coming soon" toast pattern as the account menu), each row
+               gets an icon avatar with the unread dot on the right side
+               (Facebook puts it there, not the left), and the footer is a
+               full-width hover row rather than a plain bordered link. -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+              {% if unread_notifications_count %}
+              <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+              {% endif %}
+            </label>
+            <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-6 top-14 w-[360px] z-50 p-2">
+
+              <div class="flex items-center justify-between px-2 pt-1 pb-2">
+                <p class="text-xl font-bold text-base-content">Notifications</p>
+                <div class="flex items-center gap-1">
+                  {% if unread_notifications_count %}
+                  <button type="button" class="text-xs text-primary font-medium hover:underline px-1" onclick="markAllNotificationsRead()">
+                    Mark all as read
+                  </button>
+                  {% endif %}
+                  <button type="button" onclick="showToast('Notification settings coming soon', 'info')"
+                          class="btn btn-ghost btn-circle btn-sm shrink-0" aria-label="Notification settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 px-2 pb-2">
+                <button type="button" id="notif-tab-all" onclick="setNotifTab('all')"
+                        class="notif-tab text-sm font-medium px-3 py-1.5 rounded-full bg-primary text-primary-content">
+                  All
+                </button>
+                <button type="button" id="notif-tab-unread" onclick="setNotifTab('unread')"
+                        class="notif-tab text-sm font-medium px-3 py-1.5 rounded-full text-base-content/60 hover:bg-base-200">
+                  Unread
+                </button>
+              </div>
+
+              <div id="notif-list" class="max-h-96 overflow-y-auto space-y-0.5" style="min-height: 16rem;">
+                {% if notifications %}
+                  {% for n in notifications %}
+                  <div class="notif-row flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-base-200 transition-colors {% if not n.is_read %}bg-primary/5{% endif %}" data-unread="{{ 'true' if not n.is_read else 'false' }}">
+                    <span class="bg-primary/10 text-primary rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %} text-base-content leading-snug">{{ n.message }}</p>
+                      <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
+                    </div>
+                    {% if not n.is_read %}
+                    <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0"></span>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                {% endif %}
+                <div id="notif-empty-all" class="flex items-center justify-center text-sm text-base-content/50 px-3 text-center {% if notifications %}hidden{% endif %}" style="height: 16rem;">You're all caught up.</div>
+                <div id="notif-empty-unread" class="hidden flex items-center justify-center text-sm text-base-content/50 px-3 text-center" style="height: 16rem;">No unread notifications.</div>
+              </div>
+
+              <div class="border-t border-base-200 my-2"></div>
+
+
+              <a href="/notifications" class="block text-center text-sm font-medium text-base-content px-2.5 py-2 rounded-xl hover:bg-base-200 transition-colors">
+                See previous notifications
+              </a>
+            </div>
+          </div>
+
+          <!-- Account menu -- styled after Facebook's profile popup: a
+               profile card up top (avatar, name, "See your profile" link),
+               then a list of icon rows, then sign-out on its own at the
+               bottom. Rows for features that don't exist yet (Settings,
+               Help, Display, Feedback) still render so the layout is future
+               -proof, but fire a "coming soon" toast instead of a dead link
+               or a 404 -- reuses the existing showToast() in app.js. -->
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-sm gap-2 pl-2 pr-1.5 normal-case">
+              <span class="text-sm text-base-content/70 hidden sm:inline">Hi, <span class="font-medium text-base-content">{{ staff_first_name }}</span></span>
+              <div class="bg-primary text-primary-content rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+                <span class="text-xs font-semibold">{{ staff.username[0] | upper }}</span>
+              </div>
+            </label>
+
+            <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-6 top-14 w-[360px] z-50 p-2">
+
+              <!-- Profile card -->
+              <button type="button" onclick="showToast('Profile page coming soon', 'info')"
+                      class="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center shrink-0">
+                  <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-base font-semibold text-base-content leading-tight truncate">{{ staff_full_name }}</p>
+                  <p class="text-xs text-base-content/50 mt-0.5">See your profile</p>
+                </div>
+              </button>
+
+              <div class="border-t border-base-200 my-2"></div>
+
+              <!-- Feature rows -->
+              <div class="space-y-0.5">
+
+                <button type="button" onclick="showToast('Settings coming soon', 'info')"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">Settings &amp; privacy</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                <button type="button" onclick="showToast('Help &amp; support coming soon', 'info')"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">Help &amp; support</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                <button type="button" onclick="showToast('Display &amp; accessibility coming soon', 'info')"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">Display &amp; accessibility</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                <button type="button" onclick="showToast('Thanks — feedback is noted', 'info')"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">Give feedback</span>
+                </button>
+
+              </div>
+
+              <div class="border-t border-base-200 my-2"></div>
+
+              <button type="button" onclick="document.getElementById('logout-confirm-modal').showModal()"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Log out</span>
+              </button>
+
+            </div>
+          </div>
+
+        </div>
+      </header>
+
+      <!-- Logout confirmation. A native <dialog>, not another hx-fetched
+           modal like the ones in assets/ -- there's no data to load, so a
+           static dialog already in the DOM (with built-in backdrop, ESC-
+           to-close, and focus trapping) is simpler than the htmx round trip
+           the other modals need. -->
+      <dialog id="logout-confirm-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-2">Log out?</h3>
+          <p class="text-sm text-base-content/70 mb-4">You'll need to sign in again to continue.</p>
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn">Cancel</button>
+            </form>
+            <button type="button" hx-post="/api/v1/logout" hx-redirect="/login" class="btn btn-error">
+              Log out
+            </button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      {% endif %}
+
+      <!-- PAGE CONTENT -->
+      <main class="flex-1 overflow-y-auto" style="scrollbar-gutter: stable;">
+        {% block content %}{% endblock %}
+      </main>
+
+    </div>
+
+  </div>
+
+  <!-- Toast notifications: any response can trigger one via the HX-Trigger
+       header, e.g. HX-Trigger: {"show-toast": {"message": "...", "type": "success"}}
+       "type" is optional and defaults to "success" ("error"/"info" also supported). -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
+
+
+<script>
+(function() {
+  const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('sidebar-toggle');
+
+  function syncToggleState() {
+    const collapsed = sidebar.classList.contains('collapsed');
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    toggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  }
+
+  // The head script (before the stylesheet, before any paint) already
+  // marked <html> as collapsed if localStorage said so, and the CSS above
+  // renders the sidebar collapsed off that class from the very first
+  // frame -- no flash. Mirror that onto #sidebar itself here so the
+  // click-toggle logic below (which only checks #sidebar.collapsed) stays
+  // consistent, then drop the now-redundant html class.
+  if (document.documentElement.classList.contains('sidebar-collapsed-init')) {
+    sidebar.classList.add('collapsed');
+    document.documentElement.classList.remove('sidebar-collapsed-init');
+  }
+  sidebar.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
+  syncToggleState();
+
+  sidebar.addEventListener('click', function(e) {
+    // Clicking a nav link (or anything inside one, like its icon) should
+    // navigate as normal, not toggle the sidebar -- only clicks on the
+    // logo/header or the sidebar's own background do that.
+    if (e.target.closest('a')) return;
+
+    const collapsed = sidebar.classList.toggle('collapsed');
+    sidebar.setAttribute('aria-expanded', String(!collapsed));
+    syncToggleState();
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+  });
+})();
+
+// Marks every notification read server-side, then reloads so the badge,
+// list styling, and "Mark all as read" button all reflect the new state
+// at once -- same fetch+CSRF+reload pattern the toast "Undo" action uses,
+// rather than trying to hand-patch the dropdown's DOM in place.
+function markAllNotificationsRead() {
+  fetch('/api/v1/notifications/mark-all-read', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+  }).then((res) => {
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      showToast("Couldn't mark notifications as read", 'error');
+    }
+  }).catch(() => showToast("Couldn't mark notifications as read", 'error'));
+}
+
+// Filters the already-rendered notification rows client-side -- no extra
+// request needed since every row's read state is already in the DOM via
+// data-unread. Mirrors Facebook's All/Unread pill tabs in the same popup.
+function setNotifTab(tab) {
+  document.querySelectorAll('.notif-tab').forEach((btn) => {
+    const active = btn.id === `notif-tab-${tab}`;
+    btn.classList.toggle('bg-primary', active);
+    btn.classList.toggle('text-primary-content', active);
+    btn.classList.toggle('text-base-content/60', !active);
+    btn.classList.toggle('hover:bg-base-200', !active);
+  });
+
+  const rows = document.querySelectorAll('#notif-list .notif-row');
+  let visibleCount = 0;
+  rows.forEach((row) => {
+    const show = tab === 'all' || row.dataset.unread === 'true';
+    row.classList.toggle('hidden', !show);
+    if (show) visibleCount += 1;
+  });
+
+  const hasAnyRows = rows.length > 0;
+  document.getElementById('notif-empty-all').classList.toggle('hidden', tab !== 'all' || hasAnyRows);
+  document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
+}
+
+const TOAST_DEFAULT_DURATION_MS = 4000;
+const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
+
+// Per-type visuals for the toast card: the tint behind the icon, the
+// icon markup itself (success/error render a colored glyph directly;
+// warning/info render a white glyph on a solid circle, matching the
+// reference design), and the color used for the "Undo"-style action
+// link and the countdown bar fill.
+const TOAST_VARIANTS = {
+  success: {
+    iconWrap: 'bg-emerald-100',
+    icon: '<svg class="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
+    action: 'text-emerald-600',
+    bar: 'bg-emerald-500',
+    track: 'bg-emerald-100',
+  },
+  error: {
+    iconWrap: 'bg-red-100',
+    icon: '<svg class="w-4 h-4 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    action: 'text-red-600',
+    bar: 'bg-red-500',
+    track: 'bg-red-100',
+  },
+  warning: {
+    iconWrap: 'bg-amber-100',
+    icon: '<span class="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="4" width="3" height="9" rx="1.5"/><rect x="10.5" y="15.5" width="3" height="3" rx="1.5"/></svg></span>',
+    action: 'text-amber-600',
+    bar: 'bg-amber-500',
+    track: 'bg-amber-100',
+  },
+  info: {
+    iconWrap: 'bg-blue-100',
+    icon: '<span class="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="10" width="3" height="8" rx="1.5"/><circle cx="12" cy="6" r="1.75"/></svg></span>',
+    action: 'text-blue-600',
+    bar: 'bg-blue-500',
+    track: 'bg-blue-100',
+  },
+};
+
+/**
+ * message     — bold headline text (kept as first arg for backward
+ *                compatibility with existing call sites)
+ * type        — 'success' (default) | 'error' | 'info' | 'warning'
+ * action      — optional {
+ *                 label: 'Undo',
+ *                 url: '/api/v1/assets/5/undo-delete',   // endpoint to call
+ *                 method: 'POST',                        // default POST
+ *                 successMessage: 'Delete undone',        // toast shown after a successful call
+ *                 refreshTarget: '#asset-table-container',// selector to re-fetch on success
+ *                 refreshUrl: '/api/v1/assets'            // GET url for the refresh (defaults to current path)
+ *               }
+ * duration    — optional override in ms
+ * description — optional supporting line shown under the headline
+ */
+function showToast(message, type, action, duration, description) {
+  const container = document.getElementById('toast-container');
+  if (!container || !message) return;
+
+  const variant = TOAST_VARIANTS[type] || TOAST_VARIANTS.success;
+
+  // Undo-style actions get the slightly wider "snackbar" card (there's an
+  // action label to fit, plus the countdown bar doubles as a "time left to
+  // click Undo" cue). Everything else -- plain confirmations, "coming soon"
+  // notices, errors with nothing to undo -- gets the narrower, lighter
+  // "toast" card with no countdown bar. Both are ~20-30% smaller than the
+  // original single card size.
+  const isSnackbar = !!(action && action.label);
+
+  const toast = document.createElement('div');
+  toast.className = `relative ${isSnackbar ? 'w-[300px]' : 'w-72'} bg-white rounded-xl ${isSnackbar ? 'shadow-xl' : 'shadow-lg'} ring-1 ring-black/5 overflow-hidden
+                      pointer-events-auto transition-all duration-300 ease-out opacity-0 translate-x-6`;
+
+  const body = document.createElement('div');
+  body.className = 'flex items-start gap-2.5 p-3';
+
+  const iconWrap = document.createElement('span');
+  iconWrap.className = `w-8 h-8 rounded-lg shrink-0 flex items-center justify-center ${variant.iconWrap}`;
+  iconWrap.innerHTML = variant.icon;
+  body.appendChild(iconWrap);
+
+  const content = document.createElement('div');
+  content.className = 'flex-1 min-w-0 pt-0.5';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'flex items-start justify-between gap-2';
+
+  const titleEl = document.createElement('p');
+  titleEl.className = 'font-semibold text-gray-900 text-[13px] leading-snug';
+  titleEl.textContent = message;
+  titleRow.appendChild(titleEl);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.className = 'shrink-0 -mt-0.5 -mr-1 p-1 text-gray-400 hover:text-gray-600';
+  closeBtn.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  titleRow.appendChild(closeBtn);
+
+  content.appendChild(titleRow);
+
+  if (description) {
+    const descEl = document.createElement('p');
+    descEl.className = 'text-gray-500 text-xs mt-0.5 leading-snug';
+    descEl.textContent = description;
+    content.appendChild(descEl);
+  }
+
+  let dismissTimer;
+  function dismiss() {
+    clearTimeout(dismissTimer);
+    toast.classList.add('opacity-0', 'translate-x-6');
+    setTimeout(() => toast.remove(), 300);
+  }
+
+  if (action && action.label) {
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = `mt-1.5 font-semibold text-xs hover:opacity-80 ${variant.action}`;
+    actionBtn.textContent = action.label;
+    actionBtn.addEventListener('click', () => {
+      if (action.url) {
+        fetch(action.url, {
+          method: action.method || 'POST',
+          headers: {
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+          },
+        }).then((res) => {
+          if (res.ok) {
+            // Full reload instead of the old htmx partial swap. That code
+            // defaulted refreshUrl to window.location.pathname (the whole
+            // page) whenever a route didn't set one explicitly, which
+            // dumped the entire <html> -- sidebar and all -- into the
+            // small #asset-table-container div. A reload sidesteps that
+            // class of bug entirely.
+            if (action.successMessage) {
+              sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
+            }
+            window.location.reload();
+          } else {
+            showToast("That action couldn't be undone", 'error');
+          }
+        }).catch(() => showToast("That action couldn't be undone", 'error'));
+      }
+      dismiss();
+    });
+    content.appendChild(actionBtn);
+  }
+
+  body.appendChild(content);
+  toast.appendChild(body);
+
+  // Countdown bar: a thin track the full width of the card with a
+  // colored fill that shrinks from 100% to 0% over the toast's
+  // lifetime, so the person can see how long they have left to read
+  // or act on it (and, on snackbars, click Undo) before it disappears.
+  // Shown on every toast, snackbar or plain.
+  const track = document.createElement('div');
+  track.className = `h-[2px] w-full ${variant.track}`;
+  const fill = document.createElement('div');
+  fill.className = `h-full ${variant.bar}`;
+  fill.style.width = '100%';
+  track.appendChild(fill);
+  toast.appendChild(track);
+
+  closeBtn.addEventListener('click', dismiss);
+
+  container.appendChild(toast);
+
+  // Force a reflow so the enter transition actually plays instead of
+  // the element appearing already in its final state.
+  requestAnimationFrame(() => {
+    toast.classList.remove('opacity-0', 'translate-x-6');
+  });
+
+  const effectiveDuration = duration || (action ? TOAST_ACTION_DURATION_MS : TOAST_DEFAULT_DURATION_MS);
+  let remainingMs = effectiveDuration;
+
+  // Drives the countdown bar by transitioning its width down to 0 over
+  // `ms`. Runs on its own rAF tick (rather than reusing the entry
+  // transition's tick) so it starts only once the bar is actually
+  // visible at 100% width. No-op when there's no bar (plain toasts).
+  function runCountdown(ms) {
+    if (!fill) return;
+    fill.style.transition = 'none';
+    fill.style.width = '100%';
+    requestAnimationFrame(() => {
+      fill.style.transition = `width ${ms}ms linear`;
+      fill.style.width = '0%';
+    });
+  }
+  runCountdown(remainingMs);
+  dismissTimer = setTimeout(dismiss, remainingMs);
+
+  // Pause the countdown (both the timer and the visual bar) while the
+  // person is hovering/reading it, and resume with whatever time was
+  // actually left rather than restarting the clock. Plain toasts (no
+  // track/fill) still pause the timer itself, just without a bar to animate.
+  toast.addEventListener('mouseenter', () => {
+    clearTimeout(dismissTimer);
+    if (track && fill) {
+      const trackWidth = track.getBoundingClientRect().width;
+      const fillWidth = fill.getBoundingClientRect().width;
+      const fraction = trackWidth > 0 ? fillWidth / trackWidth : 0;
+      remainingMs = Math.round(remainingMs * fraction);
+      fill.style.transition = 'none';
+      fill.style.width = `${fraction * 100}%`;
+    }
+  });
+  toast.addEventListener('mouseleave', () => {
+    if (remainingMs <= 0) return;
+    runCountdown(remainingMs);
+    dismissTimer = setTimeout(dismiss, remainingMs);
+  });
+}
+
+// htmx dispatches HX-Trigger events on the element that made the request,
+// and they bubble -- listening on body catches them regardless of which
+// tab/form fired them, so any route in the app can trigger a toast this way.
+// Example header from a Flask route:
+//   HX-Trigger: {"show-toast": {"message": "Asset deleted", "type": "success",
+//                "action": {"label": "Undo", "url": "/api/v1/assets/5/restore",
+//                "successMessage": "Delete undone", "refreshTarget": "#asset-table-container"}}}
+document.body.addEventListener('show-toast', function (evt) {
+  const detail = evt.detail || {};
+  showToast(detail.message, detail.type, detail.action, detail.duration);
+});
+
+// App-wide safety net for htmx requests. Individual hand-rolled fetch() calls
+// (bulk actions, mark-all-read, toast undo) already have their own .catch()
+// with a toast, but htmx-driven requests -- search, filters, sort, pagination,
+// modal loads -- had no equivalent, so a failed request just left the page
+// looking unchanged with zero feedback. These two listeners on <body> catch
+// every htmx request on every page, regardless of which element triggered it.
+document.body.addEventListener('htmx:responseError', function (evt) {
+  const status = evt.detail && evt.detail.xhr ? evt.detail.xhr.status : null;
+  const message = status === 403
+    ? "You don't have permission to do that."
+    : "Something went wrong. Please try again.";
+  showToast(message, 'error');
+});
+document.body.addEventListener('htmx:sendError', function () {
+  showToast("Network error — check your connection and try again.", 'error');
+});
+
+// Escape-to-close for the htmx-loaded modals in #modal-container (add/edit/
+// delete/restore/details/history/import/export). Those modals are plain
+// <div class="modal"> markup with no native dialog behavior, so unlike the
+// logout confirm and "Manage Categories" <dialog> elements (which get
+// Escape-to-close for free), they need it wired up by hand. Rather than
+// duplicating a keydown listener in every partial, one shared listener
+// removes the top-most ".modal" child of #modal-container -- the same
+// element each modal's own Cancel/X button already removes -- so stacked
+// modals (e.g. Details with Edit or Delete opened on top of it via
+// hx-swap="beforeend") only lose their top layer, not everything.
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+
+  // The folder-picker popup (assets/_export_folder_browser_modal.html) has
+  // its own Escape handler and sits above everything else while open --
+  // let it close itself first instead of also tearing down what's behind it.
+  const folderBrowser = document.getElementById('export-folder-browser');
+  if (folderBrowser && !folderBrowser.classList.contains('hidden')) return;
+
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+  const modals = container.querySelectorAll(':scope > .modal');
+  if (modals.length === 0) return;
+  modals[modals.length - 1].remove();
+});
+
+// Picks up the toast stashed in sessionStorage right before a reload
+// triggered by a toast action (e.g. clicking "Undo"), so the confirmation
+// still shows up on the fresh page instead of silently disappearing.
+(function () {
+  const pending = sessionStorage.getItem('pending-toast');
+  if (pending) {
+    sessionStorage.removeItem('pending-toast');
+    try {
+      const { message, type } = JSON.parse(pending);
+      showToast(message, type);
+    } catch (e) { /* ignore malformed payload */ }
+  }
+})();
+</script>
+
+</body>
+</html>

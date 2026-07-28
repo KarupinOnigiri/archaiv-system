@@ -10,7 +10,8 @@
     <p class="text-error text-sm mb-3">{{ error }}</p>
     {% endif %}
 
-    <form hx-post="/api/v1/members/{{ member.id }}/restrict" hx-target="closest .modal" hx-swap="outerHTML">
+    <form hx-post="/api/v1/members/{{ member.id }}/restrict" hx-target="closest .modal" hx-swap="outerHTML"
+      hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
       <div class="form-control mb-2">
         <label class="label">
           <span class="label-text">Reason <span class="text-error">*</span></span>

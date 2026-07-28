@@ -155,6 +155,44 @@ def view_members():
     )
 
 
+@members_bp.route("/members/stat-cards")
+@login_required
+def member_stat_cards():
+    """Recomputes the four summary counts and re-renders the stat-card
+    partial. Fired by the `members-refreshed from:body` listener on
+    #member-stat-cards-container in members.html -- dispatched after every
+    restrict/unrestrict/deactivate/reactivate action -- so the cards stay in
+    sync with whatever just changed without a full page reload. This route
+    was simply missing before, which is why every one of those four actions
+    was throwing a 404 here and tripping the global htmx:responseError
+    toast alongside the action's own success toast.
+
+    Mirrors the exact same queries members_page() (routes/pages.py) uses
+    for the initial full-page render, so the two can never drift out of
+    sync on what counts as active/restricted/inactive.
+    """
+    conn = get_db_connection()
+    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
+    stat_active = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 0"
+    ).fetchone()["cnt"]
+    stat_restricted = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 1"
+    ).fetchone()["cnt"]
+    stat_inactive = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 0"
+    ).fetchone()["cnt"]
+    conn.close()
+
+    return render_template(
+        "members/_stat_cards.html",
+        stat_all=stat_all,
+        stat_active=stat_active,
+        stat_restricted=stat_restricted,
+        stat_inactive=stat_inactive,
+    )
+
+
 @members_bp.route("/members/<int:id>/profile")
 @login_required
 def member_profile(id):

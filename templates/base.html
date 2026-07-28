@@ -304,6 +304,15 @@
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
 
+                <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" fill="none"/><path d="M12 3a9 9 0 000 18z" fill="currentColor" stroke="none"/></svg>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
+                  <span id="toast-style-label" class="text-xs text-base-content/50">Light</span>
+                </button>
+
                 <button type="button" onclick="showToast('Display &amp; accessibility coming soon', 'info')"
                         class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                   <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
@@ -459,6 +468,46 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
+// Three notification styles the "Notification style" toggle cycles
+// through:
+//  - 'light'    this app's normal light card (default)
+//  - 'inverted' a dark card loosely *inspired* by MD3's "inverse
+//               surface" guidance, but otherwise keeping this app's own
+//               icon chips, shape, and per-type colors
+//  - 'md3'      a snackbar built to the actual Material Design 3 spec --
+//               see renderMd3Toast() below for what that means in
+//               practice
+// Persisted so the choice survives a reload/new tab.
+const TOAST_STYLES = ['light', 'inverted', 'md3'];
+const TOAST_STYLE_LABELS = { light: 'Light', inverted: 'Inverted', md3: 'Material 3' };
+
+let TOAST_STYLE = 'light';
+try {
+  const saved = localStorage.getItem('toast-style');
+  if (TOAST_STYLES.includes(saved)) TOAST_STYLE = saved;
+} catch (e) {
+  // Storage can be unavailable (private browsing, disabled cookies, etc.) --
+  // fall back to the light style rather than let this throw.
+}
+
+function syncToastStyleLabel() {
+  const label = document.getElementById('toast-style-label');
+  if (label) label.textContent = TOAST_STYLE_LABELS[TOAST_STYLE];
+}
+syncToastStyleLabel();
+
+function toggleToastStyle() {
+  const idx = TOAST_STYLES.indexOf(TOAST_STYLE);
+  TOAST_STYLE = TOAST_STYLES[(idx + 1) % TOAST_STYLES.length];
+  try {
+    localStorage.setItem('toast-style', TOAST_STYLE);
+  } catch (e) {
+    // Non-critical -- the toggle still works for the rest of this session.
+  }
+  syncToastStyleLabel();
+  showToast(`Switched to ${TOAST_STYLE_LABELS[TOAST_STYLE].toLowerCase()} notifications`, 'success');
+}
+
 const TOAST_DEFAULT_DURATION_MS = 4000;
 const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
 
@@ -470,31 +519,66 @@ const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Und
 const TOAST_VARIANTS = {
   success: {
     iconWrap: 'bg-emerald-100',
-    icon: '<svg class="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
+    icon: '<svg class="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
     action: 'text-emerald-600',
     bar: 'bg-emerald-500',
     track: 'bg-emerald-100',
   },
   error: {
     iconWrap: 'bg-red-100',
-    icon: '<svg class="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    icon: '<svg class="w-4 h-4 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     action: 'text-red-600',
     bar: 'bg-red-500',
     track: 'bg-red-100',
   },
   warning: {
     iconWrap: 'bg-amber-100',
-    icon: '<span class="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center"><svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="4" width="3" height="9" rx="1.5"/><rect x="10.5" y="15.5" width="3" height="3" rx="1.5"/></svg></span>',
+    icon: '<span class="w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="4" width="3" height="9" rx="1.5"/><rect x="10.5" y="15.5" width="3" height="3" rx="1.5"/></svg></span>',
     action: 'text-amber-600',
     bar: 'bg-amber-500',
     track: 'bg-amber-100',
   },
   info: {
     iconWrap: 'bg-blue-100',
-    icon: '<span class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center"><svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="10" width="3" height="8" rx="1.5"/><circle cx="12" cy="6" r="1.75"/></svg></span>',
+    icon: '<span class="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="10" width="3" height="8" rx="1.5"/><circle cx="12" cy="6" r="1.75"/></svg></span>',
     action: 'text-blue-600',
     bar: 'bg-blue-500',
     track: 'bg-blue-100',
+  },
+};
+
+// MD3 "inverse surface" palette for the same four types -- background/text
+// deliberately flip dark regardless of the app's own (light) theme, per
+// Material's snackbar spec. Icon chips, action label, and countdown bar all
+// move to lighter tints so they hold contrast against the dark card.
+const TOAST_VARIANTS_DARK = {
+  success: {
+    iconWrap: 'bg-emerald-400/20',
+    icon: '<svg class="w-4 h-4 text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
+    action: 'text-emerald-300',
+    bar: 'bg-emerald-300',
+    track: 'bg-white/10',
+  },
+  error: {
+    iconWrap: 'bg-red-400/20',
+    icon: '<svg class="w-4 h-4 text-red-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    action: 'text-red-300',
+    bar: 'bg-red-300',
+    track: 'bg-white/10',
+  },
+  warning: {
+    iconWrap: 'bg-amber-400/20',
+    icon: '<span class="w-5 h-5 rounded-full bg-amber-400/90 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-[#313033]" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="4" width="3" height="9" rx="1.5"/><rect x="10.5" y="15.5" width="3" height="3" rx="1.5"/></svg></span>',
+    action: 'text-amber-300',
+    bar: 'bg-amber-300',
+    track: 'bg-white/10',
+  },
+  info: {
+    iconWrap: 'bg-blue-400/20',
+    icon: '<span class="w-5 h-5 rounded-full bg-blue-400/90 flex items-center justify-center"><svg class="w-2.5 h-2.5 text-[#313033]" viewBox="0 0 24 24" fill="currentColor"><rect x="10.5" y="10" width="3" height="8" rx="1.5"/><circle cx="12" cy="6" r="1.75"/></svg></span>',
+    action: 'text-blue-300',
+    bar: 'bg-blue-300',
+    track: 'bg-white/10',
   },
 };
 
@@ -517,17 +601,31 @@ function showToast(message, type, action, duration, description) {
   const container = document.getElementById('toast-container');
   if (!container || !message) return;
 
-  const variant = TOAST_VARIANTS[type] || TOAST_VARIANTS.success;
+  if (TOAST_STYLE === 'md3') {
+    renderMd3Toast(container, message, type, action, duration, description);
+    return;
+  }
+
+  const variantMap = TOAST_STYLE === 'inverted' ? TOAST_VARIANTS_DARK : TOAST_VARIANTS;
+  const variant = variantMap[type] || variantMap.success;
+
+  // Undo-style actions get the slightly wider "snackbar" card (there's an
+  // action label to fit, plus the countdown bar doubles as a "time left to
+  // click Undo" cue). Everything else -- plain confirmations, "coming soon"
+  // notices, errors with nothing to undo -- gets the narrower, lighter
+  // "toast" card with no countdown bar. Both are ~20-30% smaller than the
+  // original single card size.
+  const isSnackbar = !!(action && action.label);
 
   const toast = document.createElement('div');
-  toast.className = `relative w-96 bg-white rounded-2xl shadow-xl ring-1 ring-black/5 overflow-hidden
+  toast.className = `relative ${isSnackbar ? 'w-[300px]' : 'w-72'} ${TOAST_STYLE === 'inverted' ? 'bg-[#313033]' : 'bg-white'} rounded-xl ${isSnackbar ? 'shadow-xl' : 'shadow-lg'} ring-1 ${TOAST_STYLE === 'inverted' ? 'ring-white/10' : 'ring-black/5'} overflow-hidden
                       pointer-events-auto transition-all duration-300 ease-out opacity-0 translate-x-6`;
 
   const body = document.createElement('div');
-  body.className = 'flex items-start gap-3 p-4';
+  body.className = 'flex items-start gap-2.5 p-3';
 
   const iconWrap = document.createElement('span');
-  iconWrap.className = `w-10 h-10 rounded-xl shrink-0 flex items-center justify-center ${variant.iconWrap}`;
+  iconWrap.className = `w-8 h-8 rounded-lg shrink-0 flex items-center justify-center ${variant.iconWrap}`;
   iconWrap.innerHTML = variant.icon;
   body.appendChild(iconWrap);
 
@@ -538,22 +636,22 @@ function showToast(message, type, action, duration, description) {
   titleRow.className = 'flex items-start justify-between gap-2';
 
   const titleEl = document.createElement('p');
-  titleEl.className = 'font-semibold text-gray-900 text-[15px] leading-snug';
+  titleEl.className = `font-semibold ${TOAST_STYLE === 'inverted' ? 'text-[#F4EFF4]' : 'text-gray-900'} text-[13px] leading-snug`;
   titleEl.textContent = message;
   titleRow.appendChild(titleEl);
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.setAttribute('aria-label', 'Dismiss');
-  closeBtn.className = 'shrink-0 -mt-0.5 -mr-1 p-1 text-gray-400 hover:text-gray-600';
-  closeBtn.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  closeBtn.className = `shrink-0 -mt-0.5 -mr-1 p-1 ${TOAST_STYLE === 'inverted' ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`;
+  closeBtn.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   titleRow.appendChild(closeBtn);
 
   content.appendChild(titleRow);
 
   if (description) {
     const descEl = document.createElement('p');
-    descEl.className = 'text-gray-500 text-sm mt-0.5 leading-snug';
+    descEl.className = `${TOAST_STYLE === 'inverted' ? 'text-white/60' : 'text-gray-500'} text-xs mt-0.5 leading-snug`;
     descEl.textContent = description;
     content.appendChild(descEl);
   }
@@ -568,7 +666,7 @@ function showToast(message, type, action, duration, description) {
   if (action && action.label) {
     const actionBtn = document.createElement('button');
     actionBtn.type = 'button';
-    actionBtn.className = `mt-2 font-semibold text-sm hover:opacity-80 ${variant.action}`;
+    actionBtn.className = `mt-1.5 font-semibold text-xs hover:opacity-80 ${variant.action}`;
     actionBtn.textContent = action.label;
     actionBtn.addEventListener('click', () => {
       if (action.url) {
@@ -605,9 +703,10 @@ function showToast(message, type, action, duration, description) {
   // Countdown bar: a thin track the full width of the card with a
   // colored fill that shrinks from 100% to 0% over the toast's
   // lifetime, so the person can see how long they have left to read
-  // or act on it before it disappears.
+  // or act on it (and, on snackbars, click Undo) before it disappears.
+  // Shown on every toast, snackbar or plain.
   const track = document.createElement('div');
-  track.className = `h-[3px] w-full ${variant.track}`;
+  track.className = `h-[2px] w-full ${variant.track}`;
   const fill = document.createElement('div');
   fill.className = `h-full ${variant.bar}`;
   fill.style.width = '100%';
@@ -630,8 +729,9 @@ function showToast(message, type, action, duration, description) {
   // Drives the countdown bar by transitioning its width down to 0 over
   // `ms`. Runs on its own rAF tick (rather than reusing the entry
   // transition's tick) so it starts only once the bar is actually
-  // visible at 100% width.
+  // visible at 100% width. No-op when there's no bar (plain toasts).
   function runCountdown(ms) {
+    if (!fill) return;
     fill.style.transition = 'none';
     fill.style.width = '100%';
     requestAnimationFrame(() => {
@@ -644,19 +744,130 @@ function showToast(message, type, action, duration, description) {
 
   // Pause the countdown (both the timer and the visual bar) while the
   // person is hovering/reading it, and resume with whatever time was
-  // actually left rather than restarting the clock.
+  // actually left rather than restarting the clock. Plain toasts (no
+  // track/fill) still pause the timer itself, just without a bar to animate.
   toast.addEventListener('mouseenter', () => {
     clearTimeout(dismissTimer);
-    const trackWidth = track.getBoundingClientRect().width;
-    const fillWidth = fill.getBoundingClientRect().width;
-    const fraction = trackWidth > 0 ? fillWidth / trackWidth : 0;
-    remainingMs = Math.round(remainingMs * fraction);
-    fill.style.transition = 'none';
-    fill.style.width = `${fraction * 100}%`;
+    if (track && fill) {
+      const trackWidth = track.getBoundingClientRect().width;
+      const fillWidth = fill.getBoundingClientRect().width;
+      const fraction = trackWidth > 0 ? fillWidth / trackWidth : 0;
+      remainingMs = Math.round(remainingMs * fraction);
+      fill.style.transition = 'none';
+      fill.style.width = `${fraction * 100}%`;
+    }
   });
   toast.addEventListener('mouseleave', () => {
     if (remainingMs <= 0) return;
     runCountdown(remainingMs);
+    dismissTimer = setTimeout(dismiss, remainingMs);
+  });
+}
+
+// Builds a snackbar to the actual Material Design 3 spec, as its own
+// code path rather than another branch inside showToast() above -- MD3
+// snackbars differ from this app's light/inverted cards in more than
+// color:
+//  - Container: 4dp corner radius ("extra small" shape), M3 baseline
+//    inverse-surface color (#322F35) with inverse-on-surface text
+//    (#F5EFF7), elevation level 3 shadow. Width is spec-bound between
+//    344dp and 672dp rather than a fixed card width.
+//  - No leading icon and no per-type coloring. MD3 snackbars are
+//    deliberately neutral regardless of success/error/warning/info --
+//    the spec reserves color-coded severity for banners and dialogs, so
+//    a "success" and an "error" snackbar look identical apart from the
+//    text.
+//  - At most one text action (label-large type, inverse-primary color
+//    #D0BCFF) plus an optional icon-only dismiss button -- no countdown
+//    bar, since that's not part of the spec.
+function renderMd3Toast(container, message, type, action, duration, description) {
+  const hasAction = !!(action && action.label);
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', 'status');
+  toast.className = `relative flex items-center gap-2 min-w-[344px] max-w-[420px] rounded-[4px]
+                      bg-[#322F35] pl-4 pr-2 py-2 pointer-events-auto
+                      shadow-[0_1px_3px_rgba(0,0,0,0.3),0_4px_8px_rgba(0,0,0,0.15)]
+                      transition-all duration-300 ease-out opacity-0 translate-y-2`;
+
+  const textWrap = document.createElement('div');
+  textWrap.className = 'flex-1 min-w-0 py-1.5';
+
+  const msgEl = document.createElement('p');
+  msgEl.className = 'text-[#F5EFF7] text-sm leading-5 font-normal';
+  msgEl.textContent = message;
+  textWrap.appendChild(msgEl);
+
+  if (description) {
+    const descEl = document.createElement('p');
+    descEl.className = 'text-[#F5EFF7]/70 text-xs leading-4 mt-0.5';
+    descEl.textContent = description;
+    textWrap.appendChild(descEl);
+  }
+  toast.appendChild(textWrap);
+
+  let dismissTimer;
+  function dismiss() {
+    clearTimeout(dismissTimer);
+    toast.classList.add('opacity-0', 'translate-y-2');
+    setTimeout(() => toast.remove(), 300);
+  }
+
+  if (hasAction) {
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'shrink-0 text-[#D0BCFF] text-sm font-medium leading-5 px-2.5 py-1.5 rounded hover:bg-white/10';
+    actionBtn.textContent = action.label;
+    actionBtn.addEventListener('click', () => {
+      if (action.url) {
+        fetch(action.url, {
+          method: action.method || 'POST',
+          headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+        }).then((res) => {
+          if (res.ok) {
+            if (action.successMessage) {
+              sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
+            }
+            window.location.reload();
+          } else {
+            showToast("That action couldn't be undone", 'error');
+          }
+        }).catch(() => showToast("That action couldn't be undone", 'error'));
+      }
+      dismiss();
+    });
+    toast.appendChild(actionBtn);
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.className = 'shrink-0 p-1.5 text-[#F5EFF7]/60 hover:text-[#F5EFF7] hover:bg-white/10 rounded-full';
+  closeBtn.innerHTML = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  closeBtn.addEventListener('click', dismiss);
+  toast.appendChild(closeBtn);
+
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.classList.remove('opacity-0', 'translate-y-2');
+  });
+
+  const effectiveDuration = duration || (hasAction ? TOAST_ACTION_DURATION_MS : TOAST_DEFAULT_DURATION_MS);
+  let remainingMs = effectiveDuration;
+  let pauseStart = Date.now();
+  dismissTimer = setTimeout(dismiss, remainingMs);
+
+  // No visual bar to animate here (not part of the MD3 spec), but
+  // pausing the auto-dismiss on hover is still good UX, so it's kept --
+  // just tracked via timestamps instead of a fill's rendered width.
+  toast.addEventListener('mouseenter', () => {
+    clearTimeout(dismissTimer);
+    remainingMs -= (Date.now() - pauseStart);
+  });
+  toast.addEventListener('mouseleave', () => {
+    if (remainingMs <= 0) return;
+    pauseStart = Date.now();
     dismissTimer = setTimeout(dismiss, remainingMs);
   });
 }

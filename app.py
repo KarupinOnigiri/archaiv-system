@@ -85,9 +85,11 @@ def inject_csrf_token():
     return {
         "csrf_token": session["csrf_token"] if session else "",
         "staff_first_name": staff_member["first_name"] if staff_member else "",
-        "staff_full_name": full_name(staff_member["first_name"], staff_member["last_name"])
-        if staff_member
-        else "",
+        "staff_full_name": (
+            full_name(staff_member["first_name"], staff_member["last_name"])
+            if staff_member
+            else ""
+        ),
     }
 
 
