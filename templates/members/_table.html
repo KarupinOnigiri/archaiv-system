@@ -1,11 +1,20 @@
+{% from "_icons.html" import icon_eye, icon_edit, icon_trash, icon_shield_alert, icon_shield_check, icon_user_check %}
+
 {% set can_manage = g.staff.role in ["admin", "in_charge"] %}
 {% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
+{# Bulk actions (deactivate/reactivate) use the same permission as the single-row
+   equivalents below, and -- like Inventory's bulk delete/restore -- aren't
+   show_inactive-aware: an admin/in_charge can bulk-act in both the active and
+   inactive views, so this can stay a flat role check instead of branching on
+   the current view the way Inventory's can_bulk_act (which mixes two
+   differently-gated actions) has to. #}
+{% set can_bulk_act = can_manage %}
 
-{% macro sort_header(label, col, align="left") %}
+{% macro sort_header(label, col) %}
 {% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
 {% set is_active = (sort_by == col) %}
-<th class="{{ 'text-right' if align == 'right' else 'text-left' }} font-semibold py-3">
-  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% endif %} {{ 'flex-row-reverse' if align == 'right' else '' }}"
+<th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">
+  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% endif %}"
           hx-get="/api/v1/members"
           hx-target="#member-table-container"
           hx-swap="innerHTML"
@@ -28,7 +37,12 @@
 
 <table class="table w-full table-fixed" data-total-count="{{ total_count }}">
   <colgroup>
-    <col style="width: 24%">
+    <!-- Checkbox column, unconditional for the same reason as Inventory's: keeping
+         the column reserved in both states (can_bulk_act true/false) means the
+         table's column count -- and everything to its right, including the
+         pagination footer -- never shifts sideways depending on who's viewing it. -->
+    <col style="width: 2.5rem">
+    <col style="width: 21%">
     <col style="width: 13%">
     <col style="width: 15%">
     <col style="width: 10%">
@@ -38,25 +52,43 @@
     <col style="width: 5rem">
   </colgroup>
   <thead>
-    <tr class="border-b border-base-300 text-xs font-semibold text-base-content/50 tracking-wide">
-      {{ sort_header("Member", "name") }}
-      {{ sort_header("Member Code", "member_code") }}
-      {{ sort_header("Department", "department") }}
-      {{ sort_header("Type", "member_type") }}
-      {{ sort_header("Barcode ID", "barcode_id") }}
-      {{ sort_header("Batch", "batch") }}
-      <th class="text-left font-semibold py-3">Status</th>
-      <th class="text-right font-semibold py-3">Actions</th>
+    <tr class="text-left text-xs text-base-content/50 tracking-wide">
+      <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
+        {% if can_bulk_act %}
+        <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
+               aria-label="Select all rows on this page" title="Select all rows on this page">
+        {% endif %}
+      </th>
+      {{ sort_header("MEMBER", "name") }}
+      {{ sort_header("MEMBER CODE", "member_code") }}
+      {{ sort_header("DEPARTMENT", "department") }}
+      {{ sort_header("TYPE", "member_type") }}
+      {{ sort_header("BARCODE ID", "barcode_id") }}
+      {{ sort_header("BATCH", "batch") }}
+      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STATUS</th>
+      <th class="py-2 font-semibold text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
     </tr>
   </thead>
   <tbody>
     {% for m in members %}
-    <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40">
+    <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40 cursor-pointer"
+        hx-get="/api/v1/members/{{ m.id }}/profile"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+        hx-trigger="click[!target.closest('input,.dropdown,button,a')]">
 
-      <td class="py-3">
+      <td class="py-2">
+        {% if can_bulk_act %}
+        <input type="checkbox" class="member-row-checkbox checkbox checkbox-sm"
+               value="{{ m.id }}" data-name="{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}" data-member-code="{{ m.member_code }}"
+               aria-label="Select {{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}">
+        {% endif %}
+      </td>
+
+      <td class="py-2">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-            <span class="text-xs font-semibold text-primary">{{ m.first_name[0] | upper }}</span>
+          <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <span class="text-[10px] font-semibold text-primary">{{ m.first_name[0] | upper }}</span>
           </div>
           <div class="min-w-0">
             <p class="font-medium truncate">{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}</p>
@@ -64,17 +96,17 @@
         </div>
       </td>
 
-      <td class="py-3 text-base-content/70 truncate">{{ m.member_code }}</td>
-      <td class="py-3 text-base-content/70 truncate">{{ m.department }}</td>
+      <td class="py-2 text-base-content/70 truncate">{{ m.member_code }}</td>
+      <td class="py-2 text-base-content/70 truncate">{{ m.department }}</td>
 
-      <td class="py-3">
+      <td class="py-2">
         <span class="capitalize text-base-content/70">{{ m.member_type }}</span>
       </td>
 
-      <td class="py-3 text-base-content/70 truncate">{{ m.barcode_id }}</td>
-      <td class="py-3 text-base-content/70 truncate">{{ m.batch or "—" }}</td>
+      <td class="py-2 text-base-content/70 truncate">{{ m.barcode_id }}</td>
+      <td class="py-2 text-base-content/70 truncate">{{ m.batch or "—" }}</td>
 
-      <td class="py-3">
+      <td class="py-2">
         {% if not m.is_active %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
         {% elif m.is_restricted %}
@@ -84,38 +116,38 @@
         {% endif %}
       </td>
 
-      <td class="py-3 text-right">
+      <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
           <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-48 p-2 z-50">
             <li>
-              <a hx-get="/api/v1/members/{{ m.id }}/profile" hx-target="#modal-container" hx-swap="innerHTML">View Profile</a>
+              <a class="flex items-center gap-2" hx-get="/api/v1/members/{{ m.id }}/profile" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_eye() }} View Profile</a>
             </li>
             {% if can_manage %}
             <li>
-              <a hx-get="/api/v1/members/{{ m.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">Edit Details</a>
+              <a class="flex items-center gap-2" hx-get="/api/v1/members/{{ m.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit Details</a>
             </li>
             {% endif %}
             {% if m.is_active %}
               {% if can_restrict and not m.is_restricted %}
               <li>
-                <a class="text-warning" hx-get="/api/v1/members/{{ m.id }}/restrict-form" hx-target="#modal-container" hx-swap="innerHTML">Restrict</a>
+                <a class="flex items-center gap-2 text-warning" hx-get="/api/v1/members/{{ m.id }}/restrict-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_shield_alert() }} Restrict</a>
               </li>
               {% elif can_manage and m.is_restricted %}
               <li>
-                <a class="text-success" hx-get="/api/v1/members/{{ m.id }}/unrestrict-confirm" hx-target="#modal-container" hx-swap="innerHTML">Lift Restriction</a>
+                <a class="flex items-center gap-2 text-success" hx-get="/api/v1/members/{{ m.id }}/unrestrict-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_shield_check() }} Lift Restriction</a>
               </li>
               {% endif %}
               {% if can_manage %}
               <li>
-                <a class="text-error" hx-get="/api/v1/members/{{ m.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">Deactivate</a>
+                <a class="flex items-center gap-2 text-error" hx-get="/api/v1/members/{{ m.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Deactivate</a>
               </li>
               {% endif %}
             {% elif can_manage %}
               <li>
-                <a class="text-success" hx-get="/api/v1/members/{{ m.id }}/reactivate-confirm" hx-target="#modal-container" hx-swap="innerHTML">Reactivate</a>
+                <a class="flex items-center gap-2 text-success" hx-get="/api/v1/members/{{ m.id }}/reactivate-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_user_check() }} Reactivate</a>
               </li>
             {% endif %}
           </ul>
@@ -125,7 +157,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="8" class="py-12 text-center text-sm text-base-content/50">
+      <td colspan="9" class="py-12 text-center text-sm text-base-content/50">
         No members match these filters.
       </td>
     </tr>
@@ -146,7 +178,7 @@
             hx-indicator="#table-spinner"
             hx-include="#member-search, #department-filter, #restricted-filter, #show-inactive-toggle"
             name="limit"
-            hx-vals='{"offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+            hx-vals='js:{"limit": event.target.value, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
       <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
       <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
@@ -159,10 +191,7 @@
     </span>
   </div>
 
-  <div class="flex items-center gap-2">
-    <span class="text-sm text-base-content/60 whitespace-nowrap">
-      Page {{ (offset // limit) + 1 }} of {{ ((total_count - 1) // limit) + 1 if total_count > 0 else 1 }}
-    </span>
+  <div class="flex items-center gap-1">
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
             aria-label="Previous page"
             hx-get="/api/v1/members"
@@ -173,6 +202,40 @@
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
+
+    <!-- Same numbered-with-ellipsis pagination as Inventory, so both tables
+         behave identically -- see the matching comment there for why this
+         caps at a handful of buttons instead of one per page. -->
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/members"
+                hx-target="#member-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#member-search, #department-filter, #restricted-filter, #show-inactive-toggle"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
             aria-label="Next page"
             hx-get="/api/v1/members"

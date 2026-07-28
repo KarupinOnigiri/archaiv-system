@@ -1,11 +1,11 @@
 <dialog id="manage-categories-modal" class="modal" aria-labelledby="manage-categories-title" aria-describedby="manage-categories-desc">
-  <div class="modal-box max-w-md">
-    <h3 id="manage-categories-title" class="text-lg font-bold">Manage Categories</h3>
-    <p id="manage-categories-desc" class="text-sm text-base-content/50 mt-1 mb-4">
+  <div class="modal-box max-w-md flex flex-col max-h-[85vh]">
+    <h3 id="manage-categories-title" class="text-lg font-bold shrink-0">Manage Categories</h3>
+    <p id="manage-categories-desc" class="text-sm text-base-content/50 mt-1 mb-4 shrink-0">
       Add, rename, reorder, or remove categories. Drag <span class="inline-block align-middle">&#9776;</span> or use the arrows to reorder, then click Save Order.
     </p>
 
-    <div class="flex items-center justify-between mb-2">
+    <div class="flex items-center justify-between mb-2 shrink-0">
       <span class="text-xs font-semibold text-base-content/40 tracking-wide">CATEGORIES</span>
       <div class="flex items-center gap-2">
         <span id="cat-order-status" class="text-xs text-base-content/40 transition-opacity duration-300 opacity-0" aria-hidden="true">Saved</span>
@@ -14,7 +14,7 @@
       </div>
     </div>
 
-    <div class="space-y-1 h-64 overflow-y-auto overflow-x-hidden mb-5" id="category-list" role="list">
+    <div class="space-y-1 flex-1 min-h-[8rem] overflow-y-auto overflow-x-hidden mb-5" id="category-list" role="list">
       {% for cat in categories %}
       <div class="flex items-center gap-1.5 py-1 px-1 -mx-1 rounded-lg cat-row transition-all duration-300" role="listitem"
            data-cat-id="{{ cat.id }}" data-cat-name="{{ cat.name }}" draggable="true">
@@ -64,9 +64,9 @@
          see the list visually reshuffle. -->
     <div id="cat-reorder-announcer" class="sr-only" aria-live="polite"></div>
 
-    <div class="divider my-2"></div>
+    <div class="divider my-2 shrink-0"></div>
 
-    <div class="form-control">
+    <div class="form-control shrink-0">
       <label class="label py-1"><span class="label-text text-xs font-medium">New Category</span></label>
       <div class="flex gap-2">
         <input type="text" id="new-category-name" maxlength="100" class="input input-bordered input-sm flex-1" placeholder="e.g. Power Tools">
@@ -74,7 +74,7 @@
       </div>
     </div>
 
-    <div class="modal-action">
+    <div class="modal-action shrink-0">
       <button type="button" class="btn btn-ghost btn-sm" data-close-categories-modal>Close</button>
     </div>
   </div>

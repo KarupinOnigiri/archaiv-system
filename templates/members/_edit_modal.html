@@ -1,15 +1,11 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-2xl">
+  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
 
     <div class="flex justify-between items-start mb-5">
       <div>
         <h3 class="font-bold text-xl">Edit Member</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ member.member_code }} &middot; Update this member's details.</p>
       </div>
-      <button type="button" onclick="this.closest('.modal').remove()"
-              class="text-base-content/40 hover:text-base-content">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
     </div>
 
     {% if error %}

@@ -1,5 +1,5 @@
 <dialog id="member-profile-modal" class="modal" open>
-  <div class="modal-box max-w-2xl">
+  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
 
     <div class="flex items-start justify-between gap-4">
       <div>
@@ -60,6 +60,14 @@
 
     <div class="modal-action">
       <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('member-profile-modal').close(); document.getElementById('member-profile-modal').remove();">Close</button>
+      {% if g.staff.role in ["admin", "in_charge"] %}
+      <button type="button" class="btn btn-primary btn-sm"
+              hx-get="/api/v1/members/{{ member.id }}/edit-form?return_to=profile"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Edit
+      </button>
+      {% endif %}
     </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request
+from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from services.admin_deactivation_service import (
@@ -26,20 +26,24 @@ VALID_ROLES = ("admin", "in_charge", "tool_keeper")
 # # # LIST / VIEW ------------------------------------------------------------
 
 
-@staff_bp.route("/staff")
-@login_required
-def view_staff():
-    limit, offset, error = parse_pagination_params(request.args)
+def get_staff_table_context(args):
+    """Shared query logic for the staff table -- used by both the htmx
+    partial route below and the full-page /staff route (routes/pages.py),
+    the same way get_members_table_context is shared on the members side.
+    Keeping this in one place means the full-page load and the htmx
+    refetch can never drift out of sync on what filters exist.
+    Returns (context_dict, error_response)."""
+    limit, offset, error = parse_pagination_params(args)
     if error:
-        return error
+        return None, error
 
-    q = request.args.get("q", "").strip()
-    role = request.args.get("role")
-    department_id = request.args.get("department_id")
-    show_inactive = request.args.get("show_inactive") == "1"
+    q = args.get("q", "").strip()
+    role = args.get("role")
+    department_id = args.get("department_id")
+    show_inactive = args.get("show_inactive") == "1"
 
     if role and role not in VALID_ROLES:
-        return (
+        return None, (
             jsonify({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}),
             400,
         )
@@ -70,7 +74,10 @@ def view_staff():
         """,
         params,
     ).fetchone()["cnt"]
-    staff = conn.execute(
+    # Named staff_list (not "staff") so it doesn't collide with the
+    # logged-in-user variable that staff.html and staff/_table.html both
+    # refer to as `staff` (e.g. `{% if staff.role == "admin" %}`).
+    staff_list = conn.execute(
         f"""
         SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
                staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
@@ -87,12 +94,37 @@ def view_staff():
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    return {
+        "staff_list": staff_list,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "show_inactive": show_inactive,
+    }, None
+
+
+@staff_bp.route("/staff")
+@login_required
+def view_staff():
+    context, error = get_staff_table_context(request.args)
+    if error:
+        return error
+
+    if request.headers.get("HX-Request") == "true":
+        # staff=g.staff is required here (not just for the full-page load)
+        # -- staff/_table.html's `can_manage` check and its per-row Actions
+        # dropdown both read the bare `staff` variable, which would
+        # otherwise be undefined on every htmx filter/search/pagination
+        # swap and silently hide admin controls after the first load.
+        return render_template("staff/_table.html", staff=g.staff, **context)
+
     return jsonify(
         {
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset,
-            "results": [dict(row) for row in staff],
+            "total_count": context["total_count"],
+            "limit": context["limit"],
+            "offset": context["offset"],
+            "results": [dict(row) for row in context["staff_list"]],
         }
     )
 

@@ -30,6 +30,15 @@ def assets_page():
     stat_maintenance = conn.execute(
         "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'maintenance'"
     ).fetchone()["cnt"]
+    # Previously missing entirely -- assets/index.html's category filter
+    # loops over `categories`, but nothing ever supplied it on a full page
+    # load (get_assets_table_context() only returns table/pagination state,
+    # not lookup data), so the dropdown silently rendered with just the
+    # "Category" placeholder until an htmx swap happened to refresh it.
+    # Matches how members_page() already fetches and passes `departments`.
+    categories = conn.execute(
+        "SELECT * FROM categories ORDER BY sort_order, name"
+    ).fetchall()
     conn.close()
 
     # Reuses the exact same query logic view_assets() uses for htmx partial
@@ -64,6 +73,23 @@ def assets_page():
         stat_available=stat_available,
         stat_borrowed=stat_borrowed,
         stat_maintenance=stat_maintenance,
+        categories=categories,
+        # get_assets_table_context() only returns what _table.html needs
+        # (assets/total_count/limit/offset/show_archived/sort_by/sort_dir) --
+        # it deliberately doesn't return q/category_id/status/condition/
+        # deleted_from/deleted_to, since _table.html never reads those.
+        # index.html does, though (to mark the right <option selected> and
+        # fill the date inputs), so they're pulled from request.args here
+        # directly. Without this, a hard refresh on a filtered URL (e.g.
+        # ?category_id=3&status=available&deleted_from=2026-01-01) rendered
+        # the right *rows* (table_context already covered that) but every
+        # dropdown/date field silently reset to blank, since Jinja just
+        # treats an unpassed variable as falsy rather than erroring.
+        category_id=request.args.get("category_id"),
+        status_filter=request.args.get("status"),
+        condition_filter=request.args.get("condition"),
+        deleted_from=request.args.get("deleted_from"),
+        deleted_to=request.args.get("deleted_to"),
         **table_context,
     )
 

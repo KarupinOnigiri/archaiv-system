@@ -5,12 +5,12 @@
   <!-- Page header -->
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold">Inventory</h1>
-      <p class="text-sm text-base-content/50 mt-1">Every tool in the shop &mdash; what's available, what's out, and what needs attention.</p>
+      <h1 class="text-2xl font-bold">Inventory Summary</h1>
+    <!--   <p class="text-sm text-base-content/50 mt-1">Every tool in the shop &mdash; what's available, what's out, and what needs attention.</p> -->
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role in ["admin", "in_charge"] %}
-      <button type="button" class="btn btn-outline btn-sm"
+      <button type="button" id="manage-categories-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/categories/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -18,14 +18,14 @@
         Manage Categories
       </button>
       {% endif %}
-      <button type="button" class="btn btn-outline btn-sm"
+      <button type="button" id="import-csv-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/assets/import-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Import CSV
       </button>
-      <button type="button" class="btn btn-outline btn-sm"
+      <button type="button" id="export-data-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/assets/export-form"
               hx-target="#modal-container"
               hx-swap="innerHTML"
@@ -33,7 +33,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export Data
       </button>
-      <button type="button" class="btn btn-primary btn-sm rounded-full"
+      <button type="button" id="add-new-item-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/assets/add-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -69,13 +69,14 @@
         <input type="search" id="asset-search" name="q" placeholder="Search by ID, name, or barcode..."
                aria-label="Search assets by ID, name, or barcode"
                class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+               value="{{ request.args.get('q', '') }}"
                hx-get="/api/v1/assets"
                hx-trigger="keyup changed delay:400ms, search"
                hx-target="#asset-table-container"
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
-               hx-vals='{"limit": 20, "offset": 0}'>
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
                 aria-label="Clear search" title="Clear search" onclick="clearSearch()">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
@@ -87,9 +88,10 @@
            hx-trigger="categories-changed from:body"
            hx-target="#category-filter"
            hx-swap="innerHTML">
-        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
-        </div>
+        <button type="button" id="category-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearCategoryFilter()" aria-label="Clear category filter" title="Clear category filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+        </button>
         <select id="category-filter" name="category_id"
                 aria-label="Filter by category"
                 class="select select-bordered select-sm join-item w-40"
@@ -99,7 +101,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#asset-search, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
-                hx-vals='{"limit": 20, "offset": 0}'>
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <option value="">Category</option>
           {% for cat in categories %}
           <option value="{{ cat.id }}" {% if category_id == cat.id | string %}selected{% endif %}>{{ cat.name }}</option>
@@ -108,9 +110,10 @@
       </div>
 
       <div id="condition-filter-wrap" class="join rounded-lg transition-shadow" title="Condition">
-        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-        </div>
+        <button type="button" id="condition-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearConditionFilter()" aria-label="Clear condition filter" title="Clear condition filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
         <select id="condition-filter" name="condition"
                 aria-label="Filter by condition"
                 class="select select-bordered select-sm join-item w-36"
@@ -120,7 +123,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#asset-search, #category-filter, #status-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
-                hx-vals='{"limit": 20, "offset": 0}'>
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <option value="">Condition</option>
           {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
           <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | capitalize | replace("_", " ") }}</option>
@@ -129,9 +132,10 @@
       </div>
 
       <div id="status-filter-wrap" class="join rounded-lg transition-shadow {% if show_archived %}hidden{% endif %}" title="Status">
-        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        </div>
+        <button type="button" id="status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearStatusFilter()" aria-label="Clear status filter" title="Clear status filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </button>
         <select id="status-filter" name="status"
                 aria-label="Filter by status"
                 class="select select-bordered select-sm join-item w-32"
@@ -141,7 +145,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#asset-search, #category-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
-                hx-vals='{"limit": 20, "offset": 0}'>
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <option value="">Status</option>
           {% for s in ["available", "borrowed", "reserved", "maintenance"] %}
           <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | capitalize }}</option>
@@ -150,9 +154,10 @@
       </div>
 
       <div id="archived-date-filters" class="join rounded-lg transition-shadow {% if not show_archived %}hidden{% endif %}" title="Deleted date range">
-        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
-        </div>
+        <button type="button" id="date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearDeletedDateFilter()" aria-label="Clear deleted date range filter" title="Clear deleted date range filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+        </button>
         <input type="date" id="deleted-from-filter" name="deleted_from"
                aria-label="Deleted from date"
                class="input input-bordered input-sm join-item w-32"
@@ -164,7 +169,7 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-to-filter, #show-archived-toggle"
-               hx-vals='{"limit": 20, "offset": 0}'>
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
         <input type="date" id="deleted-to-filter" name="deleted_to"
                aria-label="Deleted to date"
@@ -177,7 +182,7 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #show-archived-toggle"
-               hx-vals='{"limit": 20, "offset": 0}'>
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
       </div>
 
       <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" title="Clear filters" aria-label="Clear filters">
@@ -196,7 +201,7 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter"
-               hx-vals='{"limit": 20, "offset": 0}'>
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         <span id="archived-toggle-text">{% if show_archived %}Viewing archived{% else %}Show archived{% endif %}</span>
       </label>
 
@@ -254,6 +259,43 @@
      stack on top of whatever modal is currently open (e.g. the export modal) without
      being wiped out or re-created when that modal opens/closes. -->
 {% include "assets/_export_folder_browser_modal.html" %}
+
+<script>
+// Single source of truth for "what does the filter row currently say", as a
+// URLSearchParams object -- reads straight from the live DOM controls, the
+// same values hx-include on those controls would send. Defined
+// unconditionally (outside the role-gated bulk-actions block below) since
+// filterByStatus()/clearAllFilters() further down need it regardless of role.
+//
+// This exists because filterByStatus() used to hand-build its own params
+// object containing only status/show_archived/sort/paging -- so pressing a
+// stat card (or the 1-4 shortcut) silently dropped whatever search text or
+// category/condition filter was active from the actual request. The
+// dropdowns kept *showing* the old selection (nothing resets their DOM
+// value), but the table results, and then the URL via the
+// htmx:configRequest listener below (which only re-adds whatever keys were
+// actually sent), both quietly lost them. Routing every hand-fired request
+// through this one function is what prevents that class of bug recurring.
+function getBaseFilterParams() {
+  const q = document.getElementById('asset-search').value.trim();
+  const category = document.getElementById('category-filter').value;
+  const condition = document.getElementById('condition-filter').value;
+  const status = document.getElementById('status-filter').value;
+  const archived = document.getElementById('show-archived-toggle').checked;
+  const deletedFrom = document.getElementById('deleted-from-filter').value;
+  const deletedTo = document.getElementById('deleted-to-filter').value;
+
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (category) params.set('category_id', category);
+  if (condition) params.set('condition', condition);
+  if (!archived && status) params.set('status', status);
+  if (archived && deletedFrom) params.set('deleted_from', deletedFrom);
+  if (archived && deletedTo) params.set('deleted_to', deletedTo);
+  params.set('show_archived', archived ? '1' : '0');
+  return params;
+}
+</script>
 
 {% if can_bulk_act %}
 <script>
@@ -333,26 +375,12 @@
     }
   }
 
-  // Reads the filter controls directly (rather than relying on hx-include,
-  // which only fires on an actual htmx request) so selectAllMatching() can
-  // ask the server for every id matching what's currently on screen.
+  // Delegates to the shared getBaseFilterParams() defined earlier in the
+  // page (outside this conditional block), so this and filterByStatus()/
+  // clearAllFilters() read the filter row through one shared function
+  // instead of three copies that can quietly drift apart.
   function currentFilterParams() {
-    const params = new URLSearchParams();
-    const q = document.getElementById('asset-search').value.trim();
-    const category = document.getElementById('category-filter').value;
-    const condition = document.getElementById('condition-filter').value;
-    const status = document.getElementById('status-filter').value;
-    const archived = document.getElementById('show-archived-toggle').checked;
-    const deletedFrom = document.getElementById('deleted-from-filter').value;
-    const deletedTo = document.getElementById('deleted-to-filter').value;
-    if (q) params.set('q', q);
-    if (category) params.set('category_id', category);
-    if (condition) params.set('condition', condition);
-    if (!archived && status) params.set('status', status);
-    if (archived && deletedFrom) params.set('deleted_from', deletedFrom);
-    if (archived && deletedTo) params.set('deleted_to', deletedTo);
-    params.set('show_archived', archived ? '1' : '0');
-    return params;
+    return getBaseFilterParams();
   }
 
   // Fetches every id matching the current filters (not just this page) by
@@ -611,15 +639,19 @@ function updateFilterUI() {
 
   document.getElementById('category-filter-wrap').classList.toggle('ring-2', categoryActive);
   document.getElementById('category-filter-wrap').classList.toggle('ring-primary/40', categoryActive);
+  document.getElementById('category-filter-clear-btn').disabled = !categoryActive;
 
   document.getElementById('condition-filter-wrap').classList.toggle('ring-2', conditionActive);
   document.getElementById('condition-filter-wrap').classList.toggle('ring-primary/40', conditionActive);
+  document.getElementById('condition-filter-clear-btn').disabled = !conditionActive;
 
   document.getElementById('status-filter-wrap').classList.toggle('ring-2', statusActive);
   document.getElementById('status-filter-wrap').classList.toggle('ring-primary/40', statusActive);
+  document.getElementById('status-filter-clear-btn').disabled = !statusActive;
 
   document.getElementById('archived-date-filters').classList.toggle('ring-2', dateActive);
   document.getElementById('archived-date-filters').classList.toggle('ring-primary/40', dateActive);
+  document.getElementById('date-filter-clear-btn').disabled = !dateActive;
 
   const anyActive = searchActive || categoryActive || conditionActive || statusActive || dateActive;
   const activeCount = [searchActive, categoryActive, conditionActive, statusActive, dateActive].filter(Boolean).length;
@@ -716,6 +748,38 @@ function clearSearch() {
   search.dispatchEvent(new Event('search'));
 }
 
+function clearCategoryFilter() {
+  const el = document.getElementById('category-filter');
+  el.value = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearConditionFilter() {
+  const el = document.getElementById('condition-filter');
+  el.value = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearStatusFilter() {
+  const el = document.getElementById('status-filter');
+  el.value = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearDeletedDateFilter() {
+  // One icon covers both ends of the range, so both inputs clear together.
+  // Only the second dispatched "change" needs to fire the table request --
+  // hx-include on that request already picks up both fields' current
+  // (now-empty) values, so firing on both would just mean two redundant
+  // fetches back to back.
+  const from = document.getElementById('deleted-from-filter');
+  const to = document.getElementById('deleted-to-filter');
+  from.value = '';
+  to.value = '';
+  updateFilterUI();
+  to.dispatchEvent(new Event('change'));
+}
+
 function clearAllFilters() {
   document.getElementById('asset-search').value = '';
   document.getElementById('category-filter').value = '';
@@ -724,13 +788,27 @@ function clearAllFilters() {
   document.getElementById('deleted-from-filter').value = '';
   document.getElementById('deleted-to-filter').value = '';
   updateFilterUI();
-  htmx.ajax('GET', '/api/v1/assets?' + new URLSearchParams({
-    limit: '{{ limit }}',
-    offset: 0,
-    show_archived: document.getElementById('show-archived-toggle').checked ? '1' : '0',
-    sort_by: '{{ sort_by }}',
-    sort_dir: '{{ sort_dir }}'
-  }).toString(), { target: '#asset-table-container', swap: 'innerHTML' });
+  // Every control was just blanked above, so getBaseFilterParams() now
+  // naturally returns "nothing but show_archived" -- same shared helper
+  // filterByStatus() uses, rather than a third hand-built params object.
+  const params = getBaseFilterParams();
+  params.set('limit', '{{ limit }}');
+  params.set('offset', 0);
+  params.set('sort_by', '{{ sort_by }}');
+  params.set('sort_dir', '{{ sort_dir }}');
+  // Passed as `values` (not baked into the URL string) so htmx both builds
+  // the request's query string from them AND reports them back as
+  // evt.detail.parameters in htmx:configRequest -- that's what the URL-sync
+  // listener further down reads to update the address bar. A direct
+  // htmx.ajax() call has no triggering element to pull hx-vals/hx-include
+  // from, so without this `values` override, evt.detail.parameters comes
+  // back empty and that listener wipes every filter out of the address bar
+  // instead of writing the new ones in.
+  htmx.ajax('GET', '/api/v1/assets', {
+    target: '#asset-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
 }
 
 function filterByStatus(status) {
@@ -741,15 +819,147 @@ function filterByStatus(status) {
   if (archivedToggle.checked) return;
   document.getElementById('status-filter').value = status;
   updateFilterUI();
-  htmx.ajax('GET', '/api/v1/assets?' + new URLSearchParams({
-    limit: '{{ limit }}',
-    offset: 0,
-    show_archived: '0',
-    status: status,
-    sort_by: '{{ sort_by }}',
-    sort_dir: '{{ sort_dir }}'
-  }).toString(), { target: '#asset-table-container', swap: 'innerHTML' });
+  // getBaseFilterParams() reads the status-filter value just set above,
+  // plus whatever search text / category / condition are still active --
+  // this used to be a hand-built params object containing only status/
+  // show_archived/sort/paging, which silently dropped any active search or
+  // category/condition filter (see getBaseFilterParams()'s comment).
+  const params = getBaseFilterParams();
+  params.set('limit', '{{ limit }}');
+  params.set('offset', 0);
+  params.set('sort_by', '{{ sort_by }}');
+  params.set('sort_dir', '{{ sort_dir }}');
+  // See the matching comment in clearAllFilters() above -- `values` (not a
+  // pre-built query string) is what makes evt.detail.parameters non-empty,
+  // which is what the URL-sync listener needs to actually write the new
+  // filter state into the address bar instead of blanking it.
+  htmx.ajax('GET', '/api/v1/assets', {
+    target: '#asset-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
 }
+</script>
+
+<script>
+// --- Keyboard shortcuts (Inventory page only) ---
+//
+// All of these share the same "don't hijack typing" guard: if the key event
+// target is a form control (input/textarea/select) or contenteditable, the
+// shortcut is ignored so plain digit/backtick keys still work normally while
+// someone is typing in the search box, a filter, or any modal's form fields.
+// They also back off while a modal is open in #modal-container, so a
+// shortcut never fires "through" a modal into the page behind it.
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  if (container && container.querySelector(':scope > .modal')) return true;
+  const folderBrowser = document.getElementById('export-folder-browser');
+  return !!(folderBrowser && !folderBrowser.classList.contains('hidden'));
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey) return;
+
+  // / — focus the search box, like most toolbars with a search field.
+  // Typed normally once focused, since isTypingTarget() guards this the
+  // same as every other shortcut here.
+  if (!e.altKey && e.key === '/') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('asset-search').focus();
+    return;
+  }
+
+  // ` — toggle "Show archived" on/off, same as clicking the toggle.
+  if (!e.altKey && e.key === '`') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    const toggle = document.getElementById('show-archived-toggle');
+    toggle.checked = !toggle.checked;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Available
+  // / Currently Borrowed / Needs Attention). Deliberately e.key-based (plain
+  // top-row digits), not e.code, so this doesn't collide with F1-F4 or any
+  // numpad handling. filterByStatus() itself already no-ops while the
+  // archived view is on, same as clicking a disabled stat card would.
+  if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const statusByKey = { '1': '', '2': 'available', '3': 'borrowed', '4': 'maintenance' };
+    e.preventDefault();
+    filterByStatus(statusByKey[e.key]);
+    return;
+  }
+
+  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
+  // pagination button is currently in the table footer. Reads the button
+  // rather than hand-building the offset math so it automatically respects
+  // the same disabled-at-the-edges state the button already shows.
+  if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const pageBtn = document.querySelector('#asset-table-container button[aria-label="' + label + '"]');
+    if (pageBtn && !pageBtn.disabled) {
+      e.preventDefault();
+      pageBtn.click();
+    }
+    return;
+  }
+
+  // Alt+N — open "Add New Item". Alt+M — open "Manage Categories" (staff
+  // without permission for it simply won't have the button in the DOM).
+  // Alt+I — open "Import CSV". Alt+E — open "Export Data". All four are
+  // guarded by isModalOpen() so the shortcut can't replace whatever modal
+  // (if any) is already open.
+  if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('add-new-item-btn').click();
+    return;
+  }
+  if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+    if (isModalOpen()) return;
+    const manageBtn = document.getElementById('manage-categories-btn');
+    if (!manageBtn) return;
+    e.preventDefault();
+    manageBtn.click();
+    return;
+  }
+  if (e.altKey && (e.key === 'i' || e.key === 'I')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('import-csv-btn').click();
+    return;
+  }
+  if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('export-data-btn').click();
+    return;
+  }
+
+  // Escape — with no modal open, reset every filter (search, category,
+  // condition, status, archived date range) back to blank and blur whatever
+  // was focused, the same as clicking "Clear filters" by hand. When a modal
+  // *is* open, the shared Escape handler in base.html closes it instead --
+  // this intentionally stays out of the way in that case rather than also
+  // clearing filters underneath it.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllFilters();
+  }
+});
 </script>
 
 <script>
@@ -786,9 +996,16 @@ document.addEventListener('DOMContentLoaded', function () {
   {% if deleted_to %}
   params.set('deleted_to', {{ deleted_to | tojson }});
   {% endif %}
-  htmx.ajax('GET', '/api/v1/assets?' + params.toString(), {
+  // `values` (not a pre-built query string) so this populates
+  // evt.detail.parameters correctly -- otherwise the URL-sync listener
+  // above sees an empty parameter set on this auto-fired request and wipes
+  // every filter straight out of the address bar moments after every page
+  // load, independent of anything the person does. That's the actual
+  // reason a filtered URL kept resetting to defaults on refresh.
+  htmx.ajax('GET', '/api/v1/assets', {
     target: '#asset-table-container',
-    swap: 'innerHTML'
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
   });
 });
 </script>

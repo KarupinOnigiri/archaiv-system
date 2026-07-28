@@ -19,10 +19,6 @@
        role="dialog" aria-modal="true" aria-label="Select folder">
     <div class="flex items-center justify-between px-4 py-3 border-b border-base-300 shrink-0">
       <span class="text-sm font-semibold">Select Folder</span>
-      <button type="button" onclick="closeFolderBrowser()" aria-label="Close folder picker"
-              class="text-base-content/40 hover:text-base-content shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
     </div>
 
     <div class="px-4 pt-3">
@@ -37,9 +33,14 @@
                class="input input-bordered input-xs flex-1 bg-base-100">
         <button type="button" onclick="createBrowseFolder()" class="btn btn-xs btn-outline shrink-0">+ Add</button>
       </div>
-      <button type="button" onclick="selectCurrentBrowseFolder()" class="btn btn-primary btn-sm w-full mt-2">
-        Use this folder
-      </button>
+      <div class="flex gap-2 mt-2">
+        <button type="button" onclick="closeFolderBrowser()" class="btn btn-ghost btn-sm flex-1">
+          Cancel
+        </button>
+        <button type="button" onclick="selectCurrentBrowseFolder()" class="btn btn-primary btn-sm flex-1">
+          Use this folder
+        </button>
+      </div>
     </div>
   </div>
 </div>

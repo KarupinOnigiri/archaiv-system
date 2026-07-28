@@ -58,14 +58,37 @@ if not app.secret_key:
 def inject_csrf_token():
     conn = get_db_connection()
     token = request.cookies.get("session_token")
-    if token:
-        session = conn.execute(
-            "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
-        ).fetchone()
+    if not token:
         conn.close()
-        return {"csrf_token": session["csrf_token"] if session else ""}
+        return {"csrf_token": "", "staff_first_name": ""}
+
+    session = conn.execute(
+        "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
+    ).fetchone()
+
+    # staff has no name columns of its own -- first_name lives on members,
+    # linked via staff.member_id (see routes/staff.py for the same join
+    # pattern). Explicit column list rather than SELECT * since staff and
+    # members both have an "id" column that would otherwise collide.
+    staff_member = conn.execute(
+        """
+        SELECT members.first_name, members.last_name
+        FROM sessions
+        JOIN staff ON staff.id = sessions.staff_id
+        JOIN members ON members.id = staff.member_id
+        WHERE sessions.token = ?
+        """,
+        (token,),
+    ).fetchone()
     conn.close()
-    return {"csrf_token": ""}
+
+    return {
+        "csrf_token": session["csrf_token"] if session else "",
+        "staff_first_name": staff_member["first_name"] if staff_member else "",
+        "staff_full_name": full_name(staff_member["first_name"], staff_member["last_name"])
+        if staff_member
+        else "",
+    }
 
 
 # templates/members/_table.html and _restrict_modal.html call full_name(...)

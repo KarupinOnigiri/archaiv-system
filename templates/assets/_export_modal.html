@@ -1,24 +1,21 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-lg">
+  <div class="modal-box max-w-lg flex flex-col max-h-[85vh]">
 
-    <div class="flex justify-between items-start mb-5">
+    <div class="flex justify-between items-start mb-5 shrink-0">
       <div>
         <h3 class="font-bold text-xl">Export Inventory Data</h3>
         <p class="text-sm text-base-content/50 mt-1">
           {% if show_archived %}Exporting the archived items currently shown.{% else %}Exporting the active items currently shown.{% endif %}
         </p>
       </div>
-      <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
-              class="text-base-content/40 hover:text-base-content">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
     </div>
 
-    <div id="export-error" class="hidden alert alert-error text-sm mb-4 py-2"></div>
+    <div id="export-error" class="hidden alert alert-error text-sm mb-4 py-2 shrink-0"></div>
 
-    <form id="export-form" onsubmit="return handleExportSubmit(event)">
+    <form id="export-form" onsubmit="return handleExportSubmit(event)" class="flex flex-col flex-1 min-h-0">
       <input type="hidden" name="show_archived" value="{{ '1' if show_archived else '0' }}">
 
+      <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
       <!-- Fields to include -->
       <div>
         <div class="flex items-center justify-between">
@@ -89,8 +86,9 @@
       <!-- The folder picker itself is a separate standalone modal (assets/_export_folder_browser_modal.html),
            included once in the base layout, so it can pop up above this modal without being
            re-created/torn down every time this export modal opens or closes. -->
+      </div>
 
-      <div class="modal-action">
+      <div class="modal-action shrink-0">
         <button type="button" onclick="document.getElementById('modal-container').innerHTML=''" class="btn btn-ghost">Cancel</button>
         <button type="submit" id="export-submit-btn" class="btn btn-primary">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>

@@ -61,7 +61,7 @@ def validate_password_strength(password, field_name="password"):
     return None
 
 
-DEFAULT_PAGE_LIMIT = 25
+DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 100
 
 

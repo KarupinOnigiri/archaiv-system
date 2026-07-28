@@ -33,21 +33,58 @@ def view_staff():
     if error:
         return error
 
+    q = request.args.get("q", "").strip()
+    role = request.args.get("role")
+    department_id = request.args.get("department_id")
+    show_inactive = request.args.get("show_inactive") == "1"
+
+    if role and role not in VALID_ROLES:
+        return (
+            jsonify({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}),
+            400,
+        )
+
+    where = [] if show_inactive else ["staff.is_active = 1"]
+    params = []
+    if q:
+        where.append(
+            "(staff.username LIKE ? OR staff.staff_code LIKE ? OR members.first_name LIKE ? OR members.last_name LIKE ?)"
+        )
+        like = f"%{q}%"
+        params.extend([like, like, like, like])
+    if role:
+        where.append("staff.role = ?")
+        params.append(role)
+    if department_id:
+        where.append("members.department_id = ?")
+        params.append(department_id)
+    where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
     conn = get_db_connection()
-    total_count = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
+    total_count = conn.execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        {where_clause}
+        """,
+        params,
+    ).fetchone()["cnt"]
     staff = conn.execute(
-        """
-        SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
-               staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
+        f"""
+        SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
+               staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
+               staff.failed_login_attempts, staff.created_by_staff_id, staff.created_at,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.barcode_id, departments.name AS department
         FROM staff
         JOIN members ON staff.member_id = members.id
         JOIN departments ON members.department_id = departments.id
+        {where_clause}
         ORDER BY staff.id
         LIMIT ? OFFSET ?
         """,
-        (limit, offset),
+        params + [limit, offset],
     ).fetchall()
     conn.close()
     return jsonify(

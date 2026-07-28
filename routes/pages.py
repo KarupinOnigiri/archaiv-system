@@ -3,6 +3,7 @@ from database import get_db_connection
 from services.auth_service import login_required
 from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
 from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
+from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -74,6 +75,22 @@ def assets_page():
         stat_borrowed=stat_borrowed,
         stat_maintenance=stat_maintenance,
         categories=categories,
+        # get_assets_table_context() only returns what _table.html needs
+        # (assets/total_count/limit/offset/show_archived/sort_by/sort_dir) --
+        # it deliberately doesn't return q/category_id/status/condition/
+        # deleted_from/deleted_to, since _table.html never reads those.
+        # index.html does, though (to mark the right <option selected> and
+        # fill the date inputs), so they're pulled from request.args here
+        # directly. Without this, a hard refresh on a filtered URL (e.g.
+        # ?category_id=3&status=available&deleted_from=2026-01-01) rendered
+        # the right *rows* (table_context already covered that) but every
+        # dropdown/date field silently reset to blank, since Jinja just
+        # treats an unpassed variable as falsy rather than erroring.
+        category_id=request.args.get("category_id"),
+        status_filter=request.args.get("status"),
+        condition_filter=request.args.get("condition"),
+        deleted_from=request.args.get("deleted_from"),
+        deleted_to=request.args.get("deleted_to"),
         **table_context,
     )
 
@@ -124,6 +141,67 @@ def members_page():
         stat_all=stat_all,
         stat_active=stat_active,
         stat_restricted=stat_restricted,
+        stat_inactive=stat_inactive,
+        departments=departments,
+        **table_context,
+    )
+
+
+@pages_bp.route("/staff")
+@login_required
+def staff_page():
+    conn = get_db_connection()
+    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
+    # "Locked" means an unexpired lockout on an active account -- a lock
+    # that's already past locked_until has effectively self-cleared (the
+    # next login attempt will succeed), so it counts as Active here, not
+    # Locked, and only Active/Locked/Inactive need to add up to stat_all.
+    stat_locked = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt FROM staff
+        WHERE is_active = 1
+          AND locked_until IS NOT NULL
+          AND locked_until > datetime('now', 'localtime')
+        """
+    ).fetchone()["cnt"]
+    stat_active = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt FROM staff
+        WHERE is_active = 1
+          AND (locked_until IS NULL OR locked_until <= datetime('now', 'localtime'))
+        """
+    ).fetchone()["cnt"]
+    stat_inactive = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM staff WHERE is_active = 0"
+    ).fetchone()["cnt"]
+    departments = conn.execute(
+        "SELECT * FROM departments ORDER BY sort_order, name"
+    ).fetchall()
+    conn.close()
+
+    # Same reasoning as members_page/assets_page: reuse the exact query
+    # logic view_staff() uses for htmx partial requests, so a hard refresh
+    # on a filtered URL (?q=...&role=...&department_id=...&show_inactive=1)
+    # renders that same state server-side instead of falling back to
+    # page 1 / defaults.
+    table_context, error = get_staff_table_context(request.args)
+    if error:
+        table_context = {
+            "staff_list": [],
+            "total_count": 0,
+            "limit": 20,
+            "offset": 0,
+            "show_inactive": False,
+        }
+
+    # NOTE: matches templates/staff.html (top-level, no subfolder) --
+    # partials live in templates/staff/, same layout as members.
+    return render_template(
+        "staff.html",
+        staff=g.staff,
+        stat_all=stat_all,
+        stat_active=stat_active,
+        stat_locked=stat_locked,
         stat_inactive=stat_inactive,
         departments=departments,
         **table_context,

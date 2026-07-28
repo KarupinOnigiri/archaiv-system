@@ -61,8 +61,20 @@ def get_members_table_context(args):
         where_clauses.append("members.department_id = ?")
         params.append(department_id)
 
+    # Truthiness check (not "is not None") because the filter <select>'s
+    # unset/placeholder option submits as an empty string, not an absent
+    # param -- and hx-include on the sort/page/limit controls sends that
+    # empty string on every request, not just ones where this filter was
+    # actually touched. Falling through to "is not None" here would silently
+    # apply "is_restricted = 0" on every sort/page/limit action, hiding
+    # restricted members whenever nothing was actually chosen in the filter.
     is_restricted = args.get("is_restricted")
-    if is_restricted is not None:
+    if is_restricted:
+        if is_restricted.lower() not in ("0", "1", "true", "false"):
+            return None, (
+                jsonify({"error": "is_restricted must be '0' or '1'"}),
+                400,
+            )
         where_clauses.append("members.is_restricted = ?")
         params.append(1 if is_restricted.lower() in ("1", "true") else 0)
 
@@ -944,6 +956,244 @@ def reactivate_member(id):
         }
     )
     return response
+
+
+# # # BULK ACTIONS -------------------------------------------------------
+
+
+@members_bp.route("/members/bulk-deactivate", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("10 per minute")
+def bulk_deactivate_members():
+    """Deactivates multiple members in one request. Mirrors
+    bulk_delete_assets's shape (deleted/skipped -> deactivated/skipped): a
+    single problem row doesn't fail the whole batch, it's recorded in
+    `skipped` and the rest proceed, since the caller is a multi-select UI
+    where "some of these can't be deactivated right now" is an expected
+    outcome, not an exceptional one.
+
+    Every guard from the single-item delete_member route applies per-row
+    here too (already deactivated, open borrow transaction, open checkout
+    session, linked active staff account), since bulk is just that same
+    route run in a loop -- not a shortcut around its rules."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return (
+            jsonify({"error": "Missing required field: ids (must be a non-empty list)"}),
+            400,
+        )
+
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    conn = get_db_connection()
+    deactivated, skipped = [], []
+    staff_cascades = []  # (staff_id, username) pairs to log after conn.close()
+
+    for member_id in ids:
+        member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
+
+        if member is None:
+            skipped.append({"id": member_id, "reason": "Member not found"})
+            continue
+
+        name = full_name(
+            member["first_name"], member["last_name"], member["middle_name"], member["suffix"]
+        )
+
+        if not member["is_active"]:
+            skipped.append({"id": member_id, "name": name, "reason": "Already deactivated"})
+            continue
+
+        open_loan = conn.execute(
+            "SELECT id FROM transactions WHERE member_id = ? AND status = 'borrowed' LIMIT 1",
+            (member_id,),
+        ).fetchone()
+
+        if open_loan is not None:
+            skipped.append(
+                {
+                    "id": member_id,
+                    "name": name,
+                    "reason": "Currently has one or more tools checked out",
+                }
+            )
+            continue
+
+        open_session = conn.execute(
+            "SELECT id FROM checkout_sessions WHERE member_id = ? AND status = 'open'",
+            (member_id,),
+        ).fetchone()
+
+        if open_session is not None:
+            skipped.append(
+                {"id": member_id, "name": name, "reason": "Has an open checkout session"}
+            )
+            continue
+
+        linked_staff = conn.execute(
+            "SELECT * FROM staff WHERE member_id = ? AND is_active = 1", (member_id,)
+        ).fetchone()
+
+        if linked_staff is not None and g.staff["role"] != "admin":
+            skipped.append(
+                {
+                    "id": member_id,
+                    "name": name,
+                    "reason": "Has an active staff account -- only an admin can deactivate",
+                }
+            )
+            continue
+
+        if linked_staff is not None and linked_staff["role"] == "admin":
+            skipped.append(
+                {
+                    "id": member_id,
+                    "name": name,
+                    "reason": "Has an active admin account -- deactivate via staff management instead",
+                }
+            )
+            continue
+
+        try:
+            conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (member_id,))
+            if linked_staff is not None:
+                conn.execute(
+                    "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                    (linked_staff["id"],),
+                )
+            conn.commit()
+            deactivated.append({"id": member_id, "name": name})
+            if linked_staff is not None:
+                staff_cascades.append((linked_staff["id"], linked_staff["username"]))
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.error(f"IntegrityError during bulk deactivate of member {member_id}: {e}")
+            skipped.append(
+                {
+                    "id": member_id,
+                    "name": name,
+                    "reason": "A database constraint was violated",
+                }
+            )
+
+    conn.close()
+
+    if deactivated:
+        log_action(
+            staff_id=g.staff["id"],
+            action="bulk_deactivated_members",
+            target_table="members",
+            details=(
+                f"Bulk deactivated {len(deactivated)} member(s): "
+                + ", ".join(m["name"] for m in deactivated)
+                + (f"; skipped {len(skipped)}" if skipped else "")
+            ),
+        )
+
+    for staff_id, username in staff_cascades:
+        log_action(
+            staff_id=g.staff["id"],
+            action="deactivated_staff_cascade",
+            target_table="staff",
+            target_id=staff_id,
+            details=f"Staff account {username} auto-deactivated because linked member was bulk-deactivated",
+        )
+
+    return jsonify(
+        {
+            "deactivated_count": len(deactivated),
+            "deactivated": deactivated,
+            "skipped": skipped,
+        }
+    )
+
+
+@members_bp.route("/members/bulk-reactivate", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("10 per minute")
+def bulk_reactivate_members():
+    """Reactivates multiple members in one request. Mirrors
+    bulk_reactivate_members's sibling bulk_deactivate_members above, and --
+    like the single-item reactivate_member route it fans out -- admin/
+    in_charge, not admin-only, since reactivating carries none of the
+    "reverses a disposal" weight that made asset bulk-restore admin-only."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return (
+            jsonify({"error": "Missing required field: ids (must be a non-empty list)"}),
+            400,
+        )
+
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    conn = get_db_connection()
+    reactivated, skipped = [], []
+
+    for member_id in ids:
+        member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
+
+        if member is None:
+            skipped.append({"id": member_id, "reason": "Member not found"})
+            continue
+
+        name = full_name(
+            member["first_name"], member["last_name"], member["middle_name"], member["suffix"]
+        )
+
+        if member["is_active"]:
+            skipped.append({"id": member_id, "name": name, "reason": "Already active"})
+            continue
+
+        try:
+            conn.execute("UPDATE members SET is_active = 1 WHERE id = ?", (member_id,))
+            conn.commit()
+            reactivated.append({"id": member_id, "name": name})
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.error(f"IntegrityError during bulk reactivate of member {member_id}: {e}")
+            skipped.append(
+                {
+                    "id": member_id,
+                    "name": name,
+                    "reason": "A database constraint was violated",
+                }
+            )
+
+    conn.close()
+
+    if reactivated:
+        log_action(
+            staff_id=g.staff["id"],
+            action="bulk_reactivated_members",
+            target_table="members",
+            details=(
+                f"Bulk reactivated {len(reactivated)} member(s): "
+                + ", ".join(m["name"] for m in reactivated)
+                + (f"; skipped {len(skipped)}" if skipped else "")
+            ),
+        )
+
+    return jsonify(
+        {
+            "reactivated_count": len(reactivated),
+            "reactivated": reactivated,
+            "skipped": skipped,
+        }
+    )
 
 
 # # # API ROUTES (scanning lookups) ------------------------------------------

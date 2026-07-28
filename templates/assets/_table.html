@@ -1,9 +1,11 @@
+{% from "_icons.html" import icon_eye, icon_edit, icon_trash, icon_restore %}
+
 {% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
 
 {% macro sort_header(label, col) %}
 {% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
 {% set is_active = (sort_by == col) %}
-<th class="py-3 font-semibold">
+<th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">
   <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% endif %}"
           hx-get="/api/v1/assets"
           hx-target="#asset-table-container"
@@ -47,14 +49,14 @@
     <col style="width: 5rem">
   </colgroup>
   <thead>
-    <tr class="text-left text-xs text-base-content/50 tracking-wide border-b border-base-300">
-      <th class="py-3 w-8">
+    <tr class="text-left text-xs text-base-content/50 tracking-wide">
+      <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
         {% if can_bulk_act %}
         <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
                aria-label="Select all rows on this page" title="Select all rows on this page">
         {% endif %}
       </th>
-      <th class="py-3 w-12"></th>
+      <th class="py-2 w-12 sticky top-0 z-10 bg-base-100 border-b border-base-300"></th>
       {{ sort_header("ASSET ID", "asset_id") }}
       {{ sort_header("NAME", "name") }}
       {{ sort_header("CATEGORY", "category") }}
@@ -65,47 +67,51 @@
       {% endif %}
       {{ sort_header("CONDITION", "condition") }}
       {{ sort_header("BARCODE", "barcode_id") }}
-      <th class="py-3 font-semibold text-right">ACTIONS</th>
+      <th class="py-2 font-semibold text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
     </tr>
   </thead>
   <tbody>
     {% for asset in assets %}
-    <tr class="border-b border-base-200 hover:bg-base-200/40">
-      <td class="py-3.5">
+    <tr class="border-b border-base-200 hover:bg-base-200/40 cursor-pointer"
+        hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+        hx-trigger="click[!target.closest('input,.dropdown,button,a')]">
+      <td class="py-2.5">
         {% if can_bulk_act %}
         <input type="checkbox" class="asset-row-checkbox checkbox checkbox-sm"
                value="{{ asset.id }}" data-name="{{ asset.name }}" data-asset-code="{{ asset.asset_id }}"
                aria-label="Select {{ asset.name }}">
         {% endif %}
       </td>
-      <td class="py-3.5">
+      <td class="py-2.5">
         {% if asset.image_path %}
-        <div class="w-10 h-10 rounded-lg border border-base-300 overflow-hidden shrink-0 relative">
+        <div class="w-7 h-7 rounded-lg border border-base-300 overflow-hidden shrink-0 relative">
           <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
                class="w-full h-full object-cover block"
                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <div class="w-10 h-10 rounded-lg bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          <div class="w-7 h-7 rounded-lg bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
           </div>
         </div>
         {% else %}
-        <div class="w-10 h-10 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        <div class="w-7 h-7 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         </div>
         {% endif %}
       </td>
-      <td class="py-3.5 text-sm text-base-content/60 truncate">{{ asset.asset_id }}</td>
-      <td class="py-3.5 font-medium truncate">{{ asset.name }}</td>
-      <td class="py-3.5 text-sm truncate">{{ asset.category or "—" }}</td>
+      <td class="py-2.5 text-sm text-base-content/60 truncate">{{ asset.asset_id }}</td>
+      <td class="py-2.5 font-medium truncate">{{ asset.name }}</td>
+      <td class="py-2.5 text-sm truncate">{{ asset.category or "—" }}</td>
       {% if show_archived %}
-      <td class="py-3.5 text-sm text-base-content/50">
+      <td class="py-2.5 text-sm text-base-content/50">
         <div>{{ asset.deleted_at }}</div>
         {% if asset.deleted_by_username %}
         <div class="text-xs text-base-content/40 mt-0.5 truncate">by {{ asset.deleted_by_username }}</div>
         {% endif %}
       </td>
       {% else %}
-      <td class="py-3.5">
+      <td class="py-2.5">
         <span class="px-2.5 py-1 rounded-full text-xs font-medium
           {% if asset.status == 'available' %}bg-success/15 text-success
           {% elif asset.status == 'borrowed' %}bg-info/15 text-info
@@ -115,27 +121,27 @@
         </span>
       </td>
       {% endif %}
-      <td class="py-3.5 text-sm">{{ asset.condition | capitalize }}</td>
-      <td class="py-3.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
-      <td class="py-3.5 text-right">
+      <td class="py-2.5 text-sm">{{ asset.condition | capitalize }}</td>
+      <td class="py-2.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
+      <td class="py-2.5 text-right">
         <div class="dropdown dropdown-end">
           <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" aria-label="Row actions for {{ asset.name }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-40 p-2 z-50">
             <li>
-              <a hx-get="/api/v1/assets/{{ asset.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">Details</a>
+              <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_eye() }} Details</a>
             </li>
             <li>
-              <a hx-get="/api/v1/assets/{{ asset.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">Edit</a>
+              <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit</a>
             </li>
             {% if show_archived %}
             <li>
-              <a class="text-primary" hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm" hx-target="#modal-container" hx-swap="innerHTML">Restore</a>
+              <a class="flex items-center gap-2 text-primary" hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_restore() }} Restore</a>
             </li>
             {% else %}
             <li>
-              <a class="text-error" hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">Delete</a>
+              <a class="flex items-center gap-2 text-error" hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Delete</a>
             </li>
             {% endif %}
           </ul>
@@ -165,7 +171,7 @@
             hx-indicator="#table-spinner"
             hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
             name="limit"
-            hx-vals='{"offset": 0, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+            hx-vals='js:{"limit": event.target.value, "offset": 0, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
       <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
       <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
@@ -178,10 +184,7 @@
     </span>
   </div>
 
-  <div class="flex items-center gap-2">
-    <span class="text-sm text-base-content/60 whitespace-nowrap">
-      Page {{ (offset // limit) + 1 }} of {{ ((total_count - 1) // limit) + 1 if total_count > 0 else 1 }}
-    </span>
+  <div class="flex items-center gap-1">
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
             aria-label="Previous page"
             hx-get="/api/v1/assets"
@@ -192,6 +195,41 @@
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
+
+    <!-- Numbered pages, capped to a handful of buttons via ellipsis rather than
+         rendering one per page -- always shows page 1, the last page, and a
+         small window around the current page, so this stays readable whether
+         there are 3 pages or 300. -->
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/assets"
+                hx-target="#asset-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
             aria-label="Next page"
             hx-get="/api/v1/assets"
