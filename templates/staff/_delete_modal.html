@@ -1,0 +1,50 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm max-h-[85vh] overflow-y-auto">
+    <h3 class="font-bold text-lg mb-2">Deactivate Staff Account</h3>
+    <p class="text-sm text-base-content/70 mb-4">
+      Are you sure you want to deactivate <strong>{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</strong>'s account?
+      They won't be able to log in until reactivated.
+    </p>
+
+    <div id="delete-staff-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
+
+    <div class="modal-action">
+      <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" class="btn btn-error" onclick="submitDeleteStaffForm({{ staff_member.id }})">Deactivate</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// /api/v1/staff/<id>/delete reads no request body, so a plain fetch POST
+// (no JSON payload needed) is enough -- this reuses the same
+// fetch+CSRF+reload shape as staffAction() in staff.html, just inlined
+// here so this modal can show its own error text instead of a toast if
+// something goes wrong (e.g. the account is already deactivated).
+async function submitDeleteStaffForm(id) {
+  const errorBox = document.getElementById('delete-staff-error');
+  errorBox.classList.add('hidden');
+
+  try {
+    const res = await fetch(`/api/v1/staff/${id}/delete`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorBox.textContent = result.error || "That account couldn't be deactivated";
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Staff account deactivated', type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    errorBox.textContent = "That account couldn't be deactivated";
+    errorBox.classList.remove('hidden');
+  }
+}
+</script>

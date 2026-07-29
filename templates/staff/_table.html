@@ -1,13 +1,14 @@
-{% from "_icons.html" import icon_shield_check, icon_trash, icon_user_check %}
+{% from "_icons.html" import icon_edit, icon_shield_check, icon_trash, icon_user_check %}
 
 {% set can_manage = staff.role == "admin" %}
 
 <table class="table w-full table-fixed" data-total-count="{{ total_count }}">
   <colgroup>
-    <col style="width: 24%">
-    <col style="width: 13%">
-    <col style="width: 13%">
-    <col style="width: 16%">
+    <col style="width: 18%">
+    <col style="width: 14%">
+    <col style="width: 12%">
+    <col style="width: 12%">
+    <col style="width: 15%">
     <col style="width: 17%">
     <col style="width: 12%">
     {% if can_manage %}
@@ -17,6 +18,7 @@
   <thead>
     <tr class="text-left text-xs text-base-content/50 tracking-wide">
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF</th>
+      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">USERNAME</th>
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF CODE</th>
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">ROLE</th>
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">DEPARTMENT</th>
@@ -38,10 +40,11 @@
           </div>
           <div class="min-w-0">
             <p class="font-medium truncate">{{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}</p>
-            <p class="text-xs text-base-content/50 truncate">@{{ row.username }}</p>
           </div>
         </div>
       </td>
+
+      <td class="py-2 text-base-content/70 truncate">@{{ row.username }}</td>
 
       <td class="py-2 text-base-content/70 truncate">{{ row.staff_code or "—" }}</td>
 
@@ -82,6 +85,9 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-52 p-2 z-50">
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit Details</a>
+            </li>
             {% if row.locked_until %}
             <li>
               <a class="flex items-center gap-2 text-warning"
@@ -101,10 +107,7 @@
               </li>
               {% else %}
               <li>
-                <a class="flex items-center gap-2 text-error"
-                   onclick="staffAction('/api/v1/staff/{{ row.id }}/delete', 'Deactivate this account?', 'Account deactivated')">
-                  {{ icon_trash() }} Deactivate
-                </a>
+                <a class="flex items-center gap-2 text-error" hx-get="/api/v1/staff/{{ row.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Deactivate</a>
               </li>
               {% endif %}
             {% else %}
@@ -123,7 +126,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="{{ 7 if can_manage else 6 }}" class="py-12 text-center text-sm text-base-content/50">
+      <td colspan="{{ 8 if can_manage else 7 }}" class="py-12 text-center text-sm text-base-content/50">
         No staff accounts match these filters.
       </td>
     </tr>
@@ -141,6 +144,7 @@
             hx-trigger="change"
             hx-target="#staff-table-container"
             hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
             name="limit"
             hx-vals='js:{"limit": event.target.value, "offset": 0}'>
@@ -162,6 +166,7 @@
             hx-get="/api/v1/staff"
             hx-target="#staff-table-container"
             hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -188,6 +193,7 @@
                 hx-get="/api/v1/staff"
                 hx-target="#staff-table-container"
                 hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
                 hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
                 hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
           {{ p }}
@@ -201,6 +207,7 @@
             hx-get="/api/v1/staff"
             hx-target="#staff-table-container"
             hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
             hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>

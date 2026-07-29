@@ -1,0 +1,185 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Add New Staff</h3>
+        <p class="text-sm text-base-content/50 mt-1">Grant system access to an existing member.</p>
+      </div>
+    </div>
+
+    <div id="add-staff-error" class="alert alert-error text-sm mb-4 py-2 hidden"></div>
+
+    <form id="add-staff-form" onsubmit="submitAddStaffForm(event)">
+      <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
+
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">MEMBER <span class="text-error">*</span></label>
+
+          <!-- Shown once a member has been picked from the search results below. -->
+          <div id="member-picker-selected" class="hidden mt-1 items-center justify-between gap-2 bg-base-100 border border-primary/30 rounded-lg px-3 py-2.5">
+            <p id="member-picker-selected-name" class="text-sm font-medium truncate"></p>
+            <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="clearEligibleMember()">Change</button>
+          </div>
+
+          <!-- Type-ahead search (name / member code / barcode) rather than a
+               preloaded <select> -- with enough members, a full dropdown
+               stops scaling and makes finding the right person tedious.
+               Barcode scanners just type the code + Enter, so the same box
+               covers that case too without a separate field. -->
+          <div id="member-picker-search-wrap" class="mt-1 relative">
+            <input type="text" id="member-search-input" placeholder="Search by name, member code, or barcode..." autocomplete="off"
+                   class="input input-bordered w-full bg-base-100"
+                   name="q"
+                   hx-get="/api/v1/staff/eligible-members-search"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#eligible-member-results"
+                   hx-swap="innerHTML"
+                   hx-include="this">
+            <div id="eligible-member-results" class="absolute z-20 w-full mt-1"></div>
+          </div>
+
+          <input type="hidden" id="member-id-input" name="member_id">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME <span class="text-error">*</span></label>
+            <input type="text" name="username" required placeholder="e.g. jdelacruz" autocomplete="off"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">TEMPORARY PASSWORD <span class="text-error">*</span></label>
+            <input type="password" name="password" required placeholder="At least 8 characters" autocomplete="new-password"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE <span class="text-error">*</span></label>
+            <select name="role" required class="select select-bordered w-full mt-1 bg-base-100">
+              <option value="" disabled selected hidden>Select Role</option>
+              <option value="tool_keeper">Tool Keeper</option>
+              <option value="in_charge">In Charge</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED START</label>
+            <input type="date" name="assigned_start" class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED END</label>
+            <input type="date" name="assigned_end" class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+        </div>
+        <p class="text-xs text-base-content/40 -mt-2">Optional -- leave blank for an open-ended assignment.</p>
+
+        <div class="bg-info/10 rounded-lg p-3 flex gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <p class="text-xs text-info/80">A staff code (e.g. STF-00042) is generated automatically once this account is saved.</p>
+        </div>
+
+      </div>
+
+      <div class="modal-action flex justify-between items-center mt-6">
+        <button type="button" onclick="document.getElementById('add-staff-form').reset(); clearEligibleMember();" class="text-sm text-base-content/50 hover:text-base-content">
+          Clear form
+        </button>
+        <div class="flex gap-2">
+          <button type="button" class="btn" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Staff</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Type-ahead member picker: clicking a search result (rendered by
+// staff/_eligible_member_results.html) calls this to record the choice
+// and swap the search box for a confirmation card. Reads id/label off
+// data-* attributes (safely HTML-escaped by normal Jinja templating)
+// rather than taking them as inline JS-string arguments -- interpolating
+// a name straight into an onclick="...(...)" string isn't safe if that
+// name ever contains a quote character.
+function selectEligibleMember(el) {
+  const id = el.dataset.memberId;
+  const label = el.dataset.memberLabel;
+  document.getElementById('member-id-input').value = id;
+  document.getElementById('member-picker-selected-name').textContent = label;
+  document.getElementById('member-picker-selected').classList.remove('hidden');
+  document.getElementById('member-picker-selected').classList.add('flex');
+  document.getElementById('member-picker-search-wrap').classList.add('hidden');
+  document.getElementById('eligible-member-results').innerHTML = '';
+}
+
+function clearEligibleMember() {
+  document.getElementById('member-id-input').value = '';
+  document.getElementById('member-picker-selected').classList.add('hidden');
+  document.getElementById('member-picker-selected').classList.remove('flex');
+  document.getElementById('member-picker-search-wrap').classList.remove('hidden');
+  const input = document.getElementById('member-search-input');
+  input.value = '';
+  input.focus();
+}
+
+// /api/v1/staff/add is a JSON-only endpoint (get_json_or_error() +
+// jsonify() responses, no HTML re-render on error) -- so this posts via
+// fetch instead of a plain htmx form submission, and shows errors inline
+// itself rather than relying on the server to re-render this partial with
+// an `error` variable the way e.g. Members' modals do.
+async function submitAddStaffForm(event) {
+  event.preventDefault();
+  const form = document.getElementById('add-staff-form');
+  const errorBox = document.getElementById('add-staff-error');
+  errorBox.classList.add('hidden');
+
+  const memberId = document.getElementById('member-id-input').value;
+  if (!memberId) {
+    errorBox.textContent = 'Search for and select a member first.';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  const payload = {
+    member_id: memberId,
+    username: form.username.value.trim(),
+    password: form.password.value,
+    role: form.role.value,
+    assigned_start: form.assigned_start.value || null,
+    assigned_end: form.assigned_end.value || null,
+  };
+
+  try {
+    const res = await fetch('/api/v1/staff/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorBox.textContent = result.error || "That account couldn't be created";
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({
+      message: `Staff added (${result.staff_code})`,
+      type: 'success',
+    }));
+    window.location.reload();
+  } catch (err) {
+    errorBox.textContent = "That account couldn't be created";
+    errorBox.classList.remove('hidden');
+  }
+}
+</script>

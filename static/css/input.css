@@ -38,6 +38,41 @@
   --color-error-content: #ffffff;
 }
 
+/* "System mode" -- Dark Mode. A literal dark UI: neutral charcoal/near-
+   black surfaces (not the brand navy darkened, which just reads as "dim
+   blue") with only the faintest cool undertone on those surfaces, and the
+   brand's sky-blue/gold kept purely as accent hints on primary/secondary/
+   accent -- not smeared across the backgrounds. */
+@plugin "../../daisyui-theme.mjs" {
+  name: "tesda-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-primary: #7DB3E0;
+  --color-primary-content: #082036;
+  --color-secondary: #5FC1EE;
+  --color-secondary-content: #082430;
+  --color-accent: #f7b626;
+  --color-accent-content: #1c1204;
+  --color-neutral: #0c0d10;
+  --color-neutral-content: #d4d6da;
+
+  --color-base-100: #1e2025;
+  --color-base-200: #17181c;
+  --color-base-300: #2a2c31;
+  --color-base-content: #e8e9ec;
+
+  --color-info: #5FC1EE;
+  --color-info-content: #082430;
+  --color-success: #34c98f;
+  --color-success-content: #04231a;
+  --color-warning: #f7b626;
+  --color-warning-content: #1c1204;
+  --color-error: #f87171;
+  --color-error-content: #2a0a0a;
+}
+
 /* Hide native browser password icons so only our custom eye toggle shows */
 input[type='password']::-ms-reveal,
 input[type='password']::-ms-clear {

@@ -1,4 +1,6 @@
 <dialog id="member-profile-modal" class="modal" open>
+  {% set can_manage = g.staff.role in ["admin", "in_charge"] %}
+  {% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
   <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
 
     <div class="flex items-start justify-between gap-4">
@@ -60,7 +62,41 @@
 
     <div class="modal-action">
       <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('member-profile-modal').close(); document.getElementById('member-profile-modal').remove();">Close</button>
-      {% if g.staff.role in ["admin", "in_charge"] %}
+
+      {% if member.is_active %}
+        {% if can_restrict and not member.is_restricted %}
+        <button type="button" class="btn btn-outline btn-warning btn-sm"
+                hx-get="/api/v1/members/{{ member.id }}/restrict-form?return_to=profile"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
+          Restrict
+        </button>
+        {% elif can_manage and member.is_restricted %}
+        <button type="button" class="btn btn-outline btn-success btn-sm"
+                hx-get="/api/v1/members/{{ member.id }}/unrestrict-confirm?return_to=profile"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
+          Lift Restriction
+        </button>
+        {% endif %}
+        {% if can_manage %}
+        <button type="button" class="btn btn-outline btn-error btn-sm"
+                hx-get="/api/v1/members/{{ member.id }}/delete-confirm?return_to=profile"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
+          Deactivate
+        </button>
+        {% endif %}
+      {% elif can_manage %}
+        <button type="button" class="btn btn-outline btn-success btn-sm"
+                hx-get="/api/v1/members/{{ member.id }}/reactivate-confirm?return_to=profile"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
+          Reactivate
+        </button>
+      {% endif %}
+
+      {% if can_manage %}
       <button type="button" class="btn btn-primary btn-sm"
               hx-get="/api/v1/members/{{ member.id }}/edit-form?return_to=profile"
               hx-target="#modal-container"

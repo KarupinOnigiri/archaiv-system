@@ -235,7 +235,7 @@ def view_assets():
 def asset_stat_cards():
     """Returns just the 4 stat-card numbers as HTML. Listened to via the
     'assets-refreshed' HX-Trigger event (see #stat-cards-container in
-    assets/index.html) so the cards stay in sync with the table after
+    assets.html) so the cards stay in sync with the table after
     delete/restore/import -- those flows don't do a full page reload the
     way add/edit's HX-Redirect does, so without this the cards go stale."""
     conn = get_db_connection()

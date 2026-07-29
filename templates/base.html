@@ -11,9 +11,39 @@
        sidebar's transition-all then animates that correction, producing
        a visible open-then-snap-shut flash on every navigation. -->
   <script>
+    // "System mode" (Light / Dark) -- same anti-flash reasoning
+    // as the sidebar-collapsed class right below: this has to run before
+    // the stylesheet is even requested, or the browser paints the default
+    // "tesda" theme once and then visibly snaps to the saved one.
+    try {
+      var savedTheme = localStorage.getItem('app-theme');
+      if (savedTheme === 'tesda-dark') {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      }
+    } catch (e) {
+      // Storage can be unavailable (private browsing, disabled cookies) --
+      // just fall back to the default tesda theme already on <html>.
+    }
     if (localStorage.getItem('sidebar-collapsed') === '1') {
       document.documentElement.classList.add('sidebar-collapsed-init');
     }
+
+    // <main> reserves a permanent scrollbar gutter (style="scrollbar-gutter:
+    // stable") so its content doesn't shift when a scrollbar appears/
+    // disappears. <header> is a sibling of <main>, not a child of it, so it
+    // never gets that reservation -- its right-aligned content (bell icon,
+    // profile avatar) sits further right than anything inside <main> (e.g.
+    // page content, tables). The gutter width isn't a fixed number -- it
+    // varies by OS/browser -- so measure it once here and expose it as a CSS
+    // var the header can use to match, rather than guessing a pixel value.
+    (function () {
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;';
+      document.documentElement.appendChild(probe);
+      var gutter = probe.offsetWidth - probe.clientWidth;
+      document.documentElement.removeChild(probe);
+      document.documentElement.style.setProperty('--main-scrollbar-gutter', gutter + 'px');
+    })();
   </script>
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>flowBox</title>
@@ -35,8 +65,10 @@
   }
   #sidebar.collapsed .sidebar-label,
   #sidebar.collapsed #sidebar-title,
+  #sidebar.collapsed #sidebar-title-dark,
   html.sidebar-collapsed-init #sidebar .sidebar-label,
-  html.sidebar-collapsed-init #sidebar #sidebar-title {
+  html.sidebar-collapsed-init #sidebar #sidebar-title,
+  html.sidebar-collapsed-init #sidebar #sidebar-title-dark {
     display: none;
   }
   #sidebar.collapsed #sidebar-toggle,
@@ -48,6 +80,21 @@
   #sidebar-header,
   #sidebar nav {
     transition: none;
+  }
+
+  /* Light/dark logo swap. Two <img> tags are always both present in the
+     markup (one per theme); which one is visible is decided purely by this
+     attribute selector on <html data-theme>, not JS -- so it's correct on
+     the very first paint even when the head script above has already set
+     data-theme="tesda-dark" before the stylesheet loads. No flash. */
+  .logo-theme-dark {
+    display: none;
+  }
+  html[data-theme="tesda-dark"] .logo-theme-light {
+    display: none;
+  }
+  html[data-theme="tesda-dark"] .logo-theme-dark {
+    display: inline-block;
   }
   </style>
   <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
@@ -95,7 +142,7 @@
   <div class="hidden lg:flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="relative bg-white border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+    <aside id="sidebar" class="relative bg-base-100 border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
       <button type="button" id="sidebar-toggle" class="absolute top-2 right-2 z-10 shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
               aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
@@ -103,9 +150,11 @@
 
       <div id="sidebar-header" class="flex items-center gap-3 min-w-0 px-6 pt-16 pb-4 shrink-0">
         <span class="w-5 h-7 shrink-0 flex items-center justify-center">
-          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="w-10 h-10 shrink-0 object-contain max-w-none">
+          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="logo-theme-light w-10 h-10 shrink-0 object-contain max-w-none">
+          <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="flowBox" class="logo-theme-dark w-10 h-10 shrink-0 object-contain max-w-none">
         </span>
-        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-7 w-auto shrink-0 ml-3">
+        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="logo-theme-light h-7 w-auto shrink-0 ml-3">
+        <img id="sidebar-title-dark" src="{{ url_for('static', filename='images/logo-text-dark.png') }}" alt="flowBox" class="logo-theme-dark h-7 w-auto shrink-0 ml-3">
       </div>
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
@@ -137,7 +186,8 @@
 
         {% if staff and staff.role in ["admin", "in_charge"] %}
         <a href="/staff"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == '/staff' %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
           </span>
@@ -147,7 +197,8 @@
 
         {% if staff and staff.role == "admin" %}
         <a href="/audit-log"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200">
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == '/audit-log' %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </span>
@@ -179,7 +230,7 @@
         </div>
         {% endif %}
 
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex items-center gap-3 shrink-0" style="padding-right: var(--main-scrollbar-gutter, 0px);">
 
           <!-- Notifications -- restyled after Facebook's notifications
                popup: bold header with a settings placeholder (same
@@ -304,13 +355,26 @@
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
 
+                <button type="button" id="system-mode-toggle-btn" onclick="toggleSystemMode()"
+                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                    <span id="system-mode-icon" class="w-[18px] h-[18px] text-base-content/70">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    </span>
+                  </span>
+                  <span class="flex-1 text-sm font-medium text-base-content">System mode</span>
+                  <span id="system-mode-label" class="text-xs text-base-content/50">Light Mode</span>
+                </button>
+
                 <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
                         class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                   <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" fill="none"/><path d="M12 3a9 9 0 000 18z" fill="currentColor" stroke="none"/></svg>
+                    <span id="toast-style-icon" class="w-[18px] h-[18px] text-base-content/70">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    </span>
                   </span>
                   <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
-                  <span id="toast-style-label" class="text-xs text-base-content/50">Light</span>
+                  <span id="toast-style-label" class="text-xs text-base-content/50">Light Mode</span>
                 </button>
 
                 <button type="button" onclick="showToast('Display &amp; accessibility coming soon', 'info')"
@@ -386,6 +450,26 @@
        "type" is optional and defaults to "success" ("error"/"info" also supported). -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
 
+  <!-- Session timeout modal: whenever an API call comes back 401 (session
+       expired from inactivity), this blocking dialog replaces the usual
+       error toast. A toast is easy to miss and, once the session is gone,
+       every further action on the page will keep failing anyway -- so
+       this needs to be unmissable and funnel the person straight to
+       logging back in, rather than let them keep clicking around against
+       a dead session. No cancel/backdrop-dismiss on purpose: logging in
+       again is the only way forward from here. -->
+  <dialog id="session-timeout-modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-lg mb-2">Session timed out</h3>
+      <p class="text-sm text-base-content/70 mb-4">You've been signed out due to inactivity. Please log in again to continue.</p>
+      <div class="modal-action">
+        <button type="button" onclick="window.location.href='/login'" class="btn btn-primary">
+          Log in
+        </button>
+      </div>
+    </div>
+  </dialog>
+
 
 <script>
 (function() {
@@ -437,6 +521,8 @@ function markAllNotificationsRead() {
   }).then((res) => {
     if (res.ok) {
       window.location.reload();
+    } else if (res.status === 401) {
+      showSessionTimeoutModal();
     } else {
       showToast("Couldn't mark notifications as read", 'error');
     }
@@ -468,6 +554,47 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
+// "System mode" -- the actual site-wide theme, backed by the two daisyUI
+// themes defined in input.css: 'tesda' (this app's fixed light brand theme,
+// untouched) and 'tesda-dark' (a proper dark re-tune of the same brand
+// palette). This really does re-theme the whole app by swapping
+// <html data-theme="...">, which every daisyUI/Tailwind color in the CSS
+// resolves against -- so no per-component JS is needed elsewhere.
+const SYSTEM_MODES = ['tesda', 'tesda-dark'];
+const SYSTEM_MODE_LABELS = { tesda: 'Light Mode', 'tesda-dark': 'Dark Mode' };
+const SYSTEM_MODE_ICONS = {
+  tesda: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+  'tesda-dark': '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
+};
+
+// The head script already applied the saved theme to <html> before first
+// paint (if one was saved) -- read it back from the DOM here rather than
+// localStorage again, so this stays in sync even if that attribute was set
+// some other way.
+let SYSTEM_MODE = document.documentElement.getAttribute('data-theme') || 'tesda';
+if (!SYSTEM_MODES.includes(SYSTEM_MODE)) SYSTEM_MODE = 'tesda';
+
+function syncSystemModeLabel() {
+  const label = document.getElementById('system-mode-label');
+  if (label) label.textContent = SYSTEM_MODE_LABELS[SYSTEM_MODE];
+  const icon = document.getElementById('system-mode-icon');
+  if (icon) icon.innerHTML = SYSTEM_MODE_ICONS[SYSTEM_MODE];
+}
+syncSystemModeLabel();
+
+function toggleSystemMode() {
+  const idx = SYSTEM_MODES.indexOf(SYSTEM_MODE);
+  SYSTEM_MODE = SYSTEM_MODES[(idx + 1) % SYSTEM_MODES.length];
+  document.documentElement.setAttribute('data-theme', SYSTEM_MODE);
+  try {
+    localStorage.setItem('app-theme', SYSTEM_MODE);
+  } catch (e) {
+    // Non-critical -- the theme still applies for the rest of this session.
+  }
+  syncSystemModeLabel();
+  showToast(`System mode set to ${SYSTEM_MODE_LABELS[SYSTEM_MODE]}`, 'success');
+}
+
 // Three notification styles the "Notification style" toggle cycles
 // through:
 //  - 'light'    this app's normal light card (default)
@@ -479,7 +606,17 @@ function setNotifTab(tab) {
 //               practice
 // Persisted so the choice survives a reload/new tab.
 const TOAST_STYLES = ['light', 'inverted', 'md3'];
-const TOAST_STYLE_LABELS = { light: 'Light', inverted: 'Inverted', md3: 'Material 3' };
+const TOAST_STYLE_LABELS = { light: 'Light Mode', inverted: 'Dark Mode', md3: 'Material Design' };
+
+// Icon shown on the "Notification style" row itself, swapped to match
+// whichever style is currently active: a sun for Light Mode, a moon for
+// Dark Mode, and a palette (evoking Material's "design system" identity
+// rather than light/dark) for Material Design.
+const TOAST_STYLE_ICONS = {
+  light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+  inverted: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
+  md3: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c-5.5 0-10-4.5-10-10S6.5 2 12 2s10 4 10 9a3.5 3.5 0 01-3.5 3.5h-1.8a2 2 0 00-1 3.7A2 2 0 0114 22z"/><circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="16.5" cy="10.5" r="1" fill="currentColor" stroke="none"/></svg>',
+};
 
 let TOAST_STYLE = 'light';
 try {
@@ -493,6 +630,8 @@ try {
 function syncToastStyleLabel() {
   const label = document.getElementById('toast-style-label');
   if (label) label.textContent = TOAST_STYLE_LABELS[TOAST_STYLE];
+  const icon = document.getElementById('toast-style-icon');
+  if (icon) icon.innerHTML = TOAST_STYLE_ICONS[TOAST_STYLE];
 }
 syncToastStyleLabel();
 
@@ -505,11 +644,28 @@ function toggleToastStyle() {
     // Non-critical -- the toggle still works for the rest of this session.
   }
   syncToastStyleLabel();
-  showToast(`Switched to ${TOAST_STYLE_LABELS[TOAST_STYLE].toLowerCase()} notifications`, 'success');
+  showToast(`Notification style set to ${TOAST_STYLE_LABELS[TOAST_STYLE]}`, 'success');
 }
 
 const TOAST_DEFAULT_DURATION_MS = 4000;
 const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
+
+// Opens the blocking "session timed out" dialog (see markup near
+// #toast-container). Guarded against being called twice in a row --
+// e.g. two in-flight requests both coming back 401 at once -- since
+// dialog.showModal() throws if it's already open.
+function showSessionTimeoutModal() {
+  const modal = document.getElementById('session-timeout-modal');
+  if (modal && !modal.open) modal.showModal();
+}
+(function () {
+  const modal = document.getElementById('session-timeout-modal');
+  // Block the native Escape-to-close a <dialog> gets for free -- logging
+  // in again is the only valid next step once the session's gone, so
+  // dismissing this without doing that would just leave the person
+  // clicking around against a dead session.
+  if (modal) modal.addEventListener('cancel', (e) => e.preventDefault());
+})();
 
 // Per-type visuals for the toast card: the tint behind the icon, the
 // icon markup itself (success/error render a colored glyph directly;
@@ -618,11 +774,15 @@ function showToast(message, type, action, duration, description) {
   const isSnackbar = !!(action && action.label);
 
   const toast = document.createElement('div');
-  toast.className = `relative ${isSnackbar ? 'w-[300px]' : 'w-72'} ${TOAST_STYLE === 'inverted' ? 'bg-[#313033]' : 'bg-white'} rounded-xl ${isSnackbar ? 'shadow-xl' : 'shadow-lg'} ring-1 ${TOAST_STYLE === 'inverted' ? 'ring-white/10' : 'ring-black/5'} overflow-hidden
+  toast.className = `relative ${isSnackbar ? 'w-[310px]' : 'w-72'} ${TOAST_STYLE === 'inverted' ? 'bg-[#313033]' : 'bg-white'} rounded-lg ${isSnackbar ? 'shadow-xl' : 'shadow-lg'} ring-1 ${TOAST_STYLE === 'inverted' ? 'ring-white/10' : 'ring-black/5'} overflow-hidden
                       pointer-events-auto transition-all duration-300 ease-out opacity-0 translate-x-6`;
 
+  // Icon and text sit on one row. items-center (rather than items-start)
+  // keeps the icon's center level with the title's midline, which also
+  // means the close button -- itself vertically centered inside the
+  // title row below -- lines up with the icon too, not just the text.
   const body = document.createElement('div');
-  body.className = 'flex items-start gap-2.5 p-3';
+  body.className = 'flex items-center gap-2.5 p-3';
 
   const iconWrap = document.createElement('span');
   iconWrap.className = `w-8 h-8 rounded-lg shrink-0 flex items-center justify-center ${variant.iconWrap}`;
@@ -630,20 +790,26 @@ function showToast(message, type, action, duration, description) {
   body.appendChild(iconWrap);
 
   const content = document.createElement('div');
-  content.className = 'flex-1 min-w-0 pt-0.5';
+  content.className = 'flex-1 min-w-0';
 
+  // items-center here (was items-start) is what centers the close
+  // button against the title's own line -- not the full card height,
+  // which would drift it away from the title whenever a description or
+  // action line is also present below.
   const titleRow = document.createElement('div');
-  titleRow.className = 'flex items-start justify-between gap-2';
+  titleRow.className = 'flex items-center justify-between gap-2';
 
   const titleEl = document.createElement('p');
   titleEl.className = `font-semibold ${TOAST_STYLE === 'inverted' ? 'text-[#F4EFF4]' : 'text-gray-900'} text-[13px] leading-snug`;
   titleEl.textContent = message;
   titleRow.appendChild(titleEl);
 
+  // Round hit target with a hover fill for a clearer affordance and a
+  // bigger tap target than a bare icon.
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.setAttribute('aria-label', 'Dismiss');
-  closeBtn.className = `shrink-0 -mt-0.5 -mr-1 p-1 ${TOAST_STYLE === 'inverted' ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`;
+  closeBtn.className = `shrink-0 -mr-1 p-1 rounded-full transition-colors ${TOAST_STYLE === 'inverted' ? 'text-white/40 hover:text-white/80 hover:bg-white/10' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`;
   closeBtn.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   titleRow.appendChild(closeBtn);
 
@@ -666,7 +832,7 @@ function showToast(message, type, action, duration, description) {
   if (action && action.label) {
     const actionBtn = document.createElement('button');
     actionBtn.type = 'button';
-    actionBtn.className = `mt-1.5 font-semibold text-xs hover:opacity-80 ${variant.action}`;
+    actionBtn.className = `-ml-1.5 mt-1.5 px-1.5 py-1 rounded-md font-semibold text-xs transition-colors ${variant.action} ${TOAST_STYLE === 'inverted' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`;
     actionBtn.textContent = action.label;
     actionBtn.addEventListener('click', () => {
       if (action.url) {
@@ -687,6 +853,8 @@ function showToast(message, type, action, duration, description) {
               sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
             }
             window.location.reload();
+          } else if (res.status === 401) {
+            showSessionTimeoutModal();
           } else {
             showToast("That action couldn't be undone", 'error');
           }
@@ -829,6 +997,8 @@ function renderMd3Toast(container, message, type, action, duration, description)
               sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
             }
             window.location.reload();
+          } else if (res.status === 401) {
+            showSessionTimeoutModal();
           } else {
             showToast("That action couldn't be undone", 'error');
           }
@@ -892,6 +1062,10 @@ document.body.addEventListener('show-toast', function (evt) {
 // every htmx request on every page, regardless of which element triggered it.
 document.body.addEventListener('htmx:responseError', function (evt) {
   const status = evt.detail && evt.detail.xhr ? evt.detail.xhr.status : null;
+  if (status === 401) {
+    showSessionTimeoutModal();
+    return;
+  }
   const message = status === 403
     ? "You don't have permission to do that."
     : "Something went wrong. Please try again.";

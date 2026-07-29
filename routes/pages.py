@@ -31,7 +31,7 @@ def assets_page():
     stat_maintenance = conn.execute(
         "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'maintenance'"
     ).fetchone()["cnt"]
-    # Previously missing entirely -- assets/index.html's category filter
+    # Previously missing entirely -- assets.html's category filter
     # loops over `categories`, but nothing ever supplied it on a full page
     # load (get_assets_table_context() only returns table/pagination state,
     # not lookup data), so the dropdown silently rendered with just the
@@ -67,8 +67,10 @@ def assets_page():
             "sort_dir": "desc",
         }
 
+    # NOTE: matches templates/assets.html (top-level, no subfolder) --
+    # partials live in templates/assets/, same layout as members/staff.
     return render_template(
-        "assets/index.html",
+        "assets.html",
         staff=g.staff,
         stat_all=stat_all,
         stat_available=stat_available,
@@ -192,6 +194,7 @@ def staff_page():
             "limit": 20,
             "offset": 0,
             "show_inactive": False,
+            "status": "",
         }
 
     # NOTE: matches templates/staff.html (top-level, no subfolder) --

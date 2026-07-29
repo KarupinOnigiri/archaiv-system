@@ -1,0 +1,19 @@
+{% if q and not results %}
+<div class="text-sm text-base-content/50 px-3 py-4 text-center bg-base-100 border border-base-300 rounded-lg shadow">
+  No matching active members found.
+</div>
+{% elif results %}
+<ul class="menu menu-sm bg-base-100 border border-base-300 rounded-lg shadow divide-y divide-base-200 max-h-56 overflow-y-auto p-0">
+  {% for m in results %}
+  <li>
+    <a class="flex flex-col items-start gap-0.5 py-2 rounded-none"
+       data-member-id="{{ m.id }}"
+       data-member-label="{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }} · {{ m.member_code }}"
+       onclick="selectEligibleMember(this)">
+      <span class="font-medium">{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}</span>
+      <span class="text-xs text-base-content/50">{{ m.member_code }} &middot; {{ m.barcode_id }} &middot; {{ m.department }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

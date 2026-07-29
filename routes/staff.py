@@ -41,6 +41,15 @@ def get_staff_table_context(args):
     role = args.get("role")
     department_id = args.get("department_id")
     show_inactive = args.get("show_inactive") == "1"
+    # `status` is the fine-grained filter the stat cards drive (active vs.
+    # locked vs. inactive) -- distinct from `show_inactive`, which only
+    # toggles whether inactive accounts are included alongside everyone
+    # else. Without this, "Active" and "Locked" had no way to isolate
+    # themselves from each other (both are is_active=1 rows) or from the
+    # unfiltered list, so clicking those cards sent a `status` param the
+    # backend silently ignored and the table never visibly changed.
+    status = args.get("status")
+    valid_statuses = ("active", "locked", "inactive")
 
     if role and role not in VALID_ROLES:
         return None, (
@@ -48,7 +57,31 @@ def get_staff_table_context(args):
             400,
         )
 
-    where = [] if show_inactive else ["staff.is_active = 1"]
+    if status and status not in valid_statuses:
+        return None, (
+            jsonify({"error": f"status must be one of: {', '.join(valid_statuses)}"}),
+            400,
+        )
+
+    # `status`, when given, fully determines the active/locked/inactive
+    # slice and takes precedence over the plainer show_inactive-only check
+    # below -- e.g. status=locked should still isolate locked accounts even
+    # if show_inactive happens to be left off in the request.
+    if status == "inactive":
+        where = ["staff.is_active = 0"]
+    elif status == "active":
+        where = [
+            "staff.is_active = 1",
+            "(staff.locked_until IS NULL OR staff.locked_until <= datetime('now', 'localtime'))",
+        ]
+    elif status == "locked":
+        where = [
+            "staff.is_active = 1",
+            "staff.locked_until IS NOT NULL",
+            "staff.locked_until > datetime('now', 'localtime')",
+        ]
+    else:
+        where = [] if show_inactive else ["staff.is_active = 1"]
     params = []
     if q:
         where.append(
@@ -101,6 +134,7 @@ def get_staff_table_context(args):
         "limit": limit,
         "offset": offset,
         "show_inactive": show_inactive,
+        "status": status or "",
     }, None
 
 
@@ -239,6 +273,62 @@ def view_audit_log():
 # # # CREATE (admin only) ------------------------------------------------
 
 
+@staff_bp.route("/staff/add-form")
+@roles_required("admin")
+def add_staff_form():
+    """Renders the "Add New Staff" modal. A staff account is access
+    granted to an existing member record (staff.member_id is UNIQUE NOT
+    NULL) -- there's no separate name/department to collect here, since
+    those already live on `members`.
+
+    The member picker is a type-ahead search (see
+    eligible_members_search below) rather than a preloaded <select> --
+    with enough members, dumping every eligible one into a dropdown on
+    every modal open doesn't scale and makes picking the right one
+    tedious. This route no longer needs to query members at all."""
+    return render_template("staff/_add_modal.html")
+
+
+@staff_bp.route("/staff/eligible-members-search")
+@roles_required("admin")
+def eligible_members_search():
+    """Backs the Add Staff modal's member picker. Matches name, member
+    code, or barcode ID (so scanning a barcode into the same box works
+    just as well as typing a name), restricted to the same
+    active-and-not-already-staff set add_staff_form's eligibility rule
+    requires. Capped at a handful of results since this is a live-as-
+    you-type search, not a full listing -- an empty query intentionally
+    returns nothing rather than the whole table."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        return render_template("staff/_eligible_member_results.html", results=[], q=q)
+
+    conn = get_db_connection()
+    like = f"%{q}%"
+    results = conn.execute(
+        """
+        SELECT members.id, members.first_name, members.last_name, members.middle_name,
+               members.suffix, members.member_code, members.barcode_id,
+               departments.name AS department
+        FROM members
+        JOIN departments ON members.department_id = departments.id
+        WHERE members.is_active = 1
+          AND members.id NOT IN (SELECT member_id FROM staff)
+          AND (
+            members.first_name LIKE ? OR members.last_name LIKE ?
+            OR members.member_code LIKE ? OR members.barcode_id LIKE ?
+          )
+        ORDER BY members.last_name, members.first_name
+        LIMIT 8
+        """,
+        (like, like, like, like),
+    ).fetchall()
+    conn.close()
+
+    return render_template("staff/_eligible_member_results.html", results=results, q=q)
+
+
+
 @staff_bp.route("/staff/add", methods=["POST"])
 @roles_required("admin")
 @limiter.limit("20 per minute")
@@ -339,6 +429,35 @@ def add_staff_submit():
 
 
 # # # UPDATE ------------------------------------------------------------
+
+
+@staff_bp.route("/staff/<int:id>/edit-form")
+@roles_required("admin")
+def edit_staff_form(id):
+    """Renders the "Edit Staff" modal. Only role and assigned_start/end are
+    actually editable here -- matches edit_staff_submit below, which never
+    touches username or anything on the linked member record. Name/
+    department/staff_code are shown read-only for context."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.username, staff.role, staff.assigned_start, staff.assigned_end,
+               staff.staff_code, staff.is_active, staff.locked_until,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.member_code, departments.name AS department
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    return render_template("staff/_edit_modal.html", staff_member=staff_member)
 
 
 @staff_bp.route("/staff/<int:id>/edit", methods=["POST"])
@@ -571,6 +690,36 @@ def unlock_staff(id):
 
 
 # # # DELETE (deactivate, admin only) ------------------------------------
+
+
+@staff_bp.route("/staff/<int:id>/delete-confirm")
+@roles_required("admin")
+def delete_staff_form(id):
+    """Renders the deactivate-confirmation modal. Admin rows never reach
+    this in practice -- staff/_table.html only wires the "Deactivate" link
+    up for non-admin rows, showing "Request Deactivation" instead for
+    admins -- but the same guard delete_staff() enforces is repeated here
+    so a direct hit to this URL can't be used to work around that."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.role,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    if staff_member["role"] == "admin":
+        return jsonify({"error": "Admin account/s cannot be deactivated"}), 403
+
+    return render_template("staff/_delete_modal.html", staff_member=staff_member)
 
 
 @staff_bp.route("/staff/<int:id>/delete", methods=["POST"])

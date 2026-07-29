@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="p-6 lg:p-8 space-y-6">
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
 
   <!-- Page header -->
   <div class="flex flex-wrap items-start justify-between gap-4">
@@ -10,7 +10,7 @@
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role == "admin" %}
-      <button type="button" class="btn btn-primary btn-sm rounded-full"
+      <button type="button" id="add-staff-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/staff/add-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -22,118 +22,341 @@
   </div>
 
   <!-- Stat cards -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALL STAFF</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_all }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACTIVE</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_active }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">LOCKED</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_locked }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
-      </div>
-    </div>
-
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">INACTIVE</p>
-        <p class="text-2xl font-bold mt-1">{{ stat_inactive }}</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-base-300 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
-      </div>
-    </div>
-
+  <!-- Clicking a card jumps the table to the matching status filter, mirroring
+       Members' and Inventory's stat-card click behavior. -->
+  <div id="staff-stat-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    {% include "staff/_stat_cards.html" %}
   </div>
 
   <!-- Toolbar + table -->
   <div class="bg-base-100 rounded-xl border border-base-300 p-5">
 
-    <div id="filter-row" class="flex flex-wrap items-center gap-3 mb-5">
+    <div class="relative mb-5" style="position: relative;">
 
-      <label class="input input-bordered flex items-center gap-2 flex-1 min-w-[220px] max-w-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <div id="filter-row" class="flex flex-wrap items-center gap-3">
+
+      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </div>
         <input type="search" id="staff-search" name="q" placeholder="Search by name, username, or staff code..."
-               class="grow"
+               aria-label="Search staff by name, username, or staff code"
+               class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+               value="{{ request.args.get('q', '') }}"
                hx-get="/api/v1/staff"
                hx-trigger="keyup changed delay:400ms, search"
                hx-target="#staff-table-container"
                hx-swap="innerHTML"
+               hx-indicator="#table-spinner"
                hx-include="#role-filter, #department-filter, #show-inactive-toggle"
-               hx-vals='{"limit": 20, "offset": 0}'>
-      </label>
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+        <button type="button" id="staff-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
+                aria-label="Clear search" title="Clear search" onclick="clearStaffSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+      </div>
 
-      <select id="role-filter" name="role"
-              class="select select-bordered select-sm w-40"
-              hx-get="/api/v1/staff"
-              hx-trigger="change"
-              hx-target="#staff-table-container"
-              hx-swap="innerHTML"
-              hx-include="#staff-search, #department-filter, #show-inactive-toggle"
-              hx-vals='{"limit": 20, "offset": 0}'>
-        <option value="">All Roles</option>
-        <option value="admin">Admin</option>
-        <option value="in_charge">In Charge</option>
-        <option value="tool_keeper">Tool Keeper</option>
-      </select>
+      <div id="role-filter-wrap" class="join rounded-lg transition-shadow" title="Role">
+        <button type="button" id="role-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearStaffRoleFilter()" aria-label="Clear role filter" title="Clear role filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+        </button>
+        <select id="role-filter" name="role"
+                aria-label="Filter by role"
+                class="select select-bordered select-sm join-item w-40"
+                hx-get="/api/v1/staff"
+                hx-trigger="change"
+                hx-target="#staff-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#staff-search, #department-filter, #show-inactive-toggle"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="">Role</option>
+          <option value="admin" {% if request.args.get('role') == 'admin' %}selected{% endif %}>Admin</option>
+          <option value="in_charge" {% if request.args.get('role') == 'in_charge' %}selected{% endif %}>In Charge</option>
+          <option value="tool_keeper" {% if request.args.get('role') == 'tool_keeper' %}selected{% endif %}>Tool Keeper</option>
+        </select>
+      </div>
 
-      <select id="department-filter" name="department_id"
-              class="select select-bordered select-sm w-44"
-              hx-get="/api/v1/staff"
-              hx-trigger="change"
-              hx-target="#staff-table-container"
-              hx-swap="innerHTML"
-              hx-include="#staff-search, #role-filter, #show-inactive-toggle"
-              hx-vals='{"limit": 20, "offset": 0}'>
-        <option value="">All Departments</option>
-        {% for dept in departments %}
-        <option value="{{ dept.id }}">{{ dept.name }}</option>
-        {% endfor %}
-      </select>
+      <div id="department-filter-wrap" class="join rounded-lg transition-shadow" title="Department">
+        <button type="button" id="department-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                onclick="clearStaffDepartmentFilter()" aria-label="Clear department filter" title="Clear department filter" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+        </button>
+        <select id="department-filter" name="department_id"
+                aria-label="Filter by department"
+                class="select select-bordered select-sm join-item w-40"
+                hx-get="/api/v1/staff"
+                hx-trigger="change"
+                hx-target="#staff-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#staff-search, #role-filter, #show-inactive-toggle"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="">Department</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}" {% if request.args.get('department_id') == dept.id | string %}selected{% endif %}>{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <label class="flex items-center gap-2 text-sm text-base-content/70 cursor-pointer select-none ml-auto">
+      <button type="button" id="clear-staff-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllStaffFilters()" title="Clear filters" aria-label="Clear filters">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+        <span id="clear-staff-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+      </button>
+
+      <label id="inactive-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
-               class="toggle toggle-sm"
+               class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"
+               {% if show_inactive %}checked{% endif %}
                hx-get="/api/v1/staff"
                hx-trigger="change"
                hx-target="#staff-table-container"
                hx-swap="innerHTML"
+               hx-indicator="#table-spinner"
                hx-include="#staff-search, #role-filter, #department-filter"
-               hx-vals='{"limit": 20, "offset": 0}'>
-        Show inactive
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+        <span id="inactive-toggle-text">{% if show_inactive %}Viewing inactive{% else %}Show inactive{% endif %}</span>
       </label>
 
     </div>
 
-    <div id="staff-table-container">
-      {% include "staff/_table.html" %}
+    </div>
+
+    <div class="relative">
+      <div id="table-spinner" class="htmx-indicator absolute inset-0 z-10 flex items-center justify-center bg-base-100/60 rounded-lg">
+        <span class="loading loading-spinner loading-md text-primary"></span>
+      </div>
+      <div id="staff-table-container">
+        {% include "staff/_table.html" %}
+      </div>
     </div>
 
   </div>
 </div>
 
 <div id="modal-container"></div>
+
+<script>
+// Mirrors updateMemberFilterUI() on the Members page: keeps each filter
+// control's "active" ring, its individual clear button, and the combined
+// clear-all button + count in sync with what's actually filled in.
+function updateStaffFilterUI() {
+  const search = document.getElementById('staff-search');
+  const role = document.getElementById('role-filter');
+  const department = document.getElementById('department-filter');
+
+  const searchActive = search.value.trim().length > 0;
+  const roleActive = role.value !== '';
+  const departmentActive = department.value !== '';
+
+  document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
+  document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
+  document.getElementById('staff-search-clear-btn').classList.toggle('hidden', !searchActive);
+
+  document.getElementById('role-filter-wrap').classList.toggle('ring-2', roleActive);
+  document.getElementById('role-filter-wrap').classList.toggle('ring-primary/40', roleActive);
+  document.getElementById('role-filter-clear-btn').disabled = !roleActive;
+
+  document.getElementById('department-filter-wrap').classList.toggle('ring-2', departmentActive);
+  document.getElementById('department-filter-wrap').classList.toggle('ring-primary/40', departmentActive);
+  document.getElementById('department-filter-clear-btn').disabled = !departmentActive;
+
+  const anyActive = searchActive || roleActive || departmentActive;
+  const activeCount = [searchActive, roleActive, departmentActive].filter(Boolean).length;
+  const clearBtn = document.getElementById('clear-staff-filters-btn');
+  clearBtn.classList.toggle('hidden', !anyActive);
+  document.getElementById('clear-staff-filters-count').textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+
+  updateStaffStatCardUI();
+}
+
+// Single source of truth for "what does the filter row currently say" (minus
+// the status/show-inactive concept, which the stat cards own) -- same
+// pattern as Members' getBaseMemberFilterParams(). Keeps a stat-card click
+// from silently dropping whatever search/role/department filter was active.
+function getBaseStaffFilterParams() {
+  const q = document.getElementById('staff-search').value.trim();
+  const role = document.getElementById('role-filter').value;
+  const department = document.getElementById('department-filter').value;
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (role) params.set('role', role);
+  if (department) params.set('department_id', department);
+  return params;
+}
+
+function clearStaffSearch() {
+  const search = document.getElementById('staff-search');
+  search.value = '';
+  updateStaffFilterUI();
+  // Dispatching a native "search" event (rather than just clearing the value)
+  // is what actually satisfies this input's hx-trigger and fires the refetch.
+  search.dispatchEvent(new Event('search'));
+}
+
+function clearStaffRoleFilter() {
+  const el = document.getElementById('role-filter');
+  el.value = '';
+  currentStaffStatusFilter = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearStaffDepartmentFilter() {
+  const el = document.getElementById('department-filter');
+  el.value = '';
+  currentStaffStatusFilter = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearAllStaffFilters() {
+  currentStaffStatusFilter = '';
+  document.getElementById('staff-search').value = '';
+  document.getElementById('role-filter').value = '';
+  document.getElementById('department-filter').value = '';
+  document.getElementById('show-inactive-toggle').checked = false;
+  updateShowInactivePillUI(false);
+  updateStaffFilterUI();
+  const params = new URLSearchParams();
+  params.set('limit', '{{ limit }}');
+  params.set('offset', 0);
+  params.set('show_inactive', '0');
+  htmx.ajax('GET', '/api/v1/staff', {
+    target: '#staff-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+
+['staff-search', 'role-filter', 'department-filter'].forEach(function (id) {
+  const el = document.getElementById(id);
+  el.addEventListener('input', function () { currentStaffStatusFilter = ''; updateStaffFilterUI(); });
+  el.addEventListener('change', function () { currentStaffStatusFilter = ''; updateStaffFilterUI(); });
+});
+document.addEventListener('DOMContentLoaded', updateStaffFilterUI);
+</script>
+
+<script>
+// Same active-stat-card highlighting pattern as Members'
+// STANDING_CARD_ACCENTS/updateMemberStatCardUI, and Inventory's equivalent.
+// currentStaffStatusFilter is tracked explicitly (rather than re-derived
+// from show_inactive on every call) so highlighting reflects which card was
+// actually clicked, and clears the moment someone edits a filter control
+// directly instead of via a card.
+//
+// Initialized from the actual persisted request state (this page's own
+// cold-load replay script below reads request.args the same way) rather
+// than hardcoded to '', so a hard refresh with ?show_inactive=1 in the
+// address bar highlights the "Inactive" card instead of silently falling
+// back to "All Staff" while the table itself shows the filtered results.
+{% set qs_show_inactive = request.args.get('show_inactive') %}
+{% set qs_status = request.args.get('status') %}
+{% if qs_show_inactive == '1' %}
+  {% set initial_status = 'inactive' %}
+{% elif qs_status in ['active', 'locked'] %}
+  {% set initial_status = qs_status %}
+{% else %}
+  {% set initial_status = '' %}
+{% endif %}
+let currentStaffStatusFilter = {{ initial_status | tojson }};
+
+const STAFF_STATUS_CARD_ACCENTS = {
+  '': 'ring-primary/40 border-primary/40',
+  'active': 'ring-success/40 border-success/40',
+  'locked': 'ring-warning/40 border-warning/40',
+  'inactive': 'ring-base-content/30 border-base-content/30',
+};
+
+function updateStaffStatCardUI() {
+  document.querySelectorAll('[data-status]').forEach(function (card) {
+    const isActive = currentStaffStatusFilter === card.dataset.status;
+    card.classList.toggle('ring-2', isActive);
+    card.classList.toggle('shadow-md', isActive);
+    Object.values(STAFF_STATUS_CARD_ACCENTS).forEach(function (cls) {
+      cls.split(' ').forEach(function (c) { card.classList.remove(c); });
+    });
+    if (isActive) {
+      STAFF_STATUS_CARD_ACCENTS[card.dataset.status].split(' ').forEach(function (cls) { card.classList.add(cls); });
+    }
+  });
+}
+
+// Keeps the "Show inactive" pill's color/text in sync, independent of
+// whether it was flipped by hand or by a stat-card click -- mirrors
+// Members' show-inactive-toggle change handler.
+function updateShowInactivePillUI(isInactive) {
+  const toggle = document.getElementById('show-inactive-toggle');
+  const toggleLabel = document.getElementById('inactive-toggle-label');
+  const toggleText = document.getElementById('inactive-toggle-text');
+  toggle.classList.toggle('toggle-warning', isInactive);
+  toggleLabel.classList.toggle('text-warning', isInactive);
+  toggleLabel.classList.toggle('font-semibold', isInactive);
+  toggleLabel.classList.toggle('bg-warning/10', isInactive);
+  toggleLabel.classList.toggle('text-base-content/70', !isInactive);
+  toggleText.textContent = isInactive ? 'Viewing inactive' : 'Show inactive';
+}
+
+document.getElementById('show-inactive-toggle').addEventListener('change', function (e) {
+  currentStaffStatusFilter = e.target.checked ? 'inactive' : '';
+  updateShowInactivePillUI(e.target.checked);
+  updateStaffFilterUI();
+});
+
+// Same shortcut-filter behavior as Members' filterByStanding() / Inventory's
+// filterByStatus(): clicking a card sends a fresh request for exactly that
+// status, independent of whatever's currently in the search/role/department
+// controls (those keep whatever value they're showing, but aren't included
+// in this request beyond what getBaseStaffFilterParams() already captures).
+//
+// "Active" and "Locked" both send a `status` param that /api/v1/staff now
+// honors directly (see get_staff_table_context in staff.py): "active" means
+// is_active=1 with no unexpired lockout, "locked" means is_active=1 with an
+// unexpired lockout. `show_inactive` is also set to 0 alongside `status` so
+// a hard refresh / non-JS fallback still lands on a sane default, but the
+// actual row filtering comes from `status`, not from show_inactive.
+function filterByStaffStatus(status) {
+  currentStaffStatusFilter = status;
+
+  const inactiveToggle = document.getElementById('show-inactive-toggle');
+  const params = getBaseStaffFilterParams();
+  params.set('limit', '{{ limit }}');
+  params.set('offset', 0);
+
+  if (status === 'active') {
+    inactiveToggle.checked = false;
+    params.set('show_inactive', '0');
+    params.set('status', 'active');
+  } else if (status === 'locked') {
+    inactiveToggle.checked = false;
+    params.set('show_inactive', '0');
+    params.set('status', 'locked');
+  } else if (status === 'inactive') {
+    inactiveToggle.checked = true;
+    params.set('show_inactive', '1');
+    params.set('status', 'inactive');
+  } else {
+    inactiveToggle.checked = false;
+    params.set('show_inactive', '0');
+  }
+
+  // Setting .checked directly (rather than dispatching a real "change"
+  // event) skips the show-inactive-toggle listener above, so update its
+  // pill styling here instead -- avoids that listener resetting
+  // currentStaffStatusFilter right after this function just set it.
+  updateShowInactivePillUI(inactiveToggle.checked);
+
+  updateStaffFilterUI();
+  htmx.ajax('GET', '/api/v1/staff', {
+    target: '#staff-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+</script>
 
 <script>
 // Mirrors memberAction() on the Members page: several staff actions
@@ -217,6 +440,93 @@ document.addEventListener('DOMContentLoaded', function () {
     target: '#staff-table-container',
     swap: 'innerHTML'
   });
+});
+</script>
+
+<script>
+// --- Keyboard shortcuts (Staff page) ---
+// Mirrors the Members page's equivalent block, adapted for Staff's controls
+// (role/department instead of department/standing, and Active/Locked/
+// Inactive instead of Active/Restricted/Inactive).
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  return !!(container && container.querySelector(':scope > .modal'));
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey) return;
+
+  // / — focus the search box.
+  if (!e.altKey && e.key === '/') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('staff-search').focus();
+    return;
+  }
+
+  // ` — toggle "Show inactive" on/off, same as clicking the toggle.
+  if (!e.altKey && e.key === '`') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    const toggle = document.getElementById('show-inactive-toggle');
+    toggle.checked = !toggle.checked;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Active /
+  // Locked / Inactive), same mapping as the stat cards themselves.
+  if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const statusByKey = { '1': '', '2': 'active', '3': 'locked', '4': 'inactive' };
+    e.preventDefault();
+    filterByStaffStatus(statusByKey[e.key]);
+    return;
+  }
+
+  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
+  // pagination button is currently in the table footer. Reads the button
+  // rather than hand-building the offset math so it automatically respects
+  // the same disabled-at-the-edges state the button already shows.
+  if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const pageBtn = document.querySelector('#staff-table-container button[aria-label="' + label + '"]');
+    if (pageBtn && !pageBtn.disabled) {
+      e.preventDefault();
+      pageBtn.click();
+    }
+    return;
+  }
+
+  // Alt+N — open "Add New Staff". No-op if the button isn't in the DOM
+  // (role doesn't have access) or a modal is already open.
+  if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+    if (isModalOpen()) return;
+    const addBtn = document.getElementById('add-staff-btn');
+    if (!addBtn) return;
+    e.preventDefault();
+    addBtn.click();
+    return;
+  }
+
+  // Escape — with no modal open, reset every filter back to blank and blur
+  // whatever was focused, same as clicking "Clear filters" by hand. When a
+  // modal *is* open, the shared Escape handler in base.html closes it
+  // instead -- this stays out of the way in that case.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllStaffFilters();
+  }
 });
 </script>
 {% endblock %}
