@@ -1,19 +1,39 @@
-{% if q and not results %}
-<div class="text-sm text-base-content/50 px-3 py-4 text-center bg-base-100 border border-base-300 rounded-lg shadow">
-  No matching active members found.
+{# Renders into #eligible-member-results (see _add_modal.html). Two callers
+   share this template: the type-ahead search input (q set, browse_all
+   false, capped at 8, no pagination) and the "Browse all eligible
+   members" button's *first* page (browse_all true, offset 0). Later
+   pages of a browse come back from _eligible_member_rows_append.html
+   instead -- see that file and the Load more macro in
+   _eligible_member_loadmore.html for why. Selecting a row calls
+   selectEligibleMember(this), defined in _add_modal.html, which reads
+   data-member-id / data-member-label off the clicked element.
+
+   Dismissing this panel without picking anyone is handled by the red
+   clear button next to "Browse all eligible members" in _add_modal.html
+   (dismissEligibleMemberResults()), not from inside this panel. #}
+
+{% from "staff/_eligible_member_row.html" import render_member_row %}
+{% from "staff/_eligible_member_loadmore.html" import render_load_more %}
+{% from "staff/_eligible_member_header.html" import render_header %}
+
+{% if results %}
+<div class="bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+  {{ render_header(loaded_so_far, has_more, browse_all) }}
+  <ul>
+    {% for member in results %}
+    {{ render_member_row(member) }}
+    {% endfor %}
+    {% if has_more %}
+    {{ render_load_more(next_offset) }}
+    {% endif %}
+  </ul>
 </div>
-{% elif results %}
-<ul class="menu menu-sm bg-base-100 border border-base-300 rounded-lg shadow divide-y divide-base-200 max-h-56 overflow-y-auto p-0">
-  {% for m in results %}
-  <li>
-    <a class="flex flex-col items-start gap-0.5 py-2 rounded-none"
-       data-member-id="{{ m.id }}"
-       data-member-label="{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }} · {{ m.member_code }}"
-       onclick="selectEligibleMember(this)">
-      <span class="font-medium">{{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}</span>
-      <span class="text-xs text-base-content/50">{{ m.member_code }} &middot; {{ m.barcode_id }} &middot; {{ m.department }}</span>
-    </a>
-  </li>
-  {% endfor %}
-</ul>
+{% elif q or browse_all %}
+<div class="bg-base-100 border border-base-300 rounded-lg shadow-lg px-3 py-4 text-center text-sm text-base-content/50">
+  {% if q %}
+  No eligible members match "{{ q }}".
+  {% else %}
+  No eligible members found.
+  {% endif %}
+</div>
 {% endif %}

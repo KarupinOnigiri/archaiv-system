@@ -23,16 +23,12 @@ from extensions import limiter
 from routes.stats import stats_bp
 from routes.setup import setup_bp
 from services.loan_service import sweep_overdue_members
+from datetime import datetime
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
 
 
-# Configured once, here, before anything else in the app logs anything
-# (init_db() and seed_initial_admin() both run at import time below).
-# StreamHandler → console, which systemd/journald captures automatically
-# on the Pi. FileHandler → a local log file, useful right now on the
-# laptop where there's no journald to check.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -66,10 +62,6 @@ def inject_csrf_token():
         "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
     ).fetchone()
 
-    # staff has no name columns of its own -- first_name lives on members,
-    # linked via staff.member_id (see routes/staff.py for the same join
-    # pattern). Explicit column list rather than SELECT * since staff and
-    # members both have an "id" column that would otherwise collide.
     staff_member = conn.execute(
         """
         SELECT members.first_name, members.last_name
@@ -93,10 +85,6 @@ def inject_csrf_token():
     }
 
 
-# templates/members/_table.html and _restrict_modal.html call full_name(...)
-# directly as a template function (not just as a Python-side helper for
-# JSON/log messages), so it has to be registered as a Jinja global -- without
-# this, rendering either template raises a Jinja UndefinedError.
 app.jinja_env.globals["full_name"] = full_name
 
 
@@ -114,13 +102,6 @@ app.register_blueprint(pages_bp)
 
 
 # # # ERROR HANDLERS ---------------------------------------------------------
-# Every route in this app already returns jsonify(...) for its own business-
-# logic errors (missing fields, not found, etc.) — these two handlers only
-# catch what routes *don't* raise themselves: unmatched URLs (404), wrong
-# HTTP method (405), rate limits (429, raised by Flask-Limiter), and any
-# genuinely unexpected bug (500). Without these, those cases fall through to
-# Flask's default HTML error page, which breaks the "this API always returns
-# JSON" contract for anything consuming it (htmx, JS fetch, etc.).
 
 
 @app.errorhandler(HTTPException)
@@ -159,13 +140,10 @@ scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 
-# Flask's debug reloader spawns a second process — only run the scheduler
-# in the actual worker process, not the reloader's parent watcher, or
-# you'll get every job firing twice.
+
 if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     scheduler.start()
-    # Ensure the background thread stops cleanly on process exit (Ctrl+C,
-    # systemd stop, etc.) instead of being left dangling.
+
     atexit.register(lambda: scheduler.shutdown())
 
 
@@ -200,6 +178,33 @@ def health():
 @app.route("/test")
 def test():
     return render_template("base.html")
+
+
+def format_date(value, format="%b %d, %Y %I:%M %p"):
+    """
+    Custom Jinja filter to format dates.
+    Handles datetime objects, ISO string formats, or returns the original value if parsing fails.
+    """
+    if value is None:
+        return "—"
+
+    if isinstance(value, str):
+        try:
+            # Attempts to parse ISO-formatted string dates
+            value = datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return value
+
+    if hasattr(value, "strftime"):
+        return value.strftime(format)
+
+    return value
+
+
+# Register the custom filter with Jinja
+app.jinja_env.filters["format_date"] = format_date
+# Optional: Register in globals if you access it directly as a function in templates
+app.jinja_env.globals["format_date"] = format_date
 
 
 # if __name__ == "__main__":

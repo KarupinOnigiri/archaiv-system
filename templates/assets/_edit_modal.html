@@ -1,5 +1,5 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-4xl flex flex-col max-h-[85vh]">
+  <div class="modal-box max-w-4xl">
 
     <div class="flex justify-between items-start mb-5 shrink-0">
       <div>
@@ -13,9 +13,8 @@
     {% endif %}
 
     <form id="edit-asset-form" hx-post="/api/v1/assets/{{ asset.id }}/edit" hx-target="closest .modal" hx-swap="outerHTML"
-          hx-encoding="multipart/form-data" class="flex flex-col flex-1 min-h-0">
+          hx-encoding="multipart/form-data">
       <input type="hidden" name="return_to" value="{{ return_to }}">
-      <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
       <div class="grid grid-cols-3 gap-6">
 
         <!-- Left: form fields (2 cols wide) -->
@@ -176,9 +175,8 @@
         </div>
 
       </div>
-      </div>
 
-      <div class="modal-action flex justify-end gap-2 mt-6 shrink-0">
+      <div class="modal-action flex justify-end gap-2 mt-6">
         <button type="button" class="btn btn-outline" onclick="this.closest('.modal').remove()">
           Cancel
         </button>

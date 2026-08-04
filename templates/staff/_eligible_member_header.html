@@ -1,0 +1,8 @@
+{% macro render_header(loaded_so_far, has_more, browse_all, oob=false) %}
+{% if browse_all %}
+<div id="eligible-member-count" {% if oob %}hx-swap-oob="true"{% endif %}
+     class="sticky top-0 z-10 bg-base-100 border-b border-base-300 px-3 py-2 text-xs font-semibold text-base-content/50 tracking-wide">
+  {{ loaded_so_far }}{{ "+" if has_more else "" }} ELIGIBLE MEMBER{{ "S" if loaded_so_far != 1 else "" }}
+</div>
+{% endif %}
+{% endmacro %}

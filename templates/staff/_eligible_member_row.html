@@ -1,0 +1,17 @@
+{% macro render_member_row(member) %}
+{% set label = full_name(member.first_name, member.last_name, member.middle_name, member.suffix) %}
+<li>
+  <a class="flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer"
+     data-member-id="{{ member.id }}"
+     data-member-label="{{ label }}"
+     onclick="selectEligibleMember(this)">
+    <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+      <span class="text-xs font-semibold text-primary">{{ member.first_name[0] | upper }}</span>
+    </div>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-medium truncate">{{ label }}</p>
+      <p class="text-xs text-base-content/50 truncate">{{ member.department }} &middot; {{ member.member_code or member.barcode_id or "—" }}</p>
+    </div>
+  </a>
+</li>
+{% endmacro %}

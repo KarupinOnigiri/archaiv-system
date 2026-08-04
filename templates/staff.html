@@ -116,7 +116,7 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#staff-search, #role-filter, #department-filter"
-               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+               hx-vals='js:{"limit": {{ limit }}, "offset": 0, "show_inactive": event.target.checked ? "1" : "0", "status": event.target.checked ? "inactive" : ""}'>
         <span id="inactive-toggle-text">{% if show_inactive %}Viewing inactive{% else %}Show inactive{% endif %}</span>
       </label>
 

@@ -298,12 +298,66 @@ def eligible_members_search():
     active-and-not-already-staff set add_staff_form's eligibility rule
     requires. Capped at a handful of results since this is a live-as-
     you-type search, not a full listing -- an empty query intentionally
-    returns nothing rather than the whole table."""
+    returns nothing rather than the whole table.
+
+    The "Browse all" button in the modal hits this same route with
+    browse=1 instead of typing a query -- same eligibility filter, no
+    text match, alphabetical ordering since it's meant to be skimmed
+    rather than typed against, BROWSE_PAGE_SIZE per page with a
+    "Load more" row appending the next page (append=1&offset=N) rather
+    than dumping the whole eligible pool into the DOM at once.
+
+    has_more is detected by fetching one extra row past the page size
+    rather than a separate COUNT(*) query -- if that extra row comes
+    back, there's more to load."""
+    BROWSE_PAGE_SIZE = 50
+
     q = request.args.get("q", "").strip()
-    if not q:
-        return render_template("staff/_eligible_member_results.html", results=[], q=q)
+    browse_all = request.args.get("browse") == "1"
+    append = request.args.get("append") == "1"
+
+    if not q and not browse_all:
+        return render_template(
+            "staff/_eligible_member_results.html", results=[], q=q, browse_all=False, has_more=False,
+            loaded_so_far=0, next_offset=0,
+        )
 
     conn = get_db_connection()
+
+    if browse_all:
+        try:
+            offset = max(0, int(request.args.get("offset", 0)))
+        except ValueError:
+            offset = 0
+
+        rows = conn.execute(
+            """
+            SELECT members.id, members.first_name, members.last_name, members.middle_name,
+                   members.suffix, members.member_code, members.barcode_id,
+                   departments.name AS department
+            FROM members
+            JOIN departments ON members.department_id = departments.id
+            WHERE members.is_active = 1
+              AND members.id NOT IN (SELECT member_id FROM staff)
+            ORDER BY members.last_name, members.first_name
+            LIMIT ? OFFSET ?
+            """,
+            (BROWSE_PAGE_SIZE + 1, offset),
+        ).fetchall()
+
+        has_more = len(rows) > BROWSE_PAGE_SIZE
+        results = rows[:BROWSE_PAGE_SIZE]
+        loaded_so_far = offset + len(results)
+        next_offset = offset + BROWSE_PAGE_SIZE
+
+        conn.close()
+
+        template = "staff/_eligible_member_rows_append.html" if append else "staff/_eligible_member_results.html"
+        return render_template(
+            template, results=results, q=q, browse_all=True, has_more=has_more,
+            loaded_so_far=loaded_so_far, next_offset=next_offset,
+        )
+
     like = f"%{q}%"
     results = conn.execute(
         """
@@ -325,7 +379,10 @@ def eligible_members_search():
     ).fetchall()
     conn.close()
 
-    return render_template("staff/_eligible_member_results.html", results=results, q=q)
+    return render_template(
+        "staff/_eligible_member_results.html", results=results, q=q, browse_all=False, has_more=False,
+        loaded_so_far=len(results), next_offset=0,
+    )
 
 
 

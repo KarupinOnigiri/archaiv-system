@@ -1,78 +1,150 @@
-<dialog id="member-profile-modal" class="modal" open>
-  {% set can_manage = g.staff.role in ["admin", "in_charge"] %}
-  {% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
-  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
+{% set can_manage = g.staff.role in ["admin", "in_charge"] %}
+{% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
+<div class="fixed inset-0 z-50 bg-black/20" onclick="if(event.target===this) this.remove()">
+  <style>
+    @keyframes sheet-slide-in-right {
+      from { transform: translateX(100%); opacity: 0; }
+      to   { transform: translateX(0); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet-panel { animation: none !important; }
+    }
+  </style>
+  <script>
+    document.addEventListener('keydown', function escClose(e) {
+      if (e.key === 'Escape') {
+        const modal = document.querySelector('.fixed.inset-0.z-50');
+        if (modal) modal.remove();
+        document.removeEventListener('keydown', escClose);
+      }
+    });
+  </script>
 
-    <div class="flex items-start justify-between gap-4">
+  <div class="sheet-panel absolute inset-y-4 right-4 w-full max-w-2xl bg-base-100 rounded-2xl shadow-2xl border border-base-300 flex flex-col overflow-hidden"
+       style="animation: sheet-slide-in-right 0.1s ease-out;"
+       onclick="event.stopPropagation()">
+
+    <!-- Header -->
+    <div class="flex justify-between items-start p-5 border-b border-base-300 shrink-0">
       <div>
-        <h3 class="text-lg font-bold">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</h3>
+        <h3 class="font-bold text-lg leading-snug">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ member.member_code }} &middot; {{ member.barcode_id }}</p>
       </div>
-      {% if not member.is_active %}
-      <span class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
-      {% elif member.is_restricted %}
-      <span class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">Restricted</span>
-      {% else %}
-      <span class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">Active</span>
-      {% endif %}
+      <button type="button" class="btn btn-sm btn-circle btn-ghost" onclick="this.closest('.fixed').remove()" aria-label="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mt-5 text-sm">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">DEPARTMENT</p>
-        <p class="mt-0.5">{{ member.department }}</p>
+    <!-- Two-column body -->
+    <div class="flex-1 flex min-h-0 overflow-hidden">
+
+      <!-- Left: main details -->
+      <div class="flex-1 overflow-y-auto min-h-0 p-5">
+
+        {% if member.is_restricted %}
+        <div class="bg-warning/10 rounded-lg p-3 mb-4 border border-warning/20">
+          <p class="text-xs font-semibold text-warning tracking-wide mb-1">CURRENTLY RESTRICTED</p>
+          <p class="text-sm text-base-content/70">{{ member.restriction_reason }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Member info: compact key-value list -->
+        <div class="bg-base-200/50 rounded-xl p-4">
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">MEMBER INFO</p>
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Department</span>
+              <span class="text-sm font-medium text-right">{{ member.department }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Type</span>
+              <span class="text-sm font-medium text-right capitalize">{{ member.member_type }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Batch</span>
+              <span class="text-sm font-medium text-right">{{ member.batch or "—" }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Member since</span>
+              <span class="text-sm font-medium text-right">{{ member.created_at }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs: Borrow History / Restriction History -->
+        <div class="mt-5">
+          <div role="tablist" class="tabs tabs-boxed w-fit">
+            <a role="tab" id="profile-tab-history" class="tab tab-active">Borrow History</a>
+            <a role="tab" id="profile-tab-restrictions" class="tab">Restriction History</a>
+          </div>
+
+          <div id="profile-history-panel" class="mt-4 min-h-[6rem]">
+            <div class="flex justify-center py-8">
+              <span class="loading loading-spinner loading-sm text-primary"></span>
+            </div>
+          </div>
+
+          <div id="profile-restrictions-panel" class="mt-4 min-h-[6rem] hidden">
+            <div class="flex justify-center py-8">
+              <span class="loading loading-spinner loading-sm text-primary"></span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">TYPE</p>
-        <p class="mt-0.5 capitalize">{{ member.member_type }}</p>
-      </div>
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">BATCH</p>
-        <p class="mt-0.5">{{ member.batch or "—" }}</p>
-      </div>
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEMBER SINCE</p>
-        <p class="mt-0.5">{{ member.created_at }}</p>
+
+      <!-- Right: avatar + status rail -->
+      <div class="w-64 shrink-0 border-l border-base-300 bg-base-200/30 overflow-y-auto min-h-0 p-5">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">MEMBER</p>
+
+        <!-- Avatar -->
+        <div class="w-24 aspect-square rounded-full overflow-hidden border border-base-300 bg-base-100 flex items-center justify-center mx-auto">
+          <span class="text-lg font-semibold text-base-content/40">{{ (member.first_name[0] ~ member.last_name[0]) | upper }}</span>
+        </div>
+
+        <p class="text-sm font-semibold mt-3 leading-snug text-center">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</p>
+        <p class="text-xs text-base-content/50 mt-0.5 text-center">{{ member.department }} &middot; {{ member.member_code }}</p>
+
+        <div class="flex justify-center mt-3">
+          {% if not member.is_active %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
+          {% elif member.is_restricted %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning">Restricted</span>
+          {% else %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success">Active</span>
+          {% endif %}
+        </div>
+
+        <div class="border-t border-base-300 mt-4 pt-4 space-y-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">Type</span>
+            <span class="text-sm font-medium text-right capitalize">{{ member.member_type }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">Batch</span>
+            <span class="text-sm font-medium text-right">{{ member.batch or "—" }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">Barcode</span>
+            <span class="text-sm font-medium text-right">{{ member.barcode_id }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    {% if member.is_restricted %}
-    <div class="mt-4 p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm">
-      <p class="font-medium text-warning">Currently restricted</p>
-      <p class="text-base-content/70 mt-0.5">{{ member.restriction_reason }}</p>
-    </div>
-    {% endif %}
-
-    <div role="tablist" class="tabs tabs-boxed mt-6 w-fit">
-      <a role="tab" id="profile-tab-history" class="tab tab-active">Borrow History</a>
-      <a role="tab" id="profile-tab-restrictions" class="tab">Restriction History</a>
-    </div>
-
-    <div id="profile-history-panel" class="mt-4 min-h-[6rem] max-h-72 overflow-y-auto">
-      <div class="flex justify-center py-8">
-        <span class="loading loading-spinner loading-sm text-primary"></span>
-      </div>
-    </div>
-
-    <div id="profile-restrictions-panel" class="mt-4 min-h-[6rem] max-h-72 overflow-y-auto hidden">
-      <div class="flex justify-center py-8">
-        <span class="loading loading-spinner loading-sm text-primary"></span>
-      </div>
-    </div>
-
-    <div class="modal-action">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('member-profile-modal').close(); document.getElementById('member-profile-modal').remove();">Close</button>
+    <!-- Footer actions -->
+    <div class="flex justify-end gap-2 p-5 border-t border-base-300 shrink-0">
+      <button type="button" class="btn" onclick="this.closest('.fixed').remove()">Cancel</button>
 
       {% if member.is_active %}
         {% if can_restrict and not member.is_restricted %}
-        <button type="button" class="btn btn-outline btn-warning btn-sm"
+        <button type="button" class="btn btn-outline btn-warning"
                 hx-get="/api/v1/members/{{ member.id }}/restrict-form?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
           Restrict
         </button>
         {% elif can_manage and member.is_restricted %}
-        <button type="button" class="btn btn-outline btn-success btn-sm"
+        <button type="button" class="btn btn-outline btn-success"
                 hx-get="/api/v1/members/{{ member.id }}/unrestrict-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -80,7 +152,7 @@
         </button>
         {% endif %}
         {% if can_manage %}
-        <button type="button" class="btn btn-outline btn-error btn-sm"
+        <button type="button" class="btn btn-error btn-outline"
                 hx-get="/api/v1/members/{{ member.id }}/delete-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -88,7 +160,7 @@
         </button>
         {% endif %}
       {% elif can_manage %}
-        <button type="button" class="btn btn-outline btn-success btn-sm"
+        <button type="button" class="btn btn-outline btn-success"
                 hx-get="/api/v1/members/{{ member.id }}/reactivate-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -97,7 +169,7 @@
       {% endif %}
 
       {% if can_manage %}
-      <button type="button" class="btn btn-primary btn-sm"
+      <button type="button" class="btn btn-primary w-20"
               hx-get="/api/v1/members/{{ member.id }}/edit-form?return_to=profile"
               hx-target="#modal-container"
               hx-swap="beforeend">
@@ -105,9 +177,9 @@
       </button>
       {% endif %}
     </div>
+
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+</div>
 
 <script>
 (function () {

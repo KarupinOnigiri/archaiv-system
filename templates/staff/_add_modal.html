@@ -1,16 +1,47 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
+  <style>
+    /* Thin scrollbar that stays out of the way -- transparent track so it
+       has no visual footprint when the fields fit, only ever painting a
+       slim thumb once the content actually overflows and this element
+       starts scrolling. */
+    .custom-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    .custom-scrollbar:hover,
+    .custom-scrollbar:focus-within {
+      scrollbar-color: rgb(0 0 0 / 0.2) transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: transparent;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar:hover::-webkit-scrollbar-thumb,
+    .custom-scrollbar:focus-within::-webkit-scrollbar-thumb {
+      background-color: rgb(0 0 0 / 0.2);
+    }
+  </style>
+  <div class="modal-box max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
 
-    <div class="flex justify-between items-start mb-5">
-      <div>
-        <h3 class="font-bold text-xl">Add New Staff</h3>
-        <p class="text-sm text-base-content/50 mt-1">Grant system access to an existing member.</p>
+    <div class="p-6 pb-4 shrink-0">
+      <div class="flex justify-between items-start">
+        <div>
+          <h3 class="font-bold text-xl">Add New Staff</h3>
+          <p class="text-sm text-base-content/50 mt-1">Grant system access to an existing member.</p>
+        </div>
       </div>
+
+      <div id="add-staff-error" class="alert alert-error text-sm mt-4 py-2 hidden"></div>
     </div>
 
-    <div id="add-staff-error" class="alert alert-error text-sm mb-4 py-2 hidden"></div>
-
-    <form id="add-staff-form" onsubmit="submitAddStaffForm(event)">
+    <form id="add-staff-form" onsubmit="submitAddStaffForm(event)" class="flex-1 flex flex-col min-h-0">
+      <div class="flex-1 overflow-y-auto min-h-0 px-6 py-4 custom-scrollbar">
       <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
 
         <div>
@@ -36,6 +67,23 @@
                    hx-target="#eligible-member-results"
                    hx-swap="innerHTML"
                    hx-include="this">
+            <div class="flex items-center gap-2 mt-1.5">
+              <button type="button" id="browse-all-members-btn"
+                      class="text-xs font-medium text-primary hover:underline"
+                      onclick="document.getElementById('member-search-input').value = '';"
+                      hx-get="/api/v1/staff/eligible-members-search"
+                      hx-target="#eligible-member-results"
+                      hx-swap="innerHTML"
+                      hx-vals='{"browse": "1"}'>
+                Browse all eligible members
+              </button>
+              <button type="button" id="clear-member-picker-btn"
+                      class="btn btn-ghost btn-circle text-error hover:bg-error/10 hidden w-4 h-4 min-h-0 p-0"
+                      aria-label="Clear results" title="Clear results"
+                      onclick="dismissEligibleMemberResults()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+              </button>
+            </div>
             <div id="eligible-member-results" class="absolute z-20 w-full mt-1"></div>
           </div>
 
@@ -85,8 +133,9 @@
         </div>
 
       </div>
+      </div>
 
-      <div class="modal-action flex justify-between items-center mt-6">
+      <div class="modal-action flex justify-between items-center shrink-0 border-t border-base-300 px-6 py-4 m-0">
         <button type="button" onclick="document.getElementById('add-staff-form').reset(); clearEligibleMember();" class="text-sm text-base-content/50 hover:text-base-content">
           Clear form
         </button>
@@ -127,6 +176,61 @@ function clearEligibleMember() {
   input.value = '';
   input.focus();
 }
+
+// Closes the search/browse results dropdown without picking anyone --
+// called by the red clear button next to "Browse all eligible members",
+// the click-outside listener below, and Escape while the search box is
+// focused. Leaves whatever text is in the search input alone (only
+// clears the results panel itself), so someone who typed a partial name
+// and then backed out doesn't lose it.
+function dismissEligibleMemberResults() {
+  const results = document.getElementById('eligible-member-results');
+  if (results) results.innerHTML = '';
+}
+
+// The red clear button only makes sense to show once there's actually
+// something to clear. Rather than toggling it by hand at every place
+// that can populate or empty #eligible-member-results (typeahead,
+// initial browse, load-more appends, dismiss), a MutationObserver just
+// watches that container directly -- so the button shows/hides itself
+// correctly no matter which of those triggered the change.
+(function () {
+  const results = document.getElementById('eligible-member-results');
+  const clearBtn = document.getElementById('clear-member-picker-btn');
+  if (!results || !clearBtn) return;
+  function syncClearBtn() {
+    clearBtn.classList.toggle('hidden', results.children.length === 0);
+  }
+  new MutationObserver(syncClearBtn).observe(results, { childList: true });
+  syncClearBtn();
+})();
+
+// Click anywhere outside the search box / browse button / results panel
+// closes the dropdown, same as a normal search-suggestions UI. Guarded
+// so re-opening this modal several times (Cancel, then Add New Staff
+// again) doesn't stack up duplicate listeners on document.
+if (!window.__eligibleMemberDismissListenerAdded) {
+  window.__eligibleMemberDismissListenerAdded = true;
+  document.addEventListener('click', function (e) {
+    const wrap = document.getElementById('member-picker-search-wrap');
+    if (!wrap || wrap.classList.contains('hidden')) return;
+    if (!wrap.contains(e.target)) {
+      dismissEligibleMemberResults();
+    }
+  });
+}
+
+// Escape while typing in the search box dismisses just the dropdown.
+// stopPropagation keeps this from also bubbling up to base.html's
+// shared modal-closing Escape handler -- cancelling the picker
+// shouldn't also throw away the rest of the Add Staff form.
+document.getElementById('member-search-input').addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    dismissEligibleMemberResults();
+    e.target.blur();
+  }
+});
 
 // /api/v1/staff/add is a JSON-only endpoint (get_json_or_error() +
 // jsonify() responses, no HTML re-render on error) -- so this posts via

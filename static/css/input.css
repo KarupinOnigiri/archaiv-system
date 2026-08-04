@@ -4,73 +4,80 @@
 @plugin "../../daisyui.mjs";
 @plugin "../../daisyui-theme.mjs" {
   name: "tesda";
-  default: true;
+  default: false;
   prefersdark: false;
   color-scheme: light;
 
-  /* Brand palette, from the logo:
-     Dark Navy Blue #1C3B61 (primary) / Sky Blue #45AAE0 / Golden Orange #F7B626 */
-  /* --color-primary: #1c3b61; */
-  --color-primary: #1C3B61;
+  /* Monochrome scheme (light), with one exception: primary is Material
+     Blue 700 rather than near-black. Pure black-on-white for every
+     interactive element reads as flat and is genuinely harder on the eyes
+     than having one accent hue to anchor buttons/links/active states --
+     so blue carries that role while secondary/accent/neutral/surfaces
+     stay strictly grey. Status colors keep their own muted hues so
+     success/error/warning/info stay tellable apart from each other and
+     from primary. */
+  --color-primary: #1565c0;
   --color-primary-content: #ffffff;
-  --color-secondary: #45aae0;
-  --color-secondary-content: #0f2942;
-  --color-accent: #f7b626;
-  --color-accent-content: #0f2942;
-  --color-neutral: #14263f;
-  --color-neutral-content: #eaf2fb;
+  --color-secondary: #757575;
+  --color-secondary-content: #ffffff;
+  --color-accent: #545454;
+  --color-accent-content: #ffffff;
+  --color-neutral: #212121;
+  --color-neutral-content: #eeeeee;
 
   --color-base-100: #ffffff;
-  --color-base-200: #eff5fb;
-  --color-base-300: #d7e6f5;
-  --color-base-content: #14263f;
+  --color-base-200: #f5f5f5;
+  --color-base-300: #e0e0e0;
+  --color-base-content: #212121;
 
-  /* Status colors tied back into the brand rather than generic defaults:
-     info/warning reuse the brand blue and orange, success/error stay
-     conventional green/red so status meaning is still instantly readable. */
-  --color-info: #45aae0;
-  --color-info-content: #0f2942;
-  --color-success: #1e9e6b;
+  /* Status colors: full-saturation MD swatches so alerts/notifications
+     read clearly at a glance instead of the earlier muted, desaturated
+     versions, which looked flat next to a solid blue primary. */
+  --color-info: #039be5;
+  --color-info-content: #ffffff;
+  --color-success: #43a047;
   --color-success-content: #ffffff;
-  --color-warning: #f7b626;
-  --color-warning-content: #0f2942;
-  --color-error: #dc2626;
+  --color-warning: #fb8c00;
+  --color-warning-content: #000000;
+  --color-error: #e53935;
   --color-error-content: #ffffff;
 }
 
-/* "System mode" -- Dark Mode. A literal dark UI: neutral charcoal/near-
-   black surfaces (not the brand navy darkened, which just reads as "dim
-   blue") with only the faintest cool undertone on those surfaces, and the
-   brand's sky-blue/gold kept purely as accent hints on primary/secondary/
-   accent -- not smeared across the backgrounds. */
+/* "System mode" -- Dark Mode: same idea inverted -- white-on-black
+   surfaces, but lifted off true black -- #1B1B1E/#242428/#2F2F34 rather
+   than #121212/#1E1E1E/#2C2C2C, which read as harsh/lifeless on real
+   screens despite matching MD spec exactly. Grey secondary/accent are
+   likewise lightened a step so they don't disappear against the surface,
+   and status colors are full-saturation rather than muted so
+   notifications/alerts stay legible and easy to tell apart. */
 @plugin "../../daisyui-theme.mjs" {
   name: "tesda-dark";
-  default: false;
+  default: true;
   prefersdark: true;
   color-scheme: dark;
 
-  --color-primary: #7DB3E0;
-  --color-primary-content: #082036;
-  --color-secondary: #5FC1EE;
-  --color-secondary-content: #082430;
-  --color-accent: #f7b626;
-  --color-accent-content: #1c1204;
-  --color-neutral: #0c0d10;
-  --color-neutral-content: #d4d6da;
+  --color-primary: #1565c0;
+  --color-primary-content: #ffffff;
+  --color-secondary: #b3b3b3;
+  --color-secondary-content: #1b1b1e;
+  --color-accent: #8f8f8f;
+  --color-accent-content: #ffffff;
+  --color-neutral: #18181a;
+  --color-neutral-content: #e8e8e8;
 
-  --color-base-100: #1e2025;
-  --color-base-200: #17181c;
-  --color-base-300: #2a2c31;
-  --color-base-content: #e8e9ec;
+  --color-base-100: #1b1b1e;
+  --color-base-200: #242428;
+  --color-base-300: #2f2f34;
+  --color-base-content: #e8e8e8;
 
-  --color-info: #5FC1EE;
-  --color-info-content: #082430;
-  --color-success: #34c98f;
-  --color-success-content: #04231a;
-  --color-warning: #f7b626;
-  --color-warning-content: #1c1204;
-  --color-error: #f87171;
-  --color-error-content: #2a0a0a;
+  --color-info: #29b6f6;
+  --color-info-content: #00293b;
+  --color-success: #66bb6a;
+  --color-success-content: #0b2e0d;
+  --color-warning: #ffa726;
+  --color-warning-content: #3d2600;
+  --color-error: #ef5350;
+  --color-error-content: #380a09;
 }
 
 /* Hide native browser password icons so only our custom eye toggle shows */

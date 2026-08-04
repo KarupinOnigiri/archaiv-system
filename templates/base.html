@@ -1,41 +1,19 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="tesda" class="h-full bg-base-200">
+<html lang="en" data-theme="tesda-dark" class="h-full bg-base-200">
 <head>
   <meta charset="UTF-8">
-  <!-- Must run before the stylesheet below is even requested, so the very
-       first style/layout pass already knows the sidebar is collapsed --
-       no flash of "expanded" to transition away from. Doing this later
-       (e.g. from a script inside #sidebar itself, in <body>) is too late:
-       by then the head's CSS + blocking scripts have already given the
-       browser a chance to paint the default expanded state once, and the
-       sidebar's transition-all then animates that correction, producing
-       a visible open-then-snap-shut flash on every navigation. -->
   <script>
-    // "System mode" (Light / Dark) -- same anti-flash reasoning
-    // as the sidebar-collapsed class right below: this has to run before
-    // the stylesheet is even requested, or the browser paints the default
-    // "tesda" theme once and then visibly snaps to the saved one.
     try {
-      var savedTheme = localStorage.getItem('app-theme');
-      if (savedTheme === 'tesda-dark') {
+      var staffKey = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
+      var savedTheme = localStorage.getItem('app-theme:' + staffKey);
+      if (savedTheme === 'tesda') {
         document.documentElement.setAttribute('data-theme', savedTheme);
       }
     } catch (e) {
-      // Storage can be unavailable (private browsing, disabled cookies) --
-      // just fall back to the default tesda theme already on <html>.
     }
     if (localStorage.getItem('sidebar-collapsed') === '1') {
       document.documentElement.classList.add('sidebar-collapsed-init');
     }
-
-    // <main> reserves a permanent scrollbar gutter (style="scrollbar-gutter:
-    // stable") so its content doesn't shift when a scrollbar appears/
-    // disappears. <header> is a sibling of <main>, not a child of it, so it
-    // never gets that reservation -- its right-aligned content (bell icon,
-    // profile avatar) sits further right than anything inside <main> (e.g.
-    // page content, tables). The gutter width isn't a fixed number -- it
-    // varies by OS/browser -- so measure it once here and expose it as a CSS
-    // var the header can use to match, rather than guessing a pixel value.
     (function () {
       var probe = document.createElement('div');
       probe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;';
@@ -50,32 +28,60 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo-icon-hex.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
-  <!-- These collapsed-sidebar rules used to live in an inline <style> block
-       near the bottom of <body>, well after #sidebar itself is parsed. That
-       meant the rule making 'collapsed' (or the html-level init class) do
-       anything didn't exist in the CSSOM until the browser parsed all the
-       way down there -- so the sidebar could still get one paint at its
-       default expanded width before this rule ever arrived and snapped it
-       shut. Living in <head>, ahead of <body>, guarantees the rule is
-       already in place for the very first paint. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700&display=swap" rel="stylesheet">
   <style>
   #sidebar.collapsed,
   html.sidebar-collapsed-init #sidebar {
     width: 4.25rem;
   }
   #sidebar.collapsed .sidebar-label,
-  #sidebar.collapsed #sidebar-title,
-  #sidebar.collapsed #sidebar-title-dark,
-  html.sidebar-collapsed-init #sidebar .sidebar-label,
-  html.sidebar-collapsed-init #sidebar #sidebar-title,
-  html.sidebar-collapsed-init #sidebar #sidebar-title-dark {
+  html.sidebar-collapsed-init #sidebar .sidebar-label {
     display: none;
   }
-  #sidebar.collapsed #sidebar-toggle,
-  html.sidebar-collapsed-init #sidebar #sidebar-toggle {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
+  /* The "Archiv" wordmark used to toggle via display:none, which snapped
+     it in/out instantly while the sidebar's own width was still animating
+     over 200ms -- causing a visible twitch/glitch on expand. A later fix
+     staggered opacity behind max-width (delaying the fade so it would only
+     start once the box had already grown), but that reintroduced a glitch
+     of its own: the box reached its final grown size and position *while
+     still fully invisible*, then sat there for a beat before fading --
+     which reads as the text snapping into place at the last second rather
+     than emerging. Now width and opacity animate together, on the same
+     timeline, so the text visibly grows and fades in as a single smooth
+     motion instead of "grow invisibly, then pop, then fade". */
+  #sidebar-title {
+    display: inline-flex;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 6rem;
+    margin-left: 0.75rem;
+    opacity: 1;
+    transition: max-width 200ms ease, margin-left 200ms ease, opacity 200ms ease;
+  }
+  #sidebar.collapsed #sidebar-title {
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    transition: max-width 200ms ease, margin-left 200ms ease, opacity 120ms ease;
+  }
+  html.sidebar-collapsed-init #sidebar #sidebar-title {
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    transition: none;
+  }
+  /* The account trigger's avatar is the only thing left visible once the
+     sidebar is collapsed (name/chevron are .sidebar-label and hide via the
+     rule above). Centering it here, rather than relying on its normal
+     left-aligned flex layout, keeps it centered under the hover highlight
+     instead of pinned to one side. */
+  #sidebar.collapsed #sidebar-account label,
+  html.sidebar-collapsed-init #sidebar-account label {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
   }
   #sidebar-header,
   #sidebar nav {
@@ -96,22 +102,128 @@
   html[data-theme="tesda-dark"] .logo-theme-dark {
     display: inline-block;
   }
+
+  /* Colored sidebar in light mode: instead of plain white, the sidebar
+     sits on the same dark MD3 surface as the tesda-dark theme's
+     base-100/200/300 (this app's actual default look), while the main
+     content card stays light -- matching the reference "dark chrome,
+     light content" floating-panel layout. Overriding the base-* custom
+     properties on just this container means every descendant utility that
+     already reads them (bg-base-100, text-base-content/70,
+     hover:bg-base-200, border-base-300, ...) picks up the dark surfaces
+     automatically -- no need to touch each class in the sidebar markup
+     individually.
+     Classic Material Design: large areas stay neutral charcoal/graphite
+     rather than a saturated brand color, with real saturation reserved for
+     accents sitting on top (the active-tab highlight below). Depth comes
+     from small tonal steps between the base surface and its "containers"
+     (hover, border), not from color. #main-shell (the margin/background
+     area surrounding the floating content card) gets the same dark
+     surface as the sidebar, so the two read as one continuous panel with
+     the light content card floating on top of both. */
+  html[data-theme="tesda"] #sidebar,
+  html[data-theme="tesda"] #main-shell {
+    --color-base-100: #1b1b1e;
+    --color-base-200: #242428;
+    --color-base-300: #2f2f34;
+    --color-base-content: #e8e8e8;
+  }
+
+  /* Active nav item previously remapped --color-primary to a lightened
+     blue on this dark chrome (fine on white, too heavy here). It now uses
+     a fixed-color class instead (see .sidebar-link-active below), so no
+     override of --color-primary is needed here anymore. */
+
+  /* The content card itself must stay light even though its parent
+     (#main-shell) is now dark -- so the dark override above is undone
+     just for it, the same way it's undone for the account dropdown
+     below. */
+  html[data-theme="tesda"] #content-card {
+    --color-base-100: #ffffff;
+    --color-base-200: #f5f5f5;
+    --color-base-300: #e0e0e0;
+    --color-base-content: #212121;
+  }
+
+  /* In the native dark theme, the sidebar/#main-shell and the content
+     card previously both fell back to the same plain --color-base-100,
+     so the floating card had no visible edge against its background --
+     it all read as one flat black. Giving the card a step-lighter surface
+     here (the same small-step elevation idea as the light theme above,
+     just inverted) restores that separation without touching every
+     individual bg-base-100 utility in the page content.
+     NOTE: these hex values are a reasonable dark MD3 elevation scale, not
+     pulled from the app's real tesda-dark palette (defined in
+     output.css, which isn't available here) -- nudge them to match your
+     actual brand darks if they read slightly off. */
+  html[data-theme="tesda-dark"] #sidebar,
+  html[data-theme="tesda-dark"] #main-shell {
+    --color-base-100: #0e0e10;
+    --color-base-200: #17171a;
+    --color-base-300: #202024;
+  }
+  html[data-theme="tesda-dark"] #content-card {
+    --color-base-100: #1c1c20;
+    --color-base-200: #26262b;
+    --color-base-300: #303036;
+    --color-base-content: #e8e8e8;
+  }
+
+  /* The account menu is anchored to the bottom of the (dark) sidebar, but
+     the popup itself should stay a light floating card -- like the
+     notifications popup anchored to the (light) content header -- rather
+     than inheriting the sidebar's dark surface. So the sidebar override
+     above is undone just for it. */
+  html[data-theme="tesda"] #sidebar .dropdown-content {
+    --color-base-100: #ffffff;
+    --color-base-200: #f5f5f5;
+    --color-base-300: #e0e0e0;
+    --color-base-content: #212121;
+  }
+
+  /* Same idea in dark mode: the account/notification popups should read
+     as a raised card above the content card, not disappear into the
+     sidebar's darker surface. */
+  html[data-theme="tesda-dark"] #sidebar .dropdown-content {
+    --color-base-100: #2a2a30;
+    --color-base-200: #323238;
+    --color-base-300: #3a3a41;
+    --color-base-content: #e8e8e8;
+  }
+
+  /* Notification tabs (All/Unread) keep this exact blue for their active
+     state in both themes, rather than following --color-primary (which
+     varies by theme). Fixed hex, not a theme var. */
+  .notif-tab-active {
+    background-color: #1565C0;
+    color: #ffffff;
+  }
+
+  /* Sidebar active nav item: same fixed-hex treatment as the notif tabs
+     above, so it stays this blue on the dark chrome instead of following
+     --color-primary's dark-mode lighten. */
+  .sidebar-link-active {
+    background-color: #1565C0;
+    color: #ffffff;
+  }
+
+  /* The sidebar logo normally swaps to its light-colored variant only in
+     dark mode (see the .logo-theme-* rules above). Now that the sidebar
+     itself sits on a dark navy surface in light mode too, it needs that
+     same light-colored logo regardless of the overall theme. */
+  html[data-theme="tesda"] #sidebar .logo-theme-light {
+    display: none;
+  }
+  html[data-theme="tesda"] #sidebar .logo-theme-dark {
+    display: inline-block;
+  }
   </style>
   <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </head>
-<body class="m-0 h-full overflow-hidden bg-base-200">
+<body class="m-0 h-full overflow-hidden bg-base-300">
 
-  <!-- Viewport gate: this app's fixed sidebar + data tables need real
-       screen width to be usable (see earlier discussion -- this isn't a
-       "make it responsive" fix, the whole shell assumes a wide layout).
-       Rather than let the layout break silently on a phone, show an
-       honest message below the `lg` breakpoint (1024px) and hide the app
-       shell entirely until the viewport is wide enough. Pure CSS via
-       Tailwind's responsive classes (hidden lg:flex / flex lg:hidden) --
-       no JS involved, so there's no flash of broken layout while a script
-       loads, and it reacts live if someone resizes the window instead of
-       only checking once on page load. -->
+
   <div class="flex lg:hidden fixed inset-0 z-[100] bg-base-200 flex-col items-center justify-center gap-4 px-8 text-center">
     <span class="w-14 h-14 rounded-full bg-base-100 border border-base-300 flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -129,9 +241,7 @@
     ("Reports", "/reports", "chart")
   ] %}
 
-  <!-- Resolve a breadcrumb label for whatever route is currently active.
-       A plain "set" assigned inside a "for" loop doesn't persist to the
-       outer scope in Jinja, so this uses a namespace object instead. -->
+
   {% set ns = namespace(current_label="Dashboard") %}
   {% for label, href, icon in nav_items %}
     {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
@@ -142,26 +252,28 @@
   <div class="hidden lg:flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="relative bg-base-100 border-r border-base-300 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
-      <button type="button" id="sidebar-toggle" class="absolute top-2 right-2 z-10 shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
-              aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-      </button>
+    <aside id="sidebar" class="relative bg-base-100 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
 
-      <div id="sidebar-header" class="flex items-center gap-3 min-w-0 px-6 pt-16 pb-4 shrink-0">
-        <span class="w-5 h-7 shrink-0 flex items-center justify-center">
-          <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="logo-theme-light w-10 h-10 shrink-0 object-contain max-w-none">
-          <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="flowBox" class="logo-theme-dark w-10 h-10 shrink-0 object-contain max-w-none">
-        </span>
-        <img id="sidebar-title" src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="logo-theme-light h-7 w-auto shrink-0 ml-3">
-        <img id="sidebar-title-dark" src="{{ url_for('static', filename='images/logo-text-dark.png') }}" alt="flowBox" class="logo-theme-dark h-7 w-auto shrink-0 ml-3">
+      <div id="sidebar-header" class="flex items-center justify-between gap-3 min-w-0 pl-6 pr-3 pt-8 pb-4 shrink-0">
+        <div class="flex items-center min-w-0">
+          <span class="w-5 h-7 shrink-0 flex items-center justify-center">
+            <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="Archiv" class="logo-theme-light w-7.5 h-7.5 shrink-0 object-contain max-w-none">
+            <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="Archiv" class="logo-theme-dark w-7.5 h-7.5 shrink-0 object-contain max-w-none">
+          </span>
+          <span id="sidebar-title" class="shrink-0 ml-3 flex items-center text-xl text-base-content tracking-tight" style="font-family: 'Archivo', sans-serif; font-weight: 700; height: 1.5rem; line-height: 1.5rem;">Archiv</span>
+        </div>
+        <button type="button" id="sidebar-toggle" class="sidebar-label shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
+                aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        </button>
       </div>
+
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
         <a href="{{ href }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == href %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+                  {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             {% if icon == "grid" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -187,7 +299,7 @@
         {% if staff and staff.role in ["admin", "in_charge"] %}
         <a href="/staff"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/staff' %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+                  {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
           </span>
@@ -198,7 +310,7 @@
         {% if staff and staff.role == "admin" %}
         <a href="/audit-log"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/audit-log' %}bg-primary text-primary-content{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+                  {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </span>
@@ -206,14 +318,100 @@
         </a>
         {% endif %}
       </nav>
+
+      {% if staff %}
+      <!-- ACCOUNT (bottom of sidebar) -->
+      <div id="sidebar-account" class="shrink-0 p-3">
+        <div class="dropdown dropdown-top w-full">
+          <label tabindex="0" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
+            <div class="bg-primary text-primary-content rounded-full w-[1.8rem] h-[1.8rem] flex items-center justify-center shrink-0">
+              <span class="text-[12px] font-semibold">{{ staff.username[0] | upper }}</span>
+            </div>
+            <span class="sidebar-label min-w-0 flex-1 text-left overflow-hidden">
+              <span class="block text-[13px] font-medium text-base-content leading-tight line-clamp-2" title="{{ staff_full_name }}">{{ staff_full_name }}</span>
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-label w-[1.05rem] h-[1.05rem] text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
+          </label>
+
+          <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed left-3 bottom-[76px] w-[300px] z-50 p-2">
+
+            <!-- Profile card -->
+            <button type="button" onclick="document.getElementById('my-account-modal').showModal()"
+                    class="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl hover:bg-base-200 text-left transition-colors">
+              <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center shrink-0">
+                <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-base font-semibold text-base-content leading-tight truncate">{{ staff_full_name }}</p>
+                <p class="text-xs text-base-content/50 mt-0.5">See your profile</p>
+              </div>
+            </button>
+
+            <div class="border-t border-base-200 my-2"></div>
+
+            <!-- Feature rows -->
+            <div class="space-y-0.5">
+              <button type="button" onclick="showToast('Settings coming soon', 'info')"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Settings &amp; privacy</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+
+              <button type="button" onclick="showToast('Help &amp; support coming soon', 'info')"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Help &amp; support</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+
+              <button type="button" onclick="document.getElementById('display-accessibility-modal').showModal()"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Display &amp; accessibility</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+
+              <button type="button" onclick="showToast('Thanks — feedback is noted', 'info')"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Give feedback</span>
+              </button>
+            </div>
+
+            <div class="border-t border-base-200 my-2"></div>
+
+            <button type="button" onclick="document.getElementById('logout-confirm-modal').showModal()"
+                    class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+              <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </span>
+              <span class="flex-1 text-sm font-medium text-base-content">Log out</span>
+            </button>
+
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </aside>
 
     <!-- MAIN COLUMN -->
-    <div class="flex-1 flex flex-col h-full min-w-0">
+    <div id="main-shell" class="flex-1 flex flex-col h-full min-w-0 pt-2 pr-2 pb-2 bg-base-100">
+
+      <!-- CONTENT CARD -->
+      <div id="content-card" class="flex-1 flex flex-col min-h-0 bg-base-100 rounded-[4.8px] shadow-sm overflow-hidden">
 
       {% if staff %}
-      <!-- TOP BAR -->
-      <header class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-14 flex items-center justify-between gap-4">
+      <!-- CONTENT HEADER -->
+      <div class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
         <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
@@ -232,12 +430,7 @@
 
         <div class="flex items-center gap-3 shrink-0" style="padding-right: var(--main-scrollbar-gutter, 0px);">
 
-          <!-- Notifications -- restyled after Facebook's notifications
-               popup: bold header with a settings placeholder (same
-               "coming soon" toast pattern as the account menu), each row
-               gets an icon avatar with the unread dot on the right side
-               (Facebook puts it there, not the left), and the footer is a
-               full-width hover row rather than a plain bordered link. -->
+          <!-- Notifications -->
           <div class="dropdown dropdown-end">
             <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -245,7 +438,7 @@
               <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
               {% endif %}
             </label>
-            <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-6 top-14 w-[360px] z-50 p-2">
+            <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-8 top-[72px] w-[360px] z-50 p-2">
 
               <div class="flex items-center justify-between px-2 pt-1 pb-2">
                 <p class="text-xl font-bold text-base-content">Notifications</p>
@@ -264,7 +457,7 @@
 
               <div class="flex items-center gap-2 px-2 pb-2">
                 <button type="button" id="notif-tab-all" onclick="setNotifTab('all')"
-                        class="notif-tab text-sm font-medium px-3 py-1.5 rounded-full bg-primary text-primary-content">
+                        class="notif-tab notif-tab-active text-sm font-medium px-3 py-1.5 rounded-full">
                   All
                 </button>
                 <button type="button" id="notif-tab-unread" onclick="setNotifTab('unread')"
@@ -296,127 +489,16 @@
 
               <div class="border-t border-base-200 my-2"></div>
 
-
               <a href="/notifications" class="block text-center text-sm font-medium text-base-content px-2.5 py-2 rounded-xl hover:bg-base-200 transition-colors">
                 See previous notifications
               </a>
             </div>
           </div>
 
-          <!-- Account menu -- styled after Facebook's profile popup: a
-               profile card up top (avatar, name, "See your profile" link),
-               then a list of icon rows, then sign-out on its own at the
-               bottom. Rows for features that don't exist yet (Settings,
-               Help, Display, Feedback) still render so the layout is future
-               -proof, but fire a "coming soon" toast instead of a dead link
-               or a 404 -- reuses the existing showToast() in app.js. -->
-          <div class="dropdown dropdown-end">
-            <label tabindex="0" class="btn btn-ghost btn-sm gap-2 pl-2 pr-1.5 normal-case">
-              <span class="text-sm text-base-content/70 hidden sm:inline">Hi, <span class="font-medium text-base-content">{{ staff_first_name }}</span></span>
-              <div class="bg-primary text-primary-content rounded-full w-8 h-8 flex items-center justify-center shrink-0">
-                <span class="text-xs font-semibold">{{ staff.username[0] | upper }}</span>
-              </div>
-            </label>
-
-            <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-6 top-14 w-[360px] z-50 p-2">
-
-              <!-- Profile card -->
-              <button type="button" onclick="showToast('Profile page coming soon', 'info')"
-                      class="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl hover:bg-base-200 text-left transition-colors">
-                <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center shrink-0">
-                  <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-base font-semibold text-base-content leading-tight truncate">{{ staff_full_name }}</p>
-                  <p class="text-xs text-base-content/50 mt-0.5">See your profile</p>
-                </div>
-              </button>
-
-              <div class="border-t border-base-200 my-2"></div>
-
-              <!-- Feature rows -->
-              <div class="space-y-0.5">
-
-                <button type="button" onclick="showToast('Settings coming soon', 'info')"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">Settings &amp; privacy</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-
-                <button type="button" onclick="showToast('Help &amp; support coming soon', 'info')"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">Help &amp; support</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-
-                <button type="button" id="system-mode-toggle-btn" onclick="toggleSystemMode()"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <span id="system-mode-icon" class="w-[18px] h-[18px] text-base-content/70">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-                    </span>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">System mode</span>
-                  <span id="system-mode-label" class="text-xs text-base-content/50">Light Mode</span>
-                </button>
-
-                <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <span id="toast-style-icon" class="w-[18px] h-[18px] text-base-content/70">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-                    </span>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
-                  <span id="toast-style-label" class="text-xs text-base-content/50">Light Mode</span>
-                </button>
-
-                <button type="button" onclick="showToast('Display &amp; accessibility coming soon', 'info')"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">Display &amp; accessibility</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-
-                <button type="button" onclick="showToast('Thanks — feedback is noted', 'info')"
-                        class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                  <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                  </span>
-                  <span class="flex-1 text-sm font-medium text-base-content">Give feedback</span>
-                </button>
-
-              </div>
-
-              <div class="border-t border-base-200 my-2"></div>
-
-              <button type="button" onclick="document.getElementById('logout-confirm-modal').showModal()"
-                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
-                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                </span>
-                <span class="flex-1 text-sm font-medium text-base-content">Log out</span>
-              </button>
-
-            </div>
-          </div>
-
         </div>
-      </header>
+      </div>
 
-      <!-- Logout confirmation. A native <dialog>, not another hx-fetched
-           modal like the ones in assets/ -- there's no data to load, so a
-           static dialog already in the DOM (with built-in backdrop, ESC-
-           to-close, and focus trapping) is simpler than the htmx round trip
-           the other modals need. -->
+      <!-- Logout confirmation modal -->
       <dialog id="logout-confirm-modal" class="modal">
         <div class="modal-box max-w-sm">
           <h3 class="font-bold text-lg mb-2">Log out?</h3>
@@ -434,6 +516,156 @@
           <button>close</button>
         </form>
       </dialog>
+
+      <!-- My Account modal -->
+      <dialog id="my-account-modal" class="modal">
+        <div class="modal-box max-w-md">
+
+          <div class="flex items-center gap-3">
+            <div class="relative shrink-0">
+              <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center overflow-hidden">
+                <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
+              </div>
+              <button type="button" onclick="showToast('Profile photo upload coming soon', 'info')"
+                      title="Change profile photo"
+                      class="absolute -bottom-1 -right-1 bg-base-100 border border-base-300 rounded-full w-6 h-6 flex items-center justify-center shadow hover:bg-base-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </button>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-lg font-bold truncate">{{ staff_full_name }}</h3>
+              <p class="text-sm text-base-content/50 truncate">@{{ staff.username }}</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mt-5 text-sm">
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME</p>
+              <p class="mt-0.5">{{ staff.username }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE</p>
+              <p class="mt-0.5 capitalize">{{ staff.role.replace("_", " ") }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACCOUNT STATUS</p>
+              <p class="mt-0.5">
+                {% if staff.created_at is defined and staff.created_at %}
+                  Active since {{ staff.created_at | format_date('%b %d, %Y') }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">LAST SIGNED IN</p>
+              <p class="mt-0.5">
+                {% if staff.last_login is defined and staff.last_login %}
+                  {{ staff.last_login.strftime('%b %d, %Y %I:%M %p') }}
+                {% else %}
+                  This session
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div class="border-t border-base-200 my-5"></div>
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-base-content">Password</p>
+              <p class="text-xs text-base-content/50 mt-0.5">••••••••</p>
+            </div>
+            <button type="button"
+                    onclick="document.getElementById('my-account-modal').close(); document.getElementById('change-password-modal').showModal()"
+                    class="btn btn-outline btn-sm">
+              Change password
+            </button>
+          </div>
+
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn btn-sm">Close</button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Change password modal -->
+      <dialog id="change-password-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Change password</h3>
+          <p class="text-xs text-base-content/50 mb-4">Coming soon.</p>
+
+          <div class="space-y-2">
+            <input type="password" disabled placeholder="Current password"
+                   class="input input-bordered input-sm w-full" />
+            <input type="password" disabled placeholder="New password"
+                   class="input input-bordered input-sm w-full" />
+            <input type="password" disabled placeholder="Confirm new password"
+                   class="input input-bordered input-sm w-full" />
+          </div>
+
+          <div class="modal-action">
+            <button type="button"
+                    onclick="document.getElementById('change-password-modal').close(); document.getElementById('my-account-modal').showModal()"
+                    class="btn btn-sm">
+              Back
+            </button>
+            <button type="button" disabled onclick="showToast('Password change coming soon', 'info')"
+                    class="btn btn-primary btn-sm">
+              Update password
+            </button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Display & accessibility modal -->
+      <dialog id="display-accessibility-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Display &amp; accessibility</h3>
+          <p class="text-xs text-base-content/50 mb-4">These preferences are saved to this account and this browser.</p>
+
+          <div class="space-y-0.5">
+            <button type="button" id="theme-mode-toggle-btn" onclick="toggleThemeMode()"
+                    class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+              <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                <span id="theme-mode-icon" class="w-[18px] h-[18px] text-base-content/70">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                </span>
+              </span>
+              <span class="flex-1 text-sm font-medium text-base-content">Theme mode</span>
+              <span id="theme-mode-label" class="text-xs text-base-content/50">Light Mode</span>
+            </button>
+
+            <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
+                    class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+              <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                <span id="toast-style-icon" class="w-[18px] h-[18px] text-base-content/70">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                </span>
+              </span>
+              <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
+              <span id="toast-style-label" class="text-xs text-base-content/50">Light Mode</span>
+            </button>
+          </div>
+
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn btn-sm">Close</button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
       {% endif %}
 
       <!-- PAGE CONTENT -->
@@ -441,23 +673,15 @@
         {% block content %}{% endblock %}
       </main>
 
+      </div>
+      <!-- /CONTENT CARD -->
+
     </div>
 
   </div>
 
-  <!-- Toast notifications: any response can trigger one via the HX-Trigger
-       header, e.g. HX-Trigger: {"show-toast": {"message": "...", "type": "success"}}
-       "type" is optional and defaults to "success" ("error"/"info" also supported). -->
   <div id="toast-container" class="fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
 
-  <!-- Session timeout modal: whenever an API call comes back 401 (session
-       expired from inactivity), this blocking dialog replaces the usual
-       error toast. A toast is easy to miss and, once the session is gone,
-       every further action on the page will keep failing anyway -- so
-       this needs to be unmissable and funnel the person straight to
-       logging back in, rather than let them keep clicking around against
-       a dead session. No cancel/backdrop-dismiss on purpose: logging in
-       again is the only way forward from here. -->
   <dialog id="session-timeout-modal" class="modal">
     <div class="modal-box max-w-sm">
       <h3 class="font-bold text-lg mb-2">Session timed out</h3>
@@ -470,7 +694,6 @@
     </div>
   </dialog>
 
-
 <script>
 (function() {
   const sidebar = document.getElementById('sidebar');
@@ -482,12 +705,6 @@
     toggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
   }
 
-  // The head script (before the stylesheet, before any paint) already
-  // marked <html> as collapsed if localStorage said so, and the CSS above
-  // renders the sidebar collapsed off that class from the very first
-  // frame -- no flash. Mirror that onto #sidebar itself here so the
-  // click-toggle logic below (which only checks #sidebar.collapsed) stays
-  // consistent, then drop the now-redundant html class.
   if (document.documentElement.classList.contains('sidebar-collapsed-init')) {
     sidebar.classList.add('collapsed');
     document.documentElement.classList.remove('sidebar-collapsed-init');
@@ -496,10 +713,9 @@
   syncToggleState();
 
   sidebar.addEventListener('click', function(e) {
-    // Clicking a nav link (or anything inside one, like its icon) should
-    // navigate as normal, not toggle the sidebar -- only clicks on the
-    // logo/header or the sidebar's own background do that.
     if (e.target.closest('a')) return;
+    if (e.target.closest('#sidebar-account')) return;
+    if (e.target.closest('.dropdown-content')) return;
 
     const collapsed = sidebar.classList.toggle('collapsed');
     sidebar.setAttribute('aria-expanded', String(!collapsed));
@@ -508,10 +724,6 @@
   });
 })();
 
-// Marks every notification read server-side, then reloads so the badge,
-// list styling, and "Mark all as read" button all reflect the new state
-// at once -- same fetch+CSRF+reload pattern the toast "Undo" action uses,
-// rather than trying to hand-patch the dropdown's DOM in place.
 function markAllNotificationsRead() {
   fetch('/api/v1/notifications/mark-all-read', {
     method: 'POST',
@@ -529,14 +741,10 @@ function markAllNotificationsRead() {
   }).catch(() => showToast("Couldn't mark notifications as read", 'error'));
 }
 
-// Filters the already-rendered notification rows client-side -- no extra
-// request needed since every row's read state is already in the DOM via
-// data-unread. Mirrors Facebook's All/Unread pill tabs in the same popup.
 function setNotifTab(tab) {
   document.querySelectorAll('.notif-tab').forEach((btn) => {
     const active = btn.id === `notif-tab-${tab}`;
-    btn.classList.toggle('bg-primary', active);
-    btn.classList.toggle('text-primary-content', active);
+    btn.classList.toggle('notif-tab-active', active);
     btn.classList.toggle('text-base-content/60', !active);
     btn.classList.toggle('hover:bg-base-200', !active);
   });
@@ -554,64 +762,39 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
-// "System mode" -- the actual site-wide theme, backed by the two daisyUI
-// themes defined in input.css: 'tesda' (this app's fixed light brand theme,
-// untouched) and 'tesda-dark' (a proper dark re-tune of the same brand
-// palette). This really does re-theme the whole app by swapping
-// <html data-theme="...">, which every daisyUI/Tailwind color in the CSS
-// resolves against -- so no per-component JS is needed elsewhere.
-const SYSTEM_MODES = ['tesda', 'tesda-dark'];
-const SYSTEM_MODE_LABELS = { tesda: 'Light Mode', 'tesda-dark': 'Dark Mode' };
-const SYSTEM_MODE_ICONS = {
+const THEME_MODES = ['tesda', 'tesda-dark'];
+const THEME_MODE_LABELS = { tesda: 'Light Mode', 'tesda-dark': 'Dark Mode' };
+const THEME_MODE_ICONS = {
   tesda: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   'tesda-dark': '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
 };
 
-// The head script already applied the saved theme to <html> before first
-// paint (if one was saved) -- read it back from the DOM here rather than
-// localStorage again, so this stays in sync even if that attribute was set
-// some other way.
-let SYSTEM_MODE = document.documentElement.getAttribute('data-theme') || 'tesda';
-if (!SYSTEM_MODES.includes(SYSTEM_MODE)) SYSTEM_MODE = 'tesda';
+const STAFF_KEY = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
 
-function syncSystemModeLabel() {
-  const label = document.getElementById('system-mode-label');
-  if (label) label.textContent = SYSTEM_MODE_LABELS[SYSTEM_MODE];
-  const icon = document.getElementById('system-mode-icon');
-  if (icon) icon.innerHTML = SYSTEM_MODE_ICONS[SYSTEM_MODE];
+let THEME_MODE = document.documentElement.getAttribute('data-theme') || 'tesda';
+if (!THEME_MODES.includes(THEME_MODE)) THEME_MODE = 'tesda';
+
+function syncThemeModeLabel() {
+  const label = document.getElementById('theme-mode-label');
+  if (label) label.textContent = THEME_MODE_LABELS[THEME_MODE];
+  const icon = document.getElementById('theme-mode-icon');
+  if (icon) icon.innerHTML = THEME_MODE_ICONS[THEME_MODE];
 }
-syncSystemModeLabel();
+syncThemeModeLabel();
 
-function toggleSystemMode() {
-  const idx = SYSTEM_MODES.indexOf(SYSTEM_MODE);
-  SYSTEM_MODE = SYSTEM_MODES[(idx + 1) % SYSTEM_MODES.length];
-  document.documentElement.setAttribute('data-theme', SYSTEM_MODE);
+function toggleThemeMode() {
+  const idx = THEME_MODES.indexOf(THEME_MODE);
+  THEME_MODE = THEME_MODES[(idx + 1) % THEME_MODES.length];
+  document.documentElement.setAttribute('data-theme', THEME_MODE);
   try {
-    localStorage.setItem('app-theme', SYSTEM_MODE);
-  } catch (e) {
-    // Non-critical -- the theme still applies for the rest of this session.
-  }
-  syncSystemModeLabel();
-  showToast(`System mode set to ${SYSTEM_MODE_LABELS[SYSTEM_MODE]}`, 'success');
+    localStorage.setItem('app-theme:' + STAFF_KEY, THEME_MODE);
+  } catch (e) {}
+  syncThemeModeLabel();
+  showToast(`Theme mode set to ${THEME_MODE_LABELS[THEME_MODE]}`, 'success');
 }
 
-// Three notification styles the "Notification style" toggle cycles
-// through:
-//  - 'light'    this app's normal light card (default)
-//  - 'inverted' a dark card loosely *inspired* by MD3's "inverse
-//               surface" guidance, but otherwise keeping this app's own
-//               icon chips, shape, and per-type colors
-//  - 'md3'      a snackbar built to the actual Material Design 3 spec --
-//               see renderMd3Toast() below for what that means in
-//               practice
-// Persisted so the choice survives a reload/new tab.
 const TOAST_STYLES = ['light', 'inverted', 'md3'];
 const TOAST_STYLE_LABELS = { light: 'Light Mode', inverted: 'Dark Mode', md3: 'Material Design' };
-
-// Icon shown on the "Notification style" row itself, swapped to match
-// whichever style is currently active: a sun for Light Mode, a moon for
-// Dark Mode, and a palette (evoking Material's "design system" identity
-// rather than light/dark) for Material Design.
 const TOAST_STYLE_ICONS = {
   light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   inverted: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
@@ -620,12 +803,9 @@ const TOAST_STYLE_ICONS = {
 
 let TOAST_STYLE = 'light';
 try {
-  const saved = localStorage.getItem('toast-style');
+  const saved = localStorage.getItem('toast-style:' + STAFF_KEY);
   if (TOAST_STYLES.includes(saved)) TOAST_STYLE = saved;
-} catch (e) {
-  // Storage can be unavailable (private browsing, disabled cookies, etc.) --
-  // fall back to the light style rather than let this throw.
-}
+} catch (e) {}
 
 function syncToastStyleLabel() {
   const label = document.getElementById('toast-style-label');
@@ -639,39 +819,24 @@ function toggleToastStyle() {
   const idx = TOAST_STYLES.indexOf(TOAST_STYLE);
   TOAST_STYLE = TOAST_STYLES[(idx + 1) % TOAST_STYLES.length];
   try {
-    localStorage.setItem('toast-style', TOAST_STYLE);
-  } catch (e) {
-    // Non-critical -- the toggle still works for the rest of this session.
-  }
+    localStorage.setItem('toast-style:' + STAFF_KEY, TOAST_STYLE);
+  } catch (e) {}
   syncToastStyleLabel();
   showToast(`Notification style set to ${TOAST_STYLE_LABELS[TOAST_STYLE]}`, 'success');
 }
 
 const TOAST_DEFAULT_DURATION_MS = 4000;
-const TOAST_ACTION_DURATION_MS = 6000; // give people longer to notice/click Undo
+const TOAST_ACTION_DURATION_MS = 6000;
 
-// Opens the blocking "session timed out" dialog (see markup near
-// #toast-container). Guarded against being called twice in a row --
-// e.g. two in-flight requests both coming back 401 at once -- since
-// dialog.showModal() throws if it's already open.
 function showSessionTimeoutModal() {
   const modal = document.getElementById('session-timeout-modal');
   if (modal && !modal.open) modal.showModal();
 }
 (function () {
   const modal = document.getElementById('session-timeout-modal');
-  // Block the native Escape-to-close a <dialog> gets for free -- logging
-  // in again is the only valid next step once the session's gone, so
-  // dismissing this without doing that would just leave the person
-  // clicking around against a dead session.
   if (modal) modal.addEventListener('cancel', (e) => e.preventDefault());
 })();
 
-// Per-type visuals for the toast card: the tint behind the icon, the
-// icon markup itself (success/error render a colored glyph directly;
-// warning/info render a white glyph on a solid circle, matching the
-// reference design), and the color used for the "Undo"-style action
-// link and the countdown bar fill.
 const TOAST_VARIANTS = {
   success: {
     iconWrap: 'bg-emerald-100',
@@ -703,10 +868,6 @@ const TOAST_VARIANTS = {
   },
 };
 
-// MD3 "inverse surface" palette for the same four types -- background/text
-// deliberately flip dark regardless of the app's own (light) theme, per
-// Material's snackbar spec. Icon chips, action label, and countdown bar all
-// move to lighter tints so they hold contrast against the dark card.
 const TOAST_VARIANTS_DARK = {
   success: {
     iconWrap: 'bg-emerald-400/20',
@@ -738,21 +899,6 @@ const TOAST_VARIANTS_DARK = {
   },
 };
 
-/**
- * message     — bold headline text (kept as first arg for backward
- *                compatibility with existing call sites)
- * type        — 'success' (default) | 'error' | 'info' | 'warning'
- * action      — optional {
- *                 label: 'Undo',
- *                 url: '/api/v1/assets/5/undo-delete',   // endpoint to call
- *                 method: 'POST',                        // default POST
- *                 successMessage: 'Delete undone',        // toast shown after a successful call
- *                 refreshTarget: '#asset-table-container',// selector to re-fetch on success
- *                 refreshUrl: '/api/v1/assets'            // GET url for the refresh (defaults to current path)
- *               }
- * duration    — optional override in ms
- * description — optional supporting line shown under the headline
- */
 function showToast(message, type, action, duration, description) {
   const container = document.getElementById('toast-container');
   if (!container || !message) return;
@@ -765,22 +911,12 @@ function showToast(message, type, action, duration, description) {
   const variantMap = TOAST_STYLE === 'inverted' ? TOAST_VARIANTS_DARK : TOAST_VARIANTS;
   const variant = variantMap[type] || variantMap.success;
 
-  // Undo-style actions get the slightly wider "snackbar" card (there's an
-  // action label to fit, plus the countdown bar doubles as a "time left to
-  // click Undo" cue). Everything else -- plain confirmations, "coming soon"
-  // notices, errors with nothing to undo -- gets the narrower, lighter
-  // "toast" card with no countdown bar. Both are ~20-30% smaller than the
-  // original single card size.
   const isSnackbar = !!(action && action.label);
 
   const toast = document.createElement('div');
   toast.className = `relative ${isSnackbar ? 'w-[310px]' : 'w-72'} ${TOAST_STYLE === 'inverted' ? 'bg-[#313033]' : 'bg-white'} rounded-lg ${isSnackbar ? 'shadow-xl' : 'shadow-lg'} ring-1 ${TOAST_STYLE === 'inverted' ? 'ring-white/10' : 'ring-black/5'} overflow-hidden
                       pointer-events-auto transition-all duration-300 ease-out opacity-0 translate-x-6`;
 
-  // Icon and text sit on one row. items-center (rather than items-start)
-  // keeps the icon's center level with the title's midline, which also
-  // means the close button -- itself vertically centered inside the
-  // title row below -- lines up with the icon too, not just the text.
   const body = document.createElement('div');
   body.className = 'flex items-center gap-2.5 p-3';
 
@@ -792,10 +928,6 @@ function showToast(message, type, action, duration, description) {
   const content = document.createElement('div');
   content.className = 'flex-1 min-w-0';
 
-  // items-center here (was items-start) is what centers the close
-  // button against the title's own line -- not the full card height,
-  // which would drift it away from the title whenever a description or
-  // action line is also present below.
   const titleRow = document.createElement('div');
   titleRow.className = 'flex items-center justify-between gap-2';
 
@@ -804,8 +936,6 @@ function showToast(message, type, action, duration, description) {
   titleEl.textContent = message;
   titleRow.appendChild(titleEl);
 
-  // Round hit target with a hover fill for a clearer affordance and a
-  // bigger tap target than a bare icon.
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.setAttribute('aria-label', 'Dismiss');
@@ -843,12 +973,6 @@ function showToast(message, type, action, duration, description) {
           },
         }).then((res) => {
           if (res.ok) {
-            // Full reload instead of the old htmx partial swap. That code
-            // defaulted refreshUrl to window.location.pathname (the whole
-            // page) whenever a route didn't set one explicitly, which
-            // dumped the entire <html> -- sidebar and all -- into the
-            // small #asset-table-container div. A reload sidesteps that
-            // class of bug entirely.
             if (action.successMessage) {
               sessionStorage.setItem('pending-toast', JSON.stringify({ message: action.successMessage, type: 'success' }));
             }
@@ -868,11 +992,6 @@ function showToast(message, type, action, duration, description) {
   body.appendChild(content);
   toast.appendChild(body);
 
-  // Countdown bar: a thin track the full width of the card with a
-  // colored fill that shrinks from 100% to 0% over the toast's
-  // lifetime, so the person can see how long they have left to read
-  // or act on it (and, on snackbars, click Undo) before it disappears.
-  // Shown on every toast, snackbar or plain.
   const track = document.createElement('div');
   track.className = `h-[2px] w-full ${variant.track}`;
   const fill = document.createElement('div');
@@ -885,8 +1004,6 @@ function showToast(message, type, action, duration, description) {
 
   container.appendChild(toast);
 
-  // Force a reflow so the enter transition actually plays instead of
-  // the element appearing already in its final state.
   requestAnimationFrame(() => {
     toast.classList.remove('opacity-0', 'translate-x-6');
   });
@@ -894,10 +1011,6 @@ function showToast(message, type, action, duration, description) {
   const effectiveDuration = duration || (action ? TOAST_ACTION_DURATION_MS : TOAST_DEFAULT_DURATION_MS);
   let remainingMs = effectiveDuration;
 
-  // Drives the countdown bar by transitioning its width down to 0 over
-  // `ms`. Runs on its own rAF tick (rather than reusing the entry
-  // transition's tick) so it starts only once the bar is actually
-  // visible at 100% width. No-op when there's no bar (plain toasts).
   function runCountdown(ms) {
     if (!fill) return;
     fill.style.transition = 'none';
@@ -910,10 +1023,6 @@ function showToast(message, type, action, duration, description) {
   runCountdown(remainingMs);
   dismissTimer = setTimeout(dismiss, remainingMs);
 
-  // Pause the countdown (both the timer and the visual bar) while the
-  // person is hovering/reading it, and resume with whatever time was
-  // actually left rather than restarting the clock. Plain toasts (no
-  // track/fill) still pause the timer itself, just without a bar to animate.
   toast.addEventListener('mouseenter', () => {
     clearTimeout(dismissTimer);
     if (track && fill) {
@@ -932,22 +1041,6 @@ function showToast(message, type, action, duration, description) {
   });
 }
 
-// Builds a snackbar to the actual Material Design 3 spec, as its own
-// code path rather than another branch inside showToast() above -- MD3
-// snackbars differ from this app's light/inverted cards in more than
-// color:
-//  - Container: 4dp corner radius ("extra small" shape), M3 baseline
-//    inverse-surface color (#322F35) with inverse-on-surface text
-//    (#F5EFF7), elevation level 3 shadow. Width is spec-bound between
-//    344dp and 672dp rather than a fixed card width.
-//  - No leading icon and no per-type coloring. MD3 snackbars are
-//    deliberately neutral regardless of success/error/warning/info --
-//    the spec reserves color-coded severity for banners and dialogs, so
-//    a "success" and an "error" snackbar look identical apart from the
-//    text.
-//  - At most one text action (label-large type, inverse-primary color
-//    #D0BCFF) plus an optional icon-only dismiss button -- no countdown
-//    bar, since that's not part of the spec.
 function renderMd3Toast(container, message, type, action, duration, description) {
   const hasAction = !!(action && action.label);
 
@@ -984,7 +1077,7 @@ function renderMd3Toast(container, message, type, action, duration, description)
   if (hasAction) {
     const actionBtn = document.createElement('button');
     actionBtn.type = 'button';
-    actionBtn.className = 'shrink-0 text-[#D0BCFF] text-sm font-medium leading-5 px-2.5 py-1.5 rounded hover:bg-white/10';
+    actionBtn.className = 'shrink-0 text-[#1565C0] text-sm font-medium leading-5 px-2.5 py-1.5 rounded hover:bg-white/10';
     actionBtn.textContent = action.label;
     actionBtn.addEventListener('click', () => {
       if (action.url) {
@@ -1028,9 +1121,6 @@ function renderMd3Toast(container, message, type, action, duration, description)
   let pauseStart = Date.now();
   dismissTimer = setTimeout(dismiss, remainingMs);
 
-  // No visual bar to animate here (not part of the MD3 spec), but
-  // pausing the auto-dismiss on hover is still good UX, so it's kept --
-  // just tracked via timestamps instead of a fill's rendered width.
   toast.addEventListener('mouseenter', () => {
     clearTimeout(dismissTimer);
     remainingMs -= (Date.now() - pauseStart);
@@ -1042,24 +1132,11 @@ function renderMd3Toast(container, message, type, action, duration, description)
   });
 }
 
-// htmx dispatches HX-Trigger events on the element that made the request,
-// and they bubble -- listening on body catches them regardless of which
-// tab/form fired them, so any route in the app can trigger a toast this way.
-// Example header from a Flask route:
-//   HX-Trigger: {"show-toast": {"message": "Asset deleted", "type": "success",
-//                "action": {"label": "Undo", "url": "/api/v1/assets/5/restore",
-//                "successMessage": "Delete undone", "refreshTarget": "#asset-table-container"}}}
 document.body.addEventListener('show-toast', function (evt) {
   const detail = evt.detail || {};
   showToast(detail.message, detail.type, detail.action, detail.duration);
 });
 
-// App-wide safety net for htmx requests. Individual hand-rolled fetch() calls
-// (bulk actions, mark-all-read, toast undo) already have their own .catch()
-// with a toast, but htmx-driven requests -- search, filters, sort, pagination,
-// modal loads -- had no equivalent, so a failed request just left the page
-// looking unchanged with zero feedback. These two listeners on <body> catch
-// every htmx request on every page, regardless of which element triggered it.
 document.body.addEventListener('htmx:responseError', function (evt) {
   const status = evt.detail && evt.detail.xhr ? evt.detail.xhr.status : null;
   if (status === 401) {
@@ -1075,22 +1152,9 @@ document.body.addEventListener('htmx:sendError', function () {
   showToast("Network error — check your connection and try again.", 'error');
 });
 
-// Escape-to-close for the htmx-loaded modals in #modal-container (add/edit/
-// delete/restore/details/history/import/export). Those modals are plain
-// <div class="modal"> markup with no native dialog behavior, so unlike the
-// logout confirm and "Manage Categories" <dialog> elements (which get
-// Escape-to-close for free), they need it wired up by hand. Rather than
-// duplicating a keydown listener in every partial, one shared listener
-// removes the top-most ".modal" child of #modal-container -- the same
-// element each modal's own Cancel/X button already removes -- so stacked
-// modals (e.g. Details with Edit or Delete opened on top of it via
-// hx-swap="beforeend") only lose their top layer, not everything.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
 
-  // The folder-picker popup (assets/_export_folder_browser_modal.html) has
-  // its own Escape handler and sits above everything else while open --
-  // let it close itself first instead of also tearing down what's behind it.
   const folderBrowser = document.getElementById('export-folder-browser');
   if (folderBrowser && !folderBrowser.classList.contains('hidden')) return;
 
@@ -1101,9 +1165,6 @@ document.addEventListener('keydown', function (e) {
   modals[modals.length - 1].remove();
 });
 
-// Picks up the toast stashed in sessionStorage right before a reload
-// triggered by a toast action (e.g. clicking "Undo"), so the confirmation
-// still shows up on the fresh page instead of silently disappearing.
 (function () {
   const pending = sessionStorage.getItem('pending-toast');
   if (pending) {
@@ -1111,7 +1172,7 @@ document.addEventListener('keydown', function (e) {
     try {
       const { message, type } = JSON.parse(pending);
       showToast(message, type);
-    } catch (e) { /* ignore malformed payload */ }
+    } catch (e) {}
   }
 })();
 </script>

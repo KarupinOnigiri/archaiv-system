@@ -1,0 +1,21 @@
+{# Response to a Load more click (browse=1&append=1). Swapped in as
+   outerHTML over the Load more <li> that triggered it (see
+   _eligible_member_loadmore.html's hx-target="closest li"), so this
+   never touches the scrollable wrapper or resets scroll position --
+   only appends new rows where the old Load more row was. The count
+   header (including its close button) is updated separately via
+   hx-swap-oob against the #eligible-member-count element already
+   sitting in the DOM from the initial render. #}
+
+{% from "staff/_eligible_member_row.html" import render_member_row %}
+{% from "staff/_eligible_member_loadmore.html" import render_load_more %}
+{% from "staff/_eligible_member_header.html" import render_header %}
+
+{{ render_header(loaded_so_far, has_more, true, oob=true) }}
+
+{% for member in results %}
+{{ render_member_row(member) }}
+{% endfor %}
+{% if has_more %}
+{{ render_load_more(next_offset) }}
+{% endif %}
