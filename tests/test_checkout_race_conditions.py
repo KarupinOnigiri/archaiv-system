@@ -1,7 +1,6 @@
 import database
-from tests.conftest import make_member
+from tests.conftest import make_member, make_staff_with_password, login, DEFAULT_TEST_PASSWORD
 from concurrent.futures import ThreadPoolExecutor
-from tests.conftest import make_member
 
 
 def make_asset(conn, barcode):
@@ -13,18 +12,9 @@ def make_asset(conn, barcode):
     return cur.lastrowid
 
 
-def login(client, username, password):
-    resp = client.post(
-        "/api/v1/login", json={"username": username, "password": password}
-    )
-    csrf = resp.get_json()["csrf_token"]
-    return csrf
-
-
 def test_two_carts_cannot_claim_same_asset_concurrently(client, db_conn):
-    import os
-
-    csrf = login(client, os.environ["ADMIN_USERNAME"], os.environ["ADMIN_PASSWORD"])
+    _, username = make_staff_with_password(db_conn, "admin", "ADM-RACE-1")
+    csrf = login(client, username, DEFAULT_TEST_PASSWORD)
 
     asset_id = make_asset(db_conn, "AST-RACE-2")
     member_a = make_member(db_conn, "MEM-A")
@@ -38,8 +28,19 @@ def test_two_carts_cannot_claim_same_asset_concurrently(client, db_conn):
     ).lastrowid
     db_conn.commit()
 
+    # Flask's test client keeps its request/app context on a contextvar
+    # stack that isn't safe to drive from two threads at once -- sharing
+    # the `client` fixture directly here races on push/pop and raises
+    # LookupError('flask.app_ctx') under load. Each thread gets its own
+    # throwaway client instead, carrying over the same session cookie (and
+    # therefore the same CSRF token) so both still hit the endpoint as the
+    # one logged-in staff member this test set up above.
+    session_cookie = client.get_cookie("session_token")
+
     def add_to_session(session_id):
-        return client.post(
+        thread_client = client.application.test_client()
+        thread_client.set_cookie("session_token", session_cookie.value)
+        return thread_client.post(
             f"/api/v1/checkout-sessions/{session_id}/items/add",
             json={"asset_code": "AST-RACE-2"},
             headers={"X-CSRF-Token": csrf},

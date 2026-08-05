@@ -66,6 +66,12 @@
 
     <div class="modal-action">
       {% if transaction.status == 'borrowed' %}
+      <button type="button" class="btn btn-ghost btn-sm"
+              hx-get="/api/v1/transactions/{{ transaction.id }}/renew-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Extend due date
+      </button>
       <button type="button" class="btn btn-primary btn-sm"
               hx-get="/api/v1/transactions/{{ transaction.id }}/return-confirm"
               hx-target="#modal-container"

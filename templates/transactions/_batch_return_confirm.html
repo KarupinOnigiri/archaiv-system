@@ -1,0 +1,102 @@
+{% set txn_ids = transactions | map(attribute='id') | list %}
+
+<dialog id="batch-return-modal" class="modal" open>
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Return {{ transactions|length }} asset{{ '' if transactions|length == 1 else 's' }}</h3>
+    <p class="text-sm text-base-content/60 mb-3">The same condition and remarks are applied to every item below.</p>
+
+    <ul class="max-h-32 overflow-y-auto space-y-1 mb-4 border border-base-300 rounded-lg p-2">
+      {% for txn in transactions %}
+      <li class="text-sm truncate">
+        <span class="font-medium">{{ txn.asset_name }}</span>
+        <span class="text-base-content/50">({{ txn.asset_code }}) &mdash; {{ full_name(txn.first_name, txn.last_name, txn.middle_name, txn.suffix) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <form id="batch-return-form" class="space-y-4">
+      <div class="form-control">
+        <label class="label py-1" for="batch-return-condition-select">
+          <span class="label-text text-sm">Condition on return</span>
+        </label>
+        <select id="batch-return-condition-select" name="condition_in" class="select select-bordered select-sm w-full">
+          <option value="functional" selected>Functional</option>
+          <option value="inoperable">Inoperable</option>
+          <option value="for_repair">Needs repair</option>
+          <option value="disposed">Disposed</option>
+        </select>
+        <span class="text-xs text-base-content/50 mt-1">Anything other than Functional puts every selected asset into maintenance. Disposed removes them from circulation.</span>
+      </div>
+
+      <div class="form-control">
+        <label class="label py-1" for="batch-return-remarks-input">
+          <span class="label-text text-sm">Remarks (optional)</span>
+        </label>
+        <textarea id="batch-return-remarks-input" name="return_remarks" rows="2"
+                  class="textarea textarea-bordered textarea-sm w-full"
+                  placeholder="Applied to all selected items"></textarea>
+      </div>
+    </form>
+
+    <div id="batch-return-error" class="text-error text-sm mt-3 hidden"></div>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" id="batch-return-submit-btn" class="btn btn-primary btn-sm"
+              onclick="submitBatchReturn({{ txn_ids | tojson }})">Confirm Return</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button type="button" onclick="this.closest('.modal').remove()">close</button>
+  </form>
+</dialog>
+
+<script>
+async function submitBatchReturn(transactionIds) {
+  const modal = document.getElementById('batch-return-modal');
+  const btn = document.getElementById('batch-return-submit-btn');
+  const errorEl = document.getElementById('batch-return-error');
+  const condition_in = document.getElementById('batch-return-condition-select').value;
+  const return_remarks = document.getElementById('batch-return-remarks-input').value.trim();
+
+  btn.disabled = true;
+  btn.classList.add('btn-disabled');
+  errorEl.classList.add('hidden');
+
+  let res;
+  try {
+    res = await fetch('/api/v1/transactions/batch-return', {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: JSON.stringify({
+        transaction_ids: transactionIds,
+        condition_in,
+        return_remarks: return_remarks || null,
+      }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't return these assets.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.classList.remove('btn-disabled');
+      return;
+    }
+
+    modal.remove();
+    showToast(data.message || 'Assets returned successfully', 'success');
+    if (typeof clearTxnSelection === 'function') clearTxnSelection();
+    document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+  } catch (err) {
+    if (res && res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+    errorEl.textContent = "Network error — check your connection and try again.";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.classList.remove('btn-disabled');
+  }
+}
+</script>

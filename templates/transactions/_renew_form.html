@@ -1,0 +1,90 @@
+{% set member_name = full_name(transaction.first_name, transaction.last_name, transaction.middle_name, transaction.suffix) %}
+
+<dialog id="renew-form-modal" class="modal" open>
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Extend due date</h3>
+    <p class="text-sm text-base-content/60 mb-4">
+      <span class="font-medium text-base-content">{{ transaction.asset_name }}</span>
+      ({{ transaction.asset_code }}) &mdash; borrowed by {{ member_name }}
+    </p>
+
+    <form id="renew-form" class="space-y-4">
+      <div class="form-control">
+        <label class="label py-1" for="renew-due-date-input">
+          <span class="label-text text-sm">New due date</span>
+        </label>
+        <input type="datetime-local" id="renew-due-date-input"
+               class="input input-bordered input-sm w-full"
+               value="{{ transaction.due_date[:16] | replace(' ', 'T') if transaction.due_date else '' }}">
+        <span class="text-xs text-base-content/50 mt-1">
+          Current due date: {{ transaction.due_date | format_date if transaction.due_date else "—" }}
+        </span>
+      </div>
+    </form>
+
+    <div id="renew-form-error" class="text-error text-sm mt-3 hidden"></div>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" id="renew-form-submit-btn" class="btn btn-primary btn-sm"
+              onclick="submitRenewForm({{ transaction.id }})">Save new due date</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button type="button" onclick="this.closest('.modal').remove()">close</button>
+  </form>
+</dialog>
+
+<script>
+async function submitRenewForm(transactionId) {
+  const modal = document.getElementById('renew-form-modal');
+  const btn = document.getElementById('renew-form-submit-btn');
+  const errorEl = document.getElementById('renew-form-error');
+  const dueDateInput = document.getElementById('renew-due-date-input').value;
+
+  if (!dueDateInput) {
+    errorEl.textContent = 'Pick a new due date.';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+  // Same datetime-local -> "YYYY-MM-DD HH:MM:SS" conversion the checkout
+  // modal's own due-date field uses, so the backend sees the same shape
+  // from either flow.
+  const dueDate = dueDateInput.replace('T', ' ') + ':00';
+
+  btn.disabled = true;
+  btn.classList.add('btn-disabled');
+  errorEl.classList.add('hidden');
+
+  let res;
+  try {
+    res = await fetch(`/api/v1/transactions/${transactionId}/renew`, {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: JSON.stringify({ due_date: dueDate }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't extend the due date.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.classList.remove('btn-disabled');
+      return;
+    }
+
+    modal.remove();
+    showToast(data.message || 'Due date updated', 'success');
+    document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+  } catch (err) {
+    if (res && res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+    errorEl.textContent = "Network error — check your connection and try again.";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.classList.remove('btn-disabled');
+  }
+}
+</script>

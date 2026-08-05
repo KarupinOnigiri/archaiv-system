@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request, render_template
+from flask import Blueprint, jsonify, g, request, render_template, make_response
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required, roles_required
 from services.loan_service import (
@@ -15,6 +15,8 @@ from utils.validators import (
 from datetime import datetime, timedelta
 from utils.constants import SESSION_STALE_MINUTES
 import sqlite3
+import csv
+import io
 from extensions import limiter
 
 transactions_bp = Blueprint("transactions", __name__)
@@ -213,21 +215,11 @@ TRANSACTIONS_SORTABLE_COLUMNS = {
 }
 
 
-def get_transactions_table_context(args):
-    """Builds everything transactions/_table.html needs (transactions,
-    total_count, limit, offset, status_filter, sort_by, sort_dir) from a
-    request.args-like object. Shared by view_transactions_table() (the
-    htmx partial endpoint) and transactions_page() in routes/pages.py --
-    same reasoning as get_assets_table_context() in routes/assets.py, so
-    the two can't drift out of sync on what the template requires.
-
-    Returns (context_dict, None) on success, or (None, error_response)
-    on a bad query param.
-    """
-    limit, offset, error = parse_pagination_params(args)
-    if error:
-        return None, error
-
+def _build_transactions_filters(args):
+    """Builds the WHERE clause + params shared by the table listing and
+    the CSV export -- pulled out so the two can never quietly filter
+    differently. Returns (where_clauses, params, status_filter, None) on
+    success, or (None, None, None, error_response) on a bad query param."""
     where_clauses = []
     params = []
 
@@ -257,7 +249,7 @@ def get_transactions_table_context(args):
     if time_out_from:
         error = validate_date_string(time_out_from, "time_out_from")
         if error:
-            return None, error
+            return None, None, None, error
         where_clauses.append("date(transactions.time_out) >= ?")
         params.append(time_out_from)
 
@@ -265,9 +257,31 @@ def get_transactions_table_context(args):
     if time_out_to:
         error = validate_date_string(time_out_to, "time_out_to")
         if error:
-            return None, error
+            return None, None, None, error
         where_clauses.append("date(transactions.time_out) <= ?")
         params.append(time_out_to)
+
+    return where_clauses, params, status_filter, None
+
+
+def get_transactions_table_context(args):
+    """Builds everything transactions/_table.html needs (transactions,
+    total_count, limit, offset, status_filter, sort_by, sort_dir) from a
+    request.args-like object. Shared by view_transactions_table() (the
+    htmx partial endpoint) and transactions_page() in routes/pages.py --
+    same reasoning as get_assets_table_context() in routes/assets.py, so
+    the two can't drift out of sync on what the template requires.
+
+    Returns (context_dict, None) on success, or (None, error_response)
+    on a bad query param.
+    """
+    limit, offset, error = parse_pagination_params(args)
+    if error:
+        return None, error
+
+    where_clauses, params, status_filter, error = _build_transactions_filters(args)
+    if error:
+        return None, error
 
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -300,7 +314,8 @@ def get_transactions_table_context(args):
         f"""
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
                members.first_name, members.last_name, members.middle_name, members.suffix,
-               staff.username AS borrowed_by_username,
+               borrowed_staff.username AS borrowed_by_username,
+               returned_staff.username AS returned_by_username,
                CASE WHEN transactions.status = 'borrowed'
                     AND transactions.due_date IS NOT NULL
                     AND transactions.due_date < datetime('now', 'localtime')
@@ -308,7 +323,8 @@ def get_transactions_table_context(args):
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         JOIN members ON transactions.member_id = members.id
-        LEFT JOIN staff ON transactions.borrowed_by_staff_id = staff.id
+        LEFT JOIN staff AS borrowed_staff ON transactions.borrowed_by_staff_id = borrowed_staff.id
+        LEFT JOIN staff AS returned_staff ON transactions.returned_by_staff_id = returned_staff.id
         {where_sql}
         ORDER BY {sort_column} {sort_dir.upper()}, transactions.id {sort_dir.upper()}
         LIMIT ? OFFSET ?
@@ -335,6 +351,77 @@ def view_transactions_table():
     if error:
         return error
     return render_template("transactions/_table.html", **context)
+
+
+TRANSACTIONS_EXPORT_COLUMNS = [
+    ("asset_code", "Asset Code"),
+    ("asset_name", "Asset"),
+    ("member_name", "Member"),
+    ("time_out", "Time Out"),
+    ("due_date", "Due Date"),
+    ("time_in", "Return Date"),
+    ("status", "Status"),
+    ("condition_out", "Condition Out"),
+    ("condition_in", "Condition In"),
+    ("borrowed_by_username", "Checked Out By"),
+    ("returned_by_username", "Returned To"),
+    ("return_remarks", "Remarks"),
+]
+
+
+@transactions_bp.route("/transactions/export")
+@login_required
+def export_transactions():
+    """CSV download of whatever the table currently shows -- respects the
+    same search/status/date filters as /transactions/table (built by the
+    same _build_transactions_filters(), so this can't silently diverge
+    from what's on screen), but ignores sort/pagination since an export is
+    the whole filtered set, not one page of it. Read-only, so any
+    logged-in staff can use it, same reasoning as assets' export route."""
+    where_clauses, params, _status_filter, error = _build_transactions_filters(request.args)
+    if error:
+        return error
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    conn = get_db_connection()
+    rows = conn.execute(
+        f"""
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               borrowed_staff.username AS borrowed_by_username,
+               returned_staff.username AS returned_by_username
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        LEFT JOIN staff AS borrowed_staff ON transactions.borrowed_by_staff_id = borrowed_staff.id
+        LEFT JOIN staff AS returned_staff ON transactions.returned_by_staff_id = returned_staff.id
+        {where_sql}
+        ORDER BY transactions.time_out DESC
+        """,
+        params,
+    ).fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([label for _, label in TRANSACTIONS_EXPORT_COLUMNS])
+    for row in rows:
+        record = dict(row)
+        record["member_name"] = full_name(
+            row["first_name"], row["last_name"], row["middle_name"], row["suffix"]
+        )
+        writer.writerow(
+            [record.get(col) if record.get(col) is not None else "" for col, _ in TRANSACTIONS_EXPORT_COLUMNS]
+        )
+    # utf-8-sig (BOM) so Excel opens accented/special characters correctly
+    # when double-clicking the CSV directly -- matches assets' CSV export.
+    file_bytes = output.getvalue().encode("utf-8-sig")
+
+    filename = f"transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    response = make_response(file_bytes)
+    response.headers["Content-Type"] = "text/csv"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
 
 
 @transactions_bp.route("/transactions/stat-cards")
@@ -1133,6 +1220,223 @@ def return_transaction_by_id(id):
         ),
         200,
     )
+
+
+# # # BATCH RETURN (API action) -------------------------------------------
+
+MAX_BATCH_RETURN_SIZE = 50
+
+
+@transactions_bp.route("/transactions/batch-return-confirm")
+@login_required
+def batch_return_confirm():
+    """Opens the batch-return modal for whatever row checkboxes are
+    currently ticked on the table -- read-only lookup, same split as
+    return_confirm()/return_transaction_by_id() above. Silently drops any
+    id that's missing or already returned rather than erroring, since the
+    selection was built from what the table showed a moment ago and may
+    have drifted (e.g. someone else just returned one) by the time this
+    modal opens; the confirm screen just shows however many are still
+    actually eligible."""
+    ids = request.args.getlist("transaction_ids", type=int)
+    if not ids:
+        return jsonify({"error": "No transactions selected"}), 400
+
+    conn = get_db_connection()
+    placeholders = ",".join("?" for _ in ids)
+    transactions = conn.execute(
+        f"""
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        WHERE transactions.id IN ({placeholders}) AND transactions.status = 'borrowed'
+        ORDER BY assets.name
+        """,
+        ids,
+    ).fetchall()
+    conn.close()
+
+    if not transactions:
+        return jsonify({"error": "None of the selected loans are still open"}), 400
+
+    return render_template("transactions/_batch_return_confirm.html", transactions=transactions)
+
+
+@transactions_bp.route("/transactions/batch-return", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute")
+def batch_return_transactions():
+    """Applies the same condition/remarks to every selected transaction in
+    one submit, reusing _finalize_return per row so batch and single-row
+    return can never quietly diverge on what "returning an asset" does to
+    the DB. Best-effort: one row failing (already returned out from under
+    the selection, bad id, etc.) doesn't abort the rest -- the response
+    reports exactly which ids landed and which didn't, and the modal
+    surfaces that instead of an all-or-nothing error."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    ids = data.get("transaction_ids")
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, int) for i in ids):
+        return jsonify({"error": "transaction_ids must be a non-empty list of integers"}), 400
+    if len(ids) > MAX_BATCH_RETURN_SIZE:
+        return jsonify({"error": f"Cannot return more than {MAX_BATCH_RETURN_SIZE} at once"}), 400
+
+    condition_in = data.get("condition_in")
+    if condition_in is not None and condition_in not in VALID_RETURN_CONDITIONS:
+        return (
+            jsonify(
+                {"error": f"condition_in must be one of: {', '.join(VALID_RETURN_CONDITIONS)}"}
+            ),
+            400,
+        )
+    return_remarks = data.get("return_remarks")
+
+    conn = get_db_connection()
+    returned_ids = []
+    skipped_ids = []
+
+    for txn_id in ids:
+        transaction = conn.execute(
+            "SELECT * FROM transactions WHERE id = ?", (txn_id,)
+        ).fetchone()
+        if transaction is None or transaction["status"] != "borrowed":
+            skipped_ids.append(txn_id)
+            continue
+
+        asset = conn.execute(
+            "SELECT * FROM assets WHERE id = ?", (transaction["asset_id"],)
+        ).fetchone()
+        member = conn.execute(
+            "SELECT * FROM members WHERE id = ?", (transaction["member_id"],)
+        ).fetchone()
+
+        try:
+            result = _finalize_return(
+                transaction, asset, member, g.staff["id"], condition_in, return_remarks, conn
+            )
+        except Exception:
+            conn.rollback()
+            skipped_ids.append(txn_id)
+            continue
+
+        returned_ids.append(txn_id)
+        log_action(
+            staff_id=g.staff["id"],
+            action="returned_asset",
+            target_table="transactions",
+            target_id=transaction["id"],
+            details=(
+                f"Asset {asset['asset_id']} returned (batch) by member "
+                f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
+                f"— condition: {result['final_condition']}"
+            ),
+        )
+        if result["is_disposed"]:
+            log_action(
+                staff_id=g.staff["id"],
+                action="disposed_asset",
+                target_table="assets",
+                target_id=asset["id"],
+                details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
+            )
+
+    conn.close()
+
+    return (
+        jsonify(
+            {
+                "message": f"{len(returned_ids)} asset(s) returned"
+                + (f", {len(skipped_ids)} skipped" if skipped_ids else ""),
+                "returned": returned_ids,
+                "skipped": skipped_ids,
+            }
+        ),
+        200,
+    )
+
+
+# # # RENEW / EXTEND DUE DATE (API action) ---------------------------------
+
+
+@transactions_bp.route("/transactions/<int:id>/renew-form")
+@login_required
+def renew_form(id):
+    """Opens the extend-due-date modal -- read-only lookup, same split as
+    return_confirm()/return_transaction_by_id()."""
+    conn = get_db_connection()
+    transaction = conn.execute(
+        """
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        WHERE transactions.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if transaction is None:
+        return jsonify({"error": "Transaction not found"}), 404
+    if transaction["status"] != "borrowed":
+        return jsonify({"error": "Only an active loan can be extended"}), 400
+
+    return render_template("transactions/_renew_form.html", transaction=transaction)
+
+
+@transactions_bp.route("/transactions/<int:id>/renew", methods=["POST"])
+@login_required
+@limiter.limit("20 per minute")
+def renew_transaction(id):
+    """Pushes a loan's due date out (or corrects it) without touching
+    time_out/status -- the loan stays 'borrowed' throughout. Reuses
+    validate_due_date so "a valid, non-past date" means exactly the same
+    thing here as it does at checkout time."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    new_due_date = data.get("due_date")
+    if not new_due_date:
+        return jsonify({"error": "Missing required field: due_date"}), 400
+    error = validate_due_date(new_due_date)
+    if error:
+        return error
+
+    conn = get_db_connection()
+    transaction = conn.execute("SELECT * FROM transactions WHERE id = ?", (id,)).fetchone()
+    if transaction is None:
+        conn.close()
+        return jsonify({"error": "Transaction not found"}), 404
+    if transaction["status"] != "borrowed":
+        conn.close()
+        return jsonify({"error": "Only an active loan can be extended"}), 400
+
+    old_due_date = transaction["due_date"]
+    conn.execute("UPDATE transactions SET due_date = ? WHERE id = ?", (new_due_date, id))
+    conn.commit()
+
+    # A renewal that pushes the due date back into the future is exactly
+    # the kind of thing that should un-overdue a member -- same check the
+    # return flow runs after _finalize_return, reused here so "no longer
+    # has anything overdue" means the same thing from either path.
+    check_and_lift_restriction_if_resolved(transaction["member_id"], conn)
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="renewed_loan",
+        target_table="transactions",
+        target_id=id,
+        details=f"Due date extended from {old_due_date or '—'} to {new_due_date}",
+    )
+
+    return jsonify({"message": "Due date updated", "due_date": new_due_date}), 200
 
 
 # # # CHECKOUT SESSIONS (API action) -------------------------------------

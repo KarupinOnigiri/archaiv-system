@@ -1,4 +1,4 @@
-{% from "_icons.html" import icon_eye, icon_restore %}
+{% from "_icons.html" import icon_eye, icon_restore, icon_clock %}
 
 {% macro sort_header(label, col) %}
 {% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
@@ -27,16 +27,21 @@
 
 <table class="table w-full table-fixed" data-total-count="{{ total_count }}">
   <colgroup>
-    <col style="width: 22%">
-    <col style="width: 18%">
+    <col style="width: 2.25rem">
+    <col style="width: 20%">
+    <col style="width: 16%">
+    <col style="width: 12%">
+    <col style="width: 12%">
     <col style="width: 13%">
-    <col style="width: 13%">
-    <col style="width: 13%">
-    <col style="width: 13%">
+    <col style="width: 12%">
     <col style="width: 5rem">
   </colgroup>
   <thead>
     <tr class="text-left text-xs text-base-content/50 tracking-wide">
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">
+        <input type="checkbox" class="checkbox checkbox-xs align-middle" id="select-all-txn-checkbox"
+               onchange="toggleSelectAllTxn(this.checked)" aria-label="Select all open loans on this page">
+      </th>
       {{ sort_header("ASSET", "asset_name") }}
       {{ sort_header("MEMBER", "member_name") }}
       {{ sort_header("TIME OUT", "time_out") }}
@@ -52,7 +57,14 @@
         hx-get="/api/v1/transactions/{{ txn.id }}/details-modal"
         hx-target="#modal-container"
         hx-swap="innerHTML"
-        hx-trigger="click[!target.closest('.dropdown,button,a')]">
+        hx-trigger="click[!target.closest('.dropdown,button,a,input')]">
+      <td class="py-2">
+        {% if txn.status == 'borrowed' %}
+        <input type="checkbox" class="checkbox checkbox-xs align-middle txn-row-checkbox" value="{{ txn.id }}"
+               onchange="toggleTxnSelect({{ txn.id }}, this.checked)"
+               aria-label="Select {{ txn.asset_name }} for batch return">
+        {% endif %}
+      </td>
       <td class="py-2">
         <div class="font-medium truncate">{{ txn.asset_name }}</div>
         <div class="text-xs text-base-content/50 truncate">{{ txn.asset_code }}</div>
@@ -69,6 +81,9 @@
       </td>
       <td class="py-2 text-sm text-base-content/60">
         {{ txn.time_in | format_date if txn.time_in else "—" }}
+        {% if txn.returned_by_username %}
+        <div class="text-xs text-base-content/40 mt-0.5 truncate">by {{ txn.returned_by_username }}</div>
+        {% endif %}
       </td>
       <td class="py-2">
         {% if txn.is_overdue %}
@@ -84,11 +99,14 @@
           <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" aria-label="Row actions for {{ txn.asset_name }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
-          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-40 p-2 z-50">
+          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-44 p-2 z-50">
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/transactions/{{ txn.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_eye() }} Details</a>
             </li>
             {% if txn.status == 'borrowed' %}
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/transactions/{{ txn.id }}/renew-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_clock() }} Extend due date</a>
+            </li>
             <li>
               <a class="flex items-center gap-2 text-primary" hx-get="/api/v1/transactions/{{ txn.id }}/return-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_restore() }} Return</a>
             </li>
@@ -99,7 +117,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="7" class="text-center py-10 text-base-content/50">
+      <td colspan="8" class="text-center py-10 text-base-content/50">
         {% if status_filter == "overdue" %}No overdue loans right now.
         {% elif status_filter == "borrowed" %}No active loans found.
         {% elif status_filter == "returned" %}No returned transactions found.

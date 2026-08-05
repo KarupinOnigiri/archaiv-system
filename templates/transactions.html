@@ -8,6 +8,10 @@
       <h1 class="text-2xl font-bold">Borrow &amp; Return</h1>
     </div>
     <div class="flex items-center gap-2">
+      <button type="button" id="export-transactions-btn" class="btn btn-outline btn-sm rounded-full" onclick="exportTransactions()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
       <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/checkout-sessions/start-form"
               hx-vals="js:{client_id: crypto.randomUUID()}"
@@ -121,6 +125,18 @@
 
     </div>
 
+    <!-- Batch-return bar -- hidden until at least one open-loan row's
+         checkbox is ticked. Selection lives in JS only (selectedTxnIds);
+         nothing here is persisted, so a table refresh (page, sort, filter,
+         or a return elsewhere) just clears it via clearTxnSelection(). -->
+    <div id="batch-action-bar" class="hidden items-center justify-between gap-3 mb-4 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30 text-sm">
+      <span><span id="batch-selected-count">0</span> selected</span>
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-ghost btn-xs" onclick="clearTxnSelection()">Clear</button>
+        <button type="button" class="btn btn-primary btn-xs rounded-full" onclick="openBatchReturnConfirm()">Return selected</button>
+      </div>
+    </div>
+
     <div class="relative">
       <div id="table-spinner" class="htmx-indicator absolute inset-0 z-10 flex items-center justify-center bg-base-100/60 rounded-lg">
         <span class="loading loading-spinner loading-md text-primary"></span>
@@ -143,6 +159,95 @@
 <div id="modal-container"></div>
 
 <script>
+// Exports whatever the table currently shows -- reuses the same
+// getBaseFilterParams() the stat cards and status dropdown already share,
+// so "what's on screen" and "what gets exported" can never quietly
+// diverge. A plain navigation (not fetch/htmx) since the response is a
+// file download, not markup to swap in.
+function exportTransactions() {
+  const params = getBaseFilterParams();
+  window.open('/api/v1/transactions/export?' + params.toString(), '_blank');
+}
+
+// # # # Batch return -- row checkboxes -> selectedTxnIds -> the
+// batch-action bar -> the batch-return-confirm modal. Selection is
+// JS-only (no server round-trip just to tick a box), and gets thrown
+// away on every table refresh via clearTxnSelection() below, since a
+// refreshed table can reorder or drop rows out from under stale ids.
+let selectedTxnIds = new Set();
+
+function updateBatchActionBar() {
+  const bar = document.getElementById('batch-action-bar');
+  const count = selectedTxnIds.size;
+  document.getElementById('batch-selected-count').textContent = count;
+  bar.classList.toggle('hidden', count === 0);
+  bar.classList.toggle('flex', count > 0);
+}
+
+function syncSelectAllTxnCheckbox() {
+  const boxes = document.querySelectorAll('.txn-row-checkbox');
+  const selectAll = document.getElementById('select-all-txn-checkbox');
+  if (!selectAll) return;
+  if (boxes.length === 0) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+    return;
+  }
+  const checkedCount = Array.from(boxes).filter((cb) => cb.checked).length;
+  selectAll.checked = checkedCount === boxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+}
+
+function toggleTxnSelect(id, checked) {
+  if (checked) selectedTxnIds.add(id);
+  else selectedTxnIds.delete(id);
+  updateBatchActionBar();
+  syncSelectAllTxnCheckbox();
+}
+
+function toggleSelectAllTxn(checked) {
+  document.querySelectorAll('.txn-row-checkbox').forEach(function (cb) {
+    cb.checked = checked;
+    const id = Number(cb.value);
+    if (checked) selectedTxnIds.add(id);
+    else selectedTxnIds.delete(id);
+  });
+  updateBatchActionBar();
+}
+
+// Called on table refresh and after a successful batch return (see
+// _batch_return_confirm.html) -- clears both the JS set and whatever
+// checkboxes happen to still be in the DOM.
+function clearTxnSelection() {
+  selectedTxnIds.clear();
+  document.querySelectorAll('.txn-row-checkbox').forEach(function (cb) { cb.checked = false; });
+  const selectAll = document.getElementById('select-all-txn-checkbox');
+  if (selectAll) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  }
+  updateBatchActionBar();
+}
+
+async function openBatchReturnConfirm() {
+  if (selectedTxnIds.size === 0) return;
+  const params = new URLSearchParams();
+  selectedTxnIds.forEach(function (id) { params.append('transaction_ids', id); });
+  try {
+    const res = await fetch('/api/v1/transactions/batch-return-confirm?' + params.toString());
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      const data = await res.json().catch(function () { return {}; });
+      showToast(data.error || "Couldn't open the return dialog.", 'error');
+      return;
+    }
+    const html = await res.text();
+    document.getElementById('modal-container').innerHTML = html;
+  } catch (err) {
+    showToast('Network error — check your connection and try again.', 'error');
+  }
+}
+
 // Clears just the search box, matching clearSearch() on the assets page.
 function clearSearch() {
   const input = document.getElementById('transaction-search');
@@ -298,6 +403,7 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
 document.addEventListener('htmx:afterSwap', function (evt) {
   if (evt.target && evt.target.id === 'transaction-table-container') {
     updateFilterUI();
+    clearTxnSelection();
   }
 });
 
