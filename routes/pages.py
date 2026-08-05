@@ -1,9 +1,10 @@
-﻿from flask import Blueprint, render_template, request, g
+from flask import Blueprint, render_template, request, g
 from database import get_db_connection
 from services.auth_service import login_required
 from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
 from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
 from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
+from routes.transactions import get_transactions_table_context  # same note as above -- adjust to match wherever transactions.py actually lives
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -207,5 +208,58 @@ def staff_page():
         stat_locked=stat_locked,
         stat_inactive=stat_inactive,
         departments=departments,
+        **table_context,
+    )
+
+
+@pages_bp.route("/transactions")
+@login_required
+def transactions_page():
+    conn = get_db_connection()
+    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
+    stat_borrowed = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'borrowed'"
+    ).fetchone()["cnt"]
+    # "Overdue" mirrors the same condition used by /transactions/overdue
+    # and by the is_overdue column in get_transactions_table_context() --
+    # still borrowed, and past its due date.
+    stat_overdue = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt FROM transactions
+        WHERE status = 'borrowed' AND due_date IS NOT NULL AND due_date < datetime('now', 'localtime')
+        """
+    ).fetchone()["cnt"]
+    stat_returned = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'returned'"
+    ).fetchone()["cnt"]
+    conn.close()
+
+    # Same reasoning as assets_page/members_page/staff_page: reuse the
+    # exact query logic view_transactions_table() uses for htmx partial
+    # requests, so this page can never be missing something
+    # transactions/_table.html needs, and a hard refresh on a filtered
+    # URL (?q=...&status=overdue&sort_by=due_date) renders that same
+    # state server-side instead of silently falling back to defaults.
+    table_context, error = get_transactions_table_context(request.args)
+    if error:
+        table_context = {
+            "transactions": [],
+            "total_count": 0,
+            "limit": 20,
+            "offset": 0,
+            "status_filter": "",
+            "sort_by": "time_out",
+            "sort_dir": "desc",
+        }
+
+    # NOTE: matches templates/transactions.html (top-level, no subfolder) --
+    # partials live in templates/transactions/, same layout as members/staff.
+    return render_template(
+        "transactions.html",
+        staff=g.staff,
+        stat_all=stat_all,
+        stat_borrowed=stat_borrowed,
+        stat_overdue=stat_overdue,
+        stat_returned=stat_returned,
         **table_context,
     )

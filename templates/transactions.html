@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Borrow &amp; Return</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full"
+              hx-get="/api/v1/checkout-sessions/start-form"
+              hx-vals="js:{client_id: crypto.randomUUID()}"
+              hx-target="#checkout-modal-container"
+              hx-swap="beforeend"
+              hx-trigger="click[Checkout.countOk()]">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        New Checkout
+      </button>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div id="stat-cards-container"
+       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+       hx-get="/api/v1/transactions/stat-cards"
+       hx-trigger="transactions-refreshed from:body"
+       hx-target="this"
+       hx-swap="innerHTML">
+    {% include "transactions/_stat_cards.html" %}
+  </div>
+
+  <!-- Toolbar + table -->
+  <div id="transactions-card" class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div class="relative mb-5">
+
+      <div id="filter-row" class="flex flex-wrap items-center gap-3">
+
+        <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+          <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          </div>
+          <input type="search" id="transaction-search" name="q" placeholder="Search by asset or member..."
+                 aria-label="Search transactions by asset or member"
+                 class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+                 value="{{ request.args.get('q', '') }}"
+                 hx-get="/api/v1/transactions/table"
+                 hx-trigger="keyup changed delay:400ms, search"
+                 hx-target="#transaction-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#status-filter, #time-out-from-filter, #time-out-to-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
+                  aria-label="Clear search" title="Clear search" onclick="clearSearch()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div id="status-filter-wrap" class="join rounded-lg transition-shadow" title="Status">
+          <button type="button" id="status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearStatusFilter()" aria-label="Clear status filter" title="Clear status filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <select id="status-filter" name="status"
+                  aria-label="Filter by status"
+                  class="select select-bordered select-sm join-item w-36"
+                  hx-get="/api/v1/transactions/table"
+                  hx-trigger="change"
+                  hx-target="#transaction-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#table-spinner"
+                  hx-include="#transaction-search, #time-out-from-filter, #time-out-to-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="">Status</option>
+            <option value="borrowed" {% if status_filter == "borrowed" %}selected{% endif %}>Borrowed</option>
+            <option value="overdue" {% if status_filter == "overdue" %}selected{% endif %}>Overdue</option>
+            <option value="returned" {% if status_filter == "returned" %}selected{% endif %}>Returned</option>
+          </select>
+        </div>
+
+        <div id="date-filters" class="join rounded-lg transition-shadow" title="Time out range">
+          <button type="button" id="date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearDateFilter()" aria-label="Clear time out range filter" title="Clear time out range filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </button>
+          <input type="date" id="time-out-from-filter" name="time_out_from"
+                 aria-label="Time out from date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ request.args.get('time_out_from', '') }}"
+                 title="Time out from"
+                 hx-get="/api/v1/transactions/table"
+                 hx-trigger="change"
+                 hx-target="#transaction-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#transaction-search, #status-filter, #time-out-to-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+          <input type="date" id="time-out-to-filter" name="time_out_to"
+                 aria-label="Time out to date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ request.args.get('time_out_to', '') }}"
+                 title="Time out to"
+                 hx-get="/api/v1/transactions/table"
+                 hx-trigger="change"
+                 hx-target="#transaction-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#transaction-search, #status-filter, #time-out-from-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+        </div>
+
+        <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" title="Clear filters" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
+
+      </div>
+
+    </div>
+
+    <div class="relative">
+      <div id="table-spinner" class="htmx-indicator absolute inset-0 z-10 flex items-center justify-center bg-base-100/60 rounded-lg">
+        <span class="loading loading-spinner loading-md text-primary"></span>
+      </div>
+      <div id="transaction-table-container"
+           hx-get="/api/v1/transactions/table"
+           hx-trigger="transactions-refreshed from:body"
+           hx-target="#transaction-table-container"
+           hx-swap="innerHTML"
+           hx-indicator="#table-spinner"
+           hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+           hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+        {% include "transactions/_table.html" %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="modal-container"></div>
+
+<script>
+// Clears just the search box, matching clearSearch() on the assets page.
+function clearSearch() {
+  const input = document.getElementById('transaction-search');
+  input.value = '';
+  input.dispatchEvent(new Event('search', { bubbles: true }));
+}
+
+function clearStatusFilter() {
+  const select = document.getElementById('status-filter');
+  if (select.value === '') return;
+  select.value = '';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function clearDateFilter() {
+  const from = document.getElementById('time-out-from-filter');
+  const to = document.getElementById('time-out-to-filter');
+  if (from.value === '' && to.value === '') return;
+  from.value = '';
+  to.value = '';
+  from.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// Single source of truth for "what does the filter row currently say" --
+// used by filterByStatus() and clearAllFilters() so a stat-card click (or
+// the 1-4 shortcut) never silently drops whatever search text or date
+// range is already active, same reasoning as the assets page's
+// getBaseFilterParams().
+function getBaseFilterParams() {
+  const q = document.getElementById('transaction-search').value.trim();
+  const status = document.getElementById('status-filter').value;
+  const timeOutFrom = document.getElementById('time-out-from-filter').value;
+  const timeOutTo = document.getElementById('time-out-to-filter').value;
+
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (timeOutFrom) params.set('time_out_from', timeOutFrom);
+  if (timeOutTo) params.set('time_out_to', timeOutTo);
+  return params;
+}
+
+// Fires a real htmx request (not just flipping the <select>'s value) so
+// clicking a stat card behaves exactly like picking that option from the
+// Status dropdown -- same URL-sync, same loading spinner, same result.
+function filterByStatus(status) {
+  const select = document.getElementById('status-filter');
+  select.value = status;
+  const params = getBaseFilterParams();
+  params.set('limit', '{{ limit }}');
+  params.set('offset', '0');
+  htmx.ajax('GET', '/api/v1/transactions/table', {
+    target: '#transaction-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params),
+  });
+  updateFilterUI();
+}
+
+function clearAllFilters() {
+  document.getElementById('transaction-search').value = '';
+  document.getElementById('status-filter').value = '';
+  document.getElementById('time-out-from-filter').value = '';
+  document.getElementById('time-out-to-filter').value = '';
+  htmx.ajax('GET', '/api/v1/transactions/table', {
+    target: '#transaction-table-container',
+    swap: 'innerHTML',
+    values: { limit: '{{ limit }}', offset: '0' },
+  });
+  updateFilterUI();
+}
+
+// Active-filter highlighting + "Clear filters" + search clear (x) + stat-card
+// quick filters -- purely client-side chrome; every control still drives
+// the table through its own hx-get.
+function updateFilterUI() {
+  const search = document.getElementById('transaction-search');
+  const status = document.getElementById('status-filter');
+  const dateFrom = document.getElementById('time-out-from-filter');
+  const dateTo = document.getElementById('time-out-to-filter');
+
+  const searchActive = search.value.trim().length > 0;
+  const statusActive = status.value !== '';
+  const dateActive = dateFrom.value !== '' || dateTo.value !== '';
+
+  document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
+  document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
+  document.getElementById('search-clear-btn').classList.toggle('hidden', !searchActive);
+
+  document.getElementById('status-filter-wrap').classList.toggle('ring-2', statusActive);
+  document.getElementById('status-filter-wrap').classList.toggle('ring-primary/40', statusActive);
+  document.getElementById('status-filter-clear-btn').disabled = !statusActive;
+
+  document.getElementById('date-filters').classList.toggle('ring-2', dateActive);
+  document.getElementById('date-filters').classList.toggle('ring-primary/40', dateActive);
+  document.getElementById('date-filter-clear-btn').disabled = !dateActive;
+
+  const anyActive = searchActive || statusActive || dateActive;
+  const activeCount = [searchActive, statusActive, dateActive].filter(Boolean).length;
+  const clearBtn = document.getElementById('clear-filters-btn');
+  clearBtn.classList.toggle('hidden', !anyActive);
+  document.getElementById('clear-filters-count').textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+
+  updateStatCardUI(status.value);
+}
+
+// Keeps the stat cards' ring/border highlight in sync with whichever
+// status they represent. "All Transactions" (data-status="") is active
+// whenever no status filter is set.
+const STAT_CARD_ACCENTS = {
+  '': 'ring-primary/40 border-primary/40',
+  'borrowed': 'ring-info/40 border-info/40',
+  'overdue': 'ring-error/40 border-error/40',
+  'returned': 'ring-success/40 border-success/40',
+};
+
+function updateStatCardUI(currentStatus) {
+  document.querySelectorAll('#stat-cards-container [data-status]').forEach(function (card) {
+    const isActive = card.dataset.status === currentStatus;
+    const accentClasses = STAT_CARD_ACCENTS[card.dataset.status].split(' ');
+    card.classList.toggle('ring-2', isActive);
+    card.classList.toggle('shadow-md', isActive);
+    accentClasses.forEach(function (cls) { card.classList.toggle(cls, isActive); });
+  });
+}
+
+// Keeps the address bar in sync with whatever combination of search,
+// filters, sort, and paging is currently on screen -- same reasoning and
+// mechanism as the assets page's htmx:configRequest listener.
+document.body.addEventListener('htmx:configRequest', function (evt) {
+  const tableContainer = document.getElementById('transaction-table-container');
+  if (evt.detail.target !== tableContainer) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['q', 'status', 'time_out_from', 'time_out_to', 'limit', 'offset', 'sort_by', 'sort_dir'].forEach(function (key) {
+      if (params[key] !== undefined && params[key] !== '') {
+        url.searchParams.set(key, params[key]);
+      } else {
+        url.searchParams.delete(key);
+      }
+    });
+    window.history.replaceState({}, '', url);
+  } catch (e) {
+    // Non-fatal -- worst case the address bar just doesn't reflect the
+    // latest filter state.
+  }
+});
+
+document.addEventListener('htmx:afterSwap', function (evt) {
+  if (evt.target && evt.target.id === 'transaction-table-container') {
+    updateFilterUI();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+  updateFilterUI();
+
+  // Cold-load replay: same reasoning as the assets page -- fires the real
+  // htmx request (via values, not a hand-built query string) so a hard
+  // refresh on a filtered URL renders that same state server-side and the
+  // filter chrome (rings, clear button) matches immediately.
+  var params = new URLSearchParams({
+    limit: '{{ limit }}',
+    offset: '{{ offset }}',
+    sort_by: '{{ sort_by }}',
+    sort_dir: '{{ sort_dir }}'
+  });
+  {% if request.args.get('q') %}
+  params.set('q', {{ request.args.get('q') | tojson }});
+  {% endif %}
+  {% if status_filter %}
+  params.set('status', {{ status_filter | tojson }});
+  {% endif %}
+  {% if request.args.get('time_out_from') %}
+  params.set('time_out_from', {{ request.args.get('time_out_from') | tojson }});
+  {% endif %}
+  {% if request.args.get('time_out_to') %}
+  params.set('time_out_to', {{ request.args.get('time_out_to') | tojson }});
+  {% endif %}
+  htmx.ajax('GET', '/api/v1/transactions/table', {
+    target: '#transaction-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+});
+
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const containers = [
+    document.getElementById('modal-container'),
+    document.getElementById('checkout-modal-container'),
+  ].filter(Boolean);
+  return containers.some((c) => c.querySelector(':scope > dialog[open]'));
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey) return;
+
+  // / — focus search
+  if (!e.altKey && e.key === '/') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('transaction-search').focus();
+    return;
+  }
+
+  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter
+  // (All / Active Loans / Overdue / Returned).
+  if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const statusByKey = { '1': '', '2': 'borrowed', '3': 'overdue', '4': 'returned' };
+    e.preventDefault();
+    filterByStatus(statusByKey[e.key]);
+    return;
+  }
+
+  // ArrowLeft / ArrowRight — previous / next page
+  if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const pageBtn = document.querySelector('#transaction-table-container button[aria-label="' + label + '"]');
+    if (pageBtn && !pageBtn.disabled) {
+      e.preventDefault();
+      pageBtn.click();
+    }
+    return;
+  }
+
+  // Alt+N — open "New Checkout"
+  if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('new-checkout-btn').click();
+    return;
+  }
+
+  // Escape — with no modal open, reset every filter back to blank, same
+  // as clicking "Clear filters" by hand. When a modal is open, the shared
+  // Escape handler in base.html closes it instead.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllFilters();
+  }
+});
+</script>
+{% endblock %}

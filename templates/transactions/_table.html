@@ -1,0 +1,193 @@
+{% from "_icons.html" import icon_eye, icon_restore %}
+
+{% macro sort_header(label, col) %}
+{% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
+{% set is_active = (sort_by == col) %}
+<th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">
+  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% endif %}"
+          hx-get="/api/v1/transactions/table"
+          hx-target="#transaction-table-container"
+          hx-swap="innerHTML"
+          hx-indicator="#table-spinner"
+          hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+          hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
+    {{ label }}
+    {% if is_active %}
+      {% if sort_dir == "asc" %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 15l-6-6-6 6"/></svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+      {% endif %}
+    {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l4-4 4 4"/><path d="M16 15l-4 4-4-4"/></svg>
+    {% endif %}
+  </button>
+</th>
+{% endmacro %}
+
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}">
+  <colgroup>
+    <col style="width: 22%">
+    <col style="width: 18%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 13%">
+    <col style="width: 5rem">
+  </colgroup>
+  <thead>
+    <tr class="text-left text-xs text-base-content/50 tracking-wide">
+      {{ sort_header("ASSET", "asset_name") }}
+      {{ sort_header("MEMBER", "member_name") }}
+      {{ sort_header("TIME OUT", "time_out") }}
+      {{ sort_header("DUE DATE", "due_date") }}
+      {{ sort_header("RETURN DATE", "time_in") }}
+      {{ sort_header("STATUS", "status") }}
+      <th class="py-2 font-semibold text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for txn in transactions %}
+    <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40 cursor-pointer {% if txn.is_overdue %}bg-error/5{% endif %}"
+        hx-get="/api/v1/transactions/{{ txn.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+        hx-trigger="click[!target.closest('.dropdown,button,a')]">
+      <td class="py-2">
+        <div class="font-medium truncate">{{ txn.asset_name }}</div>
+        <div class="text-xs text-base-content/50 truncate">{{ txn.asset_code }}</div>
+      </td>
+      <td class="py-2 truncate">
+        {{ full_name(txn.first_name, txn.last_name, txn.middle_name, txn.suffix) }}
+        {% if txn.borrowed_by_username %}
+        <div class="text-xs text-base-content/40 mt-0.5 truncate">out by {{ txn.borrowed_by_username }}</div>
+        {% endif %}
+      </td>
+      <td class="py-2 text-sm text-base-content/60">{{ txn.time_out | format_date }}</td>
+      <td class="py-2 text-sm {% if txn.is_overdue %}text-error font-medium{% else %}text-base-content/60{% endif %}">
+        {{ txn.due_date | format_date if txn.due_date else "—" }}
+      </td>
+      <td class="py-2 text-sm text-base-content/60">
+        {{ txn.time_in | format_date if txn.time_in else "—" }}
+      </td>
+      <td class="py-2">
+        {% if txn.is_overdue %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-error/15 text-error">Overdue</span>
+        {% elif txn.status == 'borrowed' %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-info/15 text-info">Borrowed</span>
+        {% else %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/15 text-success">Returned</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-right">
+        <div class="dropdown dropdown-end">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" aria-label="Row actions for {{ txn.asset_name }}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </label>
+          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-40 p-2 z-50">
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/transactions/{{ txn.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_eye() }} Details</a>
+            </li>
+            {% if txn.status == 'borrowed' %}
+            <li>
+              <a class="flex items-center gap-2 text-primary" hx-get="/api/v1/transactions/{{ txn.id }}/return-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_restore() }} Return</a>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="7" class="text-center py-10 text-base-content/50">
+        {% if status_filter == "overdue" %}No overdue loans right now.
+        {% elif status_filter == "borrowed" %}No active loans found.
+        {% elif status_filter == "returned" %}No returned transactions found.
+        {% else %}No transactions found.{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Pagination footer -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/transactions/table"
+            hx-trigger="change"
+            hx-target="#transaction-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }} transactions
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            aria-label="Previous page"
+            hx-get="/api/v1/transactions/table"
+            hx-target="#transaction-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/transactions/table"
+                hx-target="#transaction-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            aria-label="Next page"
+            hx-get="/api/v1/transactions/table"
+            hx-target="#transaction-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>

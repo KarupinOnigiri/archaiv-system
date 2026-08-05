@@ -1,0 +1,82 @@
+{% set member_name = full_name(transaction.first_name, transaction.last_name, transaction.middle_name, transaction.suffix) %}
+
+<dialog id="transaction-details-modal" class="modal" open>
+  <div class="modal-box max-w-md">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div>
+        <h3 class="font-bold text-lg">{{ transaction.asset_name }}</h3>
+        <p class="text-xs text-base-content/50">{{ transaction.asset_code }}</p>
+      </div>
+      {% if transaction.status == 'borrowed' %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-info/15 text-info shrink-0">Borrowed</span>
+      {% else %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/15 text-success shrink-0">Returned</span>
+      {% endif %}
+    </div>
+
+    <dl class="space-y-3 text-sm">
+      <div class="flex justify-between gap-3">
+        <dt class="text-base-content/50">Member</dt>
+        <dd class="text-right font-medium">{{ member_name }}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-base-content/50">Time out</dt>
+        <dd class="text-right">{{ transaction.time_out | format_date }}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-base-content/50">Due date</dt>
+        <dd class="text-right">{{ transaction.due_date | format_date if transaction.due_date else "—" }}</dd>
+      </div>
+      {% if transaction.borrowed_by_username %}
+      <div class="flex justify-between gap-3">
+        <dt class="text-base-content/50">Checked out by</dt>
+        <dd class="text-right">{{ transaction.borrowed_by_username }}</dd>
+      </div>
+      {% endif %}
+      <div class="flex justify-between gap-3">
+        <dt class="text-base-content/50">Condition out</dt>
+        <dd class="text-right">{{ transaction.condition_out | capitalize | replace("_", " ") if transaction.condition_out else "—" }}</dd>
+      </div>
+
+      {% if transaction.status == 'returned' %}
+      <div class="border-t border-base-300 pt-3 mt-3 space-y-3">
+        <div class="flex justify-between gap-3">
+          <dt class="text-base-content/50">Time in</dt>
+          <dd class="text-right">{{ transaction.time_in | format_date }}</dd>
+        </div>
+        {% if transaction.returned_by_username %}
+        <div class="flex justify-between gap-3">
+          <dt class="text-base-content/50">Returned to</dt>
+          <dd class="text-right">{{ transaction.returned_by_username }}</dd>
+        </div>
+        {% endif %}
+        <div class="flex justify-between gap-3">
+          <dt class="text-base-content/50">Condition in</dt>
+          <dd class="text-right">{{ transaction.condition_in | capitalize | replace("_", " ") if transaction.condition_in else "—" }}</dd>
+        </div>
+        {% if transaction.return_remarks %}
+        <div>
+          <dt class="text-base-content/50 mb-1">Remarks</dt>
+          <dd class="bg-base-200 rounded-lg p-2.5 text-sm">{{ transaction.return_remarks }}</dd>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </dl>
+
+    <div class="modal-action">
+      {% if transaction.status == 'borrowed' %}
+      <button type="button" class="btn btn-primary btn-sm"
+              hx-get="/api/v1/transactions/{{ transaction.id }}/return-confirm"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Return this asset
+      </button>
+      {% endif %}
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Close</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button type="button" onclick="this.closest('.modal').remove()">close</button>
+  </form>
+</dialog>

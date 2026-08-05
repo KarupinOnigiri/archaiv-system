@@ -1,17 +1,25 @@
 ﻿{% extends "base.html" %}
 {% block content %}
 
+<!-- Load Archivo Font from Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&display=swap" rel="stylesheet">
+
 <div class="fixed inset-0 bg-gradient-to-br from-base-200 via-base-200 to-secondary/10 overflow-hidden">
 
   <div id="login-bg-layer" class="absolute inset-0 bg-cover bg-center opacity-0 transition-opacity duration-1000 pointer-events-none"></div>
 
   <div class="relative min-h-full flex items-center justify-center p-4">
 
-  <div class="w-full max-w-sm bg-base-100 rounded-2xl shadow-xl shadow-primary/10 p-8">
+  <div class="w-full max-w-sm bg-base-100 rounded-xl shadow-xl shadow-primary/10 p-8">
 
-    <div class="flex flex-col items-center mb-6 gap-3">
-      <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="flowBox" class="h-24 w-auto">
-      <img src="{{ url_for('static', filename='images/logo-text.png') }}" alt="flowBox" class="h-8 w-auto">
+    <!-- Logo + "Archaív" Label -->
+    <div class="flex flex-col items-center mb-6 gap-1">
+      <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="Archaív" class="h-26 w-auto">
+      <span class="text-4xl font-bold tracking-tight text-base-content" style="font-family: 'Archivo', sans-serif;">
+        Archaív
+      </span>
     </div>
 
     <h1 class="text-2xl font-semibold text-center mb-1.5 text-base-content">Welcome back!</h1>
@@ -109,9 +117,6 @@ if (window.location.search.includes('error=')) {
   history.replaceState(null, '', '/login');
 }
 
-// Conditionally apply the login background image: if Login-bg.png exists
-// in static/images, fade it in at low opacity; if not found (404), the
-// page just stays as the plain gradient background.
 (function() {
   const bgUrl = "{{ url_for('static', filename='images/Login-bg.png') }}";
   const testImg = new Image();
@@ -122,7 +127,7 @@ if (window.location.search.includes('error=')) {
     layer.classList.add('opacity-70');
   };
   testImg.onerror = function() {
-    // Login-bg.png not found — leave background as is, do nothing.
+    // Login-bg.png not found — leave background as is
   };
   testImg.src = bgUrl;
 })();

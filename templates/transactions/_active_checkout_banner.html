@@ -1,0 +1,29 @@
+{# Rendered by GET /api/v1/checkout-sessions/active-banner.
+   Returns one row per checkout session the current staff user has
+   in-progress (started, not yet completed or cancelled) -- there can be
+   more than one, e.g. if a session was minimized and a second one
+   started before the first was finished. Renders nothing if there are
+   none. Re-fetched on page load and whenever transactions-refreshed
+   fires, so each row clears itself the moment that checkout completes or
+   its session goes stale/cancelled.
+
+   "Resume" doesn't always mean fetching a form from the server: if that
+   session's dialog/dock is already sitting in this tab (e.g. it's
+   minimized in the tray right now), Checkout.resumeOrExpand just brings
+   it forward instead of fetching a duplicate. #}
+{% for session in active_sessions %}
+<div class="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-info/10 border border-info/30 text-sm {% if not loop.first %}mt-2{% endif %}">
+  <div class="flex items-center gap-2 min-w-0">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span class="truncate">
+      <span class="font-medium">Checkout in progress</span>
+      &mdash; {{ session.member_barcode }}
+      &middot; {{ session.cart_items|length }} item{{ '' if session.cart_items|length == 1 else 's' }} scanned
+    </span>
+  </div>
+  <button type="button" class="btn btn-info btn-xs rounded-full shrink-0"
+          onclick="Checkout.resumeOrExpand({{ session.id | tojson }})">
+    Resume
+  </button>
+</div>
+{% endfor %}

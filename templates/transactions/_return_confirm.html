@@ -1,0 +1,98 @@
+{% set member_name = full_name(transaction.first_name, transaction.last_name, transaction.middle_name, transaction.suffix) %}
+
+<dialog id="return-confirm-modal" class="modal" open>
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Return asset</h3>
+    <p class="text-sm text-base-content/60 mb-4">
+      <span class="font-medium text-base-content">{{ transaction.asset_name }}</span>
+      ({{ transaction.asset_code }}) &mdash; borrowed by {{ member_name }}
+    </p>
+
+    <form id="return-confirm-form" class="space-y-4">
+      <div class="form-control">
+        <label class="label py-1" for="return-condition-select">
+          <span class="label-text text-sm">Condition on return</span>
+        </label>
+        <select id="return-condition-select" name="condition_in" class="select select-bordered select-sm w-full">
+          <option value="functional" selected>Functional</option>
+          <option value="inoperable">Inoperable</option>
+          <option value="for_repair">Needs repair</option>
+          <option value="disposed">Disposed</option>
+        </select>
+        <span class="text-xs text-base-content/50 mt-1">Anything other than Functional puts the asset into maintenance. Disposed removes it from circulation.</span>
+      </div>
+
+      <div class="form-control">
+        <label class="label py-1" for="return-remarks-input">
+          <span class="label-text text-sm">Remarks (optional)</span>
+        </label>
+        <textarea id="return-remarks-input" name="return_remarks" rows="2"
+                  class="textarea textarea-bordered textarea-sm w-full"
+                  placeholder="e.g. minor scuff on housing"></textarea>
+      </div>
+    </form>
+
+    <div id="return-confirm-error" class="text-error text-sm mt-3 hidden"></div>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" id="return-confirm-submit-btn" class="btn btn-primary btn-sm"
+              onclick="submitReturnConfirm({{ transaction.id }})">Confirm Return</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button type="button" onclick="this.closest('.modal').remove()">close</button>
+  </form>
+</dialog>
+
+<script>
+async function submitReturnConfirm(transactionId) {
+  const modal = document.getElementById('return-confirm-modal');
+  const btn = document.getElementById('return-confirm-submit-btn');
+  const errorEl = document.getElementById('return-confirm-error');
+  const condition_in = document.getElementById('return-condition-select').value;
+  const return_remarks = document.getElementById('return-remarks-input').value.trim();
+
+  btn.disabled = true;
+  btn.classList.add('btn-disabled');
+  errorEl.classList.add('hidden');
+
+  let res;
+  try {
+    res = await fetch(`/api/v1/transactions/${transactionId}/return`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ condition_in, return_remarks: return_remarks || null }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't return this asset.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.classList.remove('btn-disabled');
+      return;
+    }
+
+    modal.remove();
+    showToast(data.message || 'Asset returned successfully', 'success');
+    // Same event name both #transaction-table-container and
+    // #stat-cards-container listen for via hx-trigger="transactions-refreshed
+    // from:body" -- a plain DOM event dispatched here still reaches those
+    // htmx listeners even though this request wasn't made through htmx.
+    document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+  } catch (err) {
+    if (res && res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+    errorEl.textContent = "Network error — check your connection and try again.";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.classList.remove('btn-disabled');
+  }
+}
+</script>
