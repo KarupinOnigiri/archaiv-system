@@ -67,7 +67,10 @@ async function submitBatchReturn(transactionIds) {
   try {
     res = await fetch('/api/v1/transactions/batch-return', {
       method: 'POST',
-      headers: csrfHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
       body: JSON.stringify({
         transaction_ids: transactionIds,
         condition_in,
@@ -89,6 +92,7 @@ async function submitBatchReturn(transactionIds) {
     if (typeof clearTxnSelection === 'function') clearTxnSelection();
     document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
   } catch (err) {
+    console.error('submitBatchReturn failed:', err, 'response:', res);
     if (res && res.status === 401) {
       showSessionTimeoutModal();
       return;

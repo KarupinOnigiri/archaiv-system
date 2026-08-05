@@ -60,7 +60,10 @@ async function submitRenewForm(transactionId) {
   try {
     res = await fetch(`/api/v1/transactions/${transactionId}/renew`, {
       method: 'POST',
-      headers: csrfHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
       body: JSON.stringify({ due_date: dueDate }),
     });
     const data = await res.json();
@@ -77,6 +80,7 @@ async function submitRenewForm(transactionId) {
     showToast(data.message || 'Due date updated', 'success');
     document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
   } catch (err) {
+    console.error('submitRenewForm failed:', err, 'response:', res);
     if (res && res.status === 401) {
       showSessionTimeoutModal();
       return;
