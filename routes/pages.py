@@ -5,6 +5,7 @@ from routes.assets import get_assets_table_context  # adjust the module path her
 from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
 from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
 from routes.transactions import get_transactions_table_context  # same note as above -- adjust to match wherever transactions.py actually lives
+from routes.notifications import get_notifications_table_context
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -261,5 +262,25 @@ def transactions_page():
         stat_borrowed=stat_borrowed,
         stat_overdue=stat_overdue,
         stat_returned=stat_returned,
+        **table_context,
+    )
+
+
+@pages_bp.route("/notifications")
+@login_required
+def notifications_page():
+    table_context, error = get_notifications_table_context(request.args)
+    if error:
+        table_context = {
+            "notifications": [],
+            "total_count": 0,
+            "limit": 20,
+            "offset": 0,
+            "show_unread_only": False,
+        }
+
+    return render_template(
+        "notifications.html",
+        staff=g.staff,
         **table_context,
     )

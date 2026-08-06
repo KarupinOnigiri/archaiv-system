@@ -1,0 +1,63 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg flex flex-col max-h-[85vh]">
+
+    <div class="flex justify-between items-start mb-5 shrink-0">
+      <div>
+        <h3 class="font-bold text-xl">Import Members from CSV</h3>
+        <p class="text-sm text-base-content/50 mt-1">Bulk-add borrowers from a spreadsheet, e.g. a whole batch or department at once.</p>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
+
+    {% if error %}
+    <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
+    {% endif %}
+
+    <div class="bg-base-200/50 rounded-xl p-4 mb-5 text-sm">
+      <p class="font-semibold mb-1.5">Expected columns</p>
+      <p class="text-base-content/70">
+        Required: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">first_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">last_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">barcode_id</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">department</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">member_type</code> (trainee or trainer)
+      </p>
+      <p class="text-base-content/70 mt-1">
+        Optional: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">middle_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">suffix</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">batch</code>
+      </p>
+      <p class="text-base-content/50 text-xs mt-2">First row must be a header row. File must be UTF-8 encoded. A department name that doesn't exist yet will be created automatically.</p>
+    </div>
+
+    <form id="import-member-form"
+          hx-post="/api/v1/members/import"
+          hx-target="#import-step-content"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#import-spinner"
+          hx-vals='{"mode": "preview"}'>
+
+      <!-- File input stays outside #import-step-content so it survives the
+           preview swap -- same reasoning as assets/_import_modal.html. -->
+      <div class="border-2 border-dashed border-base-300 rounded-xl p-6 flex flex-col items-center text-center bg-base-200/30">
+        <div class="w-12 h-12 rounded-full bg-base-300/50 flex items-center justify-center mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        </div>
+        <p class="font-semibold text-sm">Choose a CSV file</p>
+        <p class="text-xs text-base-content/50 mt-1 mb-3">Only .csv files are accepted.</p>
+        <input type="file" name="file" accept=".csv,text/csv" required
+               class="file-input file-input-bordered file-input-sm w-full max-w-xs bg-base-100">
+      </div>
+
+      <div id="import-step-content">
+        <div class="modal-action flex justify-end items-center gap-2 mt-6 sticky bottom-0 bg-base-100 pb-1">
+          <span id="import-spinner" class="htmx-indicator loading loading-spinner loading-sm"></span>
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+          <button type="submit" class="btn btn-primary">Preview Import</button>
+        </div>
+      </div>
+    </form>
+    </div>
+  </div>
+</div>
+
+<style>
+.htmx-indicator { opacity: 0; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>

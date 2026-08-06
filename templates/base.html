@@ -279,6 +279,7 @@
     ("Inventory", "/assets", "box"),
     ("Borrowers", "/members", "users"),
     ("Borrow & Return", "/transactions", "swap"),
+    ("Notifications", "/notifications", "bell"),
     ("Approvals", "/requests", "check"),
     ("Reports", "/reports", "chart")
   ] %}
@@ -329,11 +330,16 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
             {% elif icon == "chart" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>
+            {% elif icon == "bell" %}
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
           {% if label == "Approvals" and pending_approvals_count %}
           <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          {% endif %}
+          {% if label == "Notifications" and unread_notifications_count %}
+          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ unread_notifications_count }}</span>
           {% endif %}
         </a>
         {% endfor %}
@@ -511,8 +517,10 @@
               <div id="notif-list" class="max-h-96 overflow-y-auto space-y-0.5" style="min-height: 16rem;">
                 {% if notifications %}
                   {% for n in notifications %}
-                  <div class="notif-row flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-base-200 transition-colors {% if not n.is_read %}bg-primary/5{% endif %}" data-unread="{{ 'true' if not n.is_read else 'false' }}">
-                    <span class="bg-primary/10 text-primary rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                  <div class="notif-row flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-base-200 transition-colors cursor-pointer {% if not n.is_read %}bg-primary/5{% endif %}"
+                       data-unread="{{ 'true' if not n.is_read else 'false' }}"
+                       onclick="window.location.href='/api/v1/notifications/{{ n.id }}/open'">
+                    <span class="{% if n.type == 'overdue' %}bg-error/10 text-error{% else %}bg-warning/10 text-warning{% endif %} rounded-full w-11 h-11 flex items-center justify-center shrink-0">
                       <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
                     </span>
                     <div class="min-w-0 flex-1">

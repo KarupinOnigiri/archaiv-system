@@ -1,13 +1,13 @@
 {% set txn_ids = transactions | map(attribute='id') | list %}
 
 <dialog id="batch-return-modal" class="modal" open>
-  <div class="modal-box max-w-sm">
+  <div class="modal-box max-w-lg">
     <h3 class="font-bold text-lg mb-1">Return {{ transactions|length }} asset{{ '' if transactions|length == 1 else 's' }}</h3>
     <p class="text-sm text-base-content/60 mb-3">The same condition and remarks are applied to every item below.</p>
 
     <ul class="max-h-32 overflow-y-auto space-y-1 mb-4 border border-base-300 rounded-lg p-2">
       {% for txn in transactions %}
-      <li class="text-sm truncate">
+      <li class="text-sm">
         <span class="font-medium">{{ txn.asset_name }}</span>
         <span class="text-base-content/50">({{ txn.asset_code }}) &mdash; {{ full_name(txn.first_name, txn.last_name, txn.middle_name, txn.suffix) }}</span>
       </li>
@@ -19,7 +19,7 @@
         <label class="label py-1" for="batch-return-condition-select">
           <span class="label-text text-sm">Condition on return</span>
         </label>
-        <select id="batch-return-condition-select" name="condition_in" class="select select-bordered select-sm w-full">
+        <select id="batch-return-condition-select" name="condition_in" class="select select-bordered select-sm w-40">
           <option value="functional" selected>Functional</option>
           <option value="inoperable">Inoperable</option>
           <option value="for_repair">Needs repair</option>

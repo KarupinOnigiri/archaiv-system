@@ -23,8 +23,24 @@ transactions_bp = Blueprint("transactions", __name__)
 
 
 DEFAULT_LOAN_DAYS = 2
+# Fallback only -- the real, admin-editable caps live in the loan_limits
+# table (see routes/staff.py's manage-loan-limits endpoints and
+# get_max_concurrent_loans below). This constant is what a member_type
+# falls back to if its row is somehow missing from that table.
 MAX_CONCURRENT_LOANS = 10
 MAX_AVAILABLE_ASSETS_LISTED = 300
+
+
+def get_max_concurrent_loans(member_type, conn):
+    """Looks up the admin-configured concurrent-loan cap for a member_type.
+    Falls back to MAX_CONCURRENT_LOANS if the loan_limits table is missing
+    a row for this type (shouldn't happen after migration 0017, but a
+    missing row should never hard-crash a checkout)."""
+    row = conn.execute(
+        "SELECT max_concurrent_loans FROM loan_limits WHERE member_type = ?",
+        (member_type,),
+    ).fetchone()
+    return row["max_concurrent_loans"] if row else MAX_CONCURRENT_LOANS
 
 
 def _get_active_checkout_session(session_id, member_id, conn):
@@ -222,6 +238,23 @@ def _build_transactions_filters(args):
     success, or (None, None, None, error_response) on a bad query param."""
     where_clauses = []
     params = []
+
+    # Exact-match escape hatch for deep-linking to one specific loan (e.g.
+    # from a notification's "overdue"/"due_soon" alert) -- guarantees that
+    # exact row surfaces regardless of whatever other filters/pagination
+    # happen to be in the URL. Not exposed as a user-facing filter control
+    # anywhere; only ever set by a generated link.
+    transaction_id = args.get("transaction_id")
+    if transaction_id:
+        try:
+            transaction_id = int(transaction_id)
+        except (TypeError, ValueError):
+            return None, None, None, (
+                jsonify({"error": "transaction_id must be an integer"}),
+                400,
+            )
+        where_clauses.append("transactions.id = ?")
+        params.append(transaction_id)
 
     q = args.get("q")
     if q:
@@ -1008,6 +1041,46 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
     }
 
 
+def _find_open_transaction_for_scan(asset_code, member_barcode, conn):
+    """Looks up + validates an asset-barcode/member-barcode pair for a
+    scan-driven return -- shared by the single-scan kiosk route below and
+    the scan-return cart's per-scan lookup, so "does this asset+member
+    combination resolve to a returnable loan" can never quietly diverge
+    between the two. Does NOT close conn (caller owns that) and does not
+    mutate anything -- pure lookup. Returns (transaction, asset, member,
+    error_response); error_response is None on success, in which case all
+    three of the others are populated."""
+    asset = conn.execute(
+        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
+        (asset_code, asset_code),
+    ).fetchone()
+    if asset is None:
+        return None, None, None, (jsonify({"error": "Asset not found"}), 404)
+
+    transaction = conn.execute(
+        "SELECT * FROM transactions WHERE asset_id = ? AND status = 'borrowed'",
+        (asset["id"],),
+    ).fetchone()
+    if transaction is None:
+        return None, None, None, (jsonify({"error": "This asset has no open borrow transaction"}), 400)
+
+    member = conn.execute(
+        "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+    ).fetchone()
+    if member is None:
+        return None, None, None, (jsonify({"error": "member not found"}), 404)
+
+    if member["id"] != transaction["member_id"]:
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "This asset was borrowed by someone else. member mismatch."}), 403),
+        )
+
+    return transaction, asset, member, None
+
+
 @transactions_bp.route("/transactions/return", methods=["POST"])
 @login_required
 @limiter.limit("20 per minute")
@@ -1032,40 +1105,12 @@ def return_asset():
 
     conn = get_db_connection()
 
-    asset = conn.execute(
-        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
-        (data["asset_code"], data["asset_code"]),
-    ).fetchone()
-
-    if asset is None:
+    transaction, asset, member, error = _find_open_transaction_for_scan(
+        data["asset_code"], data["member_barcode"], conn
+    )
+    if error:
         conn.close()
-        return jsonify({"error": "Asset not found"}), 404
-
-    transaction = conn.execute(
-        "SELECT * FROM transactions WHERE asset_id = ? AND status = 'borrowed'",
-        (asset["id"],),
-    ).fetchone()
-
-    if transaction is None:
-        conn.close()
-        return jsonify({"error": "This asset has no open borrow transaction"}), 400
-
-    member = conn.execute(
-        "SELECT * FROM members WHERE barcode_id = ?", (data["member_barcode"],)
-    ).fetchone()
-
-    if member is None:
-        conn.close()
-        return jsonify({"error": "member not found"}), 404
-
-    if member["id"] != transaction["member_id"]:
-        conn.close()
-        return (
-            jsonify(
-                {"error": "This asset was borrowed by someone else. member mismatch."}
-            ),
-            403,
-        )
+        return error
 
     try:
         result = _finalize_return(
@@ -1107,6 +1152,93 @@ def return_asset():
             }
         ),
         200,
+    )
+
+
+@transactions_bp.route("/transactions/member-open-loans")
+@login_required
+def member_open_loans():
+    """Lists everything a member currently has borrowed -- powers the
+    scan-return modal's checklist step, which shows this the moment a
+    member's barcode is entered (before any asset is scanned) so staff
+    can see the full expected list, not just whatever they happen to
+    scan. Read-only. A member with zero open loans still returns 200
+    with an empty list -- that's a valid, unremarkable state (nothing to
+    return), not an error -- so the modal can show its own "nothing to
+    return" message rather than branching on a 4xx for it."""
+    member_barcode = request.args.get("member_barcode")
+    if not member_barcode:
+        return jsonify({"error": "member_barcode is required"}), 400
+
+    conn = get_db_connection()
+    member = conn.execute(
+        "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+    ).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "member not found"}), 404
+
+    loans = conn.execute(
+        """
+        SELECT transactions.id AS transaction_id, assets.name AS asset_name,
+               assets.barcode_id AS asset_barcode, transactions.due_date
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        WHERE transactions.member_id = ? AND transactions.status = 'borrowed'
+        ORDER BY assets.name
+        """,
+        (member["id"],),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "member_name": full_name(
+                member["first_name"], member["last_name"], member["middle_name"], member["suffix"]
+            ),
+            "loans": [dict(row) for row in loans],
+        }
+    )
+
+
+@transactions_bp.route("/transactions/return-scan-form")
+@login_required
+def return_scan_form():
+    """Renders the scan-return modal shell -- no DB work of its own (the
+    modal drives itself client-side against member-open-loans,
+    return-scan-lookup, and batch-return, same shape as
+    checkout_start_form() above)."""
+    return render_template("transactions/_return_scan_modal.html")
+
+
+@transactions_bp.route("/transactions/return-scan-lookup")
+@login_required
+def return_scan_lookup():
+    """Read-only per-scan lookup for the scan-return modal's cart: given
+    an asset barcode and the member barcode entered at the start of that
+    session, resolves + validates them via the same
+    _find_open_transaction_for_scan() the single-scan kiosk route uses
+    (so a scan gets rejected here for exactly the same reasons it would
+    be rejected at actual return time), and returns just enough to render
+    a cart row. Nothing is mutated -- the actual return only happens when
+    the cart is submitted to /transactions/batch-return."""
+    asset_code = request.args.get("asset_code")
+    member_barcode = request.args.get("member_barcode")
+    if not asset_code or not member_barcode:
+        return jsonify({"error": "asset_code and member_barcode are required"}), 400
+
+    conn = get_db_connection()
+    transaction, asset, member, error = _find_open_transaction_for_scan(asset_code, member_barcode, conn)
+    conn.close()
+    if error:
+        return error
+
+    return jsonify(
+        {
+            "transaction_id": transaction["id"],
+            "asset_name": asset["name"],
+            "asset_barcode": asset["barcode_id"],
+        }
     )
 
 
@@ -1268,38 +1400,70 @@ def batch_return_confirm():
 @login_required
 @limiter.limit("10 per minute")
 def batch_return_transactions():
-    """Applies the same condition/remarks to every selected transaction in
-    one submit, reusing _finalize_return per row so batch and single-row
+    """Applies condition/remarks to every selected transaction in one
+    submit, reusing _finalize_return per row so batch and single-row
     return can never quietly diverge on what "returning an asset" does to
     the DB. Best-effort: one row failing (already returned out from under
     the selection, bad id, etc.) doesn't abort the rest -- the response
     reports exactly which ids landed and which didn't, and the modal
-    surfaces that instead of an all-or-nothing error."""
+    surfaces that instead of an all-or-nothing error.
+
+    Each entry in transaction_ids is either a plain integer (uses the
+    top-level condition_in for that row -- the checkbox-based batch
+    return in the table sends it this way, one condition applied to
+    everything selected) or {"id": ..., "condition_in": ...} (overrides
+    the row's own condition -- the scan-return modal sends it this way,
+    since staff can inspect each item as it's scanned rather than
+    assuming they're all in the same shape). Mixing both forms in one
+    request is fine. return_remarks stays a single value applied to
+    every row either way -- per-item remarks wasn't worth the extra UI
+    for either caller."""
     data, error = get_json_or_error()
     if error:
         return error
 
-    ids = data.get("transaction_ids")
-    if not isinstance(ids, list) or not ids or not all(isinstance(i, int) for i in ids):
-        return jsonify({"error": "transaction_ids must be a non-empty list of integers"}), 400
-    if len(ids) > MAX_BATCH_RETURN_SIZE:
+    ids_raw = data.get("transaction_ids")
+    if not isinstance(ids_raw, list) or not ids_raw:
+        return jsonify({"error": "transaction_ids must be a non-empty list"}), 400
+    if len(ids_raw) > MAX_BATCH_RETURN_SIZE:
         return jsonify({"error": f"Cannot return more than {MAX_BATCH_RETURN_SIZE} at once"}), 400
 
-    condition_in = data.get("condition_in")
-    if condition_in is not None and condition_in not in VALID_RETURN_CONDITIONS:
+    default_condition_in = data.get("condition_in")
+    if default_condition_in is not None and default_condition_in not in VALID_RETURN_CONDITIONS:
         return (
             jsonify(
                 {"error": f"condition_in must be one of: {', '.join(VALID_RETURN_CONDITIONS)}"}
             ),
             400,
         )
+
+    items = []  # list of (transaction_id, condition_in)
+    for entry in ids_raw:
+        if isinstance(entry, bool):
+            return jsonify({"error": "transaction_ids entries must be integers or objects"}), 400
+        if isinstance(entry, int):
+            items.append((entry, default_condition_in))
+            continue
+        if isinstance(entry, dict) and isinstance(entry.get("id"), int) and not isinstance(entry.get("id"), bool):
+            item_condition = entry.get("condition_in", default_condition_in)
+            if item_condition is not None and item_condition not in VALID_RETURN_CONDITIONS:
+                return (
+                    jsonify(
+                        {"error": f"condition_in must be one of: {', '.join(VALID_RETURN_CONDITIONS)}"}
+                    ),
+                    400,
+                )
+            items.append((entry["id"], item_condition))
+            continue
+        return jsonify({"error": "transaction_ids entries must be integers or {id, condition_in} objects"}), 400
+
     return_remarks = data.get("return_remarks")
 
     conn = get_db_connection()
     returned_ids = []
     skipped_ids = []
 
-    for txn_id in ids:
+    for txn_id, condition_in in items:
         transaction = conn.execute(
             "SELECT * FROM transactions WHERE id = ?", (txn_id,)
         ).fetchone()
@@ -1554,14 +1718,15 @@ def checkout_session(id):
             400,
         )
 
-    if current_loan_count + len(items) > MAX_CONCURRENT_LOANS:
+    max_loans = get_max_concurrent_loans(member["member_type"], conn)
+    if current_loan_count + len(items) > max_loans:
         conn.close()
         return (
             jsonify(
                 {
                     "error": (
                         f"This checkout would put the member at {current_loan_count + len(items)} "
-                        f"concurrent loans, exceeding the maximum of {MAX_CONCURRENT_LOANS}"
+                        f"concurrent loans, exceeding the maximum of {max_loans}"
                     ),
                     "current_loans": current_loan_count,
                     "cart_size": len(items),

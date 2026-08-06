@@ -1,0 +1,328 @@
+{# Scan-driven return, mirroring the checkout modal's shape (identify ->
+   pick items -> confirm) but deliberately lighter: no server-side session
+   row, no minimize/dock, no resume-across-reload. A return interaction is
+   short (a handful of items, confirm, done) rather than something staff
+   get interrupted mid-way through the way a checkout can be, so all state
+   just lives in JS for the lifetime of this modal and is thrown away if
+   it's closed without confirming.
+
+   Step 2 shows EVERY open loan for the member the moment their barcode is
+   entered -- not just whatever gets scanned -- so staff can see the full
+   expected list and notice if something's missing, and so a worn/unreadable
+   barcode isn't a dead end (the row can just be clicked). Scanning is still
+   there as the fast path: it's validated through the same
+   _find_open_transaction_for_scan() the single-scan kiosk route uses, and
+   on success just checks the matching row instead of adding a separate
+   entry -- there's one list, not a checklist plus a separate cart. #}
+<dialog id="return-scan-modal" class="modal" open>
+  <div class="modal-box max-w-[33.6rem]">
+    <h3 class="font-bold text-lg mb-1">Return Items</h3>
+    <p id="return-scan-step-hint" class="text-sm text-base-content/60 mb-3">Scan or enter the member's barcode to start.</p>
+
+    <!-- Step 1: identify the returning member -->
+    <div id="return-scan-step-member">
+      <div class="join w-full">
+        <input type="text" id="return-scan-member-input" autofocus
+               class="input input-bordered input-sm join-item w-full"
+               placeholder="Scan or type member barcode..."
+               onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanStart();}">
+        <button type="button" id="return-scan-start-btn" class="btn btn-primary btn-sm join-item" onclick="returnScanStart()">Start</button>
+      </div>
+      <div id="return-scan-member-error" class="text-error text-sm mt-2 hidden"></div>
+    </div>
+
+    <!-- Step 2: the member's open loans -- click to check, or scan to
+         auto-check the matching row -->
+    <div id="return-scan-step-cart" class="hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm text-base-content/60">Member: <span id="return-scan-member-label" class="font-medium text-base-content"></span></span>
+        <span class="text-xs text-base-content/50"><span id="return-scan-count">0</span> selected</span>
+      </div>
+
+      <div class="join w-full mb-1">
+        <input type="text" id="return-scan-asset-input"
+               class="input input-bordered input-sm join-item w-full"
+               placeholder="Scan or type asset barcode..."
+               onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanAddItem();}">
+        <button type="button" class="btn btn-outline btn-sm join-item" onclick="returnScanAddItem()">Scan</button>
+      </div>
+      <div id="return-scan-item-error" class="text-error text-sm mb-2 hidden"></div>
+
+      <ul id="return-scan-cart-list" class="space-y-1 max-h-56 overflow-y-auto mb-3"></ul>
+
+      <div class="form-control">
+        <label class="label py-1" for="return-scan-remarks-input">
+          <span class="label-text text-sm">Remarks (optional, applies to every checked item)</span>
+        </label>
+        <textarea id="return-scan-remarks-input" rows="2"
+                  class="textarea textarea-bordered textarea-sm w-full"
+                  placeholder="e.g. all in good condition"></textarea>
+      </div>
+      <div id="return-scan-complete-error" class="text-error text-sm mt-2 hidden"></div>
+    </div>
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" id="return-scan-complete-btn" class="btn btn-primary btn-sm hidden" disabled
+              onclick="returnScanComplete()">Complete Return</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button type="button" onclick="this.closest('.modal').remove()">close</button>
+  </form>
+</dialog>
+
+<script>
+// Lives only for as long as this modal does -- re-declared fresh every
+// time the modal is opened.
+const ReturnScanState = {
+  memberBarcode: null,
+  loans: [],               // [{transaction_id, asset_name, asset_barcode, due_date}]
+  checked: new Set(),       // transaction_ids currently ticked
+  conditions: new Map(),    // transaction_id -> condition string
+};
+
+const RETURN_SCAN_CONDITIONS = [
+  ['functional', 'Functional'],
+  ['inoperable', 'Inoperable'],
+  ['for_repair', 'Needs repair'],
+  ['disposed', 'Disposed'],
+];
+
+async function returnScanStart() {
+  const memberInput = document.getElementById('return-scan-member-input');
+  const barcode = memberInput.value.trim();
+  const errorEl = document.getElementById('return-scan-member-error');
+  errorEl.classList.add('hidden');
+  if (!barcode) {
+    errorEl.textContent = 'Scan or enter the member barcode.';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  const startBtn = document.getElementById('return-scan-start-btn');
+  startBtn.disabled = true;
+
+  let res;
+  try {
+    const params = new URLSearchParams({ member_barcode: barcode });
+    res = await fetch(`/api/v1/transactions/member-open-loans?${params.toString()}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      errorEl.textContent = data.error || "Couldn't look up that member.";
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    ReturnScanState.memberBarcode = barcode;
+    ReturnScanState.loans = data.loans;
+    ReturnScanState.checked = new Set();
+    ReturnScanState.conditions = new Map();
+
+    document.getElementById('return-scan-step-member').classList.add('hidden');
+    document.getElementById('return-scan-step-cart').classList.remove('hidden');
+    document.getElementById('return-scan-step-hint').textContent = data.loans.length
+      ? 'Check off what came back, or scan each tool as it does.'
+      : 'This member has nothing currently borrowed.';
+    document.getElementById('return-scan-member-label').textContent = `${data.member_name} · ${barcode}`;
+    document.getElementById('return-scan-complete-btn').classList.remove('hidden');
+
+    renderReturnScanChecklist();
+    document.getElementById('return-scan-asset-input').focus();
+  } catch (err) {
+    console.error('returnScanStart failed:', err, 'response:', res);
+    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.classList.remove('hidden');
+  } finally {
+    startBtn.disabled = false;
+  }
+}
+
+async function returnScanAddItem() {
+  const input = document.getElementById('return-scan-asset-input');
+  const assetCode = input.value.trim();
+  const errorEl = document.getElementById('return-scan-item-error');
+  errorEl.classList.add('hidden');
+  if (!assetCode) return;
+
+  const existing = ReturnScanState.loans.find((loan) => loan.asset_barcode === assetCode);
+  if (existing && ReturnScanState.checked.has(existing.transaction_id)) {
+    errorEl.textContent = `${assetCode} is already checked.`;
+    errorEl.classList.remove('hidden');
+    input.value = '';
+    input.focus();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ asset_code: assetCode, member_barcode: ReturnScanState.memberBarcode });
+    const res = await fetch(`/api/v1/transactions/return-scan-lookup?${params.toString()}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      errorEl.textContent = data.error || "Couldn't find that asset.";
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    // Normally already in the list fetched at returnScanStart() -- this
+    // member's open loans and "what a scan can validly resolve to" are
+    // the same underlying query. Appending as a fallback only matters if
+    // something changed between opening the modal and this scan (e.g. a
+    // loan created in another tab/session in the meantime).
+    if (!ReturnScanState.loans.some((loan) => loan.transaction_id === data.transaction_id)) {
+      ReturnScanState.loans.push({
+        transaction_id: data.transaction_id,
+        asset_name: data.asset_name,
+        asset_barcode: data.asset_barcode,
+        due_date: null,
+      });
+    }
+    ReturnScanState.checked.add(data.transaction_id);
+    if (!ReturnScanState.conditions.has(data.transaction_id)) {
+      ReturnScanState.conditions.set(data.transaction_id, 'functional');
+    }
+
+    input.value = '';
+    input.focus();
+    renderReturnScanChecklist();
+  } catch (err) {
+    console.error('returnScanAddItem failed:', err);
+    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.classList.remove('hidden');
+  }
+}
+
+function returnScanToggle(transactionId, isChecked) {
+  if (isChecked) {
+    ReturnScanState.checked.add(transactionId);
+    if (!ReturnScanState.conditions.has(transactionId)) {
+      ReturnScanState.conditions.set(transactionId, 'functional');
+    }
+  } else {
+    ReturnScanState.checked.delete(transactionId);
+  }
+  renderReturnScanChecklist();
+}
+
+function returnScanSetCondition(transactionId, condition) {
+  ReturnScanState.conditions.set(transactionId, condition);
+}
+
+function renderReturnScanChecklist() {
+  const list = document.getElementById('return-scan-cart-list');
+  const count = ReturnScanState.checked.size;
+  document.getElementById('return-scan-count').textContent = count;
+  document.getElementById('return-scan-complete-btn').disabled = count === 0;
+
+  list.innerHTML = '';
+
+  if (ReturnScanState.loans.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'text-sm text-base-content/50 text-center py-3';
+    empty.textContent = 'This member has nothing currently borrowed.';
+    list.appendChild(empty);
+    return;
+  }
+
+  ReturnScanState.loans.forEach((loan) => {
+    const isChecked = ReturnScanState.checked.has(loan.transaction_id);
+
+    const li = document.createElement('li');
+    li.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm';
+
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-2 flex-1 min-w-0 cursor-pointer';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'checkbox checkbox-xs shrink-0';
+    checkbox.checked = isChecked;
+    checkbox.setAttribute('aria-label', `Return ${loan.asset_name}`);
+    checkbox.onchange = () => returnScanToggle(loan.transaction_id, checkbox.checked);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'whitespace-normal break-words';
+    nameSpan.textContent = `${loan.asset_name} (${loan.asset_barcode})`;
+
+    label.appendChild(checkbox);
+    label.appendChild(nameSpan);
+
+    const select = document.createElement('select');
+    select.className = 'select select-bordered select-xs shrink-0 w-28 min-w-0';
+    select.disabled = !isChecked;
+    select.setAttribute('aria-label', `Condition for ${loan.asset_name}`);
+    const currentCondition = ReturnScanState.conditions.get(loan.transaction_id) || 'functional';
+    RETURN_SCAN_CONDITIONS.forEach(([value, optLabel]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = optLabel;
+      if (value === currentCondition) option.selected = true;
+      select.appendChild(option);
+    });
+    select.onchange = () => returnScanSetCondition(loan.transaction_id, select.value);
+
+    li.appendChild(label);
+    li.appendChild(select);
+    list.appendChild(li);
+  });
+}
+
+async function returnScanComplete() {
+  if (ReturnScanState.checked.size === 0) return;
+
+  const btn = document.getElementById('return-scan-complete-btn');
+  const errorEl = document.getElementById('return-scan-complete-error');
+  const remarks = document.getElementById('return-scan-remarks-input').value.trim();
+
+  btn.disabled = true;
+  btn.classList.add('btn-disabled');
+  errorEl.classList.add('hidden');
+
+  const items = Array.from(ReturnScanState.checked).map((id) => ({
+    id,
+    condition_in: ReturnScanState.conditions.get(id) || 'functional',
+  }));
+
+  let res;
+  try {
+    res = await fetch('/api/v1/transactions/batch-return', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({
+        transaction_ids: items,
+        return_remarks: remarks || null,
+      }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't complete the return.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.classList.remove('btn-disabled');
+      return;
+    }
+
+    document.getElementById('return-scan-modal').remove();
+    showToast(data.message || 'Items returned successfully', 'success');
+    document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+  } catch (err) {
+    console.error('returnScanComplete failed:', err, 'response:', res);
+    if (res && res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.classList.remove('btn-disabled');
+  }
+}
+</script>

@@ -12,6 +12,13 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
       </button>
+      <button type="button" id="return-items-btn" class="btn btn-outline btn-sm rounded-full"
+              hx-get="/api/v1/transactions/return-scan-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        Return Items
+      </button>
       <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/checkout-sessions/start-form"
               hx-vals="js:{client_id: crypto.randomUUID()}"
@@ -23,6 +30,17 @@
       </button>
     </div>
   </div>
+
+  <!-- Shown only when arriving via a notification's "open" link
+       (?transaction_id=...) -- without this, the table below silently
+       shows just the one matching row with every visible filter control
+       still reading "All", which looks broken rather than filtered. -->
+  {% if request.args.get('transaction_id') %}
+  <div class="alert bg-primary/10 border border-primary/20 text-sm py-2.5 flex items-center justify-between">
+    <span>Showing the specific loan from that notification.</span>
+    <a href="/transactions" class="btn btn-ghost btn-xs">Clear &amp; show all</a>
+  </div>
+  {% endif %}
 
   <!-- Stat cards -->
   <div id="stat-cards-container"
@@ -123,18 +141,22 @@
 
       </div>
 
-    </div>
-
-    <!-- Batch-return bar -- hidden until at least one open-loan row's
-         checkbox is ticked. Selection lives in JS only (selectedTxnIds);
-         nothing here is persisted, so a table refresh (page, sort, filter,
-         or a return elsewhere) just clears it via clearTxnSelection(). -->
-    <div id="batch-action-bar" class="hidden items-center justify-between gap-3 mb-4 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30 text-sm">
-      <span><span id="batch-selected-count">0</span> selected</span>
-      <div class="flex items-center gap-2">
-        <button type="button" class="btn btn-ghost btn-xs" onclick="clearTxnSelection()">Clear</button>
-        <button type="button" class="btn btn-primary btn-xs rounded-full" onclick="openBatchReturnConfirm()">Return selected</button>
+      <!-- Batch-return bar -- sits directly on top of the filter row above
+           (same absolute-overlay + visibility toggle as members.html's
+           #bulk-actions-bar) rather than stacking below it, so selecting
+           rows swaps the search bar out for this instead of pushing the
+           table down. Hidden until at least one open-loan row's checkbox
+           is ticked. Selection lives in JS only (selectedTxnIds); nothing
+           here is persisted, so a table refresh (page, sort, filter, or a
+           return elsewhere) just clears it via clearTxnSelection(). -->
+      <div id="batch-action-bar" class="pointer-events-none flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-sm" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
+        <span><span id="batch-selected-count">0</span> selected</span>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-ghost btn-xs" onclick="clearTxnSelection()">Clear</button>
+          <button type="button" class="btn btn-primary btn-xs rounded-full" onclick="openBatchReturnConfirm()">Return selected</button>
+        </div>
       </div>
+
     </div>
 
     <div class="relative">
@@ -178,10 +200,19 @@ let selectedTxnIds = new Set();
 
 function updateBatchActionBar() {
   const bar = document.getElementById('batch-action-bar');
+  const filterRow = document.getElementById('filter-row');
   const count = selectedTxnIds.size;
   document.getElementById('batch-selected-count').textContent = count;
-  bar.classList.toggle('hidden', count === 0);
-  bar.classList.toggle('flex', count > 0);
+
+  if (count > 0) {
+    bar.style.visibility = 'visible';
+    bar.classList.remove('pointer-events-none');
+    filterRow.style.visibility = 'hidden';
+  } else {
+    bar.style.visibility = 'hidden';
+    bar.classList.add('pointer-events-none');
+    filterRow.style.visibility = 'visible';
+  }
 }
 
 function syncSelectAllTxnCheckbox() {
@@ -491,6 +522,14 @@ document.addEventListener('keydown', function (e) {
     if (isModalOpen()) return;
     e.preventDefault();
     document.getElementById('new-checkout-btn').click();
+    return;
+  }
+
+  // Alt+R — open "Return Items"
+  if (e.altKey && (e.key === 'r' || e.key === 'R')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('return-items-btn').click();
     return;
   }
 

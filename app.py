@@ -22,7 +22,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from extensions import limiter
 from routes.stats import stats_bp
 from routes.setup import setup_bp
+from routes.notifications import notifications_bp
 from services.loan_service import sweep_overdue_members
+from services.notification_service import (
+    sync_loan_notifications,
+    get_notification_bell_context,
+)
 from datetime import datetime
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
@@ -72,6 +77,14 @@ def inject_csrf_token():
         """,
         (token,),
     ).fetchone()
+
+    # Only bother querying notifications for an actual logged-in session --
+    # an anonymous request (e.g. /login) has no session row and no bell to
+    # populate. Feeds the sidebar bell dropdown in base.html; the full
+    # /notifications page re-queries this itself with its own pagination.
+    notifications, unread_notifications_count = (
+        get_notification_bell_context(conn) if session else ([], 0)
+    )
     conn.close()
 
     return {
@@ -82,6 +95,8 @@ def inject_csrf_token():
             if staff_member
             else ""
         ),
+        "notifications": notifications,
+        "unread_notifications_count": unread_notifications_count,
     }
 
 
@@ -98,6 +113,7 @@ app.register_blueprint(auth_bp, url_prefix="/api/v1")
 app.register_blueprint(transactions_bp, url_prefix="/api/v1")
 app.register_blueprint(stats_bp, url_prefix="/api/v1")
 app.register_blueprint(setup_bp, url_prefix="/api/v1")
+app.register_blueprint(notifications_bp, url_prefix="/api/v1")
 app.register_blueprint(pages_bp)
 
 
@@ -137,6 +153,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
+scheduler.add_job(sync_loan_notifications, "interval", minutes=15)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 

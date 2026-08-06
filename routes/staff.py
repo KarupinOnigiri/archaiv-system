@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request, render_template
+from flask import Blueprint, jsonify, g, request, render_template, make_response
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from services.admin_deactivation_service import (
@@ -13,8 +13,16 @@ from utils.validators import (
     parse_pagination_params,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
+from utils.exports import sanitize_export_filename, default_export_dir, resolve_export_dir
 import sqlite3
+import csv
+import io
+import os
+from datetime import datetime
 from extensions import limiter
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1229,3 +1237,434 @@ def list_admin_deactivation_requests():
             "results": [dict(row) for row in rows],
         }
     )
+
+
+# # # LOAN LIMITS (per-member-type concurrent-loan caps) ----------------------
+
+
+@staff_bp.route("/loan-limits/manage-form")
+@roles_required("admin")
+def manage_loan_limits_form():
+    conn = get_db_connection()
+    limits = conn.execute(
+        "SELECT * FROM loan_limits ORDER BY member_type"
+    ).fetchall()
+    conn.close()
+    return render_template("staff/_loan_limits_modal.html", limits=limits, error=None)
+
+
+@staff_bp.route("/loan-limits/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_loan_limits():
+    """Updates the admin-editable per-member-type concurrent-loan caps that
+    routes/transactions.py's get_max_concurrent_loans() reads at checkout
+    time. Both member types are submitted and validated together from the
+    one modal, rather than one row at a time."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    updates = {}
+    for member_type in ("trainee", "trainer"):
+        raw = data.get(f"max_concurrent_loans_{member_type}")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            error_msg = f"Loan limit for {member_type} must be a whole number"
+            if request.is_json:
+                return jsonify({"error": error_msg}), 400
+            conn = get_db_connection()
+            limits = conn.execute("SELECT * FROM loan_limits ORDER BY member_type").fetchall()
+            conn.close()
+            return render_template(
+                "staff/_loan_limits_modal.html", limits=limits, error=error_msg
+            ), 200
+        if value < 1:
+            error_msg = f"Loan limit for {member_type} must be at least 1"
+            if request.is_json:
+                return jsonify({"error": error_msg}), 400
+            conn = get_db_connection()
+            limits = conn.execute("SELECT * FROM loan_limits ORDER BY member_type").fetchall()
+            conn.close()
+            return render_template(
+                "staff/_loan_limits_modal.html", limits=limits, error=error_msg
+            ), 200
+        updates[member_type] = value
+
+    conn = get_db_connection()
+    for member_type, value in updates.items():
+        conn.execute(
+            "UPDATE loan_limits SET max_concurrent_loans = ? WHERE member_type = ?",
+            (value, member_type),
+        )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_loan_limits",
+        target_table="loan_limits",
+        details=f"Set concurrent-loan limits: trainee={updates['trainee']}, trainer={updates['trainer']}",
+    )
+
+    if request.is_json:
+        return jsonify({"message": "Loan limits updated successfully", **updates})
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/staff"
+    return response
+
+
+# # # BULK IMPORT (CSV) ------------------------------------------------------
+
+
+REQUIRED_STAFF_CSV_COLUMNS = ("member_identifier", "username", "password", "role")
+OPTIONAL_STAFF_CSV_COLUMNS = ("assigned_start", "assigned_end")
+
+
+@staff_bp.route("/staff/import-form")
+@roles_required("admin")
+def import_staff_form():
+    return render_template("staff/_import_modal.html", error=None)
+
+
+def _staff_import_error_response(error_msg, status):
+    """Mirrors assets.py's _import_error_response -- see that function's
+    docstring for why HX-Retarget/HX-Reswap are needed."""
+    if request.is_json:
+        return jsonify({"error": error_msg}), status
+    response = make_response(
+        render_template("staff/_import_modal.html", error=error_msg), 200
+    )
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+
+@staff_bp.route("/staff/import", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("5 per minute")
+def import_staff_csv():
+    """Bulk-creates staff accounts from a CSV, mirroring
+    routes/assets.py's import_assets_csv (preview/commit dry-run pattern,
+    same manual transaction control). Unlike assets/members, a staff
+    account can't be created standalone -- each row must reference an
+    *existing* member (by member_code or barcode_id, via the
+    member_identifier column) who isn't already staff, exactly like the
+    single Add Staff form requires picking from that same candidate list."""
+    if "file" not in request.files:
+        return _staff_import_error_response("Missing file upload (field name: 'file')", 400)
+
+    file = request.files["file"]
+    if not file.filename:
+        return _staff_import_error_response("No file selected", 400)
+
+    mode = request.form.get("mode", "commit")
+    if mode not in ("preview", "commit"):
+        return _staff_import_error_response("mode must be 'preview' or 'commit'", 400)
+    dry_run = mode == "preview"
+
+    try:
+        content = file.stream.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return _staff_import_error_response("File must be UTF-8 encoded CSV", 400)
+
+    reader = csv.DictReader(io.StringIO(content))
+    raw_fieldnames = reader.fieldnames or []
+    header_map = {h: (h or "").strip().lower().replace(" ", "_") for h in raw_fieldnames}
+    canonical_fieldnames = list(header_map.values())
+
+    missing_cols = [c for c in REQUIRED_STAFF_CSV_COLUMNS if c not in canonical_fieldnames]
+    if missing_cols:
+        return _staff_import_error_response(
+            f"CSV missing required column(s): {', '.join(missing_cols)}", 400
+        )
+
+    conn = get_db_connection()
+    conn.isolation_level = None
+    conn.execute("BEGIN")
+    created, errors = [], []
+
+    for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
+        row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
+        member_identifier = (row.get("member_identifier") or "").strip()
+        username = (row.get("username") or "").strip()
+        password = row.get("password") or ""
+        role = (row.get("role") or "").strip().lower()
+
+        if not member_identifier or not username or not password or not role:
+            errors.append(
+                {
+                    "row": row_num,
+                    "error": "member_identifier, username, password, and role are required",
+                }
+            )
+            continue
+
+        if role not in VALID_ROLES:
+            errors.append(
+                {"row": row_num, "error": f"role must be one of: {', '.join(VALID_ROLES)}"}
+            )
+            continue
+
+        if len(password) < 8:
+            errors.append(
+                {"row": row_num, "error": "password must be at least 8 characters"}
+            )
+            continue
+
+        member = conn.execute(
+            """
+            SELECT id FROM members
+            WHERE member_code = ? OR barcode_id = ?
+            """,
+            (member_identifier, member_identifier),
+        ).fetchone()
+        if member is None:
+            errors.append(
+                {
+                    "row": row_num,
+                    "error": f"No member found matching member_identifier '{member_identifier}'",
+                }
+            )
+            continue
+
+        conn.execute("SAVEPOINT row_import")
+        try:
+            hashed_password = generate_password_hash(password)
+            cursor = conn.execute(
+                """
+                INSERT INTO staff (member_id, username, password_hash, role, assigned_start, assigned_end, is_active, created_by_staff_id)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    member["id"],
+                    username,
+                    hashed_password,
+                    role,
+                    row.get("assigned_start") or None,
+                    row.get("assigned_end") or None,
+                    g.staff["id"],
+                ),
+            )
+            new_id = cursor.lastrowid
+            conn.execute(
+                "UPDATE staff SET staff_code = ? WHERE id = ?",
+                (f"STF-{new_id:05d}", new_id),
+            )
+            conn.execute("RELEASE row_import")
+            created.append({"row": row_num, "id": new_id, "username": username})
+        except sqlite3.IntegrityError as e:
+            conn.execute("ROLLBACK TO row_import")
+            conn.execute("RELEASE row_import")
+            errors.append(
+                {"row": row_num, "error": f"duplicate or constraint violation: {e}"}
+            )
+
+    if dry_run:
+        conn.execute("ROLLBACK")
+    else:
+        conn.execute("COMMIT")
+    conn.close()
+
+    if dry_run:
+        return render_template(
+            "staff/_import_preview.html",
+            rows_to_create=len(created),
+            errors=errors,
+        )
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="bulk_imported_staff",
+        target_table="staff",
+        details=f"Imported {len(created)} staff account(s) via CSV, {len(errors)} error(s)",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {"created_count": len(created), "created": created, "errors": errors}
+        ), (201 if created else 400)
+
+    response = make_response(
+        render_template(
+            "staff/_import_results.html",
+            created_count=len(created),
+            created=created,
+            errors=errors,
+        )
+    )
+    if created:
+        response.headers["HX-Trigger"] = "staff-refreshed"
+    return response
+
+
+# # # EXPORT --------------------------------------------------------------
+
+# Deliberately excludes password_hash, locked_until, and
+# failed_login_attempts -- credential/security-internal fields that have
+# no business ever landing in a spreadsheet, unlike everything else here
+# which is already visible in the Staff table itself.
+STAFF_EXPORT_COLUMNS = (
+    "staff_code",
+    "username",
+    "role",
+    "first_name",
+    "last_name",
+    "middle_name",
+    "suffix",
+    "barcode_id",
+    "department",
+    "assigned_start",
+    "assigned_end",
+    "is_active",
+    "created_at",
+)
+
+STAFF_EXPORT_FIELD_LABELS = {
+    "staff_code": "Staff Code",
+    "username": "Username",
+    "role": "Role",
+    "first_name": "First Name",
+    "last_name": "Last Name",
+    "middle_name": "Middle Name",
+    "suffix": "Suffix",
+    "barcode_id": "Barcode ID",
+    "department": "Department",
+    "assigned_start": "Assigned Start",
+    "assigned_end": "Assigned End",
+    "is_active": "Active",
+    "created_at": "Created At",
+}
+
+
+def _default_staff_export_basename(show_inactive):
+    return (
+        f"staff_{'inactive' if show_inactive else 'active'}_"
+        f"{datetime.now().strftime('%Y%m%d')}"
+    )
+
+
+@staff_bp.route("/staff/export-form")
+@roles_required("admin")
+def export_staff_form():
+    """admin-only -- matches every other staff-page mutation/export-ish
+    action on this page (Add Staff, Import CSV, Manage Loan Limits are
+    all admin-only here too, even though in_charge can view the page),
+    even though the underlying GET /staff listing itself is only
+    login_required."""
+    show_inactive = request.args.get("show_inactive") == "1"
+    return render_template(
+        "staff/_export_modal.html",
+        show_inactive=show_inactive,
+        default_filename=_default_staff_export_basename(show_inactive),
+        default_export_dir=default_export_dir(),
+        fields=[(col, STAFF_EXPORT_FIELD_LABELS[col]) for col in STAFF_EXPORT_COLUMNS],
+    )
+
+
+@staff_bp.route("/staff/export", methods=["GET", "POST"])
+@roles_required("admin")
+def export_staff():
+    """Mirrors routes/assets.py's export_assets/routes/members.py's
+    export_members -- see export_staff_form's docstring for why this one
+    is admin-only rather than just login_required."""
+    show_inactive = request.values.get("show_inactive") == "1"
+    export_format = request.values.get("format", "csv").lower()
+    if export_format not in ("csv", "xlsx"):
+        export_format = "csv"
+
+    selected = request.values.getlist("fields")
+    if selected:
+        columns = [c for c in STAFF_EXPORT_COLUMNS if c in selected]
+        if not columns:
+            columns = list(STAFF_EXPORT_COLUMNS)
+    else:
+        columns = list(STAFF_EXPORT_COLUMNS)
+
+    conn = get_db_connection()
+    where_clause = "staff.is_active = 0" if show_inactive else "staff.is_active = 1"
+    staff_rows = conn.execute(
+        f"""
+        SELECT staff.staff_code, staff.username, staff.role,
+               staff.assigned_start, staff.assigned_end, staff.is_active, staff.created_at,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id, departments.name AS department
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
+        WHERE {where_clause}
+        ORDER BY staff.id
+        """
+    ).fetchall()
+    conn.close()
+
+    basename = sanitize_export_filename(
+        request.values.get("filename"), _default_staff_export_basename(show_inactive)
+    )
+
+    if export_format == "xlsx":
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Inactive Staff" if show_inactive else "Staff"
+
+        header_font = Font(bold=True)
+        ws.append([STAFF_EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for cell in ws[1]:
+            cell.font = header_font
+
+        for row in staff_rows:
+            ws.append([row[col] if row[col] is not None else "" for col in columns])
+
+        for i, col in enumerate(columns, start=1):
+            longest = max(
+                [len(col)] + [len(str(row[col] or "")) for row in staff_rows]
+            )
+            ws.column_dimensions[get_column_letter(i)].width = min(
+                max(longest + 2, 10), 40
+            )
+        ws.freeze_panes = "A2"
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        file_bytes = buf.getvalue()
+        content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        export_format = "csv"
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([STAFF_EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for row in staff_rows:
+            writer.writerow([row[col] if row[col] is not None else "" for col in columns])
+        file_bytes = output.getvalue().encode("utf-8-sig")
+        content_type = "text/csv"
+
+    filename = f"{basename}.{export_format}"
+
+    response = make_response(file_bytes)
+    response.headers["Content-Type"] = content_type
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+
+    if request.method == "POST":
+        save_dir, was_clamped = resolve_export_dir(request.values.get("save_path"))
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            saved_path = os.path.join(save_dir, filename)
+            with open(saved_path, "wb") as f:
+                f.write(file_bytes)
+            response.headers["X-Export-Saved-Path"] = saved_path
+            if was_clamped:
+                response.headers["X-Export-Warning"] = (
+                    "The folder entered was outside the app directory, "
+                    "so the export was saved to the default export folder instead."
+                )
+        except OSError as e:
+            logger.warning(f"Could not save export copy to disk: {e}")
+            response.headers["X-Export-Warning"] = (
+                "Could not save a copy on the server; your download still completed."
+            )
+
+    return response

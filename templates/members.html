@@ -17,6 +17,23 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         Manage Departments
       </button>
+      <button type="button" id="import-members-btn" class="btn btn-outline btn-sm"
+              hx-get="/api/v1/members/import-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Import CSV
+      </button>
+      {% endif %}
+      <button type="button" id="export-members-btn" class="btn btn-outline btn-sm"
+              hx-get="/api/v1/members/export-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML"
+              hx-include="#show-inactive-toggle">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        Export Data
+      </button>
+      {% if staff.role in ["admin", "in_charge"] %}
       <button type="button" id="add-member-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/members/add-form"
               hx-target="#modal-container"

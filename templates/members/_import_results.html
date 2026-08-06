@@ -1,0 +1,62 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+
+    <div class="flex justify-between items-start mb-5">
+      <h3 class="font-bold text-xl">Import Results</h3>
+      <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
+              class="text-base-content/40 hover:text-base-content">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <div class="bg-success/10 rounded-xl p-4">
+        <p class="text-xs font-semibold text-success/80 tracking-wide">CREATED</p>
+        <p class="text-2xl font-bold text-success">{{ created_count }}</p>
+      </div>
+      <div class="bg-error/10 rounded-xl p-4">
+        <p class="text-xs font-semibold text-error/80 tracking-wide">FAILED ROWS</p>
+        <p class="text-2xl font-bold text-error">{{ errors|length }}</p>
+      </div>
+    </div>
+
+    {% if errors %}
+    <div class="mb-2">
+      <p class="text-sm font-semibold mb-2">Rows that couldn't be imported</p>
+      <div class="max-h-48 overflow-y-auto border border-base-300 rounded-lg">
+        <table class="table table-sm w-full">
+          <thead>
+            <tr class="text-xs text-base-content/50">
+              <th class="py-1.5">ROW</th>
+              <th class="py-1.5">REASON</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in errors %}
+            <tr class="border-t border-base-200">
+              <td class="py-1.5 text-sm">{{ e.row }}</td>
+              <td class="py-1.5 text-sm text-error/80">{{ e.error }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-base-content/50 mt-2">Fix these rows in your CSV and re-upload just those — already-created rows won't be duplicated as long as barcode IDs stay unique.</p>
+    </div>
+    {% elif created_count == 0 %}
+    <p class="text-sm text-base-content/50">No rows were imported.</p>
+    {% endif %}
+
+    <div class="modal-action flex justify-end gap-2 mt-6">
+      <button type="button" class="btn btn-outline"
+              hx-get="/api/v1/members/import-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Import Another File
+      </button>
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-container').innerHTML=''">
+        Done
+      </button>
+    </div>
+  </div>
+</div>

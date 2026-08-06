@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Notifications</h1>
+      <p class="text-sm text-base-content/50 mt-1">Due-soon and overdue borrowed items, refreshed automatically every 15 minutes.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/notifications{% if not show_unread_only %}?show_unread_only=1{% endif %}" class="btn btn-outline btn-sm">
+        {% if show_unread_only %}Show All{% else %}Show Unread Only{% endif %}
+      </a>
+      <button type="button" class="btn btn-outline btn-sm" onclick="markAllNotificationsRead()">
+        Mark all as read
+      </button>
+    </div>
+  </div>
+
+  <!-- List -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+    <div class="divide-y divide-base-200">
+      {% for n in notifications %}
+      <div class="flex items-center gap-3 py-3 cursor-pointer hover:bg-base-200/60 transition-colors {% if not n.is_read %}bg-primary/5 -mx-2 px-2 rounded-lg{% endif %}"
+           data-notification-id="{{ n.id }}"
+           onclick="window.location.href='/api/v1/notifications/{{ n.id }}/open'">
+        <span class="{% if n.type == 'overdue' %}bg-error/10 text-error{% else %}bg-warning/10 text-warning{% endif %} rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %}">{{ n.message }}</p>
+          <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at | format_date }} &middot; <span class="uppercase">{{ n.type.replace('_', ' ') }}</span></p>
+        </div>
+        {% if not n.is_read %}
+        <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="event.stopPropagation(); markOneNotificationRead({{ n.id }}, this)">
+          Mark as read
+        </button>
+        {% endif %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      {% else %}
+      <div class="flex items-center justify-center text-sm text-base-content/50 py-16">
+        {% if show_unread_only %}No unread notifications.{% else %}You're all caught up.{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Simple prev/next pagination -->
+    {% if total_count > limit %}
+    <div class="flex items-center justify-between mt-5 pt-4 border-t border-base-200">
+      <p class="text-xs text-base-content/50">
+        Showing {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %} of {{ total_count }}
+      </p>
+      <div class="flex items-center gap-2">
+        <a href="/notifications?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}{% if show_unread_only %}&show_unread_only=1{% endif %}"
+           class="btn btn-outline btn-xs {% if offset == 0 %}btn-disabled{% endif %}">Previous</a>
+        <a href="/notifications?limit={{ limit }}&offset={{ offset + limit }}{% if show_unread_only %}&show_unread_only=1{% endif %}"
+           class="btn btn-outline btn-xs {% if offset + limit >= total_count %}btn-disabled{% endif %}">Next</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function markOneNotificationRead(id, btn) {
+  fetch(`/api/v1/notifications/${id}/mark-read`, {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+  }).then((res) => {
+    if (res.ok) {
+      window.location.reload();
+    } else if (res.status === 401) {
+      showSessionTimeoutModal();
+    } else {
+      showToast("Couldn't mark notification as read", 'error');
+    }
+  }).catch(() => showToast("Couldn't mark notification as read", 'error'));
+}
+</script>
+{% endblock %}

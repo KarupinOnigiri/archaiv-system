@@ -130,10 +130,10 @@ def get_assets_table_context(args):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? OR assets.barcode_id LIKE ? OR assets.asset_id LIKE ?)"
+            "(assets.name LIKE ? OR assets.barcode_id LIKE ? OR assets.asset_id LIKE ? OR assets.rfid_id LIKE ?)"
         )
         like = f"%{q}%"
-        params.extend([like, like, like])
+        params.extend([like, like, like, like])
 
     category_id = args.get("category_id")
     if category_id:

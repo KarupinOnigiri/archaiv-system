@@ -5,8 +5,16 @@ from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import parse_pagination_params, validate_lookup_id
+from utils.exports import sanitize_export_filename, default_export_dir, resolve_export_dir
 import sqlite3
+import csv
+import io
+import os
+from datetime import datetime
 from extensions import limiter
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1630,3 +1638,361 @@ def delete_department(id):
     )
 
     return jsonify({"message": "Department deleted successfully"})
+
+
+# # # BULK IMPORT (CSV) ------------------------------------------------------
+
+
+REQUIRED_MEMBER_CSV_COLUMNS = ("first_name", "last_name", "barcode_id", "department", "member_type")
+OPTIONAL_MEMBER_CSV_COLUMNS = ("middle_name", "suffix", "batch")
+
+
+@members_bp.route("/members/import-form")
+@roles_required("admin", "in_charge")
+def import_members_form():
+    return render_template("members/_import_modal.html", error=None)
+
+
+def _members_import_error_response(error_msg, status):
+    """Mirrors assets.py's _import_error_response: JSON for API callers,
+    the modal re-rendered with an inline error for htmx/form callers. See
+    that function's docstring for why HX-Retarget/HX-Reswap are needed --
+    same reasoning applies here (the preview step targets an inner div,
+    not the modal itself)."""
+    if request.is_json:
+        return jsonify({"error": error_msg}), status
+    response = make_response(
+        render_template("members/_import_modal.html", error=error_msg), 200
+    )
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+
+@members_bp.route("/members/import", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("5 per minute")
+def import_members_csv():
+    """Bulk-adds members from a CSV, mirroring routes/assets.py's
+    import_assets_csv: a dry-run 'preview' mode that runs every row for
+    real (including auto-created departments and actual UNIQUE-constraint
+    checks) then rolls the whole batch back, and a 'commit' mode that
+    keeps it. See import_assets_csv's comments for why manual
+    BEGIN/SAVEPOINT/ROLLBACK transaction control is needed here."""
+    if "file" not in request.files:
+        return _members_import_error_response("Missing file upload (field name: 'file')", 400)
+
+    file = request.files["file"]
+    if not file.filename:
+        return _members_import_error_response("No file selected", 400)
+
+    mode = request.form.get("mode", "commit")
+    if mode not in ("preview", "commit"):
+        return _members_import_error_response("mode must be 'preview' or 'commit'", 400)
+    dry_run = mode == "preview"
+
+    try:
+        content = file.stream.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return _members_import_error_response("File must be UTF-8 encoded CSV", 400)
+
+    reader = csv.DictReader(io.StringIO(content))
+    raw_fieldnames = reader.fieldnames or []
+    header_map = {h: (h or "").strip().lower().replace(" ", "_") for h in raw_fieldnames}
+    canonical_fieldnames = list(header_map.values())
+
+    missing_cols = [c for c in REQUIRED_MEMBER_CSV_COLUMNS if c not in canonical_fieldnames]
+    if missing_cols:
+        return _members_import_error_response(
+            f"CSV missing required column(s): {', '.join(missing_cols)}", 400
+        )
+
+    conn = get_db_connection()
+    # See import_assets_csv's comment on isolation_level=None -- same
+    # reasoning: raw SAVEPOINT/RELEASE/ROLLBACK TO statements would
+    # otherwise silently commit the previous row via sqlite3's default
+    # implicit-transaction handling.
+    conn.isolation_level = None
+    conn.execute("BEGIN")
+    created, errors, new_departments = [], [], []
+    seen_department_names = set()
+
+    for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
+        row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
+        first_name = (row.get("first_name") or "").strip()
+        last_name = (row.get("last_name") or "").strip()
+        barcode_id = (row.get("barcode_id") or "").strip()
+        department_name = (row.get("department") or "").strip()
+        member_type = (row.get("member_type") or "").strip().lower()
+
+        if not first_name or not last_name or not barcode_id or not department_name:
+            errors.append(
+                {
+                    "row": row_num,
+                    "error": "first_name, last_name, barcode_id, and department are required",
+                }
+            )
+            continue
+
+        if member_type not in VALID_MEMBER_TYPES:
+            errors.append(
+                {
+                    "row": row_num,
+                    "error": f"member_type must be one of: {', '.join(VALID_MEMBER_TYPES)}",
+                }
+            )
+            continue
+
+        conn.execute("SAVEPOINT row_import")
+        try:
+            dept_row = conn.execute(
+                "SELECT id FROM departments WHERE name = ?", (department_name,)
+            ).fetchone()
+            if dept_row is None:
+                next_order = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM departments"
+                ).fetchone()["next_order"]
+                department_id = conn.execute(
+                    "INSERT INTO departments (name, sort_order) VALUES (?, ?)",
+                    (department_name, next_order),
+                ).lastrowid
+                if department_name not in seen_department_names:
+                    seen_department_names.add(department_name)
+                    new_departments.append(department_name)
+            else:
+                department_id = dept_row["id"]
+
+            cursor = conn.execute(
+                """
+                INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, batch, department_id, member_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    first_name,
+                    last_name,
+                    row.get("middle_name") or None,
+                    row.get("suffix") or None,
+                    barcode_id,
+                    row.get("batch") or None,
+                    department_id,
+                    member_type,
+                ),
+            )
+            new_id = cursor.lastrowid
+            conn.execute(
+                "UPDATE members SET member_code = ? WHERE id = ?",
+                (f"MBR-{new_id:05d}", new_id),
+            )
+            conn.execute("RELEASE row_import")
+            created.append({"row": row_num, "id": new_id, "barcode_id": barcode_id})
+        except sqlite3.IntegrityError as e:
+            conn.execute("ROLLBACK TO row_import")
+            conn.execute("RELEASE row_import")
+            errors.append(
+                {"row": row_num, "error": f"duplicate or constraint violation: {e}"}
+            )
+
+    if dry_run:
+        conn.execute("ROLLBACK")
+    else:
+        conn.execute("COMMIT")
+    conn.close()
+
+    if dry_run:
+        # Nothing was persisted -- see import_assets_csv's identical note on
+        # why this deliberately skips log_action.
+        return render_template(
+            "members/_import_preview.html",
+            rows_to_create=len(created),
+            errors=errors,
+            new_departments=new_departments,
+        )
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="bulk_imported_members",
+        target_table="members",
+        details=f"Imported {len(created)} member(s) via CSV, {len(errors)} error(s)",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {"created_count": len(created), "created": created, "errors": errors}
+        ), (201 if created else 400)
+
+    response = make_response(
+        render_template(
+            "members/_import_results.html",
+            created_count=len(created),
+            created=created,
+            errors=errors,
+        )
+    )
+    if created:
+        response.headers["HX-Trigger"] = "members-refreshed"
+    return response
+
+
+# # # EXPORT --------------------------------------------------------------
+
+# Deliberately excludes nothing sensitive -- unlike staff, a member record
+# has no password/credential fields, so everything shown in the table is
+# fair game to export.
+MEMBERS_EXPORT_COLUMNS = (
+    "member_code",
+    "first_name",
+    "last_name",
+    "middle_name",
+    "suffix",
+    "barcode_id",
+    "batch",
+    "department",
+    "member_type",
+    "is_active",
+    "is_restricted",
+    "restriction_reason",
+    "created_at",
+)
+
+MEMBERS_EXPORT_FIELD_LABELS = {
+    "member_code": "Member Code",
+    "first_name": "First Name",
+    "last_name": "Last Name",
+    "middle_name": "Middle Name",
+    "suffix": "Suffix",
+    "barcode_id": "Barcode ID",
+    "batch": "Batch",
+    "department": "Department",
+    "member_type": "Member Type",
+    "is_active": "Active",
+    "is_restricted": "Restricted",
+    "restriction_reason": "Restriction Reason",
+    "created_at": "Created At",
+}
+
+
+def _default_members_export_basename(show_inactive):
+    return (
+        f"members_{'inactive' if show_inactive else 'active'}_"
+        f"{datetime.now().strftime('%Y%m%d')}"
+    )
+
+
+@members_bp.route("/members/export-form")
+@login_required
+def export_members_form():
+    """Read-only, so any logged-in staff can open it -- mirrors
+    assets.py's export_assets_form. show_inactive is passed through so
+    the modal's default filename/description matches whichever table view
+    (active/inactive) the user was looking at."""
+    show_inactive = request.args.get("show_inactive") == "1"
+    return render_template(
+        "members/_export_modal.html",
+        show_inactive=show_inactive,
+        default_filename=_default_members_export_basename(show_inactive),
+        default_export_dir=default_export_dir(),
+        fields=[(col, MEMBERS_EXPORT_FIELD_LABELS[col]) for col in MEMBERS_EXPORT_COLUMNS],
+    )
+
+
+@members_bp.route("/members/export", methods=["GET", "POST"])
+@login_required
+def export_members():
+    """Mirrors routes/assets.py's export_assets: read-only for GET so any
+    logged-in staff can use it, respects the active/inactive toggle the
+    same way the Export Data button already passes it, supports CSV/Excel
+    and a user-chosen column subset and filename. POST additionally saves
+    a copy on the server (see export_assets's docstring for why that's
+    gated to POST specifically)."""
+    show_inactive = request.values.get("show_inactive") == "1"
+    export_format = request.values.get("format", "csv").lower()
+    if export_format not in ("csv", "xlsx"):
+        export_format = "csv"
+
+    selected = request.values.getlist("fields")
+    if selected:
+        columns = [c for c in MEMBERS_EXPORT_COLUMNS if c in selected]
+        if not columns:
+            columns = list(MEMBERS_EXPORT_COLUMNS)
+    else:
+        columns = list(MEMBERS_EXPORT_COLUMNS)
+
+    conn = get_db_connection()
+    where_clause = "members.is_active = 0" if show_inactive else "members.is_active = 1"
+    members = conn.execute(
+        f"""
+        SELECT members.*, departments.name AS department
+        FROM members
+        JOIN departments ON members.department_id = departments.id
+        WHERE {where_clause}
+        ORDER BY members.last_name, members.first_name
+        """
+    ).fetchall()
+    conn.close()
+
+    basename = sanitize_export_filename(
+        request.values.get("filename"), _default_members_export_basename(show_inactive)
+    )
+
+    if export_format == "xlsx":
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Inactive Members" if show_inactive else "Members"
+
+        header_font = Font(bold=True)
+        ws.append([MEMBERS_EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for cell in ws[1]:
+            cell.font = header_font
+
+        for member in members:
+            ws.append([member[col] if member[col] is not None else "" for col in columns])
+
+        for i, col in enumerate(columns, start=1):
+            longest = max(
+                [len(col)] + [len(str(member[col] or "")) for member in members]
+            )
+            ws.column_dimensions[get_column_letter(i)].width = min(
+                max(longest + 2, 10), 40
+            )
+        ws.freeze_panes = "A2"
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        file_bytes = buf.getvalue()
+        content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        export_format = "csv"
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([MEMBERS_EXPORT_FIELD_LABELS.get(col, col) for col in columns])
+        for member in members:
+            writer.writerow([member[col] if member[col] is not None else "" for col in columns])
+        file_bytes = output.getvalue().encode("utf-8-sig")
+        content_type = "text/csv"
+
+    filename = f"{basename}.{export_format}"
+
+    response = make_response(file_bytes)
+    response.headers["Content-Type"] = content_type
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+
+    if request.method == "POST":
+        save_dir, was_clamped = resolve_export_dir(request.values.get("save_path"))
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            saved_path = os.path.join(save_dir, filename)
+            with open(saved_path, "wb") as f:
+                f.write(file_bytes)
+            response.headers["X-Export-Saved-Path"] = saved_path
+            if was_clamped:
+                response.headers["X-Export-Warning"] = (
+                    "The folder entered was outside the app directory, "
+                    "so the export was saved to the default export folder instead."
+                )
+        except OSError as e:
+            logger.warning(f"Could not save export copy to disk: {e}")
+            response.headers["X-Export-Warning"] = (
+                "Could not save a copy on the server; your download still completed."
+            )
+
+    return response
