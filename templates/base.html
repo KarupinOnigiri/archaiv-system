@@ -36,6 +36,13 @@
   html.sidebar-collapsed-init #sidebar {
     width: 4.25rem;
   }
+  /* While collapsed, clicking anywhere on the rail expands it (see the
+     sidebar click handler below), so the whole thing should read as
+     clickable -- unlike the expanded state, where only #sidebar-toggle
+     itself does anything and gets its own explicit cursor instead. */
+  #sidebar.collapsed {
+    cursor: pointer;
+  }
   #sidebar.collapsed .sidebar-label,
   #sidebar.collapsed #sidebar-title,
   #sidebar.collapsed #sidebar-title-dark,
@@ -43,6 +50,25 @@
   html.sidebar-collapsed-init #sidebar #sidebar-title,
   html.sidebar-collapsed-init #sidebar #sidebar-title-dark {
     display: none;
+  }
+  /* The toggle button is also a .sidebar-label (rule above), but rather
+     than popping in the instant .collapsed comes off mid-width-transition
+     (which looked like it was floating over the still-narrow rail), it
+     fades in only once the 200ms width transition is ~90% done. Hiding on
+     collapse stays instant -- no reason for it to linger while the rail
+     shrinks under it. These ID-selector rules override the .sidebar-label
+     display:none above (higher specificity) so the button stays in the
+     layout (display: flex, matching its own `flex` utility class) and can
+     actually transition via opacity instead. */
+  #sidebar-toggle {
+    transition: opacity 0.05s ease 0.18s;
+  }
+  #sidebar.collapsed #sidebar-toggle,
+  html.sidebar-collapsed-init #sidebar #sidebar-toggle {
+    display: flex;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.05s ease 0s;
   }
   /* The account trigger's avatar is the only thing left visible once the
      sidebar is collapsed (name/chevron are .sidebar-label and hide via the
@@ -291,11 +317,12 @@
   {% endfor %}
   {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
+  {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
 
   <div class="hidden lg:flex h-full">
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="relative bg-base-100 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0 cursor-pointer" aria-expanded="true" aria-label="Toggle sidebar">
+    <aside id="sidebar" class="relative bg-base-100 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0" aria-expanded="true" aria-label="Toggle sidebar">
 
       <div id="sidebar-header" class="flex items-center justify-between gap-3 min-w-0 pl-6 pr-3 pt-8 pb-4 shrink-0">
         <div class="flex items-center min-w-0">
@@ -305,7 +332,7 @@
           </span>
           <span id="sidebar-title" class="shrink-0 ml-4 flex items-center text-xl text-base-content tracking-tight" style="font-family: 'Archivo', sans-serif; font-weight: 700; height: 1.5rem; line-height: 1.5rem;">Archaív</span>
         </div>
-        <button type="button" id="sidebar-toggle" class="sidebar-label shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content"
+        <button type="button" id="sidebar-toggle" class="sidebar-label shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content cursor-pointer"
                 aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
         </button>
@@ -314,7 +341,7 @@
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
-        <a href="{{ href }}"
+        <a href="{{ href }}" data-tooltip="{{ label }}" aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -345,7 +372,7 @@
         {% endfor %}
 
         {% if staff and staff.role in ["admin", "in_charge"] %}
-        <a href="/staff"
+        <a href="/staff" data-tooltip="Staff" aria-label="Staff"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -356,7 +383,7 @@
         {% endif %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/audit-log"
+        <a href="/audit-log" data-tooltip="Activity Log" aria-label="Activity Log"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -365,13 +392,24 @@
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Activity Log</span>
         </a>
         {% endif %}
+
+        {% if staff and staff.role == "admin" %}
+        <a href="/system" data-tooltip="System" aria-label="System"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == '/system' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">System</span>
+        </a>
+        {% endif %}
       </nav>
 
       {% if staff %}
       <!-- ACCOUNT (bottom of sidebar) -->
       <div id="sidebar-account" class="shrink-0 p-3">
         <div class="dropdown dropdown-top w-full">
-          <label tabindex="0" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
+          <label tabindex="0" data-tooltip="{{ staff_full_name }}" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
             <div class="bg-primary text-primary-content rounded-full w-7 h-7 flex items-center justify-center shrink-0">
               <span class="text-sm font-semibold">{{ staff.username[0] | upper }}</span>
             </div>
@@ -450,6 +488,19 @@
       </div>
       {% endif %}
     </aside>
+
+    <!-- Shared collapsed-rail tooltip -- one reusable element (JS-positioned
+         per hover target via getBoundingClientRect, see the script below)
+         rather than a per-link tooltip embedded in the sidebar markup. That
+         matters because the nav list has overflow-y:auto, which per the CSS
+         overflow spec forces overflow-x to auto too (visible + auto on the
+         same element isn't allowed) -- an absolutely-positioned per-link
+         tooltip would get clipped at the nav's edge. Living here at the
+         top level with position:fixed sidesteps that entirely. Only ever
+         shown while the sidebar is collapsed (see JS) -- expanded labels
+         are already visible text, a tooltip would be redundant there. -->
+    <div id="sidebar-tooltip" role="tooltip"
+         class="fixed hidden bg-base-100 text-base-content text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-lg border border-base-300 whitespace-nowrap pointer-events-none z-[200]"></div>
 
     <!-- MAIN COLUMN -->
     <div id="main-shell" class="flex-1 flex flex-col h-full min-w-0 pt-2 pr-2 pb-2 bg-base-100">
@@ -645,31 +696,34 @@
       </dialog>
 
       <!-- Change password modal -->
-      <dialog id="change-password-modal" class="modal">
+      <dialog id="change-password-modal" class="modal" onclose="resetChangePasswordForm()">
         <div class="modal-box max-w-sm">
           <h3 class="font-bold text-lg mb-1">Change password</h3>
-          <p class="text-xs text-base-content/50 mb-4">Coming soon.</p>
+          <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
 
-          <div class="space-y-2">
-            <input type="password" disabled placeholder="Current password"
-                   class="input input-bordered input-sm w-full" />
-            <input type="password" disabled placeholder="New password"
-                   class="input input-bordered input-sm w-full" />
-            <input type="password" disabled placeholder="Confirm new password"
-                   class="input input-bordered input-sm w-full" />
-          </div>
+          <div id="change-password-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
 
-          <div class="modal-action">
-            <button type="button"
-                    onclick="document.getElementById('change-password-modal').close(); document.getElementById('my-account-modal').showModal()"
-                    class="btn btn-sm">
-              Back
-            </button>
-            <button type="button" disabled onclick="showToast('Password change coming soon', 'info')"
-                    class="btn btn-primary btn-sm">
-              Update password
-            </button>
-          </div>
+          <form id="change-password-form" onsubmit="return submitChangePassword(event)">
+            <div class="space-y-2">
+              <input type="password" id="cp-current" placeholder="Current password" autocomplete="current-password"
+                     class="input input-bordered input-sm w-full" />
+              <input type="password" id="cp-new" placeholder="New password (min. 8 characters)" autocomplete="new-password"
+                     class="input input-bordered input-sm w-full" />
+              <input type="password" id="cp-confirm" placeholder="Confirm new password" autocomplete="new-password"
+                     class="input input-bordered input-sm w-full" />
+            </div>
+
+            <div class="modal-action">
+              <button type="button"
+                      onclick="document.getElementById('change-password-modal').close(); document.getElementById('my-account-modal').showModal()"
+                      class="btn btn-sm">
+                Back
+              </button>
+              <button type="submit" id="change-password-submit-btn" class="btn btn-primary btn-sm">
+                Update password
+              </button>
+            </div>
+          </form>
         </div>
         <form method="dialog" class="modal-backdrop">
           <button>close</button>
@@ -815,10 +869,12 @@
   <dialog id="session-timeout-modal" class="modal">
     <div class="modal-box max-w-sm">
       <h3 class="font-bold text-lg mb-2">Session timed out</h3>
-      <p class="text-sm text-base-content/70 mb-4">You've been signed out due to inactivity. Please log in again to continue.</p>
+      <p class="text-sm text-base-content/70 mb-4">
+        You've been signed out due to inactivity. Redirecting to the login page in <span id="session-timeout-countdown">3</span>s&hellip;
+      </p>
       <div class="modal-action">
         <button type="button" onclick="window.location.href='/login'" class="btn btn-primary">
-          Log in
+          Log in now
         </button>
       </div>
     </div>
@@ -836,6 +892,13 @@
     toggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
   }
 
+  function setCollapsed(collapsed) {
+    sidebar.classList.toggle('collapsed', collapsed);
+    sidebar.setAttribute('aria-expanded', String(!collapsed));
+    syncToggleState();
+    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+  }
+
   if (document.documentElement.classList.contains('sidebar-collapsed-init')) {
     sidebar.classList.add('collapsed');
     document.documentElement.classList.remove('sidebar-collapsed-init');
@@ -843,17 +906,153 @@
   sidebar.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
   syncToggleState();
 
+  // Asymmetric on purpose: collapsing is a deliberate action (only the
+  // dedicated toggle button does it), but expanding blank rail space is
+  // easy -- while collapsed, clicking empty space (or the toggle button
+  // itself) expands it back. Nav links and the account avatar/dropdown
+  // are excluded in BOTH states, though, so using a tab or opening the
+  // account menu is always just that -- collapse/expand stays entirely
+  // the user's own choice via the toggle button or blank space, never a
+  // side effect of navigating around while collapsed.
   sidebar.addEventListener('click', function(e) {
     if (e.target.closest('a')) return;
     if (e.target.closest('#sidebar-account')) return;
     if (e.target.closest('.dropdown-content')) return;
 
-    const collapsed = sidebar.classList.toggle('collapsed');
-    sidebar.setAttribute('aria-expanded', String(!collapsed));
-    syncToggleState();
-    localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+    if (sidebar.classList.contains('collapsed')) {
+      setCollapsed(false);
+      return;
+    }
+
+    if (e.target.closest('#sidebar-toggle')) {
+      setCollapsed(true);
+    }
   });
+
+  // Collapsed-rail tooltips -- only meaningful while collapsed, since an
+  // expanded link's label is already visible text right next to it.
+  // 150ms show-delay (fast on purpose -- half the ~300ms a "normal"
+  // tooltip delay would use), no delay on hide so it never lingers once
+  // the cursor leaves.
+  const TOOLTIP_SHOW_DELAY_MS = 150;
+  const tooltipEl = document.getElementById('sidebar-tooltip');
+  let tooltipShowTimer = null;
+
+  function hideTooltip() {
+    if (tooltipShowTimer) {
+      clearTimeout(tooltipShowTimer);
+      tooltipShowTimer = null;
+    }
+    tooltipEl.classList.add('hidden');
+  }
+
+  sidebar.querySelectorAll('[data-tooltip]').forEach(function (el) {
+    el.addEventListener('mouseenter', function () {
+      if (!sidebar.classList.contains('collapsed')) return;
+      const text = el.getAttribute('data-tooltip');
+      if (!text) return;
+
+      tooltipShowTimer = setTimeout(function () {
+        tooltipEl.textContent = text;
+        tooltipEl.classList.remove('hidden');
+        const rect = el.getBoundingClientRect();
+        tooltipEl.style.top = (rect.top + rect.height / 2) + 'px';
+        tooltipEl.style.left = (rect.right + 10) + 'px';
+        tooltipEl.style.transform = 'translateY(-50%)';
+      }, TOOLTIP_SHOW_DELAY_MS);
+    });
+    el.addEventListener('mouseleave', hideTooltip);
+    el.addEventListener('click', hideTooltip);
+  });
+
+  // Collapsing mid-hover (via the toggle button, e.g.) shouldn't leave a
+  // stale tooltip positioned over now-hidden content; expanding should
+  // never show one at all (see the sidebar.classList.contains('collapsed')
+  // guard above, but a tooltip already showing when the button is
+  // clicked to expand needs to be explicitly cleared too).
+  toggleBtn.addEventListener('click', hideTooltip);
 })();
+
+function resetChangePasswordForm() {
+  const form = document.getElementById('change-password-form');
+  if (form) form.reset();
+  const errorEl = document.getElementById('change-password-error');
+  if (errorEl) errorEl.classList.add('hidden');
+  const btn = document.getElementById('change-password-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Update password'; }
+}
+
+async function submitChangePassword(event) {
+  event.preventDefault();
+
+  const errorEl = document.getElementById('change-password-error');
+  errorEl.classList.add('hidden');
+
+  const currentPassword = document.getElementById('cp-current').value;
+  const newPassword = document.getElementById('cp-new').value;
+  const confirmPassword = document.getElementById('cp-confirm').value;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    errorEl.textContent = 'Fill in all three fields.';
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+  if (newPassword !== confirmPassword) {
+    errorEl.textContent = "New password and confirmation don't match.";
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+  if (newPassword.length < 8) {
+    errorEl.textContent = 'New password must be at least 8 characters.';
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+
+  const btn = document.getElementById('change-password-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+
+  try {
+    const res = await fetch('/api/v1/staff/change-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    // change_password_submit returns 401 for two different reasons: a
+    // wrong current password (a normal, expected form error) or an
+    // expired/invalid session (via require_session, same as every other
+    // route). Distinguish by message so a mistyped current password
+    // doesn't incorrectly pop the "session timed out" modal.
+    if (res.status === 401 && data.error !== 'Current password is incorrect') {
+      showSessionTimeoutModal();
+      return false;
+    }
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't change password. Please try again.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Update password';
+      return false;
+    }
+
+    document.getElementById('change-password-modal').close();
+    showToast('Password changed successfully', 'success');
+  } catch (err) {
+    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Update password';
+  }
+
+  return false;
+}
 
 function markAllNotificationsRead() {
   fetch('/api/v1/notifications/mark-all-read', {
@@ -959,9 +1158,29 @@ function toggleToastStyle() {
 const TOAST_DEFAULT_DURATION_MS = 4000;
 const TOAST_ACTION_DURATION_MS = 6000;
 
+const SESSION_TIMEOUT_REDIRECT_SECONDS = 3;
+
 function showSessionTimeoutModal() {
   const modal = document.getElementById('session-timeout-modal');
-  if (modal && !modal.open) modal.showModal();
+  // Guards against every other 401 handler on the page calling this --
+  // there are several, one per fetch() call scattered across templates
+  // plus the global htmx:responseError listener -- re-triggering the
+  // countdown/redirect timer on an already-open modal.
+  if (!modal || modal.open) return;
+  modal.showModal();
+
+  let secondsLeft = SESSION_TIMEOUT_REDIRECT_SECONDS;
+  const countdownEl = document.getElementById('session-timeout-countdown');
+  if (countdownEl) countdownEl.textContent = String(secondsLeft);
+
+  const interval = setInterval(function () {
+    secondsLeft -= 1;
+    if (countdownEl) countdownEl.textContent = String(Math.max(secondsLeft, 0));
+    if (secondsLeft <= 0) {
+      clearInterval(interval);
+      window.location.href = '/login';
+    }
+  }, 1000);
 }
 (function () {
   const modal = document.getElementById('session-timeout-modal');

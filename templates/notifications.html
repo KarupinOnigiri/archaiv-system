@@ -9,59 +9,84 @@
       <p class="text-sm text-base-content/50 mt-1">Due-soon and overdue borrowed items, refreshed automatically every 15 minutes.</p>
     </div>
     <div class="flex items-center gap-2">
-      <a href="/notifications{% if not show_unread_only %}?show_unread_only=1{% endif %}" class="btn btn-outline btn-sm">
-        {% if show_unread_only %}Show All{% else %}Show Unread Only{% endif %}
-      </a>
       <button type="button" class="btn btn-outline btn-sm" onclick="markAllNotificationsRead()">
         Mark all as read
       </button>
     </div>
   </div>
 
-  <!-- List -->
+  <!-- Toolbar + list -->
   <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-    <div class="divide-y divide-base-200">
-      {% for n in notifications %}
-      <div class="flex items-center gap-3 py-3 cursor-pointer hover:bg-base-200/60 transition-colors {% if not n.is_read %}bg-primary/5 -mx-2 px-2 rounded-lg{% endif %}"
-           data-notification-id="{{ n.id }}"
-           onclick="window.location.href='/api/v1/notifications/{{ n.id }}/open'">
-        <span class="{% if n.type == 'overdue' %}bg-error/10 text-error{% else %}bg-warning/10 text-warning{% endif %} rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-        </span>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %}">{{ n.message }}</p>
-          <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at | format_date }} &middot; <span class="uppercase">{{ n.type.replace('_', ' ') }}</span></p>
+
+    <div class="relative mb-5">
+      <div id="filter-row" class="flex flex-wrap items-center gap-3">
+
+        {% set show_unread_only_qs = request.args.get('show_unread_only') == '1' %}
+        <label id="unread-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_unread_only_qs %}text-primary font-semibold bg-primary/10{% else %}text-base-content/70{% endif %}">
+          <input type="checkbox" id="show-unread-only-toggle" name="show_unread_only"
+                 class="toggle toggle-sm {% if show_unread_only_qs %}toggle-primary{% endif %}"
+                 {% if show_unread_only_qs %}checked{% endif %}
+                 hx-get="/api/v1/notifications/table"
+                 hx-trigger="change"
+                 hx-target="#notifications-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#notif-since-filter, #notif-until-filter"
+                 hx-vals='js:{"limit": {{ limit }}, "offset": 0, "show_unread_only": event.target.checked ? "1" : "0"}'>
+          <span>Unread only</span>
+        </label>
+
+        <div id="notif-date-filters" class="join rounded-lg transition-shadow" title="Date range">
+          <button type="button" id="notif-date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearNotifDateFilter()" aria-label="Clear date range filter" title="Clear date range filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </button>
+          <input type="date" id="notif-since-filter" name="since"
+                 aria-label="From date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ request.args.get('since', '') }}"
+                 title="From"
+                 hx-get="/api/v1/notifications/table"
+                 hx-trigger="change"
+                 hx-target="#notifications-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#show-unread-only-toggle, #notif-until-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+          <input type="date" id="notif-until-filter" name="until"
+                 aria-label="To date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ request.args.get('until', '') }}"
+                 title="To"
+                 hx-get="/api/v1/notifications/table"
+                 hx-trigger="change"
+                 hx-target="#notifications-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#show-unread-only-toggle, #notif-since-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
-        {% if not n.is_read %}
-        <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="event.stopPropagation(); markOneNotificationRead({{ n.id }}, this)">
-          Mark as read
-        </button>
-        {% endif %}
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+
+        <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
       </div>
-      {% else %}
-      <div class="flex items-center justify-center text-sm text-base-content/50 py-16">
-        {% if show_unread_only %}No unread notifications.{% else %}You're all caught up.{% endif %}
-      </div>
-      {% endfor %}
     </div>
 
-    <!-- Simple prev/next pagination -->
-    {% if total_count > limit %}
-    <div class="flex items-center justify-between mt-5 pt-4 border-t border-base-200">
-      <p class="text-xs text-base-content/50">
-        Showing {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %} of {{ total_count }}
-      </p>
-      <div class="flex items-center gap-2">
-        <a href="/notifications?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}{% if show_unread_only %}&show_unread_only=1{% endif %}"
-           class="btn btn-outline btn-xs {% if offset == 0 %}btn-disabled{% endif %}">Previous</a>
-        <a href="/notifications?limit={{ limit }}&offset={{ offset + limit }}{% if show_unread_only %}&show_unread_only=1{% endif %}"
-           class="btn btn-outline btn-xs {% if offset + limit >= total_count %}btn-disabled{% endif %}">Next</a>
-      </div>
+    <div id="notifications-table-container"
+         hx-get="/api/v1/notifications/table"
+         hx-trigger="load"
+         hx-target="#notifications-table-container"
+         hx-swap="innerHTML"
+         hx-include="#show-unread-only-toggle, #notif-since-filter, #notif-until-filter"
+         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }} }'>
     </div>
-    {% endif %}
   </div>
 </div>
+
+<style>
+.htmx-indicator { opacity: 0; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>
 
 <script>
 function markOneNotificationRead(id, btn) {
@@ -80,5 +105,58 @@ function markOneNotificationRead(id, btn) {
     }
   }).catch(() => showToast("Couldn't mark notification as read", 'error'));
 }
+
+function clearNotifDateFilter() {
+  const since = document.getElementById('notif-since-filter');
+  const until = document.getElementById('notif-until-filter');
+  if (since.value === '' && until.value === '') return;
+  since.value = '';
+  until.value = '';
+  since.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function updateNotifFilterUI() {
+  const since = document.getElementById('notif-since-filter');
+  const until = document.getElementById('notif-until-filter');
+  const dateActive = since.value !== '' || until.value !== '';
+  document.getElementById('notif-date-filters').classList.toggle('ring-2', dateActive);
+  document.getElementById('notif-date-filters').classList.toggle('ring-primary/40', dateActive);
+  document.getElementById('notif-date-filter-clear-btn').disabled = !dateActive;
+
+  const unreadToggle = document.getElementById('show-unread-only-toggle');
+  const unreadLabel = document.getElementById('unread-toggle-label');
+  unreadLabel.classList.toggle('text-primary', unreadToggle.checked);
+  unreadLabel.classList.toggle('font-semibold', unreadToggle.checked);
+  unreadLabel.classList.toggle('bg-primary/10', unreadToggle.checked);
+  unreadLabel.classList.toggle('text-base-content/70', !unreadToggle.checked);
+  unreadToggle.classList.toggle('toggle-primary', unreadToggle.checked);
+}
+
+document.getElementById('show-unread-only-toggle').addEventListener('change', updateNotifFilterUI);
+
+document.addEventListener('htmx:configRequest', function (evt) {
+  const container = document.getElementById('notifications-table-container');
+  if (evt.detail.target !== container) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['show_unread_only', 'since', 'until', 'limit', 'offset'].forEach(function (key) {
+      if (params[key] !== undefined && params[key] !== '' && params[key] !== '0') {
+        url.searchParams.set(key, params[key]);
+      } else {
+        url.searchParams.delete(key);
+      }
+    });
+    window.history.replaceState({}, '', url);
+  } catch (e) {}
+});
+
+document.addEventListener('htmx:afterSwap', function (evt) {
+  if (evt.target && evt.target.id === 'notifications-table-container') {
+    updateNotifFilterUI();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', updateNotifFilterUI);
 </script>
 {% endblock %}

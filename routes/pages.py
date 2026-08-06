@@ -1,11 +1,12 @@
 from flask import Blueprint, render_template, request, g
 from database import get_db_connection
-from services.auth_service import login_required
+from services.auth_service import login_required, roles_required
 from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
 from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
 from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
 from routes.transactions import get_transactions_table_context  # same note as above -- adjust to match wherever transactions.py actually lives
-from routes.notifications import get_notifications_table_context
+from utils.formatters import full_name
+from utils.validators import parse_pagination_params
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -233,6 +234,26 @@ def transactions_page():
     stat_returned = conn.execute(
         "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'returned'"
     ).fetchone()["cnt"]
+
+    # Only present when arriving via a notification's "open" link
+    # (?member_id=<id>) -- looked up here (rather than in
+    # get_transactions_table_context, which only needs the id for its
+    # WHERE clause) purely so transactions.html can show *whose* loans
+    # are being filtered to, instead of an unexplained filtered list.
+    filtered_member_name = None
+    member_id = request.args.get("member_id")
+    if member_id:
+        member_row = conn.execute(
+            "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
+            (member_id,),
+        ).fetchone()
+        if member_row:
+            filtered_member_name = full_name(
+                member_row["first_name"],
+                member_row["last_name"],
+                member_row["middle_name"],
+                member_row["suffix"],
+            )
     conn.close()
 
     # Same reasoning as assets_page/members_page/staff_page: reuse the
@@ -262,6 +283,7 @@ def transactions_page():
         stat_borrowed=stat_borrowed,
         stat_overdue=stat_overdue,
         stat_returned=stat_returned,
+        filtered_member_name=filtered_member_name,
         **table_context,
     )
 
@@ -269,18 +291,45 @@ def transactions_page():
 @pages_bp.route("/notifications")
 @login_required
 def notifications_page():
-    table_context, error = get_notifications_table_context(request.args)
+    """The table itself loads via htmx (hx-trigger="load" on
+    #notifications-table-container, see notifications.html and
+    routes/notifications.py's /notifications/table) rather than being
+    server-rendered here -- one request instead of two (server render +
+    the cold-load JS replay other tabs use), and get_notifications_table_
+    context is still the single source of truth either way. This route
+    only needs limit/offset, to seed the container's initial hx-vals so
+    the first load respects a hard-refreshed, paginated URL."""
+    limit, offset, error = parse_pagination_params(request.args)
     if error:
-        table_context = {
-            "notifications": [],
-            "total_count": 0,
-            "limit": 20,
-            "offset": 0,
-            "show_unread_only": False,
-        }
+        limit, offset = 20, 0
+    return render_template("notifications.html", staff=g.staff, limit=limit, offset=offset)
 
-    return render_template(
-        "notifications.html",
-        staff=g.staff,
-        **table_context,
-    )
+
+@pages_bp.route("/audit-log")
+@login_required
+def audit_log_page():
+    """The sidebar's "Activity Log" link used to point here while no
+    route existed at this exact path -- the actual logic lived at
+    /api/v1/audit-log (staff_bp's url_prefix) and returned raw JSON, so
+    the link 404'd. This is the missing page. Same one-request-not-two
+    reasoning as notifications_page(): the table loads via htmx
+    (get_audit_log_context, /api/v1/audit-log/table), so this route only
+    needs limit/offset to seed the container's initial hx-vals."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        limit, offset = 25, 0
+    return render_template("audit_log.html", staff=g.staff, limit=limit, offset=offset)
+
+
+@pages_bp.route("/system")
+@roles_required("admin")
+def system_page():
+    """Admin-only hub for the app-wide policy knobs that used to be
+    hardcoded Python constants scattered across auth.py/transactions.py/
+    notification_service.py -- session timeouts, account lockout, loan
+    limits, and the notification due-soon threshold. Just a launcher
+    page: each card opens the same modal+endpoint that already existed
+    (moved here from the Staff tab for loan limits/session settings, or
+    newly added alongside them for lockout/notifications), so there's no
+    new settings-storage logic here, only the landing page for it."""
+    return render_template("system.html", staff=g.staff)

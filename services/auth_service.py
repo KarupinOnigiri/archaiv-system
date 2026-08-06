@@ -2,12 +2,11 @@ from functools import wraps
 from database import get_db_connection
 from flask import jsonify, request, g
 from datetime import datetime, timedelta
+from services.settings_service import get_session_idle_minutes
 import hmac
 import logging
 
 logger = logging.getLogger(__name__)
-
-SESSION_IDLE_MINUTES = 30
 
 
 def require_session(conn):
@@ -40,7 +39,7 @@ def require_session(conn):
         conn.commit()
         return None, (jsonify({"error": "Session expired, please log in again"}), 401)
 
-    if now - last_active_at > timedelta(minutes=SESSION_IDLE_MINUTES):
+    if now - last_active_at > timedelta(minutes=get_session_idle_minutes(conn)):
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
         conn.commit()
         return None, (jsonify({"error": "Session timed out due to inactivity"}), 401)
@@ -72,13 +71,14 @@ def cleanup_expired_sessions():
     the table indefinitely. Run on a schedule so it doesn't grow unbounded."""
     conn = get_db_connection()
     try:
+        idle_minutes = get_session_idle_minutes(conn)
         conn.execute(
             """
             DELETE FROM sessions
             WHERE expires_at < datetime('now', 'localtime')
             OR last_active_at < datetime('now', 'localtime', ?)
             """,
-            (f"-{SESSION_IDLE_MINUTES} minutes",),
+            (f"-{idle_minutes} minutes",),
         )
         conn.commit()
     except Exception as e:

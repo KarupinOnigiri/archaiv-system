@@ -32,14 +32,29 @@
   </div>
 
   <!-- Shown only when arriving via a notification's "open" link
-       (?transaction_id=...) -- without this, the table below silently
-       shows just the one matching row with every visible filter control
-       still reading "All", which looks broken rather than filtered. -->
-  {% if request.args.get('transaction_id') %}
-  <div class="alert bg-primary/10 border border-primary/20 text-sm py-2.5 flex items-center justify-between">
-    <span>Showing the specific loan from that notification.</span>
+       (?member_id=...) -- the table below is filtered to that one
+       borrower's loans (see the member_id filter in
+       _build_transactions_filters), which would otherwise look like an
+       unexplained subset of the usual full list. -->
+  {% if filtered_member_name %}
+  <div id="member-filter-banner" class="alert bg-primary/10 border border-primary/20 text-sm py-2.5 flex items-center justify-between">
+    <span>Showing loans for <strong>{{ filtered_member_name }}</strong>.</span>
     <a href="/transactions" class="btn btn-ghost btn-xs">Clear &amp; show all</a>
   </div>
+  {% endif %}
+
+  <!-- Auto-opens one loan's details modal on top of the (possibly
+       borrower-filtered, see above) table when arriving via a
+       notification's "open" link (?open_transaction=<id>) -- gives the
+       specific loan the notification was about immediate focus. isdigit()
+       guards against a tampered/non-numeric query param turning into a
+       malformed hx-get URL. -->
+  {% set open_transaction_id = request.args.get('open_transaction') %}
+  {% if open_transaction_id and open_transaction_id.isdigit() %}
+  <div hx-get="/api/v1/transactions/{{ open_transaction_id }}/details-modal"
+       hx-target="#modal-container"
+       hx-trigger="load"
+       hx-swap="innerHTML"></div>
   {% endif %}
 
   <!-- Stat cards -->
@@ -59,6 +74,19 @@
 
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
+        <!-- Not a visible control -- carries the borrower-scoping filter
+             from a notification's "open" link (?member_id=...) through
+             every subsequent htmx request on this page (search, status,
+             dates, sort, paging), the same way the visible filter inputs
+             already do for each other via hx-include. Without this,
+             each of those requests rebuilds its params from only the
+             visible fields and silently drops member_id the moment any
+             of them fires -- which is exactly what "the notification
+             filter didn't stick" turned out to be. Empty string when
+             unset, matching every other optional filter here (backend
+             treats blank as "not set"). -->
+        <input type="hidden" id="member-id-filter" name="member_id" value="{{ request.args.get('member_id', '') }}">
+
         <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
           <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -72,7 +100,7 @@
                  hx-target="#transaction-table-container"
                  hx-swap="innerHTML"
                  hx-indicator="#table-spinner"
-                 hx-include="#status-filter, #time-out-from-filter, #time-out-to-filter"
+                 hx-include="#status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
                   aria-label="Clear search" title="Clear search" onclick="clearSearch()">
@@ -93,7 +121,7 @@
                   hx-target="#transaction-table-container"
                   hx-swap="innerHTML"
                   hx-indicator="#table-spinner"
-                  hx-include="#transaction-search, #time-out-from-filter, #time-out-to-filter"
+                  hx-include="#transaction-search, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
                   hx-vals='{"limit": {{ limit }}, "offset": 0}'>
             <option value="">Status</option>
             <option value="borrowed" {% if status_filter == "borrowed" %}selected{% endif %}>Borrowed</option>
@@ -117,7 +145,7 @@
                  hx-target="#transaction-table-container"
                  hx-swap="innerHTML"
                  hx-indicator="#table-spinner"
-                 hx-include="#transaction-search, #status-filter, #time-out-to-filter"
+                 hx-include="#transaction-search, #status-filter, #time-out-to-filter, #member-id-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
           <input type="date" id="time-out-to-filter" name="time_out_to"
@@ -130,7 +158,7 @@
                  hx-target="#transaction-table-container"
                  hx-swap="innerHTML"
                  hx-indicator="#table-spinner"
-                 hx-include="#transaction-search, #status-filter, #time-out-from-filter"
+                 hx-include="#transaction-search, #status-filter, #time-out-from-filter, #member-id-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
 
@@ -169,7 +197,7 @@
            hx-target="#transaction-table-container"
            hx-swap="innerHTML"
            hx-indicator="#table-spinner"
-           hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+           hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
            hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
         {% include "transactions/_table.html" %}
       </div>
@@ -312,12 +340,14 @@ function getBaseFilterParams() {
   const status = document.getElementById('status-filter').value;
   const timeOutFrom = document.getElementById('time-out-from-filter').value;
   const timeOutTo = document.getElementById('time-out-to-filter').value;
+  const memberId = document.getElementById('member-id-filter').value;
 
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (status) params.set('status', status);
   if (timeOutFrom) params.set('time_out_from', timeOutFrom);
   if (timeOutTo) params.set('time_out_to', timeOutTo);
+  if (memberId) params.set('member_id', memberId);
   return params;
 }
 
@@ -343,6 +373,12 @@ function clearAllFilters() {
   document.getElementById('status-filter').value = '';
   document.getElementById('time-out-from-filter').value = '';
   document.getElementById('time-out-to-filter').value = '';
+  // Also drops the borrower scope from a notification's "open" link, if
+  // one is active -- "Clear filters" clearing every filter but this one
+  // would be a surprising exception.
+  document.getElementById('member-id-filter').value = '';
+  const banner = document.getElementById('member-filter-banner');
+  if (banner) banner.remove();
   htmx.ajax('GET', '/api/v1/transactions/table', {
     target: '#transaction-table-container',
     swap: 'innerHTML',
@@ -417,7 +453,7 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
   try {
     const params = evt.detail.parameters || {};
     const url = new URL(window.location.href);
-    ['q', 'status', 'time_out_from', 'time_out_to', 'limit', 'offset', 'sort_by', 'sort_dir'].forEach(function (key) {
+    ['q', 'status', 'time_out_from', 'time_out_to', 'member_id', 'limit', 'offset', 'sort_by', 'sort_dir'].forEach(function (key) {
       if (params[key] !== undefined && params[key] !== '') {
         url.searchParams.set(key, params[key]);
       } else {
@@ -462,6 +498,9 @@ document.addEventListener('DOMContentLoaded', function () {
   {% endif %}
   {% if request.args.get('time_out_to') %}
   params.set('time_out_to', {{ request.args.get('time_out_to') | tojson }});
+  {% endif %}
+  {% if request.args.get('member_id') %}
+  params.set('member_id', {{ request.args.get('member_id') | tojson }});
   {% endif %}
   htmx.ajax('GET', '/api/v1/transactions/table', {
     target: '#transaction-table-container',

@@ -6108,6 +6108,9 @@
   .z-\[100\] {
     z-index: 100;
   }
+  .z-\[200\] {
+    z-index: 200;
+  }
   .z-\[1100\] {
     z-index: 1100;
   }
@@ -8341,6 +8344,9 @@
   :where(.divide-base-200 > :not(:last-child)) {
     border-color: var(--color-base-200);
   }
+  .self-start {
+    align-self: flex-start;
+  }
   .truncate {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -8351,6 +8357,9 @@
   }
   .overflow-visible {
     overflow: visible;
+  }
+  .overflow-x-auto {
+    overflow-x: auto;
   }
   .overflow-x-hidden {
     overflow-x: hidden;

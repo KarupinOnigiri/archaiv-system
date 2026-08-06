@@ -239,22 +239,24 @@ def _build_transactions_filters(args):
     where_clauses = []
     params = []
 
-    # Exact-match escape hatch for deep-linking to one specific loan (e.g.
-    # from a notification's "overdue"/"due_soon" alert) -- guarantees that
-    # exact row surfaces regardless of whatever other filters/pagination
-    # happen to be in the URL. Not exposed as a user-facing filter control
-    # anywhere; only ever set by a generated link.
-    transaction_id = args.get("transaction_id")
-    if transaction_id:
+    # Exact-match escape hatch for deep-linking to one borrower's loans
+    # (e.g. from a notification's "overdue"/"due_soon" alert) -- guarantees
+    # every loan for that exact member surfaces regardless of name
+    # collisions the free-text `q` search below could otherwise match
+    # incorrectly. Not exposed as a user-facing filter control anywhere;
+    # only ever set by a generated link (see routes/notifications.py's
+    # open_notification).
+    member_id = args.get("member_id")
+    if member_id:
         try:
-            transaction_id = int(transaction_id)
+            member_id = int(member_id)
         except (TypeError, ValueError):
             return None, None, None, (
-                jsonify({"error": "transaction_id must be an integer"}),
+                jsonify({"error": "member_id must be an integer"}),
                 400,
             )
-        where_clauses.append("transactions.id = ?")
-        params.append(transaction_id)
+        where_clauses.append("transactions.member_id = ?")
+        params.append(member_id)
 
     q = args.get("q")
     if q:

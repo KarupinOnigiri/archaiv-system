@@ -1,0 +1,109 @@
+<div class="divide-y divide-base-200">
+  {% for n in notifications %}
+  <div class="flex items-center gap-3 py-3 cursor-pointer hover:bg-base-200/60 transition-colors {% if not n.is_read %}bg-primary/5 -mx-2 px-2 rounded-lg{% endif %}"
+       data-notification-id="{{ n.id }}"
+       onclick="window.location.href='/api/v1/notifications/{{ n.id }}/open'">
+    <span class="{% if n.type == 'overdue' %}bg-error/10 text-error{% else %}bg-warning/10 text-warning{% endif %} rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %}">{{ n.message }}</p>
+      <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at | format_date }} &middot; <span class="uppercase">{{ n.type.replace('_', ' ') }}</span></p>
+    </div>
+    {% if not n.is_read %}
+    <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="event.stopPropagation(); markOneNotificationRead({{ n.id }}, this)">
+      Mark as read
+    </button>
+    {% endif %}
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+  </div>
+  {% else %}
+  <div class="flex items-center justify-center text-sm text-base-content/50 py-16">
+    {% if show_unread_only or since or until %}No notifications match these filters.{% else %}You're all caught up.{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+     members/staff/transactions, so every paginated tab in the app
+     behaves identically. -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/notifications/table"
+            hx-trigger="change"
+            hx-target="#notifications-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#show-unread-only-toggle, #notif-since-filter, #notif-until-filter"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }}
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            aria-label="Previous page"
+            hx-get="/api/v1/notifications/table"
+            hx-target="#notifications-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#show-unread-only-toggle, #notif-since-filter, #notif-until-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/notifications/table"
+                hx-target="#notifications-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#show-unread-only-toggle, #notif-since-filter, #notif-until-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            aria-label="Next page"
+            hx-get="/api/v1/notifications/table"
+            hx-target="#notifications-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#show-unread-only-toggle, #notif-since-filter, #notif-until-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>

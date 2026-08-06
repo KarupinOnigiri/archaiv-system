@@ -9,7 +9,7 @@
           hx-target="#transaction-table-container"
           hx-swap="innerHTML"
           hx-indicator="#table-spinner"
-          hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+          hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
           hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
     {{ label }}
     {% if is_active %}
@@ -139,7 +139,7 @@
             hx-target="#transaction-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
             name="limit"
             hx-vals='js:{"limit": event.target.value, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
@@ -161,7 +161,7 @@
             hx-target="#transaction-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
@@ -188,7 +188,7 @@
                 hx-target="#transaction-table-container"
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
-                hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+                hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
           {{ p }}
         </button>
@@ -202,7 +202,7 @@
             hx-target="#transaction-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter"
+            hx-include="#transaction-search, #status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
     </button>

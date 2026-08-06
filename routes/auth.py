@@ -13,14 +13,16 @@ from flask import (
 )
 from utils.formatters import full_name
 from utils.logger import log_action
-from services.auth_service import login_required, SESSION_IDLE_MINUTES
+from services.auth_service import login_required
+from services.settings_service import (
+    get_session_idle_minutes,
+    get_session_absolute_hours,
+    get_max_failed_attempts,
+    get_lockout_minutes,
+)
 from extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
-
-SESSION_ABSOLUTE_HOURS = 12
-MAX_FAILED_ATTEMPTS = 5
-LOCKOUT_MINUTES = 15
 
 # Precomputed once at import time so login() has a constant-cost hash to
 # # check against when no matching account exists — keeps response timing
@@ -97,7 +99,7 @@ def login():
                 existing_session["last_active_at"], "%Y-%m-%d %H:%M:%S"
             )
             session_is_live = now <= expires_at and (now - last_active_at) <= timedelta(
-                minutes=SESSION_IDLE_MINUTES
+                minutes=get_session_idle_minutes(conn)
             )
 
             if session_is_live:
@@ -172,10 +174,11 @@ def login():
 
     if not check_password_hash(staff["password_hash"], password):
         new_attempts = staff["failed_login_attempts"] + 1
+        lockout_minutes = get_lockout_minutes(conn)
 
-        if new_attempts >= MAX_FAILED_ATTEMPTS:
+        if new_attempts >= get_max_failed_attempts(conn):
             lockout_until = (
-                datetime.now() + timedelta(minutes=LOCKOUT_MINUTES)
+                datetime.now() + timedelta(minutes=lockout_minutes)
             ).strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 "UPDATE staff SET failed_login_attempts = ?, locked_until = ? WHERE id = ?",
@@ -192,17 +195,9 @@ def login():
                 details=f"Account locked after {new_attempts} failed login attempts",
             )
 
-            # return (
-            #     jsonify(
-            #         {
-            #             "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
-            #         }
-            #     ),
-            #     403,
-            # )
             return _login_response(
                 {
-                    "error": f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
+                    "error": f"Too many failed attempts. Account locked for {lockout_minutes} minutes."
                 },
                 403,
             )
@@ -249,8 +244,12 @@ def login():
 
         token = secrets.token_hex(32)
         csrf_token = secrets.token_hex(32)
+        # Captured once here and reused below for the cookie's max_age --
+        # session_conn is closed (see finally below) by the time the
+        # cookie gets set, so it can't be looked up again there.
+        absolute_hours = get_session_absolute_hours(session_conn)
         expires_at = (
-            datetime.now() + timedelta(hours=SESSION_ABSOLUTE_HOURS)
+            datetime.now() + timedelta(hours=absolute_hours)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         session_conn.execute(
@@ -285,7 +284,7 @@ def login():
         token,
         httponly=True,
         samesite="Lax",
-        max_age=SESSION_ABSOLUTE_HOURS * 3600,
+        max_age=absolute_hours * 3600,
     )
     return response
 

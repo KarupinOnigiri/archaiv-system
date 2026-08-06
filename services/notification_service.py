@@ -1,16 +1,12 @@
 from database import get_db_connection
 from utils.formatters import full_name
+from services.settings_service import get_due_soon_hours
 import logging
 
 logger = logging.getLogger(__name__)
 
-# A "due soon" alert fires once a borrowed item's due date is within this
-# many hours -- long enough for staff to catch it on the next scheduled
-# sync (every 15 min, see app.py) well before it actually tips overdue.
-DUE_SOON_HOURS = 24
 
-
-def _stale_notification_ids(conn):
+def _stale_notification_ids(conn, due_soon_hours):
     """Notification rows that no longer describe reality: the transaction
     was returned, or (via renewal) its due_date moved back out of the
     window that earned it a 'due_soon' or 'overdue' row in the first
@@ -36,7 +32,7 @@ def _stale_notification_ids(conn):
                 )
               )
         """,
-        (f"+{DUE_SOON_HOURS} hours",),
+        (f"+{due_soon_hours} hours",),
     ).fetchall()
     return [row["id"] for row in rows]
 
@@ -50,7 +46,8 @@ def sync_loan_notifications():
     for that reason, same pattern as the other scheduled jobs."""
     conn = get_db_connection()
     try:
-        stale_ids = _stale_notification_ids(conn)
+        due_soon_hours = get_due_soon_hours(conn)
+        stale_ids = _stale_notification_ids(conn, due_soon_hours)
         if stale_ids:
             conn.executemany(
                 "DELETE FROM notifications WHERE id = ?", [(i,) for i in stale_ids]
@@ -72,7 +69,7 @@ def sync_loan_notifications():
               AND transactions.due_date IS NOT NULL
               AND transactions.due_date <= datetime('now', 'localtime', ?)
             """,
-            (f"+{DUE_SOON_HOURS} hours",),
+            (f"+{due_soon_hours} hours",),
         ).fetchall()
 
         created = 0

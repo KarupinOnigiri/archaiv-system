@@ -10,13 +10,6 @@
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role == "admin" %}
-      <button type="button" id="manage-loan-limits-btn" class="btn btn-outline btn-sm"
-              hx-get="/api/v1/loan-limits/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        Manage Loan Limits
-      </button>
       <button type="button" id="import-staff-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/staff/import-form"
               hx-target="#modal-container"

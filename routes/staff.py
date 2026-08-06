@@ -14,6 +14,13 @@ from utils.validators import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from utils.exports import sanitize_export_filename, default_export_dir, resolve_export_dir
+from services.settings_service import (
+    get_session_idle_minutes,
+    get_session_absolute_hours,
+    get_max_failed_attempts,
+    get_lockout_minutes,
+    get_due_soon_hours,
+)
 import sqlite3
 import csv
 import io
@@ -196,56 +203,58 @@ def get_staff_by_id(id):
     return jsonify(dict(staff))
 
 
-@staff_bp.route("/audit-log")
-@login_required
-def view_audit_log():
-    """Read-only audit trail. admin can view everyone's entries and filter
-    by any staff_id. in_charge and tool_keeper can only view their own —
-    any staff_id they pass in is ignored and forced to their own id.
-    Other filters are all optional and combine with AND. Pagination uses
-    the shared limit/offset helper (default 25, capped at 100 — same as
-    every other paginated route), not a route-specific limit."""
+def get_audit_log_context(args, staff):
+    """Shared query logic for the audit trail -- used by both the JSON
+    API route below and the full /audit-log page (routes/pages.py), the
+    same get_*_table_context pattern used by assets/members/staff/
+    transactions/notifications. admin can view everyone's entries and
+    filter by any staff_id. in_charge and tool_keeper can only view their
+    own -- any staff_id they pass in is ignored and forced to their own
+    id. Other filters are all optional and combine with AND. Pagination
+    uses the shared limit/offset helper (default 25, capped at 100 --
+    same as every other paginated route), not a route-specific limit.
+    Returns (context_dict, None) on success, or (None, error_response)."""
     filters = []
     params = []
 
-    if g.staff["role"] == "admin":
-        staff_id = request.args.get("staff_id")
+    if staff["role"] == "admin":
+        staff_id = args.get("staff_id")
         if staff_id:
             filters.append("audit_log.staff_id = ?")
             params.append(staff_id)
     else:
         filters.append("audit_log.staff_id = ?")
-        params.append(g.staff["id"])
+        params.append(staff["id"])
 
-    action = request.args.get("action")
+    action = args.get("action")
     if action:
         filters.append("audit_log.action = ?")
         params.append(action)
 
-    target_table = request.args.get("target_table")
+    target_table = args.get("target_table")
     if target_table:
         filters.append("audit_log.target_table = ?")
         params.append(target_table)
 
-    since = request.args.get("since")
+    since = args.get("since")
     if since:
         error = validate_date_string(since, "since")
         if error:
-            return error
+            return None, error
         filters.append("audit_log.created_at >= ?")
         params.append(since)
 
-    until = request.args.get("until")
+    until = args.get("until")
     if until:
         error = validate_date_string(until, "until")
         if error:
-            return error
+            return None, error
         filters.append("audit_log.created_at <= ?")
         params.append(until)
 
-    limit, offset, error = parse_pagination_params(request.args)
+    limit, offset, error = parse_pagination_params(args)
     if error:
-        return error
+        return None, error
 
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
@@ -268,14 +277,41 @@ def view_audit_log():
     ).fetchall()
     conn.close()
 
+    return {
+        "logs": logs,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+    }, None
+
+
+@staff_bp.route("/audit-log")
+@login_required
+def view_audit_log():
+    context, error = get_audit_log_context(request.args, g.staff)
+    if error:
+        return error
+
     return jsonify(
         {
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset,
-            "results": [dict(row) for row in logs],
+            "total_count": context["total_count"],
+            "limit": context["limit"],
+            "offset": context["offset"],
+            "results": [dict(row) for row in context["logs"]],
         }
     )
+
+
+@staff_bp.route("/audit-log/table")
+@login_required
+def view_audit_log_table():
+    """htmx partial -- returns just the table + pagination footer, so
+    filtering/paging never re-renders the whole page (matching the
+    assets/members/staff/transactions/notifications pattern)."""
+    context, error = get_audit_log_context(request.args, g.staff)
+    if error:
+        return error
+    return render_template("audit_log/_table.html", **context)
 
 
 # # # CREATE (admin only) ------------------------------------------------
@@ -1314,7 +1350,7 @@ def update_loan_limits():
     if request.is_json:
         return jsonify({"message": "Loan limits updated successfully", **updates})
     response = make_response("", 200)
-    response.headers["HX-Redirect"] = "/staff"
+    response.headers["HX-Redirect"] = "/system"
     return response
 
 
@@ -1667,4 +1703,256 @@ def export_staff():
                 "Could not save a copy on the server; your download still completed."
             )
 
+    return response
+
+
+# # # SESSION SETTINGS (admin-editable login-session timeouts) --------------
+
+
+@staff_bp.route("/session-settings/manage-form")
+@roles_required("admin")
+def manage_session_settings_form():
+    return render_template(
+        "staff/_session_settings_modal.html",
+        session_idle_minutes=get_session_idle_minutes(),
+        session_absolute_hours=get_session_absolute_hours(),
+        error=None,
+    )
+
+
+@staff_bp.route("/session-settings/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_session_settings():
+    """Updates the two admin-editable session-timeout values that
+    services/auth_service.py's require_session() and routes/auth.py's
+    login() read at runtime (see services/settings_service.py) -- how
+    long a session can sit idle before "Session timed out" kicks in, and
+    the absolute ceiling on a session's lifetime regardless of activity.
+    Both submitted and validated together from the one modal, same
+    pattern as update_loan_limits."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg):
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_session_settings_modal.html",
+                session_idle_minutes=get_session_idle_minutes(),
+                session_absolute_hours=get_session_absolute_hours(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    try:
+        idle_minutes = int(data.get("session_idle_minutes"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Idle timeout must be a whole number of minutes")
+    if not (1 <= idle_minutes <= 1440):
+        return _rerender_with_error("Idle timeout must be between 1 and 1440 minutes (24 hours)")
+
+    try:
+        absolute_hours = int(data.get("session_absolute_hours"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Absolute session length must be a whole number of hours")
+    if not (1 <= absolute_hours <= 720):
+        return _rerender_with_error("Absolute session length must be between 1 and 720 hours (30 days)")
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'session_idle_minutes'",
+        (str(idle_minutes),),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'session_absolute_hours'",
+        (str(absolute_hours),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_session_settings",
+        target_table="app_settings",
+        details=f"Set session_idle_minutes={idle_minutes}, session_absolute_hours={absolute_hours}",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {
+                "message": "Session settings updated successfully",
+                "session_idle_minutes": idle_minutes,
+                "session_absolute_hours": absolute_hours,
+            }
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
+# # # ACCOUNT SECURITY SETTINGS (admin-editable lockout policy) --------------
+
+
+@staff_bp.route("/account-security/manage-form")
+@roles_required("admin")
+def manage_account_security_form():
+    return render_template(
+        "staff/_account_security_modal.html",
+        max_failed_attempts=get_max_failed_attempts(),
+        lockout_minutes=get_lockout_minutes(),
+        error=None,
+    )
+
+
+@staff_bp.route("/account-security/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_account_security():
+    """Updates the two admin-editable lockout-policy values that
+    routes/auth.py's login() reads at runtime -- how many failed login
+    attempts trigger a lockout, and how long that lockout lasts."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg):
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_account_security_modal.html",
+                max_failed_attempts=get_max_failed_attempts(),
+                lockout_minutes=get_lockout_minutes(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    try:
+        max_attempts = int(data.get("max_failed_attempts"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Max failed attempts must be a whole number")
+    if not (1 <= max_attempts <= 20):
+        return _rerender_with_error("Max failed attempts must be between 1 and 20")
+
+    try:
+        lockout_minutes = int(data.get("lockout_minutes"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Lockout duration must be a whole number of minutes")
+    if not (1 <= lockout_minutes <= 1440):
+        return _rerender_with_error("Lockout duration must be between 1 and 1440 minutes (24 hours)")
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'max_failed_attempts'",
+        (str(max_attempts),),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'lockout_minutes'",
+        (str(lockout_minutes),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_account_security_settings",
+        target_table="app_settings",
+        details=f"Set max_failed_attempts={max_attempts}, lockout_minutes={lockout_minutes}",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {
+                "message": "Account security settings updated successfully",
+                "max_failed_attempts": max_attempts,
+                "lockout_minutes": lockout_minutes,
+            }
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
+# # # NOTIFICATION SETTINGS (admin-editable due-soon threshold) -------------
+
+
+@staff_bp.route("/notification-settings/manage-form")
+@roles_required("admin")
+def manage_notification_settings_form():
+    return render_template(
+        "staff/_notification_settings_modal.html",
+        due_soon_hours=get_due_soon_hours(),
+        error=None,
+    )
+
+
+@staff_bp.route("/notification-settings/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_notification_settings():
+    """Updates the admin-editable due-soon threshold that
+    services/notification_service.py's sync_loan_notifications() reads
+    at runtime -- how many hours before a loan's due date a 'due_soon'
+    alert fires."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg):
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_notification_settings_modal.html",
+                due_soon_hours=get_due_soon_hours(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    try:
+        due_soon_hours = int(data.get("due_soon_hours"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Due-soon threshold must be a whole number of hours")
+    if not (1 <= due_soon_hours <= 168):
+        return _rerender_with_error("Due-soon threshold must be between 1 and 168 hours (1 week)")
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'due_soon_hours'",
+        (str(due_soon_hours),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_notification_settings",
+        target_table="app_settings",
+        details=f"Set due_soon_hours={due_soon_hours}",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {
+                "message": "Notification settings updated successfully",
+                "due_soon_hours": due_soon_hours,
+            }
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
     return response
