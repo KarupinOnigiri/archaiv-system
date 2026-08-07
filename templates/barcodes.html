@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- h-full + flex-col rather than the usual space-y-6 stack: this page's
+     own root fills exactly the height <main> (base.html) gives it, so
+     <main>'s own overflow-y-auto never has anything to scroll -- only
+     the table list below (flex-1 min-h-0 + its own overflow-y-auto) is
+     ever a scroll container. Without this, a page tall enough to also
+     trigger <main>'s scroll produced two visible scrollbars (the page
+     itself, and the table), stacked one on top of the other. -->
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 h-full flex flex-col gap-6" id="barcodes-page-root">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4 shrink-0">
+    <div>
+      <h1 class="text-2xl font-bold">Barcode Labels</h1>
+      <p class="text-sm text-base-content/50 mt-1">Pick from currently-present assets and borrowers, then generate a PDF of scannable barcodes for them.</p>
+    </div>
+  </div>
+
+  <div class="bg-base-100 rounded-xl border border-base-300 p-4 flex flex-col gap-4 flex-1 min-h-0">
+
+    <!-- Tabs -->
+    <div class="flex items-center gap-2 shrink-0">
+      <button type="button" id="barcode-tab-assets" onclick="BarcodeLabels.setTab('assets')"
+              class="btn btn-sm rounded-full">
+        Inventory <span class="opacity-60">({{ assets|length }})</span>
+      </button>
+      <button type="button" id="barcode-tab-members" onclick="BarcodeLabels.setTab('members')"
+              class="btn btn-sm btn-ghost rounded-full">
+        Borrowers <span class="opacity-60">({{ members|length }})</span>
+      </button>
+    </div>
+
+    <!-- Toolbar: search + select-all + count -->
+    <div class="flex flex-wrap items-center gap-3 shrink-0">
+      <label class="join">
+        <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </div>
+        <input type="search" id="barcode-search" placeholder="Search by name, ID, or barcode... (/)"
+               oninput="BarcodeLabels.filterRows()"
+               class="input input-bordered input-sm join-item w-72">
+      </label>
+
+      <label class="flex items-center gap-2 text-sm cursor-pointer select-none ml-1">
+        <input type="checkbox" id="barcode-select-all" class="checkbox checkbox-sm" onchange="BarcodeLabels.toggleSelectAll(this.checked)">
+        Select all visible
+      </label>
+
+      <span id="barcode-selected-count" class="text-xs text-base-content/50 ml-auto">0 selected</span>
+
+      <button type="button" id="barcode-generate-btn" disabled
+              onclick="BarcodeLabels.generate()"
+              class="btn btn-primary btn-sm rounded-full">
+        Generate Labels
+      </button>
+    </div>
+
+    <!-- Assets table -- same table/thead/row styling as Inventory
+         (templates/assets/_table.html): table-fixed, sticky header,
+         text-xs/tracking-wide header row, border-b divider rows,
+         hover:bg-base-200/40. Not htmx-driven like that one (this whole
+         list is static once the page loads, see barcodes_page in
+         routes/pages.py), so it's a plain table here rather than a
+         swap target, but the visual language matches on purpose. -->
+    <div id="barcode-list-assets" class="flex-1 min-h-0 border border-base-300 rounded-lg overflow-y-auto">
+      <table class="table w-full table-fixed">
+        <colgroup>
+          <col style="width: 2.5rem">
+          <col style="width: 20%">
+          <col style="width: 50%">
+          <col style="width: 30%">
+        </colgroup>
+        <thead>
+          <tr class="text-left text-xs text-base-content/50 tracking-wide">
+            <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
+              <input type="checkbox" id="barcode-select-all-assets-header" class="checkbox checkbox-sm"
+                     onchange="BarcodeLabels.toggleSelectAll(this.checked)" aria-label="Select all inventory rows">
+            </th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">ASSET ID</th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">NAME</th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">BARCODE ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in assets %}
+          <tr class="barcode-row border-b border-base-200 hover:bg-base-200/40 cursor-pointer"
+              data-search="{{ (a.name ~ ' ' ~ a.asset_id ~ ' ' ~ a.barcode_id) | lower }}"
+              onclick="BarcodeLabels.rowClick(event, this)">
+            <td class="py-2.5">
+              <input type="checkbox" class="barcode-checkbox checkbox checkbox-sm" onchange="BarcodeLabels.onCheck()"
+                     data-code="{{ a.asset_id }}" data-barcode="{{ a.barcode_id }}" data-label="{{ a.name }}"
+                     aria-label="Select {{ a.name }}">
+            </td>
+            <td class="py-2.5 text-sm text-base-content/60 truncate">{{ a.asset_id }}</td>
+            <td class="py-2.5 font-medium truncate">{{ a.name }}</td>
+            <td class="py-2.5 text-sm text-base-content/50 truncate">{{ a.barcode_id }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-sm text-base-content/40 px-3 py-6 text-center">No active inventory items.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Members table -- same as above, mirroring templates/members/_table.html -->
+    <div id="barcode-list-members" class="hidden flex-1 min-h-0 border border-base-300 rounded-lg overflow-y-auto">
+      <table class="table w-full table-fixed">
+        <colgroup>
+          <col style="width: 2.5rem">
+          <col style="width: 20%">
+          <col style="width: 50%">
+          <col style="width: 30%">
+        </colgroup>
+        <thead>
+          <tr class="text-left text-xs text-base-content/50 tracking-wide">
+            <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
+              <input type="checkbox" id="barcode-select-all-members-header" class="checkbox checkbox-sm"
+                     onchange="BarcodeLabels.toggleSelectAll(this.checked)" aria-label="Select all borrower rows">
+            </th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">MEMBER CODE</th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">NAME</th>
+            <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">BARCODE ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+          {% set mname = full_name(m.first_name, m.last_name, m.middle_name, m.suffix) %}
+          <tr class="barcode-row border-b border-base-200 hover:bg-base-200/40 cursor-pointer"
+              data-search="{{ (mname ~ ' ' ~ m.member_code ~ ' ' ~ m.barcode_id) | lower }}"
+              onclick="BarcodeLabels.rowClick(event, this)">
+            <td class="py-2.5">
+              <input type="checkbox" class="barcode-checkbox checkbox checkbox-sm" onchange="BarcodeLabels.onCheck()"
+                     data-code="{{ m.member_code }}" data-barcode="{{ m.barcode_id }}" data-label="{{ mname }}"
+                     aria-label="Select {{ mname }}">
+            </td>
+            <td class="py-2.5 text-sm text-base-content/60 truncate">{{ m.member_code }}</td>
+            <td class="py-2.5 font-medium truncate">{{ mname }}</td>
+            <td class="py-2.5 text-sm text-base-content/50 truncate">{{ m.barcode_id }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-sm text-base-content/40 px-3 py-6 text-center">No active borrowers.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Label preview modal -- large/wide (not the app's usual max-w-md/max-w-lg
+     modals) since this can hold anywhere from 1 to hundreds of label
+     cards; the grid inside scrolls on its own rather than growing the
+     modal past the viewport. Print and PDF export both read from this
+     same rendered grid. -->
+<dialog id="barcode-preview-modal" class="modal">
+  <div class="modal-box max-w-6xl w-11/12">
+    <div class="flex items-center justify-between mb-1">
+      <h3 class="font-bold text-lg">Label preview</h3>
+      <button type="button" onclick="document.getElementById('barcode-preview-modal').close()"
+              class="btn btn-ghost btn-sm btn-circle" aria-label="Close">✕</button>
+    </div>
+    <p class="text-xs text-base-content/50 mb-4">
+      <span id="barcode-preview-count"></span> -- scroll to see all. Label size in the downloaded PDF isn't tied to a specific sheet template; check your label stock before printing it.
+    </p>
+
+    <div id="barcode-label-sheet" class="grid grid-cols-4 gap-3 max-h-[65vh] overflow-y-auto pr-1 pb-1"></div>
+
+    <div class="modal-action">
+      <button type="button" onclick="document.getElementById('barcode-preview-modal').close()" class="btn btn-sm">Close</button>
+      <button type="button" onclick="BarcodeLabels.downloadPdf()" class="btn btn-primary btn-sm">Download PDF</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<style>
+  .barcode-label-card {
+    border: 1px solid var(--color-base-300, #ddd);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.15rem;
+    background: #fff;
+    /* Card background is a fixed white regardless of app theme -- it's a
+       preview of a printed label, not themed UI chrome -- so its text
+       needs to be a fixed black to match, rather than inheriting
+       --color-base-content (light gray in dark mode, unreadable against
+       this white card). The barcode's own text (the code drawn under
+       the bars) was already unaffected -- JsBarcode renders that as an
+       explicit SVG fill, not inherited CSS -- this only fixes the
+       item/member name label underneath each card, the one part that
+       WAS just inherited text color. Matches the downloaded PDF, which
+       was always black (jsPDF's own default text color). */
+    color: #000;
+  }
+</style>
+
+<script src="{{ url_for('static', filename='js/jsbarcode.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/jspdf.umd.min.js') }}"></script>
+<script>
+// Barcode Labels page -- selection view (search/select from currently-
+// present assets+members, both rendered server-side once on load) and a
+// preview modal (a grid of label cards, each barcode rendered
+// client-side via JsBarcode/CODE128 from static/js/jsbarcode.min.js --
+// see static/js/VENDORED.md) with a Download PDF button, built
+// client-side with jsPDF (static/js/jspdf.umd.min.js) -- no server
+// round-trip, no new Python dependency. (There used to also be a Print
+// button here; dropped since Download PDF alone already covers it --
+// the browser's own print-to-PDF is just as reachable straight from the
+// downloaded file.)
+const BarcodeLabels = (function () {
+  let activeTab = 'assets';
+
+  function setTab(tab) {
+    activeTab = tab;
+    document.getElementById('barcode-tab-assets').classList.toggle('btn-ghost', tab !== 'assets');
+    document.getElementById('barcode-tab-members').classList.toggle('btn-ghost', tab !== 'members');
+    document.getElementById('barcode-list-assets').classList.toggle('hidden', tab !== 'assets');
+    document.getElementById('barcode-list-members').classList.toggle('hidden', tab !== 'members');
+    document.getElementById('barcode-search').value = '';
+    filterRows();
+  }
+
+  function filterRows() {
+    const q = document.getElementById('barcode-search').value.trim().toLowerCase();
+    const container = document.getElementById(activeTab === 'assets' ? 'barcode-list-assets' : 'barcode-list-members');
+    container.querySelectorAll('.barcode-row').forEach(function (row) {
+      const matches = !q || row.dataset.search.includes(q);
+      row.classList.toggle('hidden', !matches);
+    });
+  }
+
+  // Clicking anywhere on a row toggles its checkbox, same convenience
+  // Inventory/Borrowers rows offer -- except when the click landed on
+  // the checkbox itself (which already toggled) or something else
+  // interactive inside the row.
+  function rowClick(evt, row) {
+    if (evt.target.closest('input,a,button')) return;
+    const cb = row.querySelector('.barcode-checkbox');
+    cb.checked = !cb.checked;
+    onCheck();
+  }
+
+  function toggleSelectAll(checked) {
+    const container = document.getElementById(activeTab === 'assets' ? 'barcode-list-assets' : 'barcode-list-members');
+    container.querySelectorAll('.barcode-row:not(.hidden) .barcode-checkbox').forEach(function (cb) {
+      cb.checked = checked;
+    });
+    document.getElementById('barcode-select-all').checked = checked;
+    document.getElementById(`barcode-select-all-${activeTab}-header`).checked = checked;
+    onCheck();
+  }
+
+  function selectedCheckboxes() {
+    return Array.from(document.querySelectorAll('.barcode-checkbox:checked'));
+  }
+
+  function onCheck() {
+    const count = selectedCheckboxes().length;
+    document.getElementById('barcode-selected-count').textContent = `${count} selected`;
+    document.getElementById('barcode-generate-btn').disabled = count === 0;
+  }
+
+  function buildLabelSheet() {
+    const selected = selectedCheckboxes();
+    const sheet = document.getElementById('barcode-label-sheet');
+    sheet.innerHTML = '';
+
+    selected.forEach(function (cb, i) {
+      const card = document.createElement('div');
+      card.className = 'barcode-label-card';
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = `barcode-svg-${i}`;
+      card.appendChild(svg);
+
+      const label = document.createElement('div');
+      label.className = 'text-[11px] leading-tight mt-1';
+      label.textContent = cb.dataset.label;
+      card.appendChild(label);
+
+      sheet.appendChild(card);
+
+      // CODE128 handles the full alphanumeric code as-is (letters +
+      // digits, no dashes since the no-dash format change) with no
+      // special-character escaping needed.
+      JsBarcode(svg, cb.dataset.barcode, {
+        format: 'CODE128',
+        displayValue: true,
+        text: cb.dataset.code,
+        fontSize: 12,
+        height: 40,
+        margin: 4,
+      });
+    });
+
+    return selected;
+  }
+
+  function generate() {
+    const selected = buildLabelSheet();
+    if (selected.length === 0) return;
+    document.getElementById('barcode-preview-count').textContent =
+      `${selected.length} label${selected.length === 1 ? '' : 's'}`;
+    document.getElementById('barcode-preview-modal').showModal();
+  }
+
+  // Renders each barcode a second time onto an offscreen <canvas> (jsPDF
+  // needs a raster image, not the SVG already in the preview grid) and
+  // lays them out in a fixed grid across as many A4 pages as needed,
+  // then triggers a real .pdf download -- same underlying JsBarcode
+  // call, different target/size for print-resolution output.
+  function downloadPdf() {
+    const selected = selectedCheckboxes();
+    if (selected.length === 0) return;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const marginX = 10, marginY = 12;
+    const cardW = 44, cardH = 26, gapX = 4, gapY = 6;
+    const cols = Math.max(1, Math.floor((pageW - 2 * marginX + gapX) / (cardW + gapX)));
+
+    let col = 0, x = marginX, y = marginY;
+    doc.setFontSize(8);
+
+    selected.forEach(function (cb) {
+      if (y + cardH > pageH - marginY) {
+        doc.addPage();
+        col = 0; x = marginX; y = marginY;
+      }
+
+      const canvas = document.createElement('canvas');
+      JsBarcode(canvas, cb.dataset.barcode, {
+        format: 'CODE128',
+        displayValue: true,
+        text: cb.dataset.code,
+        fontSize: 22,
+        height: 60,
+        margin: 6,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const imgProps = doc.getImageProperties(imgData);
+      const imgH = Math.min((cardW * imgProps.height) / imgProps.width, cardH - 6);
+      const imgY = y + (cardH - 6 - imgH) / 2;
+      doc.addImage(imgData, 'PNG', x, imgY, cardW, imgH);
+
+      doc.text(cb.dataset.label, x + cardW / 2, y + cardH - 2, {
+        align: 'center',
+        maxWidth: cardW,
+      });
+
+      col += 1;
+      if (col >= cols) {
+        col = 0;
+        x = marginX;
+        y += cardH + gapY;
+      } else {
+        x += cardW + gapX;
+      }
+    });
+
+    doc.save('barcode-labels.pdf');
+  }
+
+  return { setTab, filterRows, rowClick, toggleSelectAll, onCheck, generate, downloadPdf };
+})();
+
+// Supports a ?tab=members deep link (unused by the one entry point this
+// page has today -- the System page card -- but harmless to keep for
+// anyone bookmarking/sharing a direct link straight to the Borrowers tab).
+if (new URLSearchParams(location.search).get('tab') === 'members') {
+  BarcodeLabels.setTab('members');
+}
+</script>
+{% endblock %}

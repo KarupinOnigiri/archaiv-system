@@ -53,10 +53,12 @@ def complete_setup():
     if error:
         return error
 
+    # barcode_id is no longer taken from the form -- auto-generated below
+    # to match the new member record's generated member_code, same as
+    # every other member (see routes/members.py: add_member_submit).
     required_fields = (
         "first_name",
         "last_name",
-        "barcode_id",
         "department_id",
         "username",
         "password",
@@ -82,6 +84,7 @@ def complete_setup():
         return error
 
     temp_admin_id = g.staff["id"]
+    temp_admin_member_id = g.staff["member_id"]
 
     try:
         member_cursor = conn.execute(
@@ -95,15 +98,16 @@ def complete_setup():
                 data["last_name"],
                 data.get("middle_name"),
                 data.get("suffix"),
-                data["barcode_id"],
+                "",
                 data.get("batch"),
                 data["department_id"],
             ),
         )
         member_id = member_cursor.lastrowid
+        generated_member_code = f"MBR{member_id:05d}"
         conn.execute(
-            "UPDATE members SET member_code = ? WHERE id = ?",
-            (f"MBR-{member_id:05d}", member_id),
+            "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
+            (generated_member_code, generated_member_code, member_id),
         )
 
         hashed_password = generate_password_hash(data["password"])
@@ -117,14 +121,19 @@ def complete_setup():
         new_staff_id = staff_cursor.lastrowid
         conn.execute(
             "UPDATE staff SET staff_code = ? WHERE id = ?",
-            (f"STF-{new_staff_id:05d}", new_staff_id),
+            (f"STF{new_staff_id:05d}", new_staff_id),
         )
 
         # Retire the temporary admin in the same transaction as creating
         # the real one, so there's never a window where both are usable
         # (or, on failure, neither is — the rollback below undoes both
-        # halves together).
+        # halves together). Both halves of it: the staff row (so it can't
+        # log in) AND its linked member row (so "Temporary Setup Admin"
+        # doesn't sit in the Borrowers list looking like a real person --
+        # deactivating only the staff side left that member row active
+        # forever, which is its own small bug fixed here alongside this).
         conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (temp_admin_id,))
+        conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (temp_admin_member_id,))
         conn.execute("DELETE FROM sessions WHERE staff_id = ?", (temp_admin_id,))
 
         conn.commit()

@@ -21,10 +21,10 @@
         </label>
         <select name="condition" class="select select-bordered w-full">
           {% if asset.condition != 'disposed' %}
-          <option value="">&mdash; Keep current ({{ asset.condition | capitalize }}) &mdash;</option>
+          <option value="">&mdash; Keep current ({{ asset.condition | humanize }}) &mdash;</option>
           {% endif %}
           {% for c in ["functional", "inoperable", "for_repair"] %}
-          <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | capitalize }}</option>
+          <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | humanize }}</option>
           {% endfor %}
         </select>
       </div>

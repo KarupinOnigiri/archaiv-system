@@ -17,7 +17,7 @@ from database import init_db, get_db_connection
 from services.seed_service import seed_initial_admin
 from services.checkout_service import cleanup_stale_checkout_sessions
 from services.auth_service import cleanup_expired_sessions, require_session
-from utils.formatters import full_name
+from utils.formatters import full_name, humanize_label
 from services.settings_service import INDEFINITE_LOCK_UNTIL
 from services.approvals_service import get_pending_approvals_count
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -226,6 +226,14 @@ def home():
     if error:
         conn.close()
         return redirect(url_for("pages.login_page"))
+    # The temporary setup admin (services.seed_service) has no real
+    # business seeing the normal dashboard before setup is even done --
+    # send it to the wizard instead. Covers direct navigation/bookmarks/
+    # back-button landing here; the primary path (routes/auth.py's login)
+    # already redirects straight to /setup on login for this account.
+    if staff["is_system_seeded"]:
+        conn.close()
+        return redirect(url_for("pages.setup_page"))
     dashboard_context = get_dashboard_context(conn)
     conn.close()
     return render_template("home.html", staff=staff, **dashboard_context)
@@ -274,6 +282,11 @@ def format_date(value, format="%b %d, %Y %I:%M %p"):
 app.jinja_env.filters["format_date"] = format_date
 # Optional: Register in globals if you access it directly as a function in templates
 app.jinja_env.globals["format_date"] = format_date
+
+# Turns a snake_case DB value into a display label, e.g. asset.condition's
+# 'for_repair' -> 'For Repair'. See utils/formatters.py:humanize_label for
+# why the plain `capitalize` filter wasn't enough.
+app.jinja_env.filters["humanize"] = humanize_label
 
 
 if __name__ == "__main__":

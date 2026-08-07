@@ -1,35 +1,14 @@
 <div class="modal modal-open">
-  <style>
-    /* Thin scrollbar that stays out of the way -- transparent track so it
-       has no visual footprint when the fields fit, only ever painting a
-       slim thumb once the content actually overflows and this element
-       starts scrolling. */
-    .custom-scrollbar {
-      scrollbar-width: thin;
-      scrollbar-color: transparent transparent;
-    }
-    .custom-scrollbar:hover,
-    .custom-scrollbar:focus-within {
-      scrollbar-color: rgb(0 0 0 / 0.2) transparent;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: transparent;
-      border-radius: 9999px;
-    }
-    .custom-scrollbar:hover::-webkit-scrollbar-thumb,
-    .custom-scrollbar:focus-within::-webkit-scrollbar-thumb {
-      background-color: rgb(0 0 0 / 0.2);
-    }
-  </style>
-  <div class="modal-box max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
+  <!-- Wide (max-w-4xl, vs. the app's usual max-w-md/lg/2xl) specifically
+       so every field fits without this modal needing its own scroll
+       area -- no inner flex/overflow wrapper or custom scrollbar here
+       anymore; modal-box's own built-in overflow handling (daisyUI) is
+       the only safety net left, for a viewport short enough that even a
+       wide, short-as-possible layout still can't fit -- not something
+       styled/managed here, just the honest fallback. -->
+  <div class="modal-box max-w-4xl p-0">
 
-    <div class="p-6 pb-4 shrink-0">
+    <div class="p-6 pb-4">
       <div class="flex justify-between items-start">
         <div>
           <h3 class="font-bold text-xl">Add New Staff</h3>
@@ -40,8 +19,8 @@
       <div id="add-staff-error" class="alert alert-error text-sm mt-4 py-2 hidden"></div>
     </div>
 
-    <form id="add-staff-form" onsubmit="submitAddStaffForm(event)" class="flex-1 flex flex-col min-h-0">
-      <div class="flex-1 overflow-y-auto min-h-0 px-6 py-4 custom-scrollbar">
+    <form id="add-staff-form" onsubmit="submitAddStaffForm(event)">
+      <div class="px-6 pb-2">
       <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
 
         <div>
@@ -90,7 +69,7 @@
           <input type="hidden" id="member-id-input" name="member_id">
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME <span class="text-error">*</span></label>
             <input type="text" name="username" required placeholder="e.g. jdelacruz" autocomplete="off"
@@ -101,9 +80,6 @@
             <input type="password" name="password" required placeholder="At least 8 characters" autocomplete="new-password"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE <span class="text-error">*</span></label>
             <select name="role" required class="select select-bordered w-full mt-1 bg-base-100">
@@ -129,13 +105,13 @@
 
         <div class="bg-info/10 rounded-lg p-3 flex gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          <p class="text-xs text-info/80">A staff code (e.g. STF-00042) is generated automatically once this account is saved.</p>
+          <p class="text-xs text-info/80">A staff code (e.g. STF00042) is generated automatically once this account is saved.</p>
         </div>
 
       </div>
       </div>
 
-      <div class="modal-action flex justify-between items-center shrink-0 border-t border-base-300 px-6 py-4 m-0">
+      <div class="modal-action flex justify-between items-center border-t border-base-300 px-6 py-4 m-0">
         <button type="button" onclick="document.getElementById('add-staff-form').reset(); clearEligibleMember();" class="text-sm text-base-content/50 hover:text-base-content">
           Clear form
         </button>

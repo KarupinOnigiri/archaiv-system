@@ -201,6 +201,27 @@ def member_stat_cards():
     )
 
 
+@members_bp.route("/members/by-barcode/<string:barcode>")
+@login_required
+def member_by_barcode(barcode):
+    """Exact-match barcode lookup for the Borrowers search box's Enter-key
+    shortcut (members.html) -- see assets.py:asset_by_barcode for the
+    full reasoning, identical here. Matches regardless of active/
+    restricted state -- scanning a deactivated member's barcode should
+    still show their profile (which already displays that state), not
+    act like they don't exist."""
+    conn = get_db_connection()
+    member = conn.execute(
+        "SELECT id FROM members WHERE barcode_id = ?", (barcode,)
+    ).fetchone()
+    conn.close()
+    if member is None:
+        return render_template(
+            "_barcode_not_found_modal.html", kind="borrower", barcode=barcode
+        )
+    return member_profile(member["id"])
+
+
 @members_bp.route("/members/<int:id>/profile")
 @login_required
 def member_profile(id):
@@ -275,10 +296,14 @@ def add_member_submit():
     else:
         data = request.form
 
+    # barcode_id is no longer taken from the form -- it's auto-generated
+    # below to match the member's own generated member_code, same
+    # numbering, no dash (e.g. member_code "MBR00042" -> barcode_id
+    # "MBR00042" too). Also what a staff account derived from this member
+    # scans/logs in with (see routes/staff.py: get_staff_by_barcode).
     required_fields = [
         "first_name",
         "last_name",
-        "barcode_id",
         "department_id",
         "member_type",
     ]
@@ -339,7 +364,7 @@ def add_member_submit():
                 data["last_name"],
                 data.get("middle_name"),
                 data.get("suffix"),
-                data["barcode_id"],
+                "",
                 data.get("batch"),
                 data["department_id"],
                 data["member_type"],
@@ -347,10 +372,10 @@ def add_member_submit():
             ),
         )
         new_member_id = cursor.lastrowid
-        generated_code = f"MBR-{new_member_id:05d}"
+        generated_code = f"MBR{new_member_id:05d}"
         conn.execute(
-            "UPDATE members SET member_code = ? WHERE id = ?",
-            (generated_code, new_member_id),
+            "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
+            (generated_code, generated_code, new_member_id),
         )
         conn.commit()
     except sqlite3.IntegrityError as e:
@@ -1690,7 +1715,7 @@ def delete_department(id):
 # # # BULK IMPORT (CSV) ------------------------------------------------------
 
 
-REQUIRED_MEMBER_CSV_COLUMNS = ("first_name", "last_name", "barcode_id", "department", "member_type")
+REQUIRED_MEMBER_CSV_COLUMNS = ("first_name", "last_name", "department", "member_type")
 OPTIONAL_MEMBER_CSV_COLUMNS = ("middle_name", "suffix", "batch")
 
 
@@ -1768,15 +1793,17 @@ def import_members_csv():
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         first_name = (row.get("first_name") or "").strip()
         last_name = (row.get("last_name") or "").strip()
-        barcode_id = (row.get("barcode_id") or "").strip()
+        # barcode_id is no longer read from the CSV -- same reasoning as
+        # import_assets_csv: every member gets an auto-generated barcode
+        # matching its generated member_code, even on a bulk import.
         department_name = (row.get("department") or "").strip()
         member_type = (row.get("member_type") or "").strip().lower()
 
-        if not first_name or not last_name or not barcode_id or not department_name:
+        if not first_name or not last_name or not department_name:
             errors.append(
                 {
                     "row": row_num,
-                    "error": "first_name, last_name, barcode_id, and department are required",
+                    "error": "first_name, last_name, and department are required",
                 }
             )
             continue
@@ -1819,19 +1846,20 @@ def import_members_csv():
                     last_name,
                     row.get("middle_name") or None,
                     row.get("suffix") or None,
-                    barcode_id,
+                    "",
                     row.get("batch") or None,
                     department_id,
                     member_type,
                 ),
             )
             new_id = cursor.lastrowid
+            generated_code = f"MBR{new_id:05d}"
             conn.execute(
-                "UPDATE members SET member_code = ? WHERE id = ?",
-                (f"MBR-{new_id:05d}", new_id),
+                "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
+                (generated_code, generated_code, new_id),
             )
             conn.execute("RELEASE row_import")
-            created.append({"row": row_num, "id": new_id, "barcode_id": barcode_id})
+            created.append({"row": row_num, "id": new_id, "barcode_id": generated_code})
         except sqlite3.IntegrityError as e:
             conn.execute("ROLLBACK TO row_import")
             conn.execute("RELEASE row_import")

@@ -31,7 +31,7 @@ def _create_temp_admin(conn):
     # Unique per (re)seed — the member row from a *previous* temp admin
     # still exists (soft-retired, not deleted), so its barcode_id is
     # already taken and a new one is needed here.
-    barcode_id = f"SETUP-{secrets.token_hex(4).upper()}"
+    barcode_id = f"SETUP{secrets.token_hex(4).upper()}"
     password = secrets.token_urlsafe(12)
     hashed_password = generate_password_hash(password)
 
@@ -45,7 +45,7 @@ def _create_temp_admin(conn):
     member_id = member_cursor.lastrowid
     conn.execute(
         "UPDATE members SET member_code = ? WHERE id = ?",
-        (f"MBR-{member_id:05d}", member_id),
+        (f"MBR{member_id:05d}", member_id),
     )
 
     staff_cursor = conn.execute(
@@ -58,7 +58,7 @@ def _create_temp_admin(conn):
     staff_id = staff_cursor.lastrowid
     conn.execute(
         "UPDATE staff SET staff_code = ? WHERE id = ?",
-        (f"STF-{staff_id:05d}", staff_id),
+        (f"STF{staff_id:05d}", staff_id),
     )
 
     return staff_id, password

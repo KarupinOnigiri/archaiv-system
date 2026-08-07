@@ -17,12 +17,12 @@
     <div class="bg-base-200/50 rounded-xl p-4 mb-5 text-sm">
       <p class="font-semibold mb-1.5">Expected columns</p>
       <p class="text-base-content/70">
-        Required: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">first_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">last_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">barcode_id</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">department</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">member_type</code> (trainee or trainer)
+        Required: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">first_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">last_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">department</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">member_type</code> (trainee or trainer)
       </p>
       <p class="text-base-content/70 mt-1">
         Optional: <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">middle_name</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">suffix</code>, <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">batch</code>
       </p>
-      <p class="text-base-content/50 text-xs mt-2">First row must be a header row. File must be UTF-8 encoded. A department name that doesn't exist yet will be created automatically.</p>
+      <p class="text-base-content/50 text-xs mt-2">First row must be a header row. File must be UTF-8 encoded. A department name that doesn't exist yet will be created automatically. Each member's <code class="text-xs bg-base-300/60 rounded px-1 py-0.5">barcode_id</code> is auto-generated on import (to match its member code) -- any barcode_id column in the file is ignored.</p>
     </div>
 
     <form id="import-member-form"

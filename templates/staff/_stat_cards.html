@@ -1,5 +1,6 @@
-    <div id="stat-card-all" data-status="" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
-         role="button" tabindex="0" aria-label="Show all staff"
+    <div id="stat-card-all" data-status="" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-primary/30 stat-card-glow"
+         style="--stat-glow: var(--color-primary)"
+         role="button" tabindex="0" aria-label="Show all staff" data-tooltip="Show all staff (1)"
          onclick="filterByStaffStatus('')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStaffStatus('');}">
       <div>
         <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALL STAFF</p>
@@ -10,8 +11,9 @@
       </div>
     </div>
 
-    <div id="stat-card-active" data-status="active" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-success/30"
-         role="button" tabindex="0" aria-label="Filter by active staff"
+    <div id="stat-card-active" data-status="active" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-success/30 stat-card-glow"
+         style="--stat-glow: var(--color-success)"
+         role="button" tabindex="0" aria-label="Filter by active staff" data-tooltip="Filter by active staff (2)"
          onclick="filterByStaffStatus('active')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStaffStatus('active');}">
       <div>
         <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACTIVE</p>
@@ -22,8 +24,9 @@
       </div>
     </div>
 
-    <div id="stat-card-locked" data-status="locked" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-warning/30"
-         role="button" tabindex="0" aria-label="Filter by locked staff accounts"
+    <div id="stat-card-locked" data-status="locked" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-warning/30 stat-card-glow"
+         style="--stat-glow: var(--color-warning)"
+         role="button" tabindex="0" aria-label="Filter by locked staff accounts" data-tooltip="Filter by locked staff accounts (3)"
          onclick="filterByStaffStatus('locked')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStaffStatus('locked');}">
       <div>
         <p class="text-xs font-semibold text-base-content/50 tracking-wide">LOCKED</p>
@@ -34,8 +37,9 @@
       </div>
     </div>
 
-    <div id="stat-card-inactive" data-status="inactive" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-base-content/30"
-         role="button" tabindex="0" aria-label="Filter by inactive staff"
+    <div id="stat-card-inactive" data-status="inactive" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-base-content/30 stat-card-glow"
+         style="--stat-glow: var(--color-base-content)"
+         role="button" tabindex="0" aria-label="Filter by inactive staff" data-tooltip="Filter by inactive staff (4)"
          onclick="filterByStaffStatus('inactive')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStaffStatus('inactive');}">
       <div>
         <p class="text-xs font-semibold text-base-content/50 tracking-wide">INACTIVE</p>

@@ -87,7 +87,7 @@
 
   <div class="flex items-center gap-1">
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
-            aria-label="Previous page"
+            data-tooltip="Previous page (←)" aria-label="Previous page"
             hx-get="/api/v1/audit-log/table"
             hx-target="#audit-log-table-container"
             hx-swap="innerHTML"
@@ -128,7 +128,7 @@
     </nav>
 
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
-            aria-label="Next page"
+            data-tooltip="Next page (→)" aria-label="Next page"
             hx-get="/api/v1/audit-log/table"
             hx-target="#audit-log-table-container"
             hx-swap="innerHTML"

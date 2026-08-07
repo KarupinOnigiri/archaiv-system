@@ -43,7 +43,29 @@
     })();
   </script>
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>Archaív</title>
+  {# Same route->label mapping the sidebar uses for its header/active-item
+     label (see the nav_items/ns block further down in <body>) -- kept as
+     its own small map here rather than hoisting that block up, since this
+     only needs the label, not the icon/href nav_items also carries, and
+     <title> has to render before that block does. Keep the two in sync if
+     a route's label ever changes. #}
+  {% set page_titles = {
+    '/': 'Dashboard',
+    '/assets': 'Inventory',
+    '/members': 'Borrowers',
+    '/transactions': 'Borrow & Return',
+    '/requests': 'Approvals',
+    '/notifications': 'Notifications',
+    '/reports': 'Reports',
+    '/staff': 'Staff',
+    '/audit-log': 'Activity Log',
+    '/system': 'System',
+    '/feedback': 'Feedback',
+    '/login': 'Login',
+    '/barcodes': 'Barcode Labels',
+    '/setup': 'Setup',
+  } %}
+  <title>{% if page_titles.get(request.path) %}Archaív - {{ page_titles[request.path] }}{% else %}Archaív{% endif %}</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo-icon-hex.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
@@ -267,10 +289,49 @@
 
   /* Sidebar active nav item: same fixed-hex treatment as the notif tabs
      above, so it stays this blue on the dark chrome instead of following
-     --color-primary's dark-mode lighten. */
+     --color-primary's dark-mode lighten. Back to a flat, fully-opaque
+     fill -- the 65%-then-33%-opacity experiment made white text hard to
+     read against Light mode's white sidebar (pale blue on white fails
+     contrast badly), so full opacity is the deliberate, readable
+     baseline across all three sidebar modes (Mixed/Dark/Light), not a
+     leftover default. Corner radius is intentionally tighter than the
+     rounded-lg (0.5rem) every .sidebar-link shares -- 30% less
+     (0.5rem * 0.7 = 0.35rem) so the active highlight reads as a
+     slightly squarer "bar" than the soft-cornered hover state. */
   .sidebar-link-active {
     background-color: #1565C0;
     color: #ffffff;
+    border-radius: 0.35rem;
+  }
+
+  /* Stat card hover glow -- shared across every stat-card partial
+     (assets/_stat_cards.html, members/_stat_cards.html, staff/
+     _stat_cards.html, transactions/_stat_cards.html), defined once
+     here since those get htmx-swapped independently of which page
+     loaded this stylesheet. A low-opacity radial gradient, invisible
+     until hover, centered at the card's own icon circle (every card
+     has it at the top-right, per their shared "items-start
+     justify-between" layout) and fading outward. Color comes from
+     --stat-glow, set inline per card via style="--stat-glow: var(--color-X)"
+     to match that card's own icon color (e.g. --color-success for an
+     "Active" card) -- see any of the _stat_cards.html files for the
+     actual per-card values. */
+  .stat-card-glow {
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card-glow::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle at top right, var(--stat-glow, var(--color-primary)) 0%, transparent 65%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+  }
+  .stat-card-glow:hover::after {
+    opacity: 0.15;
   }
 
   /* The sidebar logo normally swaps to its light-colored (for-dark-
@@ -392,7 +453,7 @@
   ] %}
 
 
-  {% set ns = namespace(current_label="Dashboard") %}
+  {% set ns = namespace(current_label="Dashboard", parent_href=None, parent_label=None) %}
   {% for label, href, icon in nav_items %}
     {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
   {% endfor %}
@@ -400,6 +461,20 @@
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
   {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
   {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
+  <!-- Barcode Labels lives one level under System (its only entry point --
+       see templates/system.html) rather than getting its own sidebar tab,
+       so it gets a 3-level breadcrumb (Dashboard / System / Barcode
+       Labels) instead of the usual 2 -- "System" is a real link back,
+       same idea as a back button but consistent with how every other
+       breadcrumb segment already behaves, rather than a one-off widget
+       that only exists on this page. The System sidebar link itself
+       also stays highlighted while here (see the /system nav link's
+       class below) for the same "this page belongs to System" reason. -->
+  {% if request.path == '/barcodes' %}
+    {% set ns.current_label = "Barcode Labels" %}
+    {% set ns.parent_href = "/system" %}
+    {% set ns.parent_label = "System" %}
+  {% endif %}
 
   <div class="hidden lg:flex h-full">
 
@@ -424,7 +499,7 @@
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge"]) %}
-        <a href="{{ href }}" data-tooltip="{{ label }}" aria-label="{{ label }}"
+        <a href="{{ href }}" data-tooltip="{{ label }}" data-tooltip-rail aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
@@ -474,7 +549,7 @@
         {% endfor %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/staff" data-tooltip="Staff" aria-label="Staff"
+        <a href="/staff" data-tooltip="Staff" data-tooltip-rail aria-label="Staff"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -485,7 +560,7 @@
         {% endif %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/audit-log" data-tooltip="Activity Log" aria-label="Activity Log"
+        <a href="/audit-log" data-tooltip="Activity Log" data-tooltip-rail aria-label="Activity Log"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -496,7 +571,7 @@
         {% endif %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/feedback" data-tooltip="Feedback" aria-label="Feedback"
+        <a href="/feedback" data-tooltip="Feedback" data-tooltip-rail aria-label="Feedback"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/feedback' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
@@ -516,9 +591,9 @@
              convention of pinning Settings at the very bottom of the nav,
              below every other admin tool. -->
         {% if staff and staff.role == "admin" %}
-        <a href="/system" data-tooltip="System" aria-label="System"
+        <a href="/system" data-tooltip="System" data-tooltip-rail aria-label="System"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/system' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+                  {% if request.path in ['/system', '/barcodes'] %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           </span>
@@ -531,7 +606,7 @@
       <!-- ACCOUNT (bottom of sidebar) -->
       <div id="sidebar-account" class="shrink-0 p-3">
         <div class="dropdown dropdown-top w-full">
-          <label tabindex="0" data-tooltip="{{ staff_full_name }}" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
+          <label tabindex="0" data-tooltip="{{ staff_full_name }}" data-tooltip-rail class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
             <div id="sidebar-avatar" class="bg-primary text-primary-content rounded-full w-7 h-7 flex items-center justify-center shrink-0 overflow-hidden">
               {% if staff.photo_path %}
               <img src="{{ url_for('static', filename=staff.photo_path) }}" alt="" class="w-full h-full object-cover">
@@ -577,11 +652,28 @@
               </button>
 
               <button type="button" onclick="document.getElementById('help-support-modal').showModal()"
-                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors"
+                      data-tooltip="Help">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 </span>
-                <span class="flex-1 text-sm font-medium text-base-content">Help &amp; support</span>
+                <span class="flex-1 text-sm font-medium text-base-content">Help</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+
+              <!-- Keyboard shortcuts -- split out from Help (was a section
+                   inside the Help & support modal) into its own row/modal
+                   so it's not buried inside an FAQ dialog; the "?" hotkey
+                   now opens this directly too, matching the near-universal
+                   "?" = "show me the shortcuts" convention (GitHub, Slack,
+                   etc.) rather than a general help panel. -->
+              <button type="button" onclick="document.getElementById('keyboard-shortcuts-modal').showModal()"
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors"
+                      data-tooltip="Keyboard shortcuts (?)">
+                <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+                </span>
+                <span class="flex-1 text-sm font-medium text-base-content">Keyboard shortcuts</span>
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
@@ -619,17 +711,19 @@
       {% endif %}
     </aside>
 
-    <!-- Shared collapsed-rail tooltip -- one reusable element (JS-positioned
-         per hover target via getBoundingClientRect, see the script below)
-         rather than a per-link tooltip embedded in the sidebar markup. That
-         matters because the nav list has overflow-y:auto, which per the CSS
-         overflow spec forces overflow-x to auto too (visible + auto on the
-         same element isn't allowed) -- an absolutely-positioned per-link
-         tooltip would get clipped at the nav's edge. Living here at the
-         top level with position:fixed sidesteps that entirely. Only ever
-         shown while the sidebar is collapsed (see JS) -- expanded labels
-         are already visible text, a tooltip would be redundant there. -->
-    <div id="sidebar-tooltip" role="tooltip"
+    <!-- Shared app-wide tooltip -- one reusable element (JS-positioned per
+         hover target via getBoundingClientRect, see the script below)
+         rather than a per-element tooltip embedded wherever data-tooltip is
+         used. That matters for the sidebar rail specifically because the
+         nav list has overflow-y:auto, which per the CSS overflow spec
+         forces overflow-x to auto too (visible + auto on the same element
+         isn't allowed) -- an absolutely-positioned per-link tooltip would
+         get clipped at the nav's edge. Living here at the top level with
+         position:fixed sidesteps that entirely, and doubles as the one
+         tooltip instance every other [data-tooltip] element on the page
+         (header icons, toolbar buttons, filter toggles) shares too -- see
+         the delegated mouseover/mouseout handling further down. -->
+    <div id="app-tooltip" role="tooltip"
          class="fixed hidden bg-base-100 text-base-content text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-lg border border-base-300 whitespace-nowrap pointer-events-none z-[200]"></div>
 
     <!-- MAIN COLUMN -->
@@ -640,7 +734,7 @@
 
       {% if staff %}
       <!-- CONTENT HEADER -->
-      <div class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
+      <div id="content-header" class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
         <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
@@ -653,6 +747,10 @@
             <span>Dashboard</span>
           </a>
           <span class="text-base-content/30 text-sm shrink-0">/</span>
+          {% if ns.parent_href %}
+          <a href="{{ ns.parent_href }}" class="text-sm text-base-content/50 hover:text-base-content transition-colors shrink-0">{{ ns.parent_label }}</a>
+          <span class="text-base-content/30 text-sm shrink-0">/</span>
+          {% endif %}
           <h1 class="text-lg font-semibold text-base-content truncate min-w-0">{{ ns.current_label }}</h1>
         </div>
         {% endif %}
@@ -661,7 +759,7 @@
 
           <!-- Notifications -->
           <div class="dropdown dropdown-end">
-            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
+            <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative" data-tooltip="Notifications">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
               {% if unread_notifications_count %}
               <!-- bg-primary, not bg-error -- matches the earlier decision to
@@ -1108,14 +1206,18 @@
         </form>
       </dialog>
 
-      <!-- Help & support modal -- static FAQ, no backend. If this needs to
-           grow into something that reaches an actual admin (a contact
-           form, ticket queue), that's a separate feature; this is
-           intentionally just answers to the handful of "how do I..."
-           questions this app raises. -->
+      <!-- Help modal -- static FAQ, no backend. If this needs to grow into
+           something that reaches an actual admin (a contact form, ticket
+           queue), that's a separate feature; this is intentionally just
+           answers to the handful of "how do I..." questions this app
+           raises. Keyboard shortcuts used to be a section at the bottom of
+           this same modal; split out into its own modal/menu row (see
+           #keyboard-shortcuts-modal below) since a full shortcuts
+           reference isn't really a FAQ answer, and burying it at the
+           bottom of one made it easy to miss. -->
       <dialog id="help-support-modal" class="modal">
         <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg mb-1">Help &amp; support</h3>
+          <h3 class="font-bold text-lg mb-1">Help</h3>
           <p class="text-xs text-base-content/50 mb-4">Quick answers. For anything else, reach out to an admin directly.</p>
 
           <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -1139,6 +1241,131 @@
               <p class="text-sm font-semibold text-base-content">Something looks wrong or broken.</p>
               <p class="text-xs text-base-content/60 mt-1">Note what you were doing and let an admin know directly — there's no in-app bug report yet.</p>
             </div>
+            <div>
+              <p class="text-sm font-semibold text-base-content">Is there a list of keyboard shortcuts?</p>
+              <p class="text-xs text-base-content/60 mt-1">Yes — see "Keyboard shortcuts" in this same account menu, or just press <kbd class="kbd kbd-xs">?</kbd> from anywhere.</p>
+            </div>
+          </div>
+
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn btn-sm">Close</button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Keyboard shortcuts modal -- see the account-menu row above that
+           opens it, and the "?" hotkey (base.html's own keydown listener
+           further down) which opens it from anywhere. -->
+      <dialog id="keyboard-shortcuts-modal" class="modal">
+        <div class="modal-box max-w-md">
+          <h3 class="font-bold text-lg mb-1">Keyboard shortcuts</h3>
+          <p class="text-xs text-base-content/50 mb-4">Disabled while typing in a text field, and while a dialog is open (except Esc, which closes it).</p>
+
+          <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Everywhere</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-base-content/60">Open this panel</span>
+                  <kbd class="kbd kbd-sm">?</kbd>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-base-content/60">Close the open dialog</span>
+                  <kbd class="kbd kbd-sm">Esc</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Inventory</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show archived</span><kbd class="kbd kbd-sm">`</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Available / Borrowed / Needs attention</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new item</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Manage categories</span><kbd class="kbd kbd-sm">Alt+M</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Import CSV</span><kbd class="kbd kbd-sm">Alt+I</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Export data</span><kbd class="kbd kbd-sm">Alt+E</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Borrowers</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show inactive</span><kbd class="kbd kbd-sm">`</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active / Restricted / Inactive</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new member</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Manage departments</span><kbd class="kbd kbd-sm">Alt+M</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Borrow &amp; Return</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active loans / Overdue / Returned</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">New checkout</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Return items</span><kbd class="kbd kbd-sm">Alt+R</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Approvals</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Reset current tab's filters to default</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Notifications</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Mark all as read</span><kbd class="kbd kbd-sm">Alt+A</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Reports</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear date range filter</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            {% if staff and staff.role == "admin" %}
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Staff</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show inactive</span><kbd class="kbd kbd-sm">`</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active / Locked / Inactive</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new staff</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Activity Log</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
+              </div>
+            </div>
+            {% endif %}
           </div>
 
           <div class="modal-action">
@@ -1381,14 +1608,31 @@
     }
   });
 
-  // Collapsed-rail tooltips -- only meaningful while collapsed, since an
-  // expanded link's label is already visible text right next to it.
-  // 150ms show-delay (fast on purpose -- half the ~300ms a "normal"
-  // tooltip delay would use), no delay on hide so it never lingers once
-  // the cursor leaves.
+  // Shared app-wide tooltip -- one styled bubble (#app-tooltip, up near the
+  // sidebar markup) reused for every [data-tooltip] element on the page,
+  // not just the sidebar's collapsed-rail links. Delegated on `document`
+  // via mouseover/mouseout (which bubble; mouseenter/mouseleave don't)
+  // rather than binding per-element, since a lot of what carries
+  // data-tooltip now -- table pagination buttons, filter toggles -- lives
+  // inside htmx swap targets and gets replaced wholesale after every
+  // request; a one-time querySelectorAll+addEventListener pass at load
+  // would silently stop covering those elements after their first swap.
+  //
+  // Two flavors, told apart by the data-tooltip-rail marker:
+  //  - Rail (sidebar nav links, the account avatar): only makes sense
+  //    while the sidebar is collapsed to icons-only -- expanded, the
+  //    label is already visible text right next to it. Positioned to the
+  //    right of the icon, matching the rail's own layout.
+  //  - Everything else (header icons, toolbar buttons, filter toggles):
+  //    always shown on hover, positioned below-center like a typical
+  //    top-bar/toolbar tooltip.
+  // 150ms show-delay in both cases (fast on purpose -- about half the
+  // ~300ms a "normal" tooltip delay would use), no delay on hide so it
+  // never lingers once the cursor leaves.
   const TOOLTIP_SHOW_DELAY_MS = 150;
-  const tooltipEl = document.getElementById('sidebar-tooltip');
+  const tooltipEl = document.getElementById('app-tooltip');
   let tooltipShowTimer = null;
+  let tooltipTarget = null;
 
   function hideTooltip() {
     if (tooltipShowTimer) {
@@ -1396,32 +1640,50 @@
       tooltipShowTimer = null;
     }
     tooltipEl.classList.add('hidden');
+    tooltipTarget = null;
   }
 
-  sidebar.querySelectorAll('[data-tooltip]').forEach(function (el) {
-    el.addEventListener('mouseenter', function () {
-      if (!sidebar.classList.contains('collapsed')) return;
+  document.addEventListener('mouseover', function (e) {
+    const el = e.target.closest('[data-tooltip]');
+    if (!el || el === tooltipTarget) return;
+    const isRail = el.hasAttribute('data-tooltip-rail');
+    if (isRail && !sidebar.classList.contains('collapsed')) return;
+
+    tooltipTarget = el;
+    if (tooltipShowTimer) clearTimeout(tooltipShowTimer);
+    tooltipShowTimer = setTimeout(function () {
       const text = el.getAttribute('data-tooltip');
       if (!text) return;
-
-      tooltipShowTimer = setTimeout(function () {
-        tooltipEl.textContent = text;
-        tooltipEl.classList.remove('hidden');
-        const rect = el.getBoundingClientRect();
+      tooltipEl.textContent = text;
+      tooltipEl.classList.remove('hidden');
+      const rect = el.getBoundingClientRect();
+      if (isRail) {
         tooltipEl.style.top = (rect.top + rect.height / 2) + 'px';
         tooltipEl.style.left = (rect.right + 10) + 'px';
         tooltipEl.style.transform = 'translateY(-50%)';
-      }, TOOLTIP_SHOW_DELAY_MS);
-    });
-    el.addEventListener('mouseleave', hideTooltip);
-    el.addEventListener('click', hideTooltip);
+      } else {
+        tooltipEl.style.top = (rect.bottom + 8) + 'px';
+        tooltipEl.style.left = (rect.left + rect.width / 2) + 'px';
+        tooltipEl.style.transform = 'translateX(-50%)';
+      }
+    }, TOOLTIP_SHOW_DELAY_MS);
+  });
+
+  document.addEventListener('mouseout', function (e) {
+    const el = e.target.closest('[data-tooltip]');
+    if (!el || el.contains(e.relatedTarget)) return;
+    hideTooltip();
+  });
+
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-tooltip]')) hideTooltip();
   });
 
   // Collapsing mid-hover (via the toggle button, e.g.) shouldn't leave a
   // stale tooltip positioned over now-hidden content; expanding should
-  // never show one at all (see the sidebar.classList.contains('collapsed')
-  // guard above, but a tooltip already showing when the button is
-  // clicked to expand needs to be explicitly cleared too).
+  // never show one at all (see the isRail guard above, but a tooltip
+  // already showing when the button is clicked to expand needs to be
+  // explicitly cleared too).
   toggleBtn.addEventListener('click', hideTooltip);
 })();
 
@@ -3226,6 +3488,24 @@ document.getElementById('checkout-close-confirm-modal')?.addEventListener('close
   Checkout.cancelCloseConfirm();
 });
 
+// "?" opens Keyboard shortcuts from anywhere -- skipped while typing in a
+// field (an input/textarea/contenteditable, or anything already inside an
+// open modal) so it doesn't hijack a literal "?" character someone's
+// typing into a search box or form field. Mirrors the "?" convention used
+// elsewhere (GitHub, Slack, etc.) for "show me the shortcuts" -- opens
+// #keyboard-shortcuts-modal specifically, not the general Help modal
+// (see the account-menu rows above, now two separate entries).
+document.addEventListener('keydown', function (e) {
+  if (e.key !== '?') return;
+
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+  if (e.target.closest('dialog[open]')) return;
+
+  e.preventDefault();
+  document.getElementById('keyboard-shortcuts-modal')?.showModal();
+});
+
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
 
@@ -3235,8 +3515,25 @@ document.addEventListener('keydown', function (e) {
   const containers = [
     document.getElementById('modal-container'),
     document.getElementById('checkout-modal-container'),
+    // Notification settings (opened from the System page and the
+    // notification-bell dropdown's gear icon) targets this container
+    // specifically, not #modal-container -- left out of this list
+    // before, so Escape silently did nothing while it was open.
+    document.getElementById('global-modal-container'),
   ].filter(Boolean);
-  const modals = containers.flatMap((c) => Array.from(c.querySelectorAll(':scope > dialog[open]')));
+  // Two modal patterns coexist in this app: native <dialog> (opened via
+  // showModal(), e.g. Manage Categories/Departments -- those two also
+  // listen for the dialog's own native Escape-triggered 'close' event
+  // themselves and remove() on it, so this handler finding and
+  // remove()-ing them too is redundant but harmless) and the older
+  // div.modal.modal-open pattern (no dialog semantics, so no native
+  // Escape handling at all) that most of the htmx-swapped-in Add/Edit/
+  // Delete/Import/Export forms still use. Matching only dialog[open]
+  // here meant Escape silently did nothing for that second, much larger
+  // group -- this now covers both.
+  const modals = containers.flatMap((c) =>
+    Array.from(c.querySelectorAll(':scope > dialog[open], :scope > .modal.modal-open'))
+  );
   if (modals.length === 0) return;
 
   const topModal = modals[modals.length - 1];

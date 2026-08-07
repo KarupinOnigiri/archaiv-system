@@ -143,6 +143,23 @@ def login():
             """,
             (username,),
         ).fetchone()
+        # login.html's single identifier field accepts either a typed
+        # username or a scanned barcode (same box, same "username" POST
+        # key -- no separate field or param needed) -- if it didn't match
+        # a username, try it as a barcode before giving up. Only when the
+        # caller didn't *also* pass an explicit barcode_id: a JSON caller
+        # that deliberately sent both shouldn't have username's failed
+        # lookup silently retried against a different, unrelated value.
+        if staff is None and not barcode_id:
+            staff = conn.execute(
+                """
+                SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
+                FROM staff
+                JOIN members ON staff.member_id = members.id
+                WHERE members.barcode_id = ?
+                """,
+                (username,),
+            ).fetchone()
     else:
         staff = conn.execute(
             """
@@ -276,6 +293,221 @@ def login():
         raise
     finally:
         session_conn.close()
+
+    response = _login_response(
+        {
+            "message": "Login successful",
+            "staff_id": staff["id"],
+            "name": full_name(
+                staff["first_name"],
+                staff["last_name"],
+                staff["middle_name"],
+                staff["suffix"],
+            ),
+            "role": staff["role"],
+            "csrf_token": csrf_token,
+        },
+        200,
+        # The temporary setup admin (services.seed_service) lands on the
+        # setup wizard instead of the normal dashboard -- see
+        # pages.setup_page's docstring for why.
+        redirect_to=url_for("pages.setup_page") if staff["is_system_seeded"] else url_for("home"),
+    )
+    response.set_cookie(
+        "session_token",
+        token,
+        httponly=True,
+        samesite="Lax",
+        secure=_COOKIE_SECURE,
+        max_age=absolute_hours * 3600,
+    )
+    return response
+
+
+@auth_bp.route("/login-rfid", methods=["POST"])
+@limiter.limit("10 per minute; 50 per hour")
+def login_rfid():
+    """RFID-card login -- admin-only by design (see the docstring
+    discussion that led here): a keycard alone is "something you have"
+    with no second factor, and cloning/losing a card would otherwise
+    hand over the single most privileged role in the system with
+    nothing to stop it. Pairs the card (staff.rfid_id) with a short PIN
+    (staff.rfid_pin_hash, hashed the same way a password is) instead --
+    still much faster to enter at a reader than a full password, but a
+    stolen/cloned card alone isn't enough on its own.
+
+    Shares its lockout bookkeeping (failed_login_attempts/locked_until)
+    with the regular password login above rather than tracking it
+    separately -- simpler, and there's no reason repeated bad PIN
+    attempts should be lawed differently than repeated bad passwords for
+    the same account."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    rfid_id = data.get("rfid_id")
+    pin = data.get("pin")
+
+    if not rfid_id or not pin:
+        return jsonify({"error": "Provide rfid_id and pin"}), 400
+
+    conn = get_db_connection()
+
+    existing_token = request.cookies.get("session_token")
+    if existing_token:
+        existing_session = conn.execute(
+            "SELECT * FROM sessions WHERE token = ?", (existing_token,)
+        ).fetchone()
+
+        if existing_session is not None:
+            now = datetime.now()
+            expires_at = datetime.strptime(
+                existing_session["expires_at"], "%Y-%m-%d %H:%M:%S"
+            )
+            last_active_at = datetime.strptime(
+                existing_session["last_active_at"], "%Y-%m-%d %H:%M:%S"
+            )
+            session_is_live = now <= expires_at and (now - last_active_at) <= timedelta(
+                minutes=get_session_idle_minutes(conn)
+            )
+
+            if session_is_live:
+                current_staff = conn.execute(
+                    "SELECT username FROM staff WHERE id = ?",
+                    (existing_session["staff_id"],),
+                ).fetchone()
+                conn.close()
+                return _login_response(
+                    {
+                        "error": "Another account is already logged in on this device. Please log out first.",
+                        "current_username": (
+                            current_staff["username"] if current_staff else None
+                        ),
+                    },
+                    409,
+                )
+            else:
+                conn.execute("DELETE FROM sessions WHERE token = ?", (existing_token,))
+                conn.commit()
+
+    staff = conn.execute(
+        """
+        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.rfid_id = ? AND staff.role = 'admin'
+        """,
+        (rfid_id,),
+    ).fetchone()
+
+    if staff is None or not staff["rfid_pin_hash"]:
+        conn.close()
+        # Same timing-safety reasoning as the password login above --
+        # constant-cost dummy check whether the card doesn't exist, isn't
+        # an admin's, or has no PIN set yet, so response timing alone
+        # can't distinguish those cases from a wrong PIN.
+        check_password_hash(_DUMMY_PASSWORD_HASH, pin)
+        return _login_response({"error": "Invalid credentials"}, 401)
+
+    if staff["locked_until"]:
+        if staff["locked_until"] == INDEFINITE_LOCK_UNTIL:
+            conn.close()
+            return _login_response(
+                {"error": "This account has been locked by an administrator. Contact an administrator to unlock it."},
+                403,
+            )
+        locked_until = datetime.strptime(staff["locked_until"], "%Y-%m-%d %H:%M:%S")
+        if datetime.now() < locked_until:
+            conn.close()
+            remaining = int((locked_until - datetime.now()).total_seconds() / 60) + 1
+            return _login_response(
+                {"error": f"Account locked. Try again in {remaining} minute(s)."},
+                403,
+            )
+
+    if not check_password_hash(staff["rfid_pin_hash"], pin):
+        new_attempts = staff["failed_login_attempts"] + 1
+        lockout_minutes = get_lockout_minutes(conn)
+
+        if new_attempts >= get_max_failed_attempts(conn):
+            lockout_until = (
+                datetime.now() + timedelta(minutes=lockout_minutes)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE staff SET failed_login_attempts = ?, locked_until = ? WHERE id = ?",
+                (new_attempts, lockout_until, staff["id"]),
+            )
+            conn.commit()
+            conn.close()
+
+            log_action(
+                staff_id=staff["id"],
+                action="account_locked",
+                target_table="staff",
+                target_id=staff["id"],
+                details=f"Account locked after {new_attempts} failed RFID PIN attempts",
+            )
+
+            return _login_response(
+                {"error": f"Too many failed attempts. Account locked for {lockout_minutes} minutes."},
+                403,
+            )
+
+        conn.execute(
+            "UPDATE staff SET failed_login_attempts = ? WHERE id = ?",
+            (new_attempts, staff["id"]),
+        )
+        conn.commit()
+        conn.close()
+        return _login_response({"error": "Invalid credentials"}, 401)
+
+    conn.execute(
+        "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+        (staff["id"],),
+    )
+    conn.commit()
+    conn.close()
+
+    if not staff["is_active"]:
+        return _login_response({"error": "This account has been deactivated"}, 403)
+
+    session_conn = get_db_connection()
+    try:
+        session_conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff["id"],))
+
+        token = secrets.token_hex(32)
+        csrf_token = secrets.token_hex(32)
+        absolute_hours = get_session_absolute_hours(session_conn)
+        expires_at = (
+            datetime.now() + timedelta(hours=absolute_hours)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        session_conn.execute(
+            "INSERT INTO sessions (token, csrf_token, staff_id, expires_at) VALUES (?, ?, ?, ?)",
+            (token, csrf_token, staff["id"], expires_at),
+        )
+        session_conn.commit()
+    except Exception:
+        session_conn.rollback()
+        raise
+    finally:
+        session_conn.close()
+
+    # log_action for a successful RFID login, distinctly tagged rather
+    # than reusing the same action name a password login would -- see
+    # the design discussion this feature came out of: RFID-originated
+    # sessions should stay visible/distinguishable in the audit trail,
+    # not blend in with ordinary password logins.
+    log_action(
+        staff_id=staff["id"],
+        action="logged_in_rfid",
+        target_table="staff",
+        target_id=staff["id"],
+        details=f"Logged in via RFID card + PIN: {staff['username']}",
+    )
 
     response = _login_response(
         {

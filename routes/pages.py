@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, g
+from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
 from services.auth_service import login_required, roles_required
 from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
@@ -16,6 +16,35 @@ def login_page():
     error = request.args.get("error")
     username = request.args.get("username", "")
     return render_template("login.html", error=error, username=username)
+
+
+@pages_bp.route("/setup")
+@login_required
+def setup_page():
+    """One-time first-admin setup wizard -- only meaningful while logged
+    in as the temporary system-seeded admin (see
+    services/seed_service.seed_initial_admin). Posts to
+    POST /api/v1/setup/complete (routes/setup.py), which creates the
+    real first admin and retires this temporary one.
+
+    Deliberately doesn't pass `staff` to the template, the same trick
+    login.html relies on to render without the normal sidebar/header
+    chrome (see base.html's `{% if staff %}` guard around all of it) --
+    this account has no real business browsing the rest of the app
+    before setup is even done, so there's nothing to navigate to yet.
+
+    Redirects to the dashboard if hit by anyone else (i.e. any session
+    that isn't the temp admin) -- an already-set-up system has no
+    temp admin logged in, so showing this wizard there would just error
+    out on submit instead of doing anything useful."""
+    if not g.staff["is_system_seeded"]:
+        return redirect(url_for("home"))
+    conn = get_db_connection()
+    departments = conn.execute(
+        "SELECT * FROM departments ORDER BY sort_order, name"
+    ).fetchall()
+    conn.close()
+    return render_template("setup.html", departments=departments)
 
 
 @pages_bp.route("/assets")
@@ -383,6 +412,50 @@ def reports_page():
     this is the one page in the app where that's the right call, since
     there's no HTML partial to swap in, just JSON to turn into bars/tables."""
     return render_template("reports.html", staff=g.staff)
+
+
+@pages_bp.route("/barcodes")
+@roles_required("admin", "in_charge")
+def barcodes_page():
+    """Barcode label generator -- pick from currently-present assets
+    and/or members, preview the rendered (CODE128, via static/js/
+    jsbarcode.min.js) barcodes, then print via the browser's own Print
+    dialog. Reachable only from the System page (a batch utility, not a
+    daily-visit destination -- no sidebar tab, and no toolbar shortcut
+    on Inventory/Borrowers either; keeping it to one door in rather than
+    scattering entry points). "Currently present" is deliberately
+    narrower than "every row that ever existed": deleted_at IS NULL for
+    assets (an archived asset has no reason to get a fresh label) and
+    is_active = 1 for members (same idea -- a deactivated member/
+    borrower isn't getting handed a new ID barcode). A staff account has
+    no barcode of its own -- it's always its linked member's -- so
+    there's no separate staff list here; printing a staff member's
+    barcode just means printing their member row.
+
+    Both lists are fetched up front and filtered/searched client-side
+    (see barcodes.html) rather than via htmx round-trips, same reasoning
+    reports.html uses: this is a one-time-per-visit picker, not a
+    frequently-refreshed table, and a school-toolroom-scale inventory
+    (low thousands at most) is small enough to hand to the browser
+    in one shot."""
+    conn = get_db_connection()
+    assets = conn.execute("""
+        SELECT id, asset_id, barcode_id, name
+        FROM assets
+        WHERE deleted_at IS NULL
+        ORDER BY asset_id
+        """).fetchall()
+    members = conn.execute("""
+        SELECT members.id, members.member_code, members.barcode_id,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM members
+        WHERE members.is_active = 1
+        ORDER BY members.member_code
+        """).fetchall()
+    conn.close()
+    return render_template(
+        "barcodes.html", staff=g.staff, assets=assets, members=members
+    )
 
 
 @pages_bp.route("/system")

@@ -25,7 +25,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export Data
       </button>
-      <button type="button" id="add-staff-btn" class="btn btn-primary btn-sm rounded-full"
+      <button type="button" id="add-staff-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="Add new staff (Alt+N)"
               hx-get="/api/v1/staff/add-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -54,7 +54,7 @@
         <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </div>
-        <input type="search" id="staff-search" name="q" placeholder="Search by name, username, or staff code..."
+        <input type="search" id="staff-search" name="q" placeholder="Search by name, username, or staff code... (/)"
                aria-label="Search staff by name, username, or staff code"
                class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                value="{{ request.args.get('q', '') }}"
@@ -115,12 +115,12 @@
         </select>
       </div>
 
-      <button type="button" id="clear-staff-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllStaffFilters()" title="Clear filters" aria-label="Clear filters">
+      <button type="button" id="clear-staff-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllStaffFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
         <span id="clear-staff-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
       </button>
 
-      <label id="inactive-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+      <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
                class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"
@@ -751,6 +751,22 @@ function isModalOpen() {
   const container = document.getElementById('modal-container');
   return !!(container && container.querySelector(':scope > .modal'));
 }
+
+// Barcode-scan shortcut -- see templates/assets.html's identical block
+// for the full reasoning (Enter-key on the same box the live substring
+// filter uses, exact match, jumps straight to the profile modal). Looks
+// up via the linked member's barcode -- staff has no barcode of its
+// own, see routes/staff.py:staff_by_barcode.
+document.getElementById('staff-search').addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  const code = e.target.value.trim();
+  if (!code) return;
+  e.preventDefault();
+  htmx.ajax('GET', `/api/v1/staff/by-barcode/${encodeURIComponent(code)}`, {
+    target: '#modal-container',
+    swap: 'innerHTML',
+  });
+});
 
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;

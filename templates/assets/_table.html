@@ -129,7 +129,7 @@
         </span>
       </td>
       {% endif %}
-      <td class="py-2.5 text-sm">{{ asset.condition | capitalize }}</td>
+      <td class="py-2.5 text-sm">{{ asset.condition | humanize }}</td>
       <td class="py-2.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
       <td class="py-2.5 text-right">
         <div class="dropdown dropdown-end">
@@ -196,7 +196,7 @@
 
   <div class="flex items-center gap-1">
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
-            aria-label="Previous page"
+            data-tooltip="Previous page (←)" aria-label="Previous page"
             hx-get="/api/v1/assets"
             hx-target="#asset-table-container"
             hx-swap="innerHTML"
@@ -241,7 +241,7 @@
     </nav>
 
     <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
-            aria-label="Next page"
+            data-tooltip="Next page (→)" aria-label="Next page"
             hx-get="/api/v1/assets"
             hx-target="#asset-table-container"
             hx-swap="innerHTML"

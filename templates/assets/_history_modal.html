@@ -25,7 +25,7 @@
           <div><span class="text-base-content/40">In</span><br>{{ h.time_in or "—" }}</div>
         </div>
         <div class="text-xs text-base-content/60">
-          Condition: {{ h.condition_out | capitalize if h.condition_out else "—" }}{% if h.condition_in %} &rarr; {{ h.condition_in | capitalize }}{% endif %}
+          Condition: {{ h.condition_out | humanize if h.condition_out else "—" }}{% if h.condition_in %} &rarr; {{ h.condition_in | humanize }}{% endif %}
         </div>
         {% if h.return_remarks %}
         <p class="text-xs text-base-content/50 mt-1.5 italic">"{{ h.return_remarks }}"</p>

@@ -11,6 +11,7 @@ from utils.validators import (
     validate_date_string,
     validate_date_fields,
     validate_password_strength,
+    validate_rfid_pin,
     parse_pagination_params,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -243,6 +244,32 @@ def get_staff_by_id(id):
     return jsonify(dict(staff))
 
 
+@staff_bp.route("/staff/by-barcode/<string:barcode>")
+@login_required
+def staff_by_barcode(barcode):
+    """Exact-match barcode lookup for the Staff search box's Enter-key
+    shortcut (staff.html) -- see assets.py:asset_by_barcode for the full
+    reasoning, identical here. Looks up via the linked member's barcode
+    (staff has no barcode of its own -- see routes/members.py), matching
+    regardless of active/locked state, same as the other two."""
+    conn = get_db_connection()
+    staff_row = conn.execute(
+        """
+        SELECT staff.id
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE members.barcode_id = ?
+        """,
+        (barcode,),
+    ).fetchone()
+    conn.close()
+    if staff_row is None:
+        return render_template(
+            "_barcode_not_found_modal.html", kind="staff member", barcode=barcode
+        )
+    return staff_profile(staff_row["id"])
+
+
 @staff_bp.route("/staff/<int:id>/profile")
 @login_required
 def staff_profile(id):
@@ -260,7 +287,7 @@ def staff_profile(id):
         """
         SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
                staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
-               staff.created_at, staff.photo_path,
+               staff.created_at, staff.photo_path, staff.rfid_id,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.barcode_id, departments.name AS department
         FROM staff
@@ -598,7 +625,7 @@ def add_staff_submit():
             ),
         )
         new_staff_id = cursor.lastrowid
-        generated_code = f"STF-{new_staff_id:05d}"
+        generated_code = f"STF{new_staff_id:05d}"
         conn.execute(
             "UPDATE staff SET staff_code = ? WHERE id = ?",
             (generated_code, new_staff_id),
@@ -653,7 +680,7 @@ def edit_staff_form(id):
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.username, staff.role, staff.assigned_start, staff.assigned_end,
-               staff.staff_code, staff.is_active, staff.locked_until,
+               staff.staff_code, staff.is_active, staff.locked_until, staff.rfid_id,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.member_code, departments.name AS department
         FROM staff
@@ -689,6 +716,16 @@ def edit_staff_submit(id):
     if error:
         return error
 
+    # A blank/omitted rfid_pin leaves whatever's already set untouched --
+    # unlike rfid_id (a plain identifier, safe to blank out to unassign),
+    # this is a login credential, so an accidental empty submit shouldn't
+    # silently wipe a working PIN. Validated up front, before the row is
+    # even fetched, same as the role check above.
+    if data.get("rfid_pin"):
+        error = validate_rfid_pin(data["rfid_pin"])
+        if error:
+            return error
+
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
 
@@ -708,11 +745,18 @@ def edit_staff_submit(id):
             ),
             403,
         )
+
+    new_rfid_pin_hash = (
+        generate_password_hash(data["rfid_pin"])
+        if data.get("rfid_pin")
+        else staff["rfid_pin_hash"]
+    )
+
     try:
         conn.execute(
             """
             UPDATE staff
-            SET role = ?, assigned_start = ?, assigned_end = ?
+            SET role = ?, assigned_start = ?, assigned_end = ?, rfid_id = ?, rfid_pin_hash = ?
             WHERE id = ?
             """,
             (
@@ -720,6 +764,13 @@ def edit_staff_submit(id):
                 new_role,
                 data.get("assigned_start", staff["assigned_start"]),
                 data.get("assigned_end", staff["assigned_end"]),
+                # An empty string means "clear the card" (unassign), not
+                # "set it to the literal empty string" -- normalized to
+                # NULL so the UNIQUE index (idx_staff_rfid_id) still
+                # treats every unassigned staff account as distinct
+                # instead of colliding on "".
+                data.get("rfid_id", staff["rfid_id"]) or None,
+                new_rfid_pin_hash,
                 staff["id"],
             ),
         )
@@ -730,7 +781,7 @@ def edit_staff_submit(id):
         return (
             jsonify(
                 {
-                    "error": "A database constraint was violated. Check for duplicate barcode/username/ID values."
+                    "error": "A database constraint was violated. Check that the RFID card isn't already assigned to another staff account."
                 }
             ),
             400,
@@ -2116,7 +2167,7 @@ def import_staff_csv():
             new_id = cursor.lastrowid
             conn.execute(
                 "UPDATE staff SET staff_code = ? WHERE id = ?",
-                (f"STF-{new_id:05d}", new_id),
+                (f"STF{new_id:05d}", new_id),
             )
             conn.execute("RELEASE row_import")
             created.append({"row": row_num, "id": new_id, "username": username})

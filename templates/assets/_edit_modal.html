@@ -28,9 +28,16 @@
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID <span class="text-error">*</span></label>
-              <input type="text" name="barcode_id" required value="{{ asset.barcode_id }}"
-                     class="input input-bordered w-full mt-1 bg-base-100">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
+              <!-- Read-only: barcode_id is system-generated and kept in
+                   sync with asset_id (see routes/assets.py), not something
+                   a staff member edits by hand. No `name` attribute, so it
+                   simply isn't submitted -- edit_asset_submit falls back
+                   to the asset's existing barcode_id when the form omits
+                   it, leaving it untouched. -->
+              <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
+                {{ asset.barcode_id }}
+              </div>
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID ID</label>
@@ -53,7 +60,7 @@
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">CONDITION</label>
               <select name="condition" class="select select-bordered w-full mt-1 bg-base-100">
                 {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
-                <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | capitalize }}</option>
+                <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | humanize }}</option>
                 {% endfor %}
               </select>
             </div>

@@ -35,7 +35,7 @@
       {% endif %}
       <div class="flex justify-between gap-3">
         <dt class="text-base-content/50">Condition out</dt>
-        <dd class="text-right">{{ transaction.condition_out | capitalize | replace("_", " ") if transaction.condition_out else "—" }}</dd>
+        <dd class="text-right">{{ transaction.condition_out | humanize if transaction.condition_out else "—" }}</dd>
       </div>
 
       {% if transaction.status == 'returned' %}
@@ -52,7 +52,7 @@
         {% endif %}
         <div class="flex justify-between gap-3">
           <dt class="text-base-content/50">Condition in</dt>
-          <dd class="text-right">{{ transaction.condition_in | capitalize | replace("_", " ") if transaction.condition_in else "—" }}</dd>
+          <dd class="text-right">{{ transaction.condition_in | humanize if transaction.condition_in else "—" }}</dd>
         </div>
         {% if transaction.return_remarks %}
         <div>

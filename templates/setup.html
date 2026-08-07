@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Load Archivo Font from Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&display=swap" rel="stylesheet">
+
+<div class="fixed inset-0 bg-gradient-to-br from-base-200 via-base-200 to-secondary/10 overflow-hidden overflow-y-auto">
+
+  <div class="relative min-h-full flex items-center justify-center p-4 py-10">
+
+  <div class="w-full max-w-lg bg-base-100 rounded-xl shadow-xl shadow-primary/10 p-8">
+
+    <!-- Logo + "Archaív" Label -- same as login.html -->
+    <div class="flex flex-col items-center mb-6 gap-1">
+      <img src="{{ url_for('static', filename='images/logo-icon-light.png') }}" alt="Archaív" class="logo-theme-light h-20 w-auto">
+      <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="Archaív" class="logo-theme-dark h-20 w-auto">
+      <span class="text-3xl font-bold tracking-tight text-base-content" style="font-family: 'Archivo', sans-serif;">
+        Archaív
+      </span>
+    </div>
+
+    <h1 class="text-2xl font-semibold text-center mb-1.5 text-base-content">Welcome to setup</h1>
+    <p class="text-sm text-base-content/50 text-center mb-8">
+      You're signed in as a temporary setup account. Fill in your own details below to create the real first admin account -- this temporary one is retired automatically once you do.
+    </p>
+
+    <div id="setup-error" class="hidden alert alert-error text-sm mb-4 py-2"></div>
+
+    <form id="setup-form" onsubmit="return submitSetupForm(event)" class="space-y-4" novalidate>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">FIRST NAME <span class="text-error">*</span></label>
+          <input type="text" name="first_name" required placeholder="e.g. Juan" autofocus
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">LAST NAME <span class="text-error">*</span></label>
+          <input type="text" name="last_name" required placeholder="e.g. Dela Cruz"
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">MIDDLE NAME</label>
+          <input type="text" name="middle_name" placeholder="Optional"
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">SUFFIX</label>
+          <input type="text" name="suffix" placeholder="e.g. Jr., III"
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+      </div>
+
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">DEPARTMENT <span class="text-error">*</span></label>
+        <select name="department_id" required class="select select-bordered w-full mt-1 bg-base-100">
+          <option value="" disabled selected hidden>Select Department</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}">{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME <span class="text-error">*</span></label>
+          <input type="text" name="username" required placeholder="e.g. jdelacruz" autocomplete="username"
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-base-content/50 tracking-wide">PASSWORD <span class="text-error">*</span></label>
+          <input type="password" name="password" required placeholder="At least 8 characters" autocomplete="new-password"
+                 class="input input-bordered w-full mt-1 bg-base-100">
+        </div>
+      </div>
+
+      <div class="bg-info/10 rounded-lg p-3 flex gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <p class="text-xs text-info/80">A member code and barcode are generated automatically once this account is saved.</p>
+      </div>
+
+      <button type="submit" id="setup-submit-btn" class="btn btn-primary w-full rounded-[18px] mt-2 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
+        Create admin account
+      </button>
+    </form>
+
+  </div>
+
+  </div>
+</div>
+
+<script>
+// /api/v1/setup/complete is JSON-only (get_json_or_error() + jsonify()
+// responses, no HTML re-render on error) -- so this posts via fetch,
+// same pattern as staff/_add_modal.html's submitAddStaffForm. On success
+// the temp admin's own session is dead server-side already (see
+// complete_setup in routes/setup.py), so there's nothing to do here but
+// send the browser to /login.
+async function submitSetupForm(event) {
+  event.preventDefault();
+  const form = document.getElementById('setup-form');
+  const errorBox = document.getElementById('setup-error');
+  const submitBtn = document.getElementById('setup-submit-btn');
+  errorBox.classList.add('hidden');
+
+  const payload = {
+    first_name: form.first_name.value.trim(),
+    last_name: form.last_name.value.trim(),
+    middle_name: form.middle_name.value.trim() || null,
+    suffix: form.suffix.value.trim() || null,
+    department_id: form.department_id.value,
+    username: form.username.value.trim(),
+    password: form.password.value,
+  };
+
+  submitBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/setup/complete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorBox.textContent = result.error || "That account couldn't be created";
+      errorBox.classList.remove('hidden');
+      submitBtn.disabled = false;
+      return false;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({
+      message: 'Setup complete -- log in with your new account',
+      type: 'success',
+    }));
+    window.location.href = '/login';
+  } catch (err) {
+    errorBox.textContent = "That account couldn't be created";
+    errorBox.classList.remove('hidden');
+    submitBtn.disabled = false;
+  }
+  return false;
+}
+</script>
+{% endblock %}

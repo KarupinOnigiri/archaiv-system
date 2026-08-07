@@ -27,9 +27,15 @@
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID <span class="text-error">*</span></label>
-              <input type="text" name="barcode_id" required placeholder="e.g. 883920192"
-                     class="input input-bordered w-full mt-1 bg-base-100">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
+              <!-- No longer a form field -- barcode_id is auto-generated
+                   server-side to match the asset's own generated ID
+                   (asset_id), so every asset's barcode is uniform and
+                   guaranteed in sync with its ID. See add_asset_submit in
+                   routes/assets.py. -->
+              <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
+                Auto-generated on save
+              </div>
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID ID</label>

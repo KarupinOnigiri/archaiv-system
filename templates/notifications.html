@@ -12,7 +12,7 @@
       <button type="button" id="clear-selected-notifs-btn" class="btn btn-outline btn-error btn-sm hidden" onclick="clearSelectedNotifications()">
         Clear selected (<span id="clear-selected-notifs-count">0</span>)
       </button>
-      <button type="button" id="mark-all-read-btn" class="btn btn-outline btn-sm" onclick="markAllNotificationsRead()">
+      <button type="button" id="mark-all-read-btn" class="btn btn-outline btn-sm" data-tooltip="Mark all as read (Alt+A)" onclick="markAllNotificationsRead()">
         Mark all as read
       </button>
     </div>
@@ -88,7 +88,7 @@
         </div>
 
         <button type="button" id="notif-clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative"
-                onclick="clearAllNotifFilters()" title="Clear filters" aria-label="Clear filters">
+                onclick="clearAllNotifFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           <span id="notif-clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
         </button>

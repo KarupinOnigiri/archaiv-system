@@ -525,7 +525,12 @@ def add_asset_submit():
     else:
         data = request.form
 
-    required_fields = ["name", "barcode_id"]
+    # barcode_id is no longer taken from the form -- it's auto-generated
+    # below to match the asset's own generated asset_id, same numbering,
+    # no dash (e.g. asset_id "AST00042" -> barcode_id "AST00042" too).
+    # Keeps every asset's barcode uniform and in step with its ID instead
+    # of depending on a staff member typing/scanning one in correctly.
+    required_fields = ["name"]
     for field in required_fields:
         if field not in data or not data[field]:
             error_msg = f"Missing required field: {field}"
@@ -616,7 +621,7 @@ def add_asset_submit():
             (
                 "",
                 data["name"],
-                data["barcode_id"],
+                "",
                 data.get("rfid_id") or None,
                 data.get("category_id") or None,
                 data.get("serial_code") or None,
@@ -626,10 +631,10 @@ def add_asset_submit():
             ),
         )
         new_asset_id = cursor.lastrowid
-        generated_code = f"AST-{new_asset_id:05d}"
+        generated_code = f"AST{new_asset_id:05d}"
         conn.execute(
-            "UPDATE assets SET asset_id = ? WHERE id = ?",
-            (generated_code, new_asset_id),
+            "UPDATE assets SET asset_id = ?, barcode_id = ? WHERE id = ?",
+            (generated_code, generated_code, new_asset_id),
         )
 
         if has_image:
@@ -733,7 +738,7 @@ def add_asset_submit():
     return response
 
 
-REQUIRED_CSV_COLUMNS = ("name", "barcode_id")
+REQUIRED_CSV_COLUMNS = ("name",)
 
 
 OPTIONAL_CSV_COLUMNS = (
@@ -865,9 +870,13 @@ def import_assets_csv():
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         name = (row.get("name") or "").strip()
-        barcode_id = (row.get("barcode_id") or "").strip()
-        if not name or not barcode_id:
-            errors.append({"row": row_num, "error": "name and barcode_id are required"})
+        # barcode_id is no longer read from the CSV -- even on a bulk
+        # import, every asset gets an auto-generated barcode matching its
+        # generated asset_id, same as the single-asset Add form. Any
+        # barcode_id column in the file (e.g. from a round-tripped export)
+        # is simply ignored.
+        if not name:
+            errors.append({"row": row_num, "error": "name is required"})
             continue
 
         date_error = validate_date_fields(row, ("acquired_date", "last_calibrated"))
@@ -913,11 +922,10 @@ def import_assets_csv():
             cursor = conn.execute(
                 """
                 INSERT INTO assets (asset_id, name, barcode_id, rfid_id, category_id, serial_code, acquired_date, last_calibrated, notes, deleted_at, deleted_by)
-                VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES ('', ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
-                    barcode_id,
                     row.get("rfid_id") or None,
                     category_id,
                     row.get("serial_code") or None,
@@ -929,16 +937,17 @@ def import_assets_csv():
                 ),
             )
             new_id = cursor.lastrowid
+            generated_code = f"AST{new_id:05d}"
             conn.execute(
-                "UPDATE assets SET asset_id = ? WHERE id = ?",
-                (f"AST-{new_id:05d}", new_id),
+                "UPDATE assets SET asset_id = ?, barcode_id = ? WHERE id = ?",
+                (generated_code, generated_code, new_id),
             )
             conn.execute("RELEASE row_import")
             created.append(
                 {
                     "row": row_num,
                     "id": new_id,
-                    "barcode_id": barcode_id,
+                    "barcode_id": generated_code,
                     "archived": deleted_at is not None,
                 }
             )
@@ -2343,6 +2352,34 @@ def asset_history_modal(id):
 # # # DETAILS (read-only, opened by clicking a row) --------------------------
 
 DETAILS_RECENT_ACTIVITY_LIMIT = 3
+
+
+@assets_bp.route("/assets/by-barcode/<string:barcode>")
+@login_required
+def asset_by_barcode(barcode):
+    """Exact-match barcode lookup for the Inventory search box's Enter-key
+    shortcut (assets.html) -- distinct from that same box's existing live
+    substring filter, which already searches barcode_id among other
+    fields but only narrows the table rather than jumping straight to a
+    record. Matches regardless of archived state (not filtered to
+    deleted_at IS NULL) -- scanning an archived item's barcode should
+    still show its (now-archived) details, not act like it doesn't
+    exist. Renders the same details modal a row click already opens on
+    a hit; a shared "no match" modal (used by the members/staff
+    equivalents too) on a miss. Both return 200 rather than 404 --
+    htmx.ajax() (see assets.html's own script) only swaps on 2xx by
+    default, and a "not found" result here is an expected, valid
+    response to render, not an error condition."""
+    conn = get_db_connection()
+    asset = conn.execute(
+        "SELECT id FROM assets WHERE barcode_id = ?", (barcode,)
+    ).fetchone()
+    conn.close()
+    if asset is None:
+        return render_template(
+            "_barcode_not_found_modal.html", kind="inventory item", barcode=barcode
+        )
+    return asset_details_modal(asset["id"])
 
 
 @assets_bp.route("/assets/<int:id>/details-modal")

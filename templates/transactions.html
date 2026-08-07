@@ -12,14 +12,14 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export
       </button>
-      <button type="button" id="return-items-btn" class="btn btn-outline btn-sm rounded-full"
+      <button type="button" id="return-items-btn" class="btn btn-outline btn-sm rounded-full" data-tooltip="Return items (Alt+R)"
               hx-get="/api/v1/transactions/return-scan-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
         Return Items
       </button>
-      <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full"
+      <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="New checkout (Alt+N)"
               hx-get="/api/v1/checkout-sessions/start-form"
               hx-vals="js:{client_id: crypto.randomUUID()}"
               hx-target="#checkout-modal-container"
@@ -91,7 +91,7 @@
           <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           </div>
-          <input type="search" id="transaction-search" name="q" placeholder="Search by asset or member..."
+          <input type="search" id="transaction-search" name="q" placeholder="Search by asset or member... (/)"
                  aria-label="Search transactions by asset or member"
                  class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                  value="{{ request.args.get('q', '') }}"
@@ -162,7 +162,7 @@
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
 
-        <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" title="Clear filters" aria-label="Clear filters">
+        <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
         </button>

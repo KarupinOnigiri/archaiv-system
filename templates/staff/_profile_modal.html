@@ -160,6 +160,20 @@
             <span class="text-xs text-base-content/50">Barcode</span>
             <span class="text-sm font-medium text-right">{{ staff_member.barcode_id }}</span>
           </div>
+          {% if can_manage %}
+          <!-- RFID keycard/tag -- admin-only, both here and in the Edit
+               modal (see staff/_edit_modal.html). Laying the groundwork
+               for a future RFID-based access/login protocol; not every
+               staff account will have a card issued yet, hence the
+               "Not assigned" fallback rather than hiding the row
+               entirely when empty -- an admin scanning this profile
+               should be able to tell "no card on file" apart from
+               "I can't see this field". -->
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs text-base-content/50">RFID card</span>
+            <span class="text-sm font-medium text-right {% if not staff_member.rfid_id %}text-base-content/40{% endif %}">{{ staff_member.rfid_id or "Not assigned" }}</span>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>

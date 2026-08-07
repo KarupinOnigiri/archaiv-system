@@ -64,6 +64,37 @@
         </div>
         <p class="text-xs text-base-content/40 -mt-2">To reset a password or unlock this account, use the row actions on the staff table.</p>
 
+        <!-- RFID keycard/tag + PIN -- admin-only (this whole modal
+             already is: both edit-staff-form and edit-staff/edit are
+             @roles_required("admin")). RFID card login (routes/auth.py:
+             login_rfid) is admin-role-gated at the backend too, so this
+             pair is only ever meaningful on an admin account -- but the
+             fields themselves aren't blocked from being set on any
+             role, in case that ever needs to widen later.
+             Blank RFID CARD on save unassigns it (a plain identifier,
+             safe to clear) -- see edit_staff_submit in routes/staff.py.
+             Blank PIN on save leaves whatever's already set untouched
+             instead (a credential, not an identifier -- an accidental
+             blank submit shouldn't silently revoke a working PIN); the
+             hint text below tells them which state they're in without
+             ever exposing the actual PIN. -->
+        <div class="border-t border-base-300 pt-4 grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID CARD</label>
+            <input type="text" name="rfid_id" value="{{ staff_member.rfid_id or '' }}" placeholder="Not assigned -- scan or enter a card ID"
+                   autocomplete="off"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID PIN</label>
+            <input type="text" name="rfid_pin" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+                   placeholder="{{ 'PIN is set -- leave blank to keep it' if staff_member.rfid_pin_hash else 'No PIN set -- 4-8 digits' }}"
+                   autocomplete="off"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+          <p class="text-xs text-base-content/40 col-span-2 -mt-1">Both visible to admins only. RFID login only works once a card and a PIN are both set.</p>
+        </div>
+
       </div>
 
       <div class="modal-action flex justify-end gap-2 mt-6">
@@ -91,6 +122,13 @@ async function submitEditStaffForm(event, id) {
     role: form.role.value,
     assigned_start: form.assigned_start.value || null,
     assigned_end: form.assigned_end.value || null,
+    rfid_id: form.rfid_id.value.trim(),
+    // Omitted (not just blank) when empty -- the backend treats a
+    // missing rfid_pin as "don't touch the existing PIN", and treats an
+    // explicit empty string the same way (see edit_staff_submit), but
+    // simplest to just not send the key at all when there's nothing new
+    // to set.
+    ...(form.rfid_pin.value.trim() ? { rfid_pin: form.rfid_pin.value.trim() } : {}),
   };
 
   try {

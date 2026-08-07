@@ -10,14 +10,14 @@
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role in ["admin", "in_charge"] %}
-      <button type="button" id="manage-categories-btn" class="btn btn-outline btn-sm"
+      <button type="button" id="manage-categories-btn" class="btn btn-outline btn-sm" data-tooltip="Manage categories (Alt+M)"
               hx-get="/api/v1/categories/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
         Manage Categories
       </button>
-      <button type="button" id="import-csv-btn" class="btn btn-outline btn-sm"
+      <button type="button" id="import-csv-btn" class="btn btn-outline btn-sm" data-tooltip="Import CSV (Alt+I)"
               hx-get="/api/v1/assets/import-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -25,7 +25,7 @@
         Import CSV
       </button>
       {% endif %}
-      <button type="button" id="export-data-btn" class="btn btn-outline btn-sm"
+      <button type="button" id="export-data-btn" class="btn btn-outline btn-sm" data-tooltip="Export data (Alt+E)"
               hx-get="/api/v1/assets/export-form"
               hx-target="#modal-container"
               hx-swap="innerHTML"
@@ -34,7 +34,7 @@
         Export Data
       </button>
       {% if staff.role in ["admin", "in_charge"] %}
-      <button type="button" id="add-new-item-btn" class="btn btn-primary btn-sm rounded-full"
+      <button type="button" id="add-new-item-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="Add new item (Alt+N)"
               hx-get="/api/v1/assets/add-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -68,7 +68,7 @@
         <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </div>
-        <input type="search" id="asset-search" name="q" placeholder="Search by ID, name, or barcode..."
+        <input type="search" id="asset-search" name="q" placeholder="Search by ID, name, or barcode... (/)"
                aria-label="Search assets by ID, name, or barcode"
                class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                value="{{ request.args.get('q', '') }}"
@@ -128,7 +128,7 @@
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <option value="">Condition</option>
           {% for c in ["functional", "inoperable", "for_repair", "disposed"] %}
-          <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | capitalize | replace("_", " ") }}</option>
+          <option value="{{ c }}" {% if condition_filter == c %}selected{% endif %}>{{ c | humanize }}</option>
           {% endfor %}
         </select>
       </div>
@@ -187,12 +187,12 @@
                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
       </div>
 
-      <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" title="Clear filters" aria-label="Clear filters">
+      <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
         <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
       </button>
 
-      <label id="archived-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+      <label id="archived-toggle-label" data-tooltip="Toggle show archived (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-archived-toggle" name="show_archived"
                value="1"
                class="toggle toggle-sm {% if show_archived %}toggle-warning{% endif %}"
@@ -864,6 +864,27 @@ function isModalOpen() {
   const folderBrowser = document.getElementById('export-folder-browser');
   return !!(folderBrowser && !folderBrowser.classList.contains('hidden'));
 }
+
+// Barcode-scan shortcut: a scanner types the code then sends Enter, same
+// as a person would -- so this is just an Enter-key listener on the same
+// search box the live substring filter (hx-trigger="keyup changed
+// delay:300ms" on #asset-search, further down) already uses. Distinct
+// from that filter: this does an *exact* barcode match and, on a hit,
+// jumps straight to that item's own details modal instead of merely
+// narrowing the table -- see asset_by_barcode in routes/assets.py.
+// htmx.ajax() rather than a plain fetch so this goes through the same
+// request pipeline (CSRF header, HX-Request, etc.) every other
+// htmx-driven interaction on this page already does.
+document.getElementById('asset-search').addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  const code = e.target.value.trim();
+  if (!code) return;
+  e.preventDefault();
+  htmx.ajax('GET', `/api/v1/assets/by-barcode/${encodeURIComponent(code)}`, {
+    target: '#modal-container',
+    swap: 'innerHTML',
+  });
+});
 
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;

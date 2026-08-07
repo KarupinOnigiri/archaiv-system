@@ -94,7 +94,7 @@ def save_asset_image(file_storage, asset_code):
     success, and relative_path is None on failure.
 
     asset_code should be the asset's human-readable code (e.g.
-    'AST-00001') — used as a filename prefix purely for readability on
+    'AST00001') — used as a filename prefix purely for readability on
     disk; a random suffix is still appended so re-uploads never collide
     with or overwrite a cached copy of the old image."""
     error = validate_image_upload(file_storage)

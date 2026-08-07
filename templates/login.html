@@ -46,7 +46,7 @@
             value="{{ username or '' }}"
             autocomplete="username"
             autofocus
-            placeholder="Username"
+            placeholder="Username or Barcode ID"
             class="grow bg-transparent border-none outline-none focus:outline-none"
           >
         </label>
@@ -54,7 +54,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline shrink-0" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
           </svg>
-          Please enter your username.
+          Please enter your username or barcode ID.
         </p>
       </div>
 
@@ -110,6 +110,65 @@
 
       <button type="submit" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
         Sign in
+      </button>
+    </form>
+
+    <!-- RFID + PIN login -- admin-only (routes/auth.py:login_rfid
+         enforces this server-side too), hidden behind a toggle rather
+         than shown alongside the password form by default: it's a
+         secondary path for staff who actually have a card issued, not
+         the primary way most staff sign in. -->
+    <button type="button" id="show-rfid-login-btn" onclick="toggleRfidLogin(true)"
+            class="w-full text-center text-sm text-base-content/50 hover:text-base-content mt-4 flex items-center justify-center gap-1.5">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+      Admin? Sign in with RFID card
+    </button>
+
+    <form id="rfid-login-form" novalidate class="space-y-4 hidden">
+      <div class="form-control">
+        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+          <input
+            type="text"
+            id="rfid-id-field"
+            autocomplete="off"
+            placeholder="Scan RFID card"
+            class="grow bg-transparent border-none outline-none focus:outline-none"
+          >
+        </label>
+      </div>
+
+      <div class="form-control">
+        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="10" width="16" height="10" rx="2"/>
+            <path d="M8 10V7a4 4 0 018 0v3"/>
+          </svg>
+          <input
+            type="password"
+            id="rfid-pin-field"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="8"
+            autocomplete="off"
+            placeholder="PIN"
+            class="grow bg-transparent border-none outline-none focus:outline-none"
+          >
+        </label>
+      </div>
+
+      <div id="rfid-login-error" class="hidden flex items-start gap-1.5 text-error text-xs -mt-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
+        </svg>
+        <span id="rfid-login-error-text"></span>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full rounded-[18px] py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
+        Sign in with RFID
+      </button>
+      <button type="button" onclick="toggleRfidLogin(false)" class="w-full text-center text-sm text-base-content/50 hover:text-base-content">
+        Use username/password instead
       </button>
     </form>
 
@@ -187,6 +246,66 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
 
   if (hasEmpty) {
     e.preventDefault();
+  }
+});
+
+// Toggles between the two login forms -- password (default) and RFID
+// card + PIN (admin-only, see routes/auth.py:login_rfid). Only one is
+// ever visible/interactive at a time; switching back to password mode
+// also clears whatever was typed into the RFID fields, same reasoning
+// as a password field never being resubmitted on reload.
+function toggleRfidLogin(showRfid) {
+  document.getElementById('login-form').classList.toggle('hidden', showRfid);
+  document.getElementById('show-rfid-login-btn').classList.toggle('hidden', showRfid);
+  document.getElementById('rfid-login-form').classList.toggle('hidden', !showRfid);
+  document.getElementById('rfid-login-error').classList.add('hidden');
+  if (showRfid) {
+    document.getElementById('rfid-id-field').value = '';
+    document.getElementById('rfid-pin-field').value = '';
+    document.getElementById('rfid-id-field').focus();
+  }
+}
+
+// /api/v1/login-rfid is JSON-only (same as every other JSON API
+// route in this app) -- posts via fetch rather than a plain form
+// submission, same pattern as staff/_add_modal.html's
+// submitAddStaffForm. On success there's no HX-Redirect (this isn't an
+// htmx request) so the redirect happens here explicitly; RFID login is
+// admin-only, so unlike the password form there's no temp-admin
+// setup-wizard case to special-case -- straight to the dashboard.
+document.getElementById('rfid-login-form').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const rfidId = document.getElementById('rfid-id-field').value.trim();
+  const pin = document.getElementById('rfid-pin-field').value.trim();
+  const errorBox = document.getElementById('rfid-login-error');
+  const errorText = document.getElementById('rfid-login-error-text');
+  errorBox.classList.add('hidden');
+
+  if (!rfidId || !pin) {
+    errorText.textContent = 'Scan your card and enter your PIN.';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/v1/login-rfid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rfid_id: rfidId, pin: pin }),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorText.textContent = result.error || 'Sign-in failed';
+      errorBox.classList.remove('hidden');
+      document.getElementById('rfid-pin-field').value = '';
+      return;
+    }
+
+    window.location.href = '/';
+  } catch (err) {
+    errorText.textContent = 'Sign-in failed';
+    errorBox.classList.remove('hidden');
   }
 });
 </script>
