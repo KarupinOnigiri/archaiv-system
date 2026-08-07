@@ -6,3 +6,9 @@ instance/
 *.log
 backups/
 .pytest_cache/
+
+# instance/ already covers the real DB path (database.py's DB_PATH), but
+# a stray copy at the repo root (toolroom.db) got committed once before
+# -- see the repo-hygiene history rewrite. Catch any *.db file wherever
+# it turns up so that can't happen again.
+*.db
