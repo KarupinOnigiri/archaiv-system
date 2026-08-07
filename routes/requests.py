@@ -1,9 +1,14 @@
-from flask import Blueprint, jsonify, g, request
+from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import parse_pagination_params
+from services.notification_service import (
+    create_unrestriction_requested_notifications,
+    create_unrestriction_resolved_notification,
+    clear_unrestriction_pending_notifications,
+)
 from datetime import datetime
 import sqlite3
 from extensions import limiter
@@ -66,6 +71,13 @@ def create_unrestriction_request():
             409,
         )
 
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
+
     try:
         cursor = conn.execute(
             """
@@ -74,8 +86,15 @@ def create_unrestriction_request():
             """,
             (member_id, g.staff["id"], reason),
         )
-        conn.commit()
         request_id = cursor.lastrowid
+        # Same transaction as the request insert -- an admin/in_charge
+        # should never be able to observe a request that exists but has no
+        # notification behind it (or vice versa) if something failed
+        # partway through.
+        create_unrestriction_requested_notifications(
+            conn, request_id, updated_name, g.staff["username"]
+        )
+        conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
         logger.error(f"IntegrityError: {e}")
@@ -83,12 +102,6 @@ def create_unrestriction_request():
     finally:
         conn.close()
 
-    updated_name = full_name(
-        member["first_name"],
-        member["last_name"],
-        member["middle_name"],
-        member["suffix"],
-    )
     log_action(
         staff_id=g.staff["id"],
         action="requested_unrestriction",
@@ -139,6 +152,10 @@ def cancel_unrestriction_request(id):
             """,
             (g.staff["id"], review_notes, reviewed_at, id),
         )
+        # The requester already knows they cancelled it -- no notification
+        # back to them -- but admin/in_charge's "pending review" notices
+        # for it need to go, since there's nothing left to review.
+        clear_unrestriction_pending_notifications(conn, id)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -186,6 +203,15 @@ def list_unrestriction_requests():
     if g.staff["role"] not in ("admin", "in_charge"):
         where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
         params.append(g.staff["id"])
+    elif request.args.get("mine") == "1":
+        # admin/in_charge see everyone's by default (the review queue) --
+        # this narrows that back down to "requests I personally filed",
+        # for the same admin/in_charge account that might also be the one
+        # who flagged a member for review in the first place. Distinct
+        # from the branch above: that one is a hard restriction based on
+        # role, this is an opt-in filter on top of the wider view.
+        where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
+        params.append(g.staff["id"])
 
     if status_filter:
         where_clauses.append("unrestriction_requests.status = ?")
@@ -201,6 +227,8 @@ def list_unrestriction_requests():
         f"""
         SELECT unrestriction_requests.*,
                members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.restriction_reason AS member_restriction_reason,
+               members.restriction_source AS member_restriction_source,
                requester.username AS requested_by_username,
                reviewer.username AS reviewed_by_username
         FROM unrestriction_requests
@@ -214,6 +242,24 @@ def list_unrestriction_requests():
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    context = {
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "status_filter": status_filter or "",
+        "requests_list": rows,
+    }
+
+    if request.headers.get("HX-Request") == "true":
+        # staff=g.staff is required here (not just for the full-page load) --
+        # the partial's own can_review check reads the bare `staff` variable,
+        # which would otherwise be undefined on every htmx filter/pagination
+        # swap and silently hide admin/in_charge review actions after the
+        # first load. Same reasoning as staff_bp.view_staff.
+        return render_template(
+            "requests/_unrestriction_table.html", staff=g.staff, **context
+        )
 
     return jsonify(
         {
@@ -281,6 +327,12 @@ def approve_unrestriction_request(id):
         )
 
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    updated_name = full_name(
+        member["first_name"],
+        member["last_name"],
+        member["middle_name"],
+        member["suffix"],
+    )
 
     try:
         # Same effect as the direct unrestrict_member route — approval
@@ -297,6 +349,10 @@ def approve_unrestriction_request(id):
             """,
             (g.staff["id"], review_notes, reviewed_at, id),
         )
+        clear_unrestriction_pending_notifications(conn, id)
+        create_unrestriction_resolved_notification(
+            conn, id, req["requested_by_staff_id"], updated_name, approved=True
+        )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -304,12 +360,6 @@ def approve_unrestriction_request(id):
     finally:
         conn.close()
 
-    updated_name = full_name(
-        member["first_name"],
-        member["last_name"],
-        member["middle_name"],
-        member["suffix"],
-    )
     log_action(
         staff_id=g.staff["id"],
         action="approved_unrestriction_request",
@@ -339,6 +389,15 @@ def deny_unrestriction_request(id):
         conn.close()
         return error
 
+    member = conn.execute(
+        "SELECT * FROM members WHERE id = ?", (req["member_id"],)
+    ).fetchone()
+    updated_name = (
+        full_name(member["first_name"], member["last_name"], member["middle_name"], member["suffix"])
+        if member is not None
+        else "the member"
+    )
+
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
@@ -349,6 +408,10 @@ def deny_unrestriction_request(id):
             WHERE id = ?
             """,
             (g.staff["id"], review_notes, reviewed_at, id),
+        )
+        clear_unrestriction_pending_notifications(conn, id)
+        create_unrestriction_resolved_notification(
+            conn, id, req["requested_by_staff_id"], updated_name, approved=False, review_notes=review_notes
         )
         conn.commit()
     except Exception:

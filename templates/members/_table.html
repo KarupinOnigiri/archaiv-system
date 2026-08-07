@@ -139,6 +139,10 @@
               <li>
                 <a class="flex items-center gap-2 text-success" hx-get="/api/v1/members/{{ m.id }}/unrestrict-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_shield_check() }} Lift Restriction</a>
               </li>
+              {% elif g.staff.role == "tool_keeper" and m.is_restricted %}
+              <li>
+                <a class="flex items-center gap-2 text-warning" hx-get="/api/v1/members/{{ m.id }}/request-unrestriction-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_shield_check() }} Request Unrestriction</a>
+              </li>
               {% endif %}
               {% if can_manage %}
               <li>

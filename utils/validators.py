@@ -112,11 +112,26 @@ def validate_due_date(value, field_name="due_date"):
     return None
 
 
+# The only tables validate_lookup_id is ever called with (see call sites in
+# routes/members.py, routes/assets.py, routes/setup.py). `table` gets
+# interpolated straight into SQL below since SQLite doesn't support binding
+# identifiers as parameters — this allowlist is what actually keeps that
+# safe, rather than relying solely on callers to remember the docstring
+# rule not to pass user input as the table name.
+_LOOKUP_TABLES = {"departments", "categories"}
+
+
 def validate_lookup_id(conn, table, id_value, field_name, required=False):
     """Checks that id_value references an existing row in `table`.
     `table` must always be a hardcoded literal from your own code — never
     pass user input as the table name. Returns an error response, or None
     if valid (or if not required and id_value is None)."""
+    if table not in _LOOKUP_TABLES:
+        raise ValueError(
+            f"validate_lookup_id: {table!r} is not an allowed lookup table "
+            f"(add it to _LOOKUP_TABLES in utils/validators.py if this is intentional)"
+        )
+
     if id_value is None:
         if required:
             return jsonify({"error": f"Missing required field: {field_name}"}), 400

@@ -1,0 +1,11 @@
+-- Adds staff.photo_path, used by the self-service profile photo upload
+-- (routes/staff.py: upload_own_photo). Nullable with no default -- NULL
+-- is what the app already treats as "no photo" (base.html falls back to
+-- initials via {% if staff.photo_path %}), so existing rows need no
+-- backfill.
+--
+-- Stores a path relative to /static, the same convention as
+-- assets.image_path -- e.g. "uploads/staff/jdoe-a1b2c3d4.jpg" -- resolved
+-- with url_for('static', filename=staff.photo_path) wherever it's
+-- rendered or returned from the API, rather than storing a full URL.
+ALTER TABLE staff ADD COLUMN photo_path TEXT;

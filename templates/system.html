@@ -82,10 +82,29 @@
       </div>
       <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/notification-settings/manage-form"
-              hx-target="#modal-container"
+              hx-target="#global-modal-container"
               hx-swap="innerHTML">
         Manage
       </button>
+    </div>
+
+    <!-- Feedback & bug reports -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center gap-3 mb-2">
+          <span class="bg-success/10 text-success rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </span>
+          <h3 class="font-semibold">Feedback &amp; bug reports</h3>
+          {% if open_feedback_count %}
+          <span class="bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ open_feedback_count }}</span>
+          {% endif %}
+        </div>
+        <p class="text-sm text-base-content/60">Bugs and ideas staff members have submitted from their account dropdown's "Give feedback" row. Has its own tab -- see the sidebar.</p>
+      </div>
+      <a href="/feedback" class="btn btn-outline btn-sm mt-4 self-start">
+        Open Feedback tab
+      </a>
     </div>
 
   </div>

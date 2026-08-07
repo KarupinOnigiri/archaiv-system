@@ -221,12 +221,35 @@ def member_profile(id):
         """,
         (id,),
     ).fetchone()
+
+    # Surfaces an already-pending unrestriction request right on the
+    # profile, rather than leaving it discoverable only by going to
+    # Approvals and searching -- a tool_keeper looking at a restricted
+    # member has no other way to tell "someone already flagged this" from
+    # "nobody has yet", and the create endpoint already 409s on a duplicate
+    # so this is purely about surfacing what it silently already knows.
+    pending_unrestriction_request = None
+    if member is not None and member["is_restricted"]:
+        pending_unrestriction_request = conn.execute(
+            """
+            SELECT unrestriction_requests.id, unrestriction_requests.reason,
+                   unrestriction_requests.created_at, staff.username AS requested_by_username
+            FROM unrestriction_requests
+            JOIN staff ON unrestriction_requests.requested_by_staff_id = staff.id
+            WHERE unrestriction_requests.member_id = ? AND unrestriction_requests.status = 'pending'
+            """,
+            (id,),
+        ).fetchone()
     conn.close()
 
     if member is None:
         return jsonify({"error": "Member not found"}), 404
 
-    return render_template("members/_profile_modal.html", member=member)
+    return render_template(
+        "members/_profile_modal.html",
+        member=member,
+        pending_unrestriction_request=pending_unrestriction_request,
+    )
 
 
 @members_bp.route("/members/add-form")
@@ -308,8 +331,8 @@ def add_member_submit():
     try:
         cursor = conn.execute(
             """
-            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, batch, department_id, member_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO members (first_name, last_name, middle_name, suffix, barcode_id, batch, department_id, member_type, phone_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["first_name"],
@@ -320,6 +343,7 @@ def add_member_submit():
                 data.get("batch"),
                 data["department_id"],
                 data["member_type"],
+                data.get("phone_number"),
             ),
         )
         new_member_id = cursor.lastrowid
@@ -475,7 +499,7 @@ def edit_member_submit(id):
         conn.execute(
             """
             UPDATE members
-            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department_id = ?, batch = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department_id = ?, batch = ?, phone_number = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
             WHERE id = ?
             """,
             (
@@ -485,6 +509,7 @@ def edit_member_submit(id):
                 data.get("suffix", member["suffix"]),
                 data.get("department_id", member["department_id"]),
                 data.get("batch", member["batch"]),
+                data.get("phone_number", member["phone_number"]),
                 new_is_restricted,
                 data.get("restriction_reason", member["restriction_reason"]),
                 new_restriction_source,
@@ -760,6 +785,28 @@ def unrestrict_member(id):
     )
     return response
 
+
+@members_bp.route("/members/<int:id>/request-unrestriction-form")
+@roles_required("tool_keeper")
+def request_unrestriction_form(id):
+    """Renders the modal a tool_keeper uses to flag a restricted member for
+    review, submitting to requests_bp's POST /unrestriction-requests (the
+    create endpoint already existed and worked -- this is the missing UI
+    that actually calls it; before this, a tool_keeper looking at a
+    restricted member had no button anywhere to request it be lifted).
+    admin/in_charge don't get this -- they have direct "Lift Restriction"
+    instead, same as restrict/unrestrict's existing split."""
+    conn = get_db_connection()
+    member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
+    conn.close()
+
+    if member is None:
+        return jsonify({"error": "Member not found"}), 404
+
+    if not member["is_restricted"]:
+        return jsonify({"error": "Member is not currently restricted"}), 400
+
+    return render_template("members/_request_unrestriction_modal.html", member=member)
 
 
 # # # DELETE (deactivate) -----------------------------------------------

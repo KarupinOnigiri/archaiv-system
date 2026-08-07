@@ -1,35 +1,61 @@
-<div class="overflow-x-auto">
-  <table class="table table-sm w-full">
-    <thead>
-      <tr class="text-xs text-base-content/50">
-        <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">WHEN</th>
-        <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF</th>
-        <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTION</th>
-        <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">TARGET</th>
-        <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">DETAILS</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for log in logs %}
-      <tr class="border-t border-base-200">
-        <td class="py-2 text-sm whitespace-nowrap">{{ log.created_at | format_date }}</td>
-        <td class="py-2 text-sm">{{ log.staff_username or "—" }}</td>
-        <td class="py-2 text-sm">
-          <span class="px-2 py-0.5 rounded-full bg-base-200 text-xs">{{ log.action.replace('_', ' ') }}</span>
-        </td>
-        <td class="py-2 text-sm text-base-content/70">
-          {% if log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}
-        </td>
-        <td class="py-2 text-sm text-base-content/70 max-w-md truncate" title="{{ log.details or '' }}">{{ log.details or "—" }}</td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="5" class="py-16 text-center text-sm text-base-content/50">No activity matches these filters.</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<!-- table-fixed + an explicit colgroup, rather than letting each column's
+     width follow its own content: without it, a page of short ACTION/
+     DETAILS text next to a page of long ones shifts every column
+     sideways between requests (paging, filtering, htmx refresh), which
+     reads as the table "jumping". Percentages sum to 100 and are sized
+     by how much a column actually needs -- WHEN/STAFF/TARGET are short,
+     fixed-shape values; ACTION is a short pill; DETAILS is free text and
+     gets the rest. -->
+<table class="table table-sm w-full table-fixed">
+  <colgroup>
+    <col style="width: 15%">
+    <col style="width: 13%">
+    <col style="width: 16%">
+    <col style="width: 14%">
+    <col style="width: 42%">
+  </colgroup>
+  <thead>
+    <tr class="text-xs text-base-content/50">
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">WHEN</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTION</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">TARGET</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">DETAILS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for log in logs %}
+    {# openAuditLogDetail (audit_log.html) reads its data straight off
+       this row's own dataset -- every field the modal shows is already
+       in this response, so viewing the full entry doesn't need a second
+       request. Individual data-* attributes rather than one JSON blob
+       attribute, so Jinja's normal attribute autoescaping covers each
+       value on its own (details/action can contain arbitrary
+       staff-entered text). #}
+    <tr class="border-t border-base-200 hover:bg-base-200/40 cursor-pointer transition-colors"
+        data-when="{{ log.created_at | format_date }}"
+        data-staff="{{ log.staff_username or '—' }}"
+        data-action="{{ log.action.replace('_', ' ') }}"
+        data-target="{% if log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}"
+        data-details="{{ log.details or '—' }}"
+        onclick="openAuditLogDetail(this)">
+      <td class="py-2 text-sm whitespace-nowrap truncate">{{ log.created_at | format_date }}</td>
+      <td class="py-2 text-sm truncate">{{ log.staff_username or "—" }}</td>
+      <td class="py-2 text-sm truncate">
+        <span class="px-2 py-0.5 rounded-full bg-base-200 text-xs">{{ log.action.replace('_', ' ') }}</span>
+      </td>
+      <td class="py-2 text-sm text-base-content/70 truncate">
+        {% if log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}
+      </td>
+      <td class="py-2 text-sm text-base-content/70 truncate" title="{{ log.details or '' }}">{{ log.details or "—" }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5" class="py-16 text-center text-sm text-base-content/50">No activity matches these filters.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
 <!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
      members/staff/transactions/notifications. -->
@@ -43,7 +69,7 @@
             hx-target="#audit-log-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#audit-since-filter, #audit-until-filter"
+            hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
             name="limit"
             hx-vals='js:{"limit": event.target.value, "offset": 0}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
@@ -66,7 +92,7 @@
             hx-target="#audit-log-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#audit-since-filter, #audit-until-filter"
+            hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
@@ -93,7 +119,7 @@
                 hx-target="#audit-log-table-container"
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
-                hx-include="#audit-since-filter, #audit-until-filter"
+                hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
           {{ p }}
         </button>
@@ -107,7 +133,7 @@
             hx-target="#audit-log-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#audit-since-filter, #audit-until-filter"
+            hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
     </button>

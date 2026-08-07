@@ -99,6 +99,21 @@ def finalize_if_ready(request_row, conn):
         "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
         (request_row["target_staff_id"],),
     )
+    # Without this, the request row stayed status='pending' forever even
+    # after the target was actually deactivated -- nothing here ever
+    # marked it resolved, so a finalized request never left the Pending
+    # queue/filter and kept accepting further redundant approvals from
+    # anyone still eligible (harmless since the target was already
+    # inactive, but confusing: the queue looked like it still needed
+    # attention when the outcome had already happened).
+    conn.execute(
+        """
+        UPDATE admin_deactivation_requests
+        SET status = 'approved', resolved_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (request_row["id"],),
+    )
     conn.commit()
 
     log_action(

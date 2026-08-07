@@ -64,7 +64,7 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#role-filter, #department-filter, #show-inactive-toggle"
-               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+               hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
         <button type="button" id="staff-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
                 aria-label="Clear search" title="Clear search" onclick="clearStaffSearch()">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
@@ -85,7 +85,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#staff-search, #department-filter, #show-inactive-toggle"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+                hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
           <option value="">Role</option>
           <option value="admin" {% if request.args.get('role') == 'admin' %}selected{% endif %}>Admin</option>
           <option value="in_charge" {% if request.args.get('role') == 'in_charge' %}selected{% endif %}>In Charge</option>
@@ -107,7 +107,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#staff-search, #role-filter, #show-inactive-toggle"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+                hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
           <option value="">Department</option>
           {% for dept in departments %}
           <option value="{{ dept.id }}" {% if request.args.get('department_id') == dept.id | string %}selected{% endif %}>{{ dept.name }}</option>
@@ -131,11 +131,30 @@
                hx-swap="innerHTML"
                hx-indicator="#table-spinner"
                hx-include="#staff-search, #role-filter, #department-filter"
-               hx-vals='js:{"limit": {{ limit }}, "offset": 0, "show_inactive": event.target.checked ? "1" : "0", "status": event.target.checked ? "inactive" : ""}'>
+               hx-vals='js:{"limit": {{ limit }}, "offset": 0, "show_inactive": event.target.checked ? "1" : "0", "status": event.target.checked ? "inactive" : "", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
         <span id="inactive-toggle-text">{% if show_inactive %}Viewing inactive{% else %}Show inactive{% endif %}</span>
       </label>
 
     </div>
+
+    <!-- can_bulk_act here is intentionally role-only (not show_inactive-aware
+         like _table.html's copy of this check) -- same reasoning as Members'
+         equivalent bar: this bar and its JS wiring render once on initial page
+         load, but "Show inactive" toggles client-side afterwards without a page
+         reload, so this check has to cover both states up front. _table.html
+         re-renders per request and can safely mirror it with a flat check too. -->
+    {% set can_bulk_act = staff.role == "admin" %}
+    {% if can_bulk_act %}
+    <div id="bulk-actions-bar" class="pointer-events-none flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
+      <span id="bulk-selected-count" class="text-sm font-medium text-primary">0 selected</span>
+      <button type="button" id="bulk-select-all-match-btn" class="btn btn-link btn-xs px-0 hidden">Select all matching filters</button>
+      <button type="button" id="bulk-clear-btn" class="btn btn-ghost btn-xs">Clear</button>
+      <div class="ml-auto flex items-center gap-2">
+        <button type="button" id="bulk-reactivate-btn" class="btn btn-primary btn-xs {% if not show_inactive %}hidden{% endif %}">Reactivate Selected</button>
+        <button type="button" id="bulk-deactivate-btn" class="btn btn-error btn-xs {% if show_inactive %}hidden{% endif %}">Deactivate Selected</button>
+      </div>
+    </div>
+    {% endif %}
 
     </div>
 
@@ -152,6 +171,254 @@
 </div>
 
 <div id="modal-container"></div>
+
+{% set can_bulk_act = staff.role == "admin" %}
+{% if can_bulk_act %}
+<script>
+// Mirrors the bulk-selection/bulk-action block on the Members page, adapted
+// for staff rows/endpoints (staff-row-checkbox instead of
+// member-row-checkbox, /api/v1/staff/bulk-* instead of /api/v1/members/bulk-*).
+// See that copy's comments for the reasoning behind each piece -- kept
+// identical here rather than re-explained line by line.
+(function() {
+  const container = document.getElementById('staff-table-container');
+  const bar = document.getElementById('bulk-actions-bar');
+  const filterRow = document.getElementById('filter-row');
+  const countEl = document.getElementById('bulk-selected-count');
+  const matchLink = document.getElementById('bulk-select-all-match-btn');
+  const clearBtn = document.getElementById('bulk-clear-btn');
+  const deactivateBtn = document.getElementById('bulk-deactivate-btn');
+  const reactivateBtn = document.getElementById('bulk-reactivate-btn');
+
+  let selectAllMatched = false;
+  let matchedAllIds = [];
+
+  function getSelectedIds() {
+    if (selectAllMatched) return matchedAllIds;
+    return Array.from(container.querySelectorAll('.staff-row-checkbox:checked')).map(cb => cb.value);
+  }
+
+  function getTotalCount() {
+    const table = container.querySelector('table');
+    return table ? parseInt(table.dataset.totalCount || '0', 10) : 0;
+  }
+
+  function showBar() {
+    bar.style.visibility = 'visible';
+    bar.classList.remove('pointer-events-none');
+    filterRow.style.visibility = 'hidden';
+  }
+
+  function hideBar() {
+    bar.style.visibility = 'hidden';
+    bar.classList.add('pointer-events-none');
+    filterRow.style.visibility = 'visible';
+    selectAllMatched = false;
+    matchedAllIds = [];
+    if (matchLink) matchLink.classList.add('hidden');
+  }
+
+  function updateBar() {
+    if (selectAllMatched) return;
+    const pageIds = Array.from(container.querySelectorAll('.staff-row-checkbox:checked')).map(cb => cb.value);
+    if (pageIds.length > 0) {
+      countEl.textContent = `${pageIds.length} selected`;
+      showBar();
+
+      const totalOnPage = container.querySelectorAll('.staff-row-checkbox').length;
+      const totalCount = getTotalCount();
+      if (matchLink && pageIds.length === totalOnPage && totalCount > totalOnPage) {
+        matchLink.textContent = `Select all ${totalCount} matching filters`;
+        matchLink.classList.remove('hidden');
+      } else if (matchLink) {
+        matchLink.classList.add('hidden');
+      }
+    } else {
+      hideBar();
+    }
+  }
+
+  function syncSelectAll() {
+    const all = container.querySelectorAll('.staff-row-checkbox');
+    const checkedCount = container.querySelectorAll('.staff-row-checkbox:checked').length;
+    const selectAll = document.getElementById('select-all-checkbox');
+    if (selectAll) {
+      selectAll.checked = all.length > 0 && checkedCount === all.length;
+      selectAll.indeterminate = checkedCount > 0 && checkedCount < all.length;
+    }
+  }
+
+  function currentFilterParams() {
+    return getBaseStaffFilterParams();
+  }
+
+  async function selectAllMatching() {
+    const totalCount = getTotalCount();
+    const params = currentFilterParams();
+    params.set('limit', totalCount);
+    params.set('offset', 0);
+    try {
+      const res = await fetch('/api/v1/staff?' + params.toString());
+      if (!res.ok) throw new Error('bad status');
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const ids = Array.from(doc.querySelectorAll('.staff-row-checkbox')).map(cb => cb.value);
+      if (ids.length < totalCount) throw new Error('incomplete');
+      matchedAllIds = ids;
+      selectAllMatched = true;
+      countEl.textContent = `${ids.length} selected (all matching filters)`;
+      matchLink.classList.add('hidden');
+    } catch (e) {
+      showToast("Couldn't select every matching staff account — only what's on this page is selected.", 'error');
+    }
+  }
+
+  if (matchLink) {
+    matchLink.addEventListener('click', selectAllMatching);
+  }
+
+  container.addEventListener('change', function(e) {
+    if (e.target.id === 'select-all-checkbox') {
+      selectAllMatched = false;
+      const checked = e.target.checked;
+      container.querySelectorAll('.staff-row-checkbox').forEach(cb => { cb.checked = checked; });
+      updateBar();
+    } else if (e.target.classList.contains('staff-row-checkbox')) {
+      selectAllMatched = false;
+      syncSelectAll();
+      updateBar();
+    }
+  });
+
+  container.addEventListener('htmx:afterSwap', hideBar);
+
+  function clearSelection() {
+    container.querySelectorAll('.staff-row-checkbox:checked').forEach(cb => { cb.checked = false; });
+    const selectAll = document.getElementById('select-all-checkbox');
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+    }
+    hideBar();
+  }
+
+  clearBtn.addEventListener('click', clearSelection);
+
+  async function runBulkAction(url, pastTense) {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+        },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast(data.error || `Couldn't ${pastTense} the selected staff accounts`, 'error');
+        return;
+      }
+
+      const doneCount = data.deactivated_count ?? data.reactivated_count ?? 0;
+      const skippedCount = (data.skipped || []).length;
+      let message = `${doneCount} staff account${doneCount === 1 ? '' : 's'} ${pastTense}`;
+      if (skippedCount > 0) {
+        message += `, ${skippedCount} skipped`;
+      }
+      showToast(message, skippedCount > 0 ? 'info' : 'success');
+
+      // Full reload rather than an htmx table refresh -- the stat cards at the
+      // top of this page also need to reflect the change, same reasoning as
+      // Members'/Inventory's bulk actions.
+      window.location.reload();
+    } catch (err) {
+      showToast(`Couldn't ${pastTense} the selected staff accounts`, 'error');
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Deactivating removes system access, so this gets the same are-you-sure
+  // dialog as Members'/Inventory's bulk deactivate/delete rather than firing
+  // immediately on click. Admin rows never reach here (they're excluded from
+  // getSelectedIds()'s targets by never getting a checkbox... actually they
+  // do get a checkbox like anyone else, but bulk_deactivate_staff skips them
+  // server-side and reports them back in `skipped`, same as any other
+  // not-eligible row -- see that route's docstring in routes/staff.py).
+  function confirmBulkDeactivate(ids, names, onConfirm) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+
+    const maxNames = 5;
+    const shown = names.slice(0, maxNames).map(n => `<li class="truncate">&bull; ${escapeHtml(n)}</li>`).join('');
+    const more = names.length > maxNames
+      ? `<li class="text-base-content/50">&hellip; and ${names.length - maxNames} more</li>`
+      : '';
+
+    backdrop.innerHTML = `
+      <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="bulk-deactivate-confirm-title">
+        <div class="flex items-start gap-3">
+          <div class="w-9 h-9 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} staff account${ids.length === 1 ? '' : 's'}?</h3>
+            <p class="text-sm text-base-content/60 mt-1">This can be reversed later from the inactive view. Admin accounts are skipped here -- deactivate those via a deactivation request instead.</p>
+            <ul class="text-sm mt-3 space-y-0.5">${shown}${more}</ul>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+          <button type="button" id="bulk-deactivate-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="button" id="bulk-deactivate-confirm-btn" class="btn btn-error btn-sm">Deactivate ${ids.length}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+
+    function close() {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKeydown);
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop) close();
+    });
+    backdrop.querySelector('#bulk-deactivate-cancel-btn').addEventListener('click', close);
+    backdrop.querySelector('#bulk-deactivate-confirm-btn').addEventListener('click', function () {
+      close();
+      onConfirm();
+    });
+    backdrop.querySelector('#bulk-deactivate-confirm-btn').focus();
+  }
+
+  if (deactivateBtn) {
+    deactivateBtn.addEventListener('click', () => {
+      const ids = getSelectedIds();
+      if (ids.length === 0) return;
+      const names = selectAllMatched
+        ? []
+        : Array.from(container.querySelectorAll('.staff-row-checkbox:checked'))
+            .map(cb => cb.dataset.name || 'Unnamed staff');
+      confirmBulkDeactivate(ids, names, () => runBulkAction('/api/v1/staff/bulk-deactivate', 'deactivated'));
+    });
+  }
+  if (reactivateBtn) {
+    reactivateBtn.addEventListener('click', () => runBulkAction('/api/v1/staff/bulk-reactivate', 'reactivated'));
+  }
+})();
+</script>
+{% endif %}
 
 <script>
 // Mirrors updateMemberFilterUI() on the Members page: keeps each filter
@@ -202,6 +469,12 @@ function getBaseStaffFilterParams() {
   if (q) params.set('q', q);
   if (role) params.set('role', role);
   if (department) params.set('department_id', department);
+  // Read the live sort state off the currently-rendered table (set server-side
+  // via _table.html's data-sort-by/data-sort-dir) rather than tracking a
+  // separate JS variable that a sort-header click could drift out of sync with.
+  const table = document.querySelector('#staff-table-container table');
+  params.set('sort_by', (table && table.dataset.sortBy) || 'name');
+  params.set('sort_dir', (table && table.dataset.sortDir) || 'asc');
   return params;
 }
 
@@ -236,7 +509,10 @@ function clearAllStaffFilters() {
   document.getElementById('show-inactive-toggle').checked = false;
   updateShowInactivePillUI(false);
   updateStaffFilterUI();
-  const params = new URLSearchParams();
+  // getBaseStaffFilterParams() already returns nothing but sort_by/sort_dir
+  // now that every filter control above was just blanked -- keeps the
+  // current sort intact instead of resetting it alongside the filters.
+  const params = getBaseStaffFilterParams();
   params.set('limit', '{{ limit }}');
   params.set('offset', 0);
   params.set('show_inactive', '0');
@@ -440,7 +716,9 @@ document.addEventListener('DOMContentLoaded', function () {
   var params = new URLSearchParams({
     limit: '{{ limit }}',
     offset: '{{ offset }}',
-    show_inactive: '{{ "1" if show_inactive else "0" }}'
+    show_inactive: '{{ "1" if show_inactive else "0" }}',
+    sort_by: '{{ sort_by }}',
+    sort_dir: '{{ sort_dir }}'
   });
   {% if request.args.get('q') %}
   params.set('q', {{ request.args.get('q') | tojson }});

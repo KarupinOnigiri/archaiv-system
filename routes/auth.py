@@ -1,3 +1,4 @@
+import os
 import secrets
 from database import get_db_connection, get_json_or_error
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -19,10 +20,20 @@ from services.settings_service import (
     get_session_absolute_hours,
     get_max_failed_attempts,
     get_lockout_minutes,
+    INDEFINITE_LOCK_UNTIL,
 )
 from extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
+
+# Cookies get the Secure flag (browser refuses to send them over plain
+# HTTP) whenever the app isn't running in local debug mode -- same
+# FLASK_DEBUG check app.py uses to decide whether the scheduler/reloader
+# assume "developer's own machine over HTTP". Anything else (a kiosk
+# deployment, a shared server) should be behind HTTPS, and there's no
+# reason a session cookie should ever be allowed to leak over plaintext
+# there.
+_COOKIE_SECURE = os.environ.get("FLASK_DEBUG", "0") != "1"
 
 # Precomputed once at import time so login() has a constant-cost hash to
 # # check against when no matching account exists — keeps response timing
@@ -153,21 +164,24 @@ def login():
 
     # Check lockout before even touching the password
     if staff["locked_until"]:
+        # The auto-lockout below (too many failed attempts) and an admin's
+        # manual lock (routes/staff.py: lock_staff) both just write to this
+        # same column -- from here they're indistinguishable except for the
+        # sentinel value an indefinite manual lock uses, which gets its own
+        # message instead of a "try again in ~4 million minutes" one.
+        if staff["locked_until"] == INDEFINITE_LOCK_UNTIL:
+            conn.close()
+            return _login_response(
+                {"error": "This account has been locked by an administrator. Contact an administrator to unlock it."},
+                403,
+            )
         locked_until = datetime.strptime(staff["locked_until"], "%Y-%m-%d %H:%M:%S")
         if datetime.now() < locked_until:
             conn.close()
             remaining = int((locked_until - datetime.now()).total_seconds() / 60) + 1
-            # return (
-            #     jsonify(
-            #         {
-            #             "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
-            #         }
-            #     ),
-            #     403,
-            # )
             return _login_response(
                 {
-                    "error": f"Account locked due to too many failed attempts. Try again in {remaining} minute(s)."
+                    "error": f"Account locked. Try again in {remaining} minute(s)."
                 },
                 403,
             )
@@ -284,6 +298,7 @@ def login():
         token,
         httponly=True,
         samesite="Lax",
+        secure=_COOKIE_SECURE,
         max_age=absolute_hours * 3600,
     )
     return response
@@ -307,6 +322,7 @@ def logout():
         "",
         httponly=True,
         samesite="Lax",
+        secure=_COOKIE_SECURE,
         max_age=0,
     )
     return response

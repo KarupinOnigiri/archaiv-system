@@ -1,13 +1,32 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="tesda-dark" class="h-full bg-base-200">
+<html lang="en" data-theme="tesda" data-sidebar="dark" class="h-full bg-base-200">
 <head>
   <meta charset="UTF-8">
   <script>
     try {
+      // Three modes now, not two -- Mixed (dark sidebar/main-shell, light
+      // content card -- this is what "tesda" alone always looked like) is
+      // still the app-wide default, unchanged. Light is the new addition:
+      // same "tesda" color tokens, but the sidebar stays light too instead
+      // of being forced dark -- toggled by data-sidebar, independent of
+      // data-theme, since Mixed and Light share the exact same palette and
+      // only differ in whether that one override applies (see the
+      // data-sidebar CSS rules further down). Dark is the native dark
+      // theme, unchanged. Read this early, before <body>, so there's no
+      // flash of the wrong look on load.
       var staffKey = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
-      var savedTheme = localStorage.getItem('app-theme:' + staffKey);
-      if (savedTheme === 'tesda') {
-        document.documentElement.setAttribute('data-theme', savedTheme);
+      var savedMode = localStorage.getItem('app-theme:' + staffKey);
+      // Back-compat: earlier versions stored the raw data-theme value here
+      // ('tesda' / 'tesda-dark') instead of a mode key -- 'tesda' meant
+      // today's Mixed (that's all "tesda" ever looked like before Light
+      // became its own true-light-sidebar mode), so map it forward rather
+      // than losing an existing saved preference.
+      if (savedMode === 'tesda') savedMode = 'mixed';
+      if (savedMode === 'tesda-dark') savedMode = 'dark';
+      if (savedMode === 'light') {
+        document.documentElement.setAttribute('data-sidebar', 'light');
+      } else if (savedMode === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'tesda-dark');
       }
     } catch (e) {
     }
@@ -50,6 +69,21 @@
   html.sidebar-collapsed-init #sidebar #sidebar-title,
   html.sidebar-collapsed-init #sidebar #sidebar-title-dark {
     display: none;
+  }
+  /* Collapsed-rail count badges (Notifications/Approvals/Feedback): the
+     full pill badge next to each label is itself a .sidebar-label, so it
+     disappears along with the label text under the rule above -- leaving
+     a bare icon with zero indication anything's waiting, unlike the bell
+     in the top header, which always shows its own circle regardless of
+     sidebar state. This is the collapsed-only substitute: a small dot
+     overlaid on the icon itself (not a .sidebar-label), hidden while
+     expanded since the full pill badge already covers that case. */
+  .sidebar-collapsed-badge {
+    display: none;
+  }
+  #sidebar.collapsed .sidebar-collapsed-badge,
+  html.sidebar-collapsed-init #sidebar .sidebar-collapsed-badge {
+    display: flex;
   }
   /* The toggle button is also a .sidebar-label (rule above), but rather
      than popping in the instant .collapsed comes off mid-width-transition
@@ -101,16 +135,15 @@
     display: inline-block;
   }
 
-  /* Colored sidebar in light mode: instead of plain white, the sidebar
+  /* Colored sidebar in Mixed mode: instead of plain white, the sidebar
      sits on the same dark MD3 surface as the tesda-dark theme's
-     base-100/200/300 (this app's actual default look), while the main
-     content card stays light -- matching the reference "dark chrome,
-     light content" floating-panel layout. Overriding the base-* custom
-     properties on just this container means every descendant utility that
-     already reads them (bg-base-100, text-base-content/70,
-     hover:bg-base-200, border-base-300, ...) picks up the dark surfaces
-     automatically -- no need to touch each class in the sidebar markup
-     individually.
+     base-100/200/300, while the main content card stays light -- matching
+     the reference "dark chrome, light content" floating-panel layout.
+     Overriding the base-* custom properties on just this container means
+     every descendant utility that already reads them (bg-base-100,
+     text-base-content/70, hover:bg-base-200, border-base-300, ...) picks
+     up the dark surfaces automatically -- no need to touch each class in
+     the sidebar markup individually.
      Classic Material Design: large areas stay neutral charcoal/graphite
      rather than a saturated brand color, with real saturation reserved for
      accents sitting on top (the active-tab highlight below). Depth comes
@@ -118,13 +151,48 @@
      (hover, border), not from color. #main-shell (the margin/background
      area surrounding the floating content card) gets the same dark
      surface as the sidebar, so the two read as one continuous panel with
-     the light content card floating on top of both. */
-  html[data-theme="tesda"] #sidebar,
-  html[data-theme="tesda"] #main-shell {
+     the light content card floating on top of both.
+     [data-sidebar="dark"] scopes this to Mixed mode specifically. */
+  html[data-theme="tesda"][data-sidebar="dark"] #sidebar,
+  html[data-theme="tesda"][data-sidebar="dark"] #main-shell {
     --color-base-100: #1b1b1e;
     --color-base-200: #242428;
     --color-base-300: #2f2f34;
     --color-base-content: #e8e8e8;
+  }
+  /* Light mode: same values "tesda" already carries on <html> (so this
+     LOOKS like it does nothing new) -- but written out explicitly here
+     rather than left to inherit, on purpose. Toggling data-sidebar live
+     (clicking the theme switcher, not a fresh page load) moves #sidebar
+     from the *directly declared* dark values above to *inherited*
+     values if nothing matches here, and Chromium doesn't reliably
+     repaint that transition -- confirmed by testing (a real click
+     leaves the sidebar showing its old color until the next full
+     navigation). Giving Light its own directly-declared rule, matching
+     the pattern Mixed/Dark both already use, keeps every mode's
+     transition symmetric (declared -> declared, never declared ->
+     inherited) and the toggle actually repaints on click. */
+  html[data-theme="tesda"][data-sidebar="light"] #sidebar,
+  html[data-theme="tesda"][data-sidebar="light"] #main-shell {
+    --color-base-100: #ffffff;
+    --color-base-200: #f5f5f5;
+    --color-base-300: #e0e0e0;
+    --color-base-content: #212121;
+  }
+  /* Mixed/Dark modes don't need a sidebar border -- the dark sidebar
+     already reads as a distinct panel against the light content card
+     next to it. Light mode has no such contrast (sidebar, main-shell,
+     and content card are all the same white now), so without a line
+     here the sidebar has no visible edge at all.
+     Same color-mix formula as .border-base-300 (static/css/input.css) --
+     not var(--color-base-300) -- so this line and the content header's
+     own border-b (border-base-300, templates/*.html's "shrink-0 border-b
+     border-base-300" header bar) are pixel-identical, not just similar.
+     var(--color-base-300) alone resolves to a different, lighter value
+     (that override only repoints the .border-base-300 *utility class*,
+     not the underlying CSS variable itself). */
+  html[data-theme="tesda"][data-sidebar="light"] #sidebar {
+    border-right: 1px solid color-mix(in oklab, var(--color-base-content) 38.5%, transparent);
   }
 
   /* Active nav item previously remapped --color-primary to a lightened
@@ -205,14 +273,19 @@
     color: #ffffff;
   }
 
-  /* The sidebar logo normally swaps to its light-colored variant only in
-     dark mode (see the .logo-theme-* rules above). Now that the sidebar
-     itself sits on a dark navy surface in light mode too, it needs that
-     same light-colored logo regardless of the overall theme. */
-  html[data-theme="tesda"] #sidebar .logo-theme-light {
+  /* The sidebar logo normally swaps to its light-colored (for-dark-
+     backgrounds) variant only in the native Dark theme (see the
+     .logo-theme-* rules above). Mixed mode's sidebar sits on a dark
+     surface too, so it needs that same light-colored logo despite
+     data-theme still being "tesda" -- but only in Mixed
+     ([data-sidebar="dark"]); Light mode's sidebar is an actual light
+     background, so it should fall through to the normal light-theme
+     logo (the logo-icon-light.png <img>, unaffected by these two
+     rules) same as everywhere else in the app. */
+  html[data-theme="tesda"][data-sidebar="dark"] #sidebar .logo-theme-light {
     display: none;
   }
-  html[data-theme="tesda"] #sidebar .logo-theme-dark {
+  html[data-theme="tesda"][data-sidebar="dark"] #sidebar .logo-theme-dark {
     display: inline-block;
   }
 
@@ -300,13 +373,21 @@
     <p class="text-sm text-base-content/60 max-w-xs">Please open this on a desktop or laptop. If you're already on one, try widening the browser window.</p>
   </div>
 
+  <!-- Order follows standard sidebar IA: overview first, then the primary
+       data entities (Inventory/Borrowers), then the transactional workflow
+       that acts on them (Borrow & Return), then the two action queues tied
+       to that workflow (Approvals -- decisions waiting on you -- ahead of
+       Notifications -- passive due/overdue alerts), then Reports as the
+       analytics/lookback tab last, since it's consulted least often day to
+       day. Admin-only tabs (Staff/Activity Log/Feedback/System) follow the
+       same "frequent-first, Settings-always-last" convention further down. -->
   {% set nav_items = [
     ("Dashboard", "/", "grid"),
     ("Inventory", "/assets", "box"),
     ("Borrowers", "/members", "users"),
     ("Borrow & Return", "/transactions", "swap"),
-    ("Notifications", "/notifications", "bell"),
     ("Approvals", "/requests", "check"),
+    ("Notifications", "/notifications", "bell"),
     ("Reports", "/reports", "chart")
   ] %}
 
@@ -318,6 +399,7 @@
   {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
   {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
+  {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
 
   <div class="hidden lg:flex h-full">
 
@@ -327,7 +409,7 @@
       <div id="sidebar-header" class="flex items-center justify-between gap-3 min-w-0 pl-6 pr-3 pt-8 pb-4 shrink-0">
         <div class="flex items-center min-w-0">
           <span class="w-5 h-7 shrink-0 flex items-center justify-center">
-            <img src="{{ url_for('static', filename='images/logo-icon.png') }}" alt="Archaív" class="logo-theme-light w-10 h-10 shrink-0 object-contain max-w-none">
+            <img src="{{ url_for('static', filename='images/logo-icon-light.png') }}" alt="Archaív" class="logo-theme-light w-10 h-10 shrink-0 object-contain max-w-none">
             <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="Archaív" class="logo-theme-dark w-10 h-10 shrink-0 object-contain max-w-none">
           </span>
           <span id="sidebar-title" class="shrink-0 ml-4 flex items-center text-xl text-base-content tracking-tight" style="font-family: 'Archivo', sans-serif; font-weight: 700; height: 1.5rem; line-height: 1.5rem;">Archaív</span>
@@ -341,10 +423,11 @@
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
+        {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge"]) %}
         <a href="{{ href }}" data-tooltip="{{ label }}" aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
-          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+          <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             {% if icon == "grid" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             {% elif icon == "box" %}
@@ -360,18 +443,37 @@
             {% elif icon == "bell" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             {% endif %}
+            {% if label == "Approvals" and pending_approvals_count %}
+            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full items-center justify-center leading-none">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
+            {% endif %}
+            {% if label == "Notifications" and unread_notifications_count %}
+            <!-- Same active/inactive flip as the expanded pill badge below
+                 -- when collapsed, .sidebar-link-active still paints the
+                 whole row (icon included) that same blue, so a blue dot
+                 on top of it would disappear just like the pill would. -->
+            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
+                         {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
+            {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
           {% if label == "Approvals" and pending_approvals_count %}
-          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          <span class="sidebar-label ml-auto bg-base-content text-base-100 text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
           {% endif %}
           {% if label == "Notifications" and unread_notifications_count %}
-          <span class="sidebar-label ml-auto bg-error text-error-content text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ unread_notifications_count }}</span>
+          <!-- Blue on the normal (unhighlighted) row, same family as the
+               header bell's badge -- but the active row's own background
+               is that exact blue (.sidebar-link-active), so a blue badge
+               would vanish into it. Flips to white-on-blue-text there
+               instead, so the count stays legible whichever state the
+               tab is in. -->
+          <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
+                       {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ unread_notifications_count }}</span>
           {% endif %}
         </a>
+        {% endif %}
         {% endfor %}
 
-        {% if staff and staff.role in ["admin", "in_charge"] %}
+        {% if staff and staff.role == "admin" %}
         <a href="/staff" data-tooltip="Staff" aria-label="Staff"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -394,6 +496,26 @@
         {% endif %}
 
         {% if staff and staff.role == "admin" %}
+        <a href="/feedback" data-tooltip="Feedback" aria-label="Feedback"
+           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+                  {% if request.path == '/feedback' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+          <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            {% if open_feedback_count %}
+            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full items-center justify-center leading-none">{{ "9+" if open_feedback_count > 9 else open_feedback_count }}</span>
+            {% endif %}
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Feedback</span>
+          {% if open_feedback_count %}
+          <span class="sidebar-label ml-auto bg-base-content text-base-100 text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ open_feedback_count }}</span>
+          {% endif %}
+        </a>
+        {% endif %}
+
+        <!-- System (settings) intentionally last -- the near-universal
+             convention of pinning Settings at the very bottom of the nav,
+             below every other admin tool. -->
+        {% if staff and staff.role == "admin" %}
         <a href="/system" data-tooltip="System" aria-label="System"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/system' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -410,11 +532,15 @@
       <div id="sidebar-account" class="shrink-0 p-3">
         <div class="dropdown dropdown-top w-full">
           <label tabindex="0" data-tooltip="{{ staff_full_name }}" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-base-200 cursor-pointer">
-            <div class="bg-primary text-primary-content rounded-full w-7 h-7 flex items-center justify-center shrink-0">
+            <div id="sidebar-avatar" class="bg-primary text-primary-content rounded-full w-7 h-7 flex items-center justify-center shrink-0 overflow-hidden">
+              {% if staff.photo_path %}
+              <img src="{{ url_for('static', filename=staff.photo_path) }}" alt="" class="w-full h-full object-cover">
+              {% else %}
               <span class="text-sm font-semibold">{{ staff.username[0] | upper }}</span>
+              {% endif %}
             </div>
             <span class="sidebar-label min-w-0 flex-1 text-left overflow-hidden">
-              <span class="block text-[11px] font-medium text-base-content leading-tight line-clamp-2" title="{{ staff_full_name }}">{{ staff_full_name }}</span>
+              <span class="block text-[13px] font-medium text-base-content leading-tight line-clamp-2" title="{{ staff_full_name }}">{{ staff_full_name }}</span>
             </span>
             <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-label w-5 h-5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
           </label>
@@ -424,8 +550,12 @@
             <!-- Profile card -->
             <button type="button" onclick="document.getElementById('my-account-modal').showModal()"
                     class="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl hover:bg-base-200 text-left transition-colors">
-              <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center shrink-0">
+              <div id="dropdown-avatar" class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center shrink-0 overflow-hidden">
+                {% if staff.photo_path %}
+                <img src="{{ url_for('static', filename=staff.photo_path) }}" alt="" class="w-full h-full object-cover">
+                {% else %}
                 <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
+                {% endif %}
               </div>
               <div class="min-w-0 flex-1">
                 <p class="text-base font-semibold text-base-content leading-tight truncate">{{ staff_full_name }}</p>
@@ -437,7 +567,7 @@
 
             <!-- Feature rows -->
             <div class="space-y-0.5">
-              <button type="button" onclick="showToast('Settings coming soon', 'info')"
+              <button type="button" onclick="document.getElementById('settings-privacy-modal').showModal()"
                       class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -446,7 +576,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
-              <button type="button" onclick="showToast('Help &amp; support coming soon', 'info')"
+              <button type="button" onclick="document.getElementById('help-support-modal').showModal()"
                       class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -464,7 +594,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
-              <button type="button" onclick="showToast('Thanks — feedback is noted', 'info')"
+              <button type="button" onclick="document.getElementById('give-feedback-modal').showModal()"
                       class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -534,7 +664,12 @@
             <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
               {% if unread_notifications_count %}
-              <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+              <!-- bg-primary, not bg-error -- matches the earlier decision to
+                   keep the bell's own indicator blue (unlike the sidebar tab
+                   badges, which moved off blue since it blended into the
+                   active-tab highlight; the bell has no such highlight to
+                   clash with, so it explicitly stayed as-is). -->
+              <span class="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full flex items-center justify-center leading-none">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
               {% endif %}
             </label>
             <div tabindex="0" class="dropdown-content bg-base-100 rounded-2xl shadow-lg border border-base-300 fixed right-8 top-[72px] w-[360px] z-50 p-2">
@@ -547,10 +682,16 @@
                     Mark all as read
                   </button>
                   {% endif %}
-                  <button type="button" onclick="showToast('Notification settings coming soon', 'info')"
-                          class="btn btn-ghost btn-circle btn-sm shrink-0" aria-label="Notification settings">
+                  {% if staff.role == "admin" %}
+                  <button type="button"
+                          hx-get="/api/v1/notification-settings/manage-form"
+                          hx-target="#global-modal-container"
+                          hx-swap="innerHTML"
+                          class="btn btn-ghost btn-circle btn-sm shrink-0" aria-label="Notification settings"
+                          title="Notification settings -- this is the due-soon alert threshold, a shared app-wide setting (same one on the System page), not a personal preference.">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                   </button>
+                  {% endif %}
                 </div>
               </div>
 
@@ -571,9 +712,23 @@
                   <div class="notif-row flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-base-200 transition-colors cursor-pointer {% if not n.is_read %}bg-primary/5{% endif %}"
                        data-unread="{{ 'true' if not n.is_read else 'false' }}"
                        onclick="window.location.href='/api/v1/notifications/{{ n.id }}/open'">
-                    <span class="{% if n.type == 'overdue' %}bg-error/10 text-error{% else %}bg-warning/10 text-warning{% endif %} rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                    {% if n.type == 'overdue' %}
+                    <span class="bg-error/10 text-error rounded-full w-11 h-11 flex items-center justify-center shrink-0">
                       <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
                     </span>
+                    {% elif n.type == 'due_soon' %}
+                    <span class="bg-warning/10 text-warning rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                    </span>
+                    {% elif n.type == 'unrestriction_requested' %}
+                    <span class="bg-info/10 text-info rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    </span>
+                    {% else %}
+                    <span class="bg-primary/10 text-primary rounded-full w-11 h-11 flex items-center justify-center shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                    </span>
+                    {% endif %}
                     <div class="min-w-0 flex-1">
                       <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %} text-base-content leading-snug">{{ n.message }}</p>
                       <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
@@ -581,6 +736,11 @@
                     {% if not n.is_read %}
                     <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0"></span>
                     {% endif %}
+                    <button type="button" class="btn btn-ghost btn-xs btn-circle shrink-0 text-base-content/30 hover:text-error"
+                            title="Clear" aria-label="Clear notification"
+                            onclick="event.stopPropagation(); dismissBellNotification({{ n.id }})">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+                    </button>
                   </div>
                   {% endfor %}
                 {% endif %}
@@ -624,30 +784,64 @@
 
           <div class="flex items-center gap-3">
             <div class="relative shrink-0">
-              <div class="bg-primary text-primary-content rounded-full w-14 h-14 flex items-center justify-center overflow-hidden">
-                <span class="text-xl font-semibold">{{ staff.username[0] | upper }}</span>
+              <div id="account-modal-avatar" onclick="openPhotoLightbox()"
+                   ondragover="event.preventDefault(); event.stopPropagation(); this.classList.add('ring-2', 'ring-primary')"
+                   ondragleave="this.classList.remove('ring-2', 'ring-primary')"
+                   ondrop="handleAvatarDrop(event)"
+                   title="{% if staff.photo_path %}View photo{% endif %} — drop or paste an image to replace it"
+                   class="bg-primary text-primary-content rounded-full w-[84px] h-[84px] flex items-center justify-center overflow-hidden transition-opacity {% if staff.photo_path %}cursor-pointer hover:opacity-90{% else %}cursor-default{% endif %}">
+                {% if staff.photo_path %}
+                <img src="{{ url_for('static', filename=staff.photo_path) }}" alt="" class="w-full h-full object-cover">
+                {% else %}
+                <span class="text-2xl font-semibold">{{ staff.username[0] | upper }}</span>
+                {% endif %}
               </div>
-              <button type="button" onclick="showToast('Profile photo upload coming soon', 'info')"
-                      title="Change profile photo"
-                      class="absolute -bottom-1 -right-1 bg-base-100 border border-base-300 rounded-full w-6 h-6 flex items-center justify-center shadow hover:bg-base-200 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              </button>
+              <!-- Spinner shown over the avatar while a photo is uploading; toggled
+                   by uploadProfilePhoto() below, kept separate from the avatar's own
+                   markup so it doesn't get clobbered by renderAvatars() swapping the
+                   initials/<img> in and out. -->
+              <div id="account-modal-avatar-spinner" class="hidden absolute inset-0 bg-black/40 rounded-full flex items-center justify-center cursor-wait">
+                <span class="loading loading-spinner loading-sm text-white"></span>
+              </div>
+              <input type="file" id="profile-photo-input" accept="image/png,image/jpeg,image/webp"
+                     class="hidden" onchange="handleProfilePhotoSelect(event)">
             </div>
             <div class="min-w-0">
               <h3 class="text-lg font-bold truncate">{{ staff_full_name }}</h3>
-              <p class="text-sm text-base-content/50 truncate">@{{ staff.username }}</p>
+              <div class="flex items-center gap-1 -ml-1.5">
+                <p class="text-sm text-base-content/50 truncate">@{{ staff.username }}</p>
+                <button type="button" onclick="copyUsername()" title="Copy username"
+                        class="btn btn-ghost btn-square btn-xs text-base-content/40 hover:text-base-content shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-4 mt-5 text-sm">
             <div>
-              <p class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME</p>
-              <p class="mt-0.5">{{ staff.username }}</p>
-            </div>
-            <div>
               <p class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE</p>
-              <p class="mt-0.5 capitalize">{{ staff.role.replace("_", " ") }}</p>
+              <span class="badge badge-primary badge-sm capitalize mt-1">{{ staff.role.replace("_", " ") }}</span>
             </div>
+            {% if staff_member_type %}
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">TYPE</p>
+              <span class="badge badge-ghost badge-sm capitalize mt-1">{{ staff_member_type }}</span>
+            </div>
+            {% endif %}
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">DEPARTMENT</p>
+              <p class="mt-0.5">{{ staff_department_name or "—" }}</p>
+            </div>
+            {% if staff_batch %}
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">BATCH</p>
+              <p class="mt-0.5">{{ staff_batch }}</p>
+            </div>
+            {% endif %}
             <div>
               <p class="text-xs font-semibold text-base-content/50 tracking-wide">ACCOUNT STATUS</p>
               <p class="mt-0.5">
@@ -674,6 +868,25 @@
 
           <div class="flex items-center justify-between gap-3">
             <div>
+              <p class="text-sm font-semibold text-base-content">Profile photo</p>
+              <p class="text-xs text-base-content/50 mt-0.5">JPG, PNG, or WebP — up to 5MB. Drag onto the photo, paste, or pick a file.</p>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button type="button" id="profile-photo-remove-btn" onclick="removeProfilePhoto()"
+                      class="btn btn-ghost btn-sm text-error {% if not staff.photo_path %}hidden{% endif %}">
+                Remove
+              </button>
+              <button type="button" id="profile-photo-btn" onclick="document.getElementById('profile-photo-input').click()"
+                      class="btn btn-outline btn-sm">
+                Change photo
+              </button>
+            </div>
+          </div>
+
+          <div class="border-t border-base-200 my-3"></div>
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
               <p class="text-sm font-semibold text-base-content">Password</p>
               <p class="text-xs text-base-content/50 mt-0.5">••••••••</p>
             </div>
@@ -693,6 +906,76 @@
         <form method="dialog" class="modal-backdrop">
           <button>close</button>
         </form>
+      </dialog>
+
+      <!-- Profile photo lightbox -- opened from the account-modal avatar
+           (openPhotoLightbox() below) to view the current photo at full
+           size. Stacks on top of my-account-modal rather than replacing
+           it (native <dialog> top-layer handles this fine, same as
+           Checkout's expand-over-dock stacking), so closing it (Escape,
+           backdrop click, or the browser's native Escape-to-close since
+           this one isn't wired into the app's custom close-guard system)
+           just returns to the account modal underneath. -->
+      <dialog id="photo-lightbox-modal" class="modal">
+        <div class="modal-box max-w-lg p-0 overflow-hidden bg-transparent shadow-none">
+          <img id="photo-lightbox-img" src="" alt="Profile photo" class="w-full h-auto rounded-2xl">
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Profile photo crop modal -- the step between picking/dropping/
+           pasting a file and it actually being uploaded. Lets the user pan
+           and zoom the image behind a circular mask so they control what
+           ends up in the avatar, instead of a raw upload getting an
+           arbitrary center-crop from object-cover. openCropModal() below
+           loads the picked file into #crop-image; saveCroppedPhoto() bakes
+           the current pan/zoom to a square canvas and hands that blob to
+           the existing uploadProfilePhoto() flow, so the backend endpoint
+           and validation are untouched. Nothing is uploaded until Save. -->
+      <dialog id="photo-crop-modal" class="modal" onclose="closeCropModal()">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Reposition photo</h3>
+          <p class="text-xs text-base-content/50 mb-4">Drag to reposition, scroll or use the slider to zoom.</p>
+
+          <div id="crop-viewport"
+               class="relative mx-auto w-[260px] h-[260px] rounded-full overflow-hidden bg-base-300 cursor-grab select-none touch-none">
+            <img id="crop-image" src="" alt="" draggable="false"
+                 class="absolute top-0 left-0 max-w-none pointer-events-none">
+          </div>
+
+          <div class="flex items-center gap-3 mt-5">
+            <button type="button" id="crop-zoom-out-btn" onclick="stepCropZoom(-20)"
+                    title="Zoom out — 100% is as far out as it goes, since any less would leave gaps in the circle"
+                    class="btn btn-ghost btn-square btn-xs shrink-0 text-base-content/40 hover:text-base-content disabled:opacity-30 disabled:cursor-not-allowed">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="M21 21l-4.35-4.35"></path>
+                <path d="M8 11h6"></path>
+              </svg>
+            </button>
+            <input type="range" id="crop-zoom" min="100" max="300" value="100" step="1"
+                   class="range range-xs flex-1" oninput="updateCropZoom(this.value)">
+            <button type="button" id="crop-zoom-in-btn" onclick="stepCropZoom(20)" title="Zoom in"
+                    class="btn btn-ghost btn-square btn-xs shrink-0 text-base-content/40 hover:text-base-content disabled:opacity-30 disabled:cursor-not-allowed">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="M21 21l-4.35-4.35"></path>
+                <path d="M11 8v6M8 11h6"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" onclick="document.getElementById('photo-crop-modal').close()">Cancel</button>
+            <button type="button" id="crop-save-btn" class="btn btn-sm btn-primary" onclick="saveCroppedPhoto()">
+              <span id="crop-save-spinner" class="hidden loading loading-spinner loading-xs"></span>
+              Save
+            </button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
       </dialog>
 
       <!-- Change password modal -->
@@ -741,11 +1024,11 @@
                     class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
               <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                 <span id="theme-mode-icon" class="w-[18px] h-[18px] text-base-content/70">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>
                 </span>
               </span>
               <span class="flex-1 text-sm font-medium text-base-content">Theme mode</span>
-              <span id="theme-mode-label" class="text-xs text-base-content/50">Light Mode</span>
+              <span id="theme-mode-label" class="text-xs text-base-content/50">Mixed Mode</span>
             </button>
 
             <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
@@ -756,7 +1039,7 @@
                 </span>
               </span>
               <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
-              <span id="toast-style-label" class="text-xs text-base-content/50">Light Mode</span>
+              <span id="toast-style-label" class="text-xs text-base-content/50">Material Design</span>
             </button>
           </div>
 
@@ -765,6 +1048,167 @@
               <button class="btn btn-sm">Close</button>
             </form>
           </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Settings & privacy modal -- per-user notification display prefs
+           (routes/staff.py: update_own_notification_prefs). Distinct from
+           the admin-only due-soon threshold gear in the notifications
+           dropdown above: these three toggles don't change when an alert
+           is generated, only whether *this* account sees it once it is
+           (see services/notification_service.py's PREF_FILTER_SQL). -->
+      <dialog id="settings-privacy-modal" class="modal">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Settings &amp; privacy</h3>
+          <p class="text-xs text-base-content/50 mb-4">Controls which alerts land in your own notification bell. Saved to this account.</p>
+
+          <div class="space-y-0.5">
+            <label class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 cursor-pointer transition-colors">
+              <span class="flex-1">
+                <span class="block text-sm font-medium text-base-content">Due-soon reminders</span>
+                <span class="block text-xs text-base-content/50">A loan you're tracking is nearing its due date</span>
+              </span>
+              <input type="checkbox" id="notify-due-soon-toggle" class="toggle toggle-sm toggle-primary"
+                     {% if staff.notify_due_soon %}checked{% endif %}
+                     onchange="updateNotificationPref('notify_due_soon', this.checked)">
+            </label>
+
+            <label class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 cursor-pointer transition-colors">
+              <span class="flex-1">
+                <span class="block text-sm font-medium text-base-content">Overdue alerts</span>
+                <span class="block text-xs text-base-content/50">A loan has passed its due date</span>
+              </span>
+              <input type="checkbox" id="notify-overdue-toggle" class="toggle toggle-sm toggle-primary"
+                     {% if staff.notify_overdue %}checked{% endif %}
+                     onchange="updateNotificationPref('notify_overdue', this.checked)">
+            </label>
+
+            <label class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 cursor-pointer transition-colors">
+              <span class="flex-1">
+                <span class="block text-sm font-medium text-base-content">Unrestriction requests</span>
+                <span class="block text-xs text-base-content/50">Filed, approved, or denied requests you can act on or filed yourself</span>
+              </span>
+              <input type="checkbox" id="notify-requests-toggle" class="toggle toggle-sm toggle-primary"
+                     {% if staff.notify_requests %}checked{% endif %}
+                     onchange="updateNotificationPref('notify_requests', this.checked)">
+            </label>
+          </div>
+
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn btn-sm">Close</button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Help & support modal -- static FAQ, no backend. If this needs to
+           grow into something that reaches an actual admin (a contact
+           form, ticket queue), that's a separate feature; this is
+           intentionally just answers to the handful of "how do I..."
+           questions this app raises. -->
+      <dialog id="help-support-modal" class="modal">
+        <div class="modal-box max-w-md">
+          <h3 class="font-bold text-lg mb-1">Help &amp; support</h3>
+          <p class="text-xs text-base-content/50 mb-4">Quick answers. For anything else, reach out to an admin directly.</p>
+
+          <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            <div>
+              <p class="text-sm font-semibold text-base-content">How do I check out an item?</p>
+              <p class="text-xs text-base-content/60 mt-1">Use the Checkout button in the sidebar, scan or search for the borrower, then add each asset by code or search before confirming with a due date.</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-base-content">How do I return or renew a loan?</p>
+              <p class="text-xs text-base-content/60 mt-1">Open the Transactions tab, find the loan, and use Return or Renew from its row. Batch return handles multiple items from the same borrower at once.</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-base-content">Why can't I unrestrict a member?</p>
+              <p class="text-xs text-base-content/60 mt-1">Tool keepers file an unrestriction request instead of acting directly; an admin or in-charge staff member reviews it from the Approvals tab.</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-base-content">I forgot my password.</p>
+              <p class="text-xs text-base-content/60 mt-1">You can't reset your own password from the login screen — ask an admin to reset it for you from the Staff tab.</p>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-base-content">Something looks wrong or broken.</p>
+              <p class="text-xs text-base-content/60 mt-1">Note what you were doing and let an admin know directly — there's no in-app bug report yet.</p>
+            </div>
+          </div>
+
+          <div class="modal-action">
+            <form method="dialog">
+              <button class="btn btn-sm">Close</button>
+            </form>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      <!-- Give feedback modal -- an in-app bug/issue report, POSTed to
+           routes/feedback.py (submit_feedback). Reviewed by admins from
+           the Feedback tab (templates/feedback.html, admin-only sidebar
+           link). page_path is auto-captured from the current URL when the
+           modal opens, not typed by hand -- one less field, and it's more
+           reliable than a staff member's memory of exactly where they
+           were when something broke. -->
+      <dialog id="give-feedback-modal" class="modal" onclose="resetGiveFeedbackForm()">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Give feedback</h3>
+          <p class="text-xs text-base-content/50 mb-4">Report a bug, suggest something, or just tell us what's on your mind. Goes straight to the admins.</p>
+
+          <div id="give-feedback-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+
+          <form id="give-feedback-form" onsubmit="return submitGiveFeedback(event)">
+            <div class="space-y-3">
+              <div class="flex gap-2">
+                <label class="flex-1">
+                  <input type="radio" name="feedback-category" value="bug" class="hidden peer" checked>
+                  <span class="block text-center text-sm font-medium px-2 py-1.5 rounded-lg border border-base-300 peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-primary cursor-pointer transition-colors">Bug</span>
+                </label>
+                <label class="flex-1">
+                  <input type="radio" name="feedback-category" value="idea" class="hidden peer">
+                  <span class="block text-center text-sm font-medium px-2 py-1.5 rounded-lg border border-base-300 peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-primary cursor-pointer transition-colors">Idea</span>
+                </label>
+                <label class="flex-1">
+                  <input type="radio" name="feedback-category" value="other" class="hidden peer">
+                  <span class="block text-center text-sm font-medium px-2 py-1.5 rounded-lg border border-base-300 peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-primary cursor-pointer transition-colors">Other</span>
+                </label>
+              </div>
+              <textarea id="feedback-message" rows="4" maxlength="4000" placeholder="What happened, or what's on your mind?"
+                        class="textarea textarea-bordered textarea-sm w-full"></textarea>
+
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-base-content/60">Screenshots (optional)</span>
+                  <span id="feedback-screenshot-count" class="text-xs text-base-content/40">0/5</span>
+                </div>
+                <div id="feedback-screenshot-previews" class="flex flex-wrap gap-2 mt-1.5 empty:mt-0"></div>
+                <button type="button" id="feedback-screenshot-add-btn"
+                        onclick="document.getElementById('feedback-screenshot-input').click()"
+                        class="btn btn-outline btn-xs mt-1.5">
+                  Add screenshot
+                </button>
+                <input type="file" id="feedback-screenshot-input" accept="image/png,image/jpeg,image/webp"
+                       multiple class="hidden" onchange="handleFeedbackScreenshotSelect(event)">
+              </div>
+            </div>
+
+            <div class="modal-action">
+              <button type="button" onclick="document.getElementById('give-feedback-modal').close()" class="btn btn-sm">
+                Cancel
+              </button>
+              <button type="submit" id="give-feedback-submit-btn" class="btn btn-primary btn-sm">
+                Send feedback
+              </button>
+            </div>
+          </form>
         </div>
         <form method="dialog" class="modal-backdrop">
           <button>close</button>
@@ -785,6 +1229,14 @@
   </div>
 
   <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 items-end pointer-events-none"></div>
+
+  <!-- Target for modals opened from the sidebar/header (account dropdown,
+       notifications dropdown) -- distinct from the #modal-container every
+       page defines inside its own page-content block, which isn't in
+       scope for anything in base.html itself (the sidebar/header render
+       outside that block). Same "lives here, not tied to one page" reason
+       as #checkout-modal-container below. -->
+  <div id="global-modal-container"></div>
 
   {% if staff %}
   <!-- Lives here, outside the page content area, specifically so it
@@ -973,6 +1425,127 @@
   toggleBtn.addEventListener('click', hideTooltip);
 })();
 
+// Accumulated across possibly-repeated "Add screenshot" clicks -- a plain
+// <input multiple> alone would replace its file list on every pick, so
+// this array (and the previews rendered from it) is the actual source of
+// truth for what gets uploaded, not the <input>'s own .files.
+const MAX_FEEDBACK_SCREENSHOTS = 5;
+let feedbackScreenshotFiles = [];
+
+function resetGiveFeedbackForm() {
+  const form = document.getElementById('give-feedback-form');
+  if (form) form.reset();
+  const errorEl = document.getElementById('give-feedback-error');
+  if (errorEl) errorEl.classList.add('hidden');
+  const btn = document.getElementById('give-feedback-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Send feedback'; }
+  feedbackScreenshotFiles = [];
+  renderFeedbackScreenshotPreviews();
+}
+
+function renderFeedbackScreenshotPreviews() {
+  const container = document.getElementById('feedback-screenshot-previews');
+  container.innerHTML = '';
+  feedbackScreenshotFiles.forEach((file, index) => {
+    const url = URL.createObjectURL(file);
+    const wrap = document.createElement('div');
+    wrap.className = 'relative w-14 h-14 rounded-lg overflow-hidden border border-base-300 shrink-0';
+    wrap.innerHTML = `
+      <img src="${url}" alt="" class="w-full h-full object-cover">
+      <button type="button" aria-label="Remove screenshot"
+              class="absolute top-0 right-0 bg-black/60 hover:bg-black/80 text-white w-4 h-4 flex items-center justify-center text-xs leading-none">&times;</button>
+    `;
+    wrap.querySelector('button').onclick = () => {
+      feedbackScreenshotFiles.splice(index, 1);
+      renderFeedbackScreenshotPreviews();
+    };
+    container.appendChild(wrap);
+  });
+
+  document.getElementById('feedback-screenshot-count').textContent =
+    `${feedbackScreenshotFiles.length}/${MAX_FEEDBACK_SCREENSHOTS}`;
+  document.getElementById('feedback-screenshot-add-btn').disabled =
+    feedbackScreenshotFiles.length >= MAX_FEEDBACK_SCREENSHOTS;
+}
+
+function handleFeedbackScreenshotSelect(event) {
+  const picked = Array.from(event.target.files || []);
+  event.target.value = ''; // so picking the same file again still fires 'change'
+
+  const room = MAX_FEEDBACK_SCREENSHOTS - feedbackScreenshotFiles.length;
+  if (room <= 0) return;
+
+  const errorEl = document.getElementById('give-feedback-error');
+  if (picked.length > room) {
+    errorEl.textContent = `Only ${room} more screenshot${room === 1 ? '' : 's'} can be added (max ${MAX_FEEDBACK_SCREENSHOTS}).`;
+    errorEl.classList.remove('hidden');
+  }
+  feedbackScreenshotFiles.push(...picked.slice(0, room));
+  renderFeedbackScreenshotPreviews();
+}
+
+async function submitGiveFeedback(event) {
+  event.preventDefault();
+
+  const errorEl = document.getElementById('give-feedback-error');
+  errorEl.classList.add('hidden');
+
+  const category = document.querySelector('input[name="feedback-category"]:checked')?.value;
+  const message = document.getElementById('feedback-message').value.trim();
+
+  if (!message) {
+    errorEl.textContent = 'Say a bit about what happened or what you have in mind.';
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+
+  const btn = document.getElementById('give-feedback-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  const formData = new FormData();
+  formData.append('category', category);
+  formData.append('message', message);
+  formData.append('page_path', window.location.pathname);
+  feedbackScreenshotFiles.forEach((file) => formData.append('screenshots', file));
+
+  try {
+    const res = await fetch('/api/v1/feedback', {
+      method: 'POST',
+      headers: {
+        // No Content-Type here -- the browser sets multipart/form-data
+        // with the correct boundary itself; setting it manually on a
+        // FormData body breaks the boundary and the server can't parse it.
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: formData,
+    });
+
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+      return false;
+    }
+
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't send feedback.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Send feedback';
+      return false;
+    }
+
+    document.getElementById('give-feedback-modal').close();
+    showToast(data.message || 'Thanks — feedback sent', 'success');
+  } catch (e) {
+    errorEl.textContent = "Couldn't send feedback. Check your connection and try again.";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Send feedback';
+  }
+  return false;
+}
+
 function resetChangePasswordForm() {
   const form = document.getElementById('change-password-form');
   if (form) form.reset();
@@ -1054,6 +1627,369 @@ async function submitChangePassword(event) {
   return false;
 }
 
+const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+const PROFILE_PHOTO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+// Swaps every avatar spot (sidebar rail, dropdown card, account modal) to
+// the same <img>, or back to initials when url is falsy. Three separate
+// containers exist because each one is a different size/context, but they
+// always show the same photo, so a successful upload (or a removal) has to
+// touch all three at once rather than just the one the user clicked.
+function renderAvatars(url) {
+  const targets = ['sidebar-avatar', 'dropdown-avatar', 'account-modal-avatar'];
+  targets.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = url
+      ? `<img src="${url}" alt="" class="w-full h-full object-cover">`
+      : `<span class="font-semibold">{{ staff.username[0] | upper if staff else '' }}</span>`;
+  });
+
+  // account-modal-avatar is the only one that's clickable (opens the
+  // lightbox) -- its cursor/hover styling is set server-side to match
+  // whatever staff.photo_path was at page load, but an upload changes
+  // that client-side without a reload, so it has to be resynced here too.
+  const accountAvatar = document.getElementById('account-modal-avatar');
+  if (accountAvatar) {
+    accountAvatar.classList.toggle('cursor-pointer', !!url);
+    accountAvatar.classList.toggle('hover:opacity-90', !!url);
+    accountAvatar.classList.toggle('cursor-default', !url);
+    accountAvatar.title = url ? 'View photo — drop or paste an image to replace it' : 'Drop or paste an image to add one';
+  }
+
+  const removeBtn = document.getElementById('profile-photo-remove-btn');
+  if (removeBtn) removeBtn.classList.toggle('hidden', !url);
+}
+
+// Opens the current profile photo at full size. No-ops when the avatar is
+// still showing initials (nothing to enlarge) -- reads the live DOM
+// rather than a server-rendered flag so it stays correct right after an
+// upload, before any page reload.
+function openPhotoLightbox() {
+  const avatarImg = document.querySelector('#account-modal-avatar img');
+  if (!avatarImg) return;
+  document.getElementById('photo-lightbox-img').src = avatarImg.src;
+  document.getElementById('photo-lightbox-modal').showModal();
+}
+
+function copyUsername() {
+  const username = {{ staff.username | tojson if staff else '""' }};
+  navigator.clipboard.writeText(username)
+    .then(() => showToast('Username copied', 'success'))
+    .catch(() => showToast("Couldn't copy — select and copy manually", 'error'));
+}
+
+function validateProfilePhotoFile(file) {
+  if (!file) return 'No file selected.';
+  if (!PROFILE_PHOTO_ALLOWED_TYPES.includes(file.type)) {
+    return 'Please choose a PNG, JPEG, or WebP image.';
+  }
+  if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+    return 'That image is too large — please choose one under 5MB.';
+  }
+  return null;
+}
+
+function handleProfilePhotoSelect(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  openPickedPhoto(file, input);
+}
+
+// Shared entry point for every way a photo can be picked (file input,
+// drag-and-drop onto the avatar, or pasting an image) -- validates once,
+// then opens the crop modal rather than uploading straight away.
+function openPickedPhoto(file, input) {
+  const error = validateProfilePhotoFile(file);
+  if (error) {
+    showToast(error, 'error');
+    if (input) input.value = '';
+    return;
+  }
+  openCropModal(file, input);
+}
+
+function handleAvatarDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.currentTarget.classList.remove('ring-2', 'ring-primary');
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  openPickedPhoto(file, null);
+}
+
+// Pasting an image (Ctrl+V) while the account modal is open replaces the
+// photo the same way a drop would. Scoped to the whole document since the
+// browser puts focus all over the modal (buttons, nothing at all), not
+// reliably on the avatar itself -- gated on the modal being open so paste
+// elsewhere in the app is untouched.
+document.addEventListener('paste', function (event) {
+  const modal = document.getElementById('my-account-modal');
+  if (!modal || !modal.open) return;
+  const items = event.clipboardData && event.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) openPickedPhoto(file, null);
+      event.preventDefault();
+      return;
+    }
+  }
+});
+
+// # # # PHOTO CROP MODAL --------------------------------------------------
+// Circular-viewport pan-and-zoom cropper. cropState tracks everything
+// needed to redraw the preview and, on Save, to bake the same transform
+// onto an offscreen canvas at a fixed output size -- so what's previewed
+// behind the circular mask is exactly what gets uploaded.
+const CROP_VIEWPORT = 260; // px, must match #crop-viewport's w/h in the template
+const CROP_OUTPUT = 480; // px, exported square image size
+let cropState = null;
+
+function openCropModal(file, sourceInput) {
+  const img = document.getElementById('crop-image');
+  const objectUrl = URL.createObjectURL(file);
+
+  cropState = {
+    file,
+    sourceInput,
+    objectUrl,
+    naturalW: 0,
+    naturalH: 0,
+    baseScale: 1,
+    zoom: 1, // 1x-3x, on top of baseScale
+    panX: 0,
+    panY: 0,
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    startPanX: 0,
+    startPanY: 0,
+  };
+
+  img.onload = function () {
+    cropState.naturalW = img.naturalWidth;
+    cropState.naturalH = img.naturalHeight;
+    // baseScale covers the circular viewport with no gaps at zoom = 1x,
+    // same idea as CSS object-fit: cover.
+    cropState.baseScale = Math.max(CROP_VIEWPORT / img.naturalWidth, CROP_VIEWPORT / img.naturalHeight);
+    cropState.panX = (CROP_VIEWPORT - img.naturalWidth * cropState.baseScale) / 2;
+    cropState.panY = (CROP_VIEWPORT - img.naturalHeight * cropState.baseScale) / 2;
+    updateCropZoom(100); // also syncs the zoom-out button's disabled state
+  };
+  img.src = objectUrl;
+
+  document.getElementById('photo-crop-modal').showModal();
+}
+
+function closeCropModal() {
+  if (cropState) {
+    URL.revokeObjectURL(cropState.objectUrl);
+    if (cropState.sourceInput) cropState.sourceInput.value = '';
+    cropState = null;
+  }
+}
+
+function currentCropScale() {
+  return cropState.baseScale * cropState.zoom;
+}
+
+// Keeps the image covering the viewport at all times -- panX/panY are
+// clamped so the viewport's circular mask never shows empty space.
+function clampCropPan() {
+  const scale = currentCropScale();
+  const dispW = cropState.naturalW * scale;
+  const dispH = cropState.naturalH * scale;
+  const minX = Math.min(0, CROP_VIEWPORT - dispW);
+  const minY = Math.min(0, CROP_VIEWPORT - dispH);
+  cropState.panX = Math.max(minX, Math.min(0, cropState.panX));
+  cropState.panY = Math.max(minY, Math.min(0, cropState.panY));
+}
+
+function applyCropTransform() {
+  clampCropPan();
+  const scale = currentCropScale();
+  const img = document.getElementById('crop-image');
+  img.style.width = `${cropState.naturalW * scale}px`;
+  img.style.height = `${cropState.naturalH * scale}px`;
+  img.style.transform = `translate(${cropState.panX}px, ${cropState.panY}px)`;
+}
+
+function updateCropZoom(sliderValue) {
+  if (!cropState) return;
+  const clamped = Math.max(100, Math.min(300, sliderValue));
+  cropState.zoom = clamped / 100;
+  document.getElementById('crop-zoom').value = clamped;
+  document.getElementById('crop-zoom-out-btn').disabled = clamped <= 100;
+  document.getElementById('crop-zoom-in-btn').disabled = clamped >= 300;
+  applyCropTransform();
+}
+
+// Click handlers for the magnifier icons flanking the slider -- same
+// clamped 100-300 range, just nudged by `delta` instead of dragged. Below
+// 100 the photo would no longer fully cover the circular mask (gaps at
+// the edges), so 100 is a hard floor, not just the slider's default.
+function stepCropZoom(delta) {
+  if (!cropState) return;
+  const slider = document.getElementById('crop-zoom');
+  updateCropZoom(Number(slider.value) + delta);
+}
+
+(function initCropDragAndWheel() {
+  const viewport = document.getElementById('crop-viewport');
+  if (!viewport) return;
+
+  function pointerDown(clientX, clientY) {
+    if (!cropState) return;
+    cropState.dragging = true;
+    cropState.startX = clientX;
+    cropState.startY = clientY;
+    cropState.startPanX = cropState.panX;
+    cropState.startPanY = cropState.panY;
+    viewport.classList.add('cursor-grabbing');
+    viewport.classList.remove('cursor-grab');
+  }
+  function pointerMove(clientX, clientY) {
+    if (!cropState || !cropState.dragging) return;
+    cropState.panX = cropState.startPanX + (clientX - cropState.startX);
+    cropState.panY = cropState.startPanY + (clientY - cropState.startY);
+    applyCropTransform();
+  }
+  function pointerUp() {
+    if (!cropState) return;
+    cropState.dragging = false;
+    viewport.classList.remove('cursor-grabbing');
+    viewport.classList.add('cursor-grab');
+  }
+
+  viewport.addEventListener('pointerdown', (e) => { viewport.setPointerCapture(e.pointerId); pointerDown(e.clientX, e.clientY); });
+  viewport.addEventListener('pointermove', (e) => pointerMove(e.clientX, e.clientY));
+  viewport.addEventListener('pointerup', pointerUp);
+  viewport.addEventListener('pointercancel', pointerUp);
+
+  // Scroll wheel zooms, same range as the slider, so trackpad/mouse users
+  // don't have to reach for it.
+  viewport.addEventListener('wheel', (e) => {
+    if (!cropState) return;
+    e.preventDefault();
+    stepCropZoom(-e.deltaY * 0.2);
+  }, { passive: false });
+})();
+
+async function saveCroppedPhoto() {
+  if (!cropState) return;
+  const saveBtn = document.getElementById('crop-save-btn');
+  const saveSpinner = document.getElementById('crop-save-spinner');
+  saveBtn.disabled = true;
+  saveSpinner.classList.remove('hidden');
+
+  try {
+    const img = document.getElementById('crop-image');
+    const outScale = CROP_OUTPUT / CROP_VIEWPORT;
+    const scale = currentCropScale() * outScale;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = CROP_OUTPUT;
+    canvas.height = CROP_OUTPUT;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(
+      img,
+      cropState.panX * outScale,
+      cropState.panY * outScale,
+      cropState.naturalW * scale,
+      cropState.naturalH * scale
+    );
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob) {
+      showToast("Couldn't process that image. Please try again.", 'error');
+      return;
+    }
+
+    const sourceInput = cropState.sourceInput;
+    document.getElementById('photo-crop-modal').close();
+    await uploadProfilePhoto(blob, sourceInput);
+  } finally {
+    saveBtn.disabled = false;
+    saveSpinner.classList.add('hidden');
+  }
+}
+
+async function uploadProfilePhoto(blob, input) {
+  const btn = document.getElementById('profile-photo-btn');
+  const spinner = document.getElementById('account-modal-avatar-spinner');
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+
+  const formData = new FormData();
+  formData.append('photo', blob, 'profile.jpg');
+
+  try {
+    const res = await fetch('/api/v1/staff/photo', {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: formData,
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+
+    if (!res.ok) {
+      showToast(data.error || "Couldn't upload photo. Please try again.", 'error');
+      return;
+    }
+
+    renderAvatars(data.photo_url);
+    showToast('Profile photo updated', 'success');
+  } catch (err) {
+    showToast('Network error — check your connection and try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+    // Reset so selecting the same file again still fires onchange.
+    if (input) input.value = '';
+  }
+}
+
+async function removeProfilePhoto() {
+  const removeBtn = document.getElementById('profile-photo-remove-btn');
+  removeBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/staff/photo', {
+      method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+
+    if (!res.ok) {
+      showToast(data.error || "Couldn't remove photo. Please try again.", 'error');
+      return;
+    }
+
+    renderAvatars(null);
+    showToast('Profile photo removed', 'success');
+  } catch (err) {
+    showToast('Network error — check your connection and try again.', 'error');
+  } finally {
+    removeBtn.disabled = false;
+  }
+}
+
 function markAllNotificationsRead() {
   fetch('/api/v1/notifications/mark-all-read', {
     method: 'POST',
@@ -1069,6 +2005,74 @@ function markAllNotificationsRead() {
       showToast("Couldn't mark notifications as read", 'error');
     }
   }).catch(() => showToast("Couldn't mark notifications as read", 'error'));
+}
+
+// Per-item dismiss from the bell dropdown -- the small '×' next to each
+// row. Reloads on success (same as every other notification/staff action
+// in this app that needs a sidebar badge count to reflect immediately)
+// rather than just removing the row client-side, so the bell's unread
+// count updates too, not just the open dropdown's contents.
+function dismissBellNotification(id) {
+  fetch(`/api/v1/notifications/${id}/clear`, {
+    method: 'POST',
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+  }).then((res) => {
+    if (res.ok) {
+      window.location.reload();
+    } else if (res.status === 401) {
+      showSessionTimeoutModal();
+    } else {
+      showToast("Couldn't clear notification", 'error');
+    }
+  }).catch(() => showToast("Couldn't clear notification", 'error'));
+}
+
+// The notification-settings modal (routes/staff.py: update_notification_
+// settings) swaps an empty body into #global-modal-container on a
+// successful save -- that's what actually closes it (see that route's
+// docstring), but it leaves no on-screen confirmation. This delegated
+// listener (the form is loaded in dynamically, so it can't have its own
+// listener attached at page load) fills that in: an empty response body
+// means the save succeeded and the modal just closed; a non-empty one
+// means it re-rendered with a validation error already shown inline, so
+// no separate toast is needed there.
+document.body.addEventListener('htmx:afterRequest', function (evt) {
+  if (evt.detail.elt && evt.detail.elt.id === 'notification-settings-form' && evt.detail.successful) {
+    if ((evt.detail.xhr.responseText || '').trim() === '') {
+      showToast('Notification settings updated', 'success');
+    }
+  }
+});
+
+function updateNotificationPref(field, checked) {
+  const toggleIds = {
+    notify_due_soon: 'notify-due-soon-toggle',
+    notify_overdue: 'notify-overdue-toggle',
+    notify_requests: 'notify-requests-toggle',
+  };
+  const toggleEl = document.getElementById(toggleIds[field]);
+
+  fetch('/api/v1/staff/notification-prefs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+    body: JSON.stringify({ [field]: checked }),
+  }).then((res) => {
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+    } else if (!res.ok) {
+      // revert the toggle -- the save didn't take
+      if (toggleEl) toggleEl.checked = !checked;
+      showToast("Couldn't save that preference", 'error');
+    }
+  }).catch(() => {
+    if (toggleEl) toggleEl.checked = !checked;
+    showToast("Couldn't save that preference", 'error');
+  });
 }
 
 function setNotifTab(tab) {
@@ -1092,17 +2096,46 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
-const THEME_MODES = ['tesda', 'tesda-dark'];
-const THEME_MODE_LABELS = { tesda: 'Light Mode', 'tesda-dark': 'Dark Mode' };
+// Three modes now, not two -- see the head boot script's comment at the
+// top of this file for the full reasoning. Each maps to a (data-theme,
+// data-sidebar) pair; Mixed and Light share data-theme="tesda" (same
+// color tokens throughout) and differ only in data-sidebar, which the
+// CSS overrides further up this file key off of. Cycling order
+// (Mixed -> Light -> Dark -> Mixed -> ...) keeps the old default first,
+// so an existing saved "tesda" preference (mapped to 'mixed' below)
+// lands in the exact same visual spot it always has.
+const THEME_MODES = ['mixed', 'light', 'dark'];
+const THEME_MODE_ATTRS = {
+  mixed: { theme: 'tesda', sidebar: 'dark' },
+  light: { theme: 'tesda', sidebar: 'light' },
+  dark: { theme: 'tesda-dark', sidebar: 'dark' },
+};
+const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode' };
 const THEME_MODE_ICONS = {
-  tesda: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
-  'tesda-dark': '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
+  // Contrast glyph (half-filled circle) -- distinct from the plain sun/moon
+  // below, reads as "part light, part dark" at a glance.
+  mixed: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>',
+  light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+  dark: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
 };
 
 const STAFF_KEY = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
 
-let THEME_MODE = document.documentElement.getAttribute('data-theme') || 'tesda';
-if (!THEME_MODES.includes(THEME_MODE)) THEME_MODE = 'tesda';
+function currentThemeMode() {
+  const theme = document.documentElement.getAttribute('data-theme');
+  const sidebar = document.documentElement.getAttribute('data-sidebar');
+  if (theme === 'tesda-dark') return 'dark';
+  if (theme === 'tesda' && sidebar === 'light') return 'light';
+  return 'mixed';
+}
+
+let THEME_MODE = currentThemeMode();
+
+function applyThemeMode(mode) {
+  const attrs = THEME_MODE_ATTRS[mode];
+  document.documentElement.setAttribute('data-theme', attrs.theme);
+  document.documentElement.setAttribute('data-sidebar', attrs.sidebar);
+}
 
 function syncThemeModeLabel() {
   const label = document.getElementById('theme-mode-label');
@@ -1115,7 +2148,7 @@ syncThemeModeLabel();
 function toggleThemeMode() {
   const idx = THEME_MODES.indexOf(THEME_MODE);
   THEME_MODE = THEME_MODES[(idx + 1) % THEME_MODES.length];
-  document.documentElement.setAttribute('data-theme', THEME_MODE);
+  applyThemeMode(THEME_MODE);
   try {
     localStorage.setItem('app-theme:' + STAFF_KEY, THEME_MODE);
   } catch (e) {}
@@ -1131,7 +2164,10 @@ const TOAST_STYLE_ICONS = {
   md3: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c-5.5 0-10-4.5-10-10S6.5 2 12 2s10 4 10 9a3.5 3.5 0 01-3.5 3.5h-1.8a2 2 0 00-1 3.7A2 2 0 0114 22z"/><circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="16.5" cy="10.5" r="1" fill="currentColor" stroke="none"/></svg>',
 };
 
-let TOAST_STYLE = 'light';
+// Material Design is the app-wide default toast style, same per-account
+// override rule as THEME_MODE above (keyed by username, never leaks
+// between accounts on a shared browser).
+let TOAST_STYLE = 'md3';
 try {
   const saved = localStorage.getItem('toast-style:' + STAFF_KEY);
   if (TOAST_STYLES.includes(saved)) TOAST_STYLE = saved;

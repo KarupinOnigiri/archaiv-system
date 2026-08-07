@@ -17,7 +17,6 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
         Manage Categories
       </button>
-      {% endif %}
       <button type="button" id="import-csv-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/assets/import-form"
               hx-target="#modal-container"
@@ -25,6 +24,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Import CSV
       </button>
+      {% endif %}
       <button type="button" id="export-data-btn" class="btn btn-outline btn-sm"
               hx-get="/api/v1/assets/export-form"
               hx-target="#modal-container"
@@ -33,6 +33,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export Data
       </button>
+      {% if staff.role in ["admin", "in_charge"] %}
       <button type="button" id="add-new-item-btn" class="btn btn-primary btn-sm rounded-full"
               hx-get="/api/v1/assets/add-form"
               hx-target="#modal-container"
@@ -40,6 +41,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         Add New Item
       </button>
+      {% endif %}
     </div>
   </div>
 
@@ -921,8 +923,10 @@ document.addEventListener('keydown', function (e) {
   // (if any) is already open.
   if (e.altKey && (e.key === 'n' || e.key === 'N')) {
     if (isModalOpen()) return;
+    const addBtn = document.getElementById('add-new-item-btn');
+    if (!addBtn) return;
     e.preventDefault();
-    document.getElementById('add-new-item-btn').click();
+    addBtn.click();
     return;
   }
   if (e.altKey && (e.key === 'm' || e.key === 'M')) {
@@ -935,8 +939,10 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.altKey && (e.key === 'i' || e.key === 'I')) {
     if (isModalOpen()) return;
+    const importBtn = document.getElementById('import-csv-btn');
+    if (!importBtn) return;
     e.preventDefault();
-    document.getElementById('import-csv-btn').click();
+    importBtn.click();
     return;
   }
   if (e.altKey && (e.key === 'e' || e.key === 'E')) {

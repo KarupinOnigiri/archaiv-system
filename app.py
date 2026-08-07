@@ -18,16 +18,21 @@ from services.seed_service import seed_initial_admin
 from services.checkout_service import cleanup_stale_checkout_sessions
 from services.auth_service import cleanup_expired_sessions, require_session
 from utils.formatters import full_name
+from services.settings_service import INDEFINITE_LOCK_UNTIL
+from services.approvals_service import get_pending_approvals_count
 from apscheduler.schedulers.background import BackgroundScheduler
 from extensions import limiter
 from routes.stats import stats_bp
 from routes.setup import setup_bp
 from routes.notifications import notifications_bp
+from routes.feedback import feedback_bp, get_open_feedback_count
 from services.loan_service import sweep_overdue_members
 from services.notification_service import (
     sync_loan_notifications,
     get_notification_bell_context,
 )
+from services.dashboard_service import get_dashboard_context
+from routes.dashboard import dashboard_bp
 from datetime import datetime
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
@@ -47,7 +52,13 @@ logging.basicConfig(
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
-app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB request body cap
+# Was 1 MB, which -- since it's a hard Flask-level cap applied before any
+# route runs -- already undercut MAX_IMAGE_SIZE_BYTES (5MB, utils/uploads.py)
+# for any single-image upload. Raised to cover the new feedback-screenshot
+# upload (routes/feedback.py), which allows up to MAX_FEEDBACK_IMAGES (5)
+# images in one multipart request; 26 MB is 5 images at the 5MB cap plus
+# headroom for multipart boundaries/form fields.
+app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024
 
 if not app.secret_key:
     raise RuntimeError(
@@ -69,10 +80,15 @@ def inject_csrf_token():
 
     staff_member = conn.execute(
         """
-        SELECT members.first_name, members.last_name
+        SELECT staff.id AS staff_id, staff.role,
+               staff.notify_due_soon, staff.notify_overdue, staff.notify_requests,
+               members.first_name, members.last_name,
+               members.member_type, members.batch,
+               departments.name AS department_name
         FROM sessions
         JOIN staff ON staff.id = sessions.staff_id
         JOIN members ON members.id = staff.member_id
+        LEFT JOIN departments ON departments.id = members.department_id
         WHERE sessions.token = ?
         """,
         (token,),
@@ -83,7 +99,25 @@ def inject_csrf_token():
     # populate. Feeds the sidebar bell dropdown in base.html; the full
     # /notifications page re-queries this itself with its own pagination.
     notifications, unread_notifications_count = (
-        get_notification_bell_context(conn) if session else ([], 0)
+        get_notification_bell_context(
+            conn, staff_member["staff_id"], staff_member["role"], staff_member
+        )
+        if session and staff_member
+        else ([], 0)
+    )
+    # Same idea for the sidebar's "Approvals" badge -- see
+    # get_pending_approvals_count's docstring for the scoping rules.
+    pending_approvals_count = (
+        get_pending_approvals_count(conn, staff_member["staff_id"], staff_member["role"])
+        if staff_member
+        else 0
+    )
+    # Badges the System sidebar link (admin-only, see templates/base.html)
+    # -- only worth querying for the role that can ever see that link.
+    open_feedback_count = (
+        get_open_feedback_count(conn)
+        if staff_member and staff_member["role"] == "admin"
+        else 0
     )
     conn.close()
 
@@ -97,10 +131,23 @@ def inject_csrf_token():
         ),
         "notifications": notifications,
         "unread_notifications_count": unread_notifications_count,
+        "pending_approvals_count": pending_approvals_count,
+        "open_feedback_count": open_feedback_count,
+        # Feeds the extra rows in the "My Account" modal (templates/base.html)
+        # -- a staff account is always tied to a member record (staff.member_id),
+        # so these come from there, not the staff table itself.
+        "staff_member_type": staff_member["member_type"] if staff_member else "",
+        "staff_batch": staff_member["batch"] if staff_member else None,
+        "staff_department_name": staff_member["department_name"] if staff_member else "",
     }
 
 
 app.jinja_env.globals["full_name"] = full_name
+
+# Lets staff/_table.html and staff/_profile_modal.html tell an indefinite
+# manual lock (services.settings_service.INDEFINITE_LOCK_UNTIL) apart from
+# an ordinary timed one without duplicating that sentinel string in Jinja.
+app.jinja_env.globals["INDEFINITE_LOCK_UNTIL"] = INDEFINITE_LOCK_UNTIL
 
 
 limiter.init_app(app)
@@ -114,6 +161,8 @@ app.register_blueprint(transactions_bp, url_prefix="/api/v1")
 app.register_blueprint(stats_bp, url_prefix="/api/v1")
 app.register_blueprint(setup_bp, url_prefix="/api/v1")
 app.register_blueprint(notifications_bp, url_prefix="/api/v1")
+app.register_blueprint(feedback_bp, url_prefix="/api/v1")
+app.register_blueprint(dashboard_bp, url_prefix="/api/v1")
 app.register_blueprint(pages_bp)
 
 
@@ -166,12 +215,20 @@ if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
 
 @app.route("/")
 def home():
+    """The Dashboard -- templates/home.html is the file (kept at its
+    existing name/route rather than moved to a new dashboard.html), but
+    everything it renders is the one-page operational overview: live
+    inventory/member/loan counts, a recent-activity feed, top-borrowed
+    assets, and quick actions. See services/dashboard_service.py for the
+    query layer behind it."""
     conn = get_db_connection()
     staff, error = require_session(conn)
-    conn.close()
     if error:
+        conn.close()
         return redirect(url_for("pages.login_page"))
-    return render_template("home.html", staff=staff)
+    dashboard_context = get_dashboard_context(conn)
+    conn.close()
+    return render_template("home.html", staff=staff, **dashboard_context)
 
 
 @app.route("/health")
@@ -190,11 +247,6 @@ def health():
     except Exception as e:
         app.logger.error(f"Health check failed: {e}")
         return jsonify({"status": "error", "detail": "database unavailable"}), 503
-
-
-@app.route("/test")
-def test():
-    return render_template("base.html")
 
 
 def format_date(value, format="%b %d, %Y %I:%M %p"):
@@ -223,9 +275,6 @@ app.jinja_env.filters["format_date"] = format_date
 # Optional: Register in globals if you access it directly as a function in templates
 app.jinja_env.globals["format_date"] = format_date
 
-
-# if __name__ == "__main__":
-#     app.run(debug=debug_mode)
 
 if __name__ == "__main__":
     host = os.environ.get("FLASK_HOST", "127.0.0.1")

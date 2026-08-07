@@ -1,6 +1,14 @@
 {% from "_icons.html" import icon_eye, icon_edit, icon_trash, icon_restore %}
 
 {% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
+{# Matches the actual backend permission on the single-row Edit/Delete/
+   Restore actions below (routes/assets.py: edit-form/edit, delete-confirm/
+   delete, and undo-delete are all @roles_required("admin", "in_charge")) --
+   distinct from can_bulk_act above, which is stricter (admin-only) for
+   bulk-restore specifically. A tool_keeper could open these menu items
+   before and get a 403 from the backend; now they're just not shown,
+   same as members/_table.html's can_manage gate. #}
+{% set can_manage = g.staff.role in ["admin", "in_charge"] %}
 
 {% macro sort_header(label, col) %}
 {% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
@@ -132,6 +140,7 @@
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/details-modal" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_eye() }} Details</a>
             </li>
+            {% if can_manage %}
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit</a>
             </li>
@@ -143,6 +152,7 @@
             <li>
               <a class="flex items-center gap-2 text-error" hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Delete</a>
             </li>
+            {% endif %}
             {% endif %}
           </ul>
         </div>

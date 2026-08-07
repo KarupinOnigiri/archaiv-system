@@ -1,42 +1,93 @@
-{% from "_icons.html" import icon_edit, icon_shield_check, icon_trash, icon_user_check %}
+{% from "_icons.html" import icon_eye, icon_edit, icon_shield_alert, icon_shield_check, icon_trash, icon_user_check %}
 
 {% set can_manage = staff.role == "admin" %}
+{# Bulk actions reuse the exact same admin-only gate as the single-row
+   Deactivate/Reactivate/Unlock actions in this table's own dropdown --
+   both bulk-deactivate and bulk-reactivate routes are @roles_required("admin"). #}
+{% set can_bulk_act = can_manage %}
 
-<table class="table w-full table-fixed" data-total-count="{{ total_count }}">
-  <colgroup>
-    <col style="width: 18%">
-    <col style="width: 14%">
-    <col style="width: 12%">
-    <col style="width: 12%">
-    <col style="width: 15%">
-    <col style="width: 17%">
-    <col style="width: 12%">
-    {% if can_manage %}
-    <col style="width: 3rem">
+{% macro sort_header(label, col) %}
+{% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
+{% set is_active = (sort_by == col) %}
+<th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">
+  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% endif %}"
+          hx-get="/api/v1/staff"
+          hx-target="#staff-table-container"
+          hx-swap="innerHTML"
+          hx-indicator="#table-spinner"
+          hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
+          hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
+    {{ label }}
+    {% if is_active %}
+      {% if sort_dir == "asc" %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 15l-6-6-6 6"/></svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+      {% endif %}
+    {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l4-4 4 4"/><path d="M16 15l-4 4-4-4"/></svg>
     {% endif %}
+  </button>
+</th>
+{% endmacro %}
+
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}">
+  <colgroup>
+    <!-- Checkbox column, unconditional (same reasoning as Members'/Inventory's):
+         keeps the column count -- and everything to its right, including the
+         pagination footer -- from shifting sideways depending on who's viewing it. -->
+    <col style="width: 2.5rem">
+    <col style="width: 19%">
+    <col style="width: 11%">
+    <col style="width: 10%">
+    <col style="width: 10%">
+    <col style="width: 16%">
+    <col style="width: 16%">
+    <col style="width: 10%">
+    <col style="width: 5rem">
   </colgroup>
   <thead>
     <tr class="text-left text-xs text-base-content/50 tracking-wide">
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF</th>
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">USERNAME</th>
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STAFF CODE</th>
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">ROLE</th>
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">DEPARTMENT</th>
+      <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
+        {% if can_bulk_act %}
+        <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
+               aria-label="Select all rows on this page" title="Select all rows on this page">
+        {% endif %}
+      </th>
+      {{ sort_header("STAFF", "name") }}
+      {{ sort_header("USERNAME", "username") }}
+      {{ sort_header("STAFF CODE", "staff_code") }}
+      {{ sort_header("ROLE", "role") }}
+      {{ sort_header("DEPARTMENT", "department") }}
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">ASSIGNED</th>
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STATUS</th>
-      {% if can_manage %}
       <th class="py-2 font-semibold text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
-      {% endif %}
     </tr>
   </thead>
   <tbody>
     {% for row in staff_list %}
-    <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40">
+    <tr class="border-b border-base-200 last:border-0 hover:bg-base-200/40 cursor-pointer"
+        hx-get="/api/v1/staff/{{ row.id }}/profile"
+        hx-target="#modal-container"
+        hx-swap="beforeend"
+        hx-trigger="click[!target.closest('input,.dropdown,button,a')]">
+
+      <td class="py-2">
+        {% if can_bulk_act %}
+        <input type="checkbox" class="staff-row-checkbox checkbox checkbox-sm"
+               value="{{ row.id }}" data-name="{{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}"
+               aria-label="Select {{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}">
+        {% endif %}
+      </td>
 
       <td class="py-2">
         <div class="flex items-center gap-3">
-          <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+          <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+            {% if row.photo_path %}
+            <img src="{{ url_for('static', filename=row.photo_path) }}" alt="" class="w-full h-full object-cover">
+            {% else %}
             <span class="text-[10px] font-semibold text-primary">{{ row.first_name[0] | upper }}</span>
+            {% endif %}
           </div>
           <div class="min-w-0">
             <p class="font-medium truncate">{{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}</p>
@@ -72,13 +123,15 @@
         {% if not row.is_active %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
         {% elif row.locked_until %}
-        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning">Locked</span>
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning whitespace-nowrap"
+              title="{% if row.locked_until == INDEFINITE_LOCK_UNTIL %}Locked indefinitely by an administrator{% else %}Locked until {{ row.locked_until }}{% endif %}">
+          Locked{% if row.locked_until == INDEFINITE_LOCK_UNTIL %} &infin;{% endif %}
+        </span>
         {% else %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-success/10 text-success">Active</span>
         {% endif %}
       </td>
 
-      {% if can_manage %}
       <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
           <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
@@ -86,13 +139,31 @@
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-52 p-2 z-50">
             <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/profile" hx-target="#modal-container" hx-swap="beforeend">{{ icon_eye() }} View Profile</a>
+            </li>
+            {% if can_manage %}
+            <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit Details</a>
             </li>
+            {% if row.is_active %}
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/reset-password-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                Reset Password
+              </a>
+            </li>
+            {% endif %}
             {% if row.locked_until %}
             <li>
               <a class="flex items-center gap-2 text-warning"
-                 onclick="staffAction('/api/v1/staff/{{ row.id }}/unlock', 'Unlock this account?', 'Account unlocked')">
+                 hx-get="/api/v1/staff/{{ row.id }}/unlock-form" hx-target="#modal-container" hx-swap="innerHTML">
                 {{ icon_shield_check() }} Unlock
+              </a>
+            </li>
+            {% elif row.is_active and row.id != staff.id %}
+            <li>
+              <a class="flex items-center gap-2 text-warning" hx-get="/api/v1/staff/{{ row.id }}/lock-form" hx-target="#modal-container" hx-swap="innerHTML">
+                {{ icon_shield_alert() }} Lock
               </a>
             </li>
             {% endif %}
@@ -118,15 +189,15 @@
               </a>
             </li>
             {% endif %}
+            {% endif %}
           </ul>
         </div>
       </td>
-      {% endif %}
 
     </tr>
     {% else %}
     <tr>
-      <td colspan="{{ 8 if can_manage else 7 }}" class="py-12 text-center text-sm text-base-content/50">
+      <td colspan="9" class="py-12 text-center text-sm text-base-content/50">
         No staff accounts match these filters.
       </td>
     </tr>
@@ -147,7 +218,7 @@
             hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
             name="limit"
-            hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+            hx-vals='js:{"limit": event.target.value, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
       <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
       <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
@@ -168,7 +239,7 @@
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
-            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
 
@@ -195,7 +266,7 @@
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
                 hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
-                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
           {{ p }}
         </button>
         {% set ns.prev = p %}
@@ -209,7 +280,7 @@
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
             hx-include="#staff-search, #role-filter, #department-filter, #show-inactive-toggle"
-            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
     </button>
   </div>

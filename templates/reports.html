@@ -1,0 +1,673 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Reports</h1>
+      <p class="text-sm text-base-content/50 mt-1">Usage patterns across assets, categories, and borrowers.</p>
+    </div>
+    <a id="reports-export-btn" class="btn btn-outline btn-sm" href="#" target="_blank" rel="noopener">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+      Export
+    </a>
+  </div>
+
+  <!-- At-a-glance KPIs -- summarizes the same date range every report card
+       below is scoped to, refreshed alongside them by fetchAllReports().
+       Purely informational (unlike Staff/Members/Assets' clickable stat
+       cards, nothing here is a shortcut into a filtered view -- there's no
+       single-metric "view" of a report to jump to). -->
+  <div id="reports-kpi-row" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">TOTAL CHECKOUTS</p>
+        <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">&mdash;</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+      </div>
+    </div>
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSETS BORROWED</p>
+        <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">&mdash;</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+      </div>
+    </div>
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">BORROWERS</p>
+        <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">&mdash;</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+    </div>
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">OVERDUE RATE</p>
+        <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+    </div>
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
+      <div>
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RATE</p>
+        <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared date range -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-4 flex flex-wrap items-center gap-3">
+    <span class="text-xs font-semibold text-base-content/50 tracking-wide">DATE RANGE</span>
+    <div id="reports-date-presets" class="join rounded-lg">
+      <button type="button" id="reports-preset-week" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('week')">This Week</button>
+      <button type="button" id="reports-preset-month" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('month')">This Month</button>
+      <button type="button" id="reports-preset-30d" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('30d')">Last 30 Days</button>
+      <button type="button" id="reports-preset-year" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('year')">This Year</button>
+      <button type="button" id="reports-preset-all" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('all')">All Time</button>
+    </div>
+    <div id="reports-date-filters" class="join rounded-lg transition-shadow">
+      <button type="button" id="reports-date-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+              onclick="clearReportsDateFilter()" aria-label="Clear date range" title="Clear date range" disabled>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+      <input type="date" id="reports-since-filter" aria-label="From date" title="From"
+             class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
+      <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+      <input type="date" id="reports-until-filter" aria-label="To date" title="To"
+             class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
+    </div>
+    <span class="text-xs text-base-content/40">Leave blank for all-time. Applies to every report below.</span>
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+
+    <!-- Most Borrowed Assets -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+        </span>
+        <h3 class="font-semibold">Most Borrowed Assets</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Top 10 by number of checkouts. Click a row for details.</p>
+      <div id="report-most-borrowed-assets" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Most Borrowed Categories -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-info/10 text-info flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </span>
+        <h3 class="font-semibold">Most Borrowed Categories</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Which kind of tool moves the most.</p>
+      <div id="report-most-borrowed-categories" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Least Borrowed Assets -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-base-300 text-base-content/50 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+        </span>
+        <h3 class="font-semibold">Least Borrowed Assets</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Idle stock, including tools never checked out. Click a row for details.</p>
+      <div id="report-least-borrowed-assets" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Average Loan Duration -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center justify-between mb-0.5">
+        <div class="flex items-center gap-2.5">
+          <span class="w-8 h-8 rounded-full bg-info/10 text-info flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </span>
+          <h3 class="font-semibold">Average Loan Duration</h3>
+        </div>
+        <div class="join">
+          <button type="button" id="loan-duration-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('loan-duration', 'asset')">By Asset</button>
+          <button type="button" id="loan-duration-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('loan-duration', 'category')">By Category</button>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Hours between checkout and return, completed loans only. Click an asset row for details.</p>
+      <div id="report-loan-duration" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Top Borrowers -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        </span>
+        <h3 class="font-semibold">Top Borrowers</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Members with the most checkouts. Click a row for their profile.</p>
+      <div id="report-top-borrowers" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Overdue Frequency -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-warning/10 text-warning flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </span>
+        <h3 class="font-semibold">Overdue Frequency</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Members who return late (or are currently overdue) most often. Click a row for their profile.</p>
+      <div id="report-overdue-frequency" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    <!-- Condition Changes -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 xl:col-span-2">
+      <div class="flex items-center justify-between mb-0.5">
+        <div class="flex items-center gap-2.5">
+          <span class="w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </span>
+          <h3 class="font-semibold">Condition Changes</h3>
+        </div>
+        <div class="join">
+          <button type="button" id="condition-changes-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('condition-changes', 'asset')">By Asset</button>
+          <button type="button" id="condition-changes-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('condition-changes', 'category')">By Category</button>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">How often something comes back in worse condition than it went out. Click an asset row for details.</p>
+      <div id="report-condition-changes" class="report-body min-h-[8rem]"></div>
+    </div>
+
+    {% if staff.role == "admin" %}
+    <!-- Staff Activity -- admin-only (see routes/stats.py's staff_activity
+         endpoint docstring for why: staff oversight is admin territory
+         everywhere else in the app, in_charge doesn't get this one).
+         Deliberately a plain table (not a bar chart) and sorted
+         alphabetically server-side, not by any count -- workload
+         visibility, not a leaderboard. -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 xl:col-span-2">
+      <div class="flex items-center gap-2.5 mb-0.5">
+        <span class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+        </span>
+        <h3 class="font-semibold">Staff Activity</h3>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Workload coverage across active staff accounts -- who's processing checkouts/returns, and whether an account is being used at all. Click a row for their profile.</p>
+      <div id="report-staff-activity" class="report-body min-h-[8rem]"></div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<div id="modal-container"></div>
+
+<!-- Vendored locally (static/js/chart.min.js), same as htmx.min.js -- not
+     loaded from a CDN, so it works the same whether or not this
+     deployment has internet access. Only pulled in on this page, since
+     it's the only one that uses it. -->
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+
+<script>
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+const REPORT_EMPTY_STATE = '<p class="text-center py-8 text-sm text-base-content/40">No data for this range.</p>';
+const REPORT_ERROR_STATE = '<p class="text-center py-8 text-sm text-error">Couldn\'t load this report.</p>';
+const REPORT_LOADING_STATE = '<div class="flex justify-center py-8"><span class="loading loading-spinner loading-sm text-primary"></span></div>';
+
+// Opens the existing Inventory/Members row-click modals from here too --
+// reuses the exact same routes those pages already use (this doesn't
+// duplicate that markup or logic), via htmx.ajax() rather than a raw
+// fetch()+innerHTML so the modal's own trailing <script> (which fetches
+// its history/activity tabs) actually runs the same way it does when
+// opened the normal way through htmx's declarative hx-get -- a plain
+// innerHTML injection wouldn't execute it, leaving those tabs spinning
+// forever.
+function openMemberProfile(id) {
+  htmx.ajax('GET', `/api/v1/members/${id}/profile`, { target: '#modal-container', swap: 'innerHTML' });
+}
+
+function openAssetDetails(id) {
+  htmx.ajax('GET', `/api/v1/assets/${id}/details-modal`, { target: '#modal-container', swap: 'innerHTML' });
+}
+
+function openStaffProfile(id) {
+  htmx.ajax('GET', `/api/v1/staff/${id}/profile`, { target: '#modal-container', swap: 'innerHTML' });
+}
+
+// Delegator shared with renderTable below -- avoids re-serializing each
+// row's data into an inline onclick attribute (member/asset rows carry
+// more than a plain id/name), reading it back from whatever last stashed
+// it here instead.
+window.__reportRowClick = function (elId, index) {
+  const entry = window.__reportRowClickData && window.__reportRowClickData[elId];
+  if (!entry) return;
+  entry.onClick(entry.rows[index]);
+};
+window.__reportRowClickData = {};
+
+// Reads a daisyUI theme color straight off the CSS custom property (an
+// oklch(...) string, which Canvas/Chart.js accept natively as a color) --
+// rather than hardcoding hex values here that could quietly drift from
+// whatever the actual theme defines, and so a theme swap is reflected
+// automatically without this file needing to know the theme's palette.
+function themeColor(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+const REPORT_CHARTS = {}; // elId -> Chart instance, so a refetch can destroy-and-recreate instead of leaking canvases
+
+// Real bar chart (Chart.js, vendored locally -- static/js/chart.min.js,
+// see the <script> tag above) for the three pure "ranking" reports, where
+// a chart genuinely earns its place: one metric, ranked, nothing else to
+// show per row. The other four reports (Least Borrowed, Loan Duration,
+// Overdue Frequency, Condition Changes) stay as tables -- multiple
+// differently-shaped columns don't compress into one chart cleanly, and a
+// table already reads better for those than forcing a chart would.
+//
+// onClick(row), when given, opens the matching Inventory/Members modal
+// clicking a bar. Tooltips always show the exact value and (if given) a
+// sublabel line, not just what the bar's relative length implies.
+function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', colorVar, onClick = null }) {
+  const el = document.getElementById(elId);
+  if (REPORT_CHARTS[elId]) {
+    REPORT_CHARTS[elId].destroy();
+    delete REPORT_CHARTS[elId];
+  }
+  if (rows.length === 0) { el.innerHTML = REPORT_EMPTY_STATE; return; }
+
+  el.innerHTML = `<div style="height: ${Math.max(160, rows.length * 32)}px"><canvas id="${elId}-canvas"></canvas></div>`;
+  const canvas = document.getElementById(`${elId}-canvas`);
+  const barColor = themeColor(colorVar);
+  const gridColor = themeColor('--color-base-300');
+  const textColor = themeColor('--color-base-content');
+
+  const chart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: rows.map(label),
+      datasets: [{
+        data: rows.map(value),
+        backgroundColor: barColor,
+        borderRadius: 4,
+        maxBarThickness: 22,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: typeof onClick === 'function' ? function (evt, elements) {
+        if (!elements.length) return;
+        onClick(rows[elements[0].index]);
+      } : undefined,
+      onHover: typeof onClick === 'function' ? function (evt, elements) {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      } : undefined,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) { return ctx.parsed.x + valueSuffix; },
+            afterLabel: sublabel ? function (ctx) { return sublabel(rows[ctx.dataIndex]); } : undefined,
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0, color: textColor },
+          grid: { color: gridColor },
+        },
+        y: {
+          ticks: { color: textColor, autoSkip: false },
+          grid: { display: false },
+        },
+      },
+    },
+  });
+  REPORT_CHARTS[elId] = chart;
+}
+
+// Re-renders whatever charts are currently on screen when the theme
+// toggles (base.html's toggleThemeMode()), so bar/text/grid colors
+// actually follow it instead of staying frozen at whatever they were
+// when first drawn -- charts read colors once at creation time, they
+// don't watch CSS variables the way the rest of the page's styling does.
+new MutationObserver(function () {
+  if (Object.keys(REPORT_CHARTS).length === 0) return;
+  fetchMostBorrowedAssets();
+  fetchMostBorrowedCategories();
+  fetchTopBorrowers();
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function renderTable(elId, rows, columns, { onClick = null } = {}) {
+  const el = document.getElementById(elId);
+  if (rows.length === 0) { el.innerHTML = REPORT_EMPTY_STATE; return; }
+  const clickable = typeof onClick === 'function';
+  const head = columns.map(function (c) {
+    return `<th class="text-xs font-semibold text-base-content/50 py-1.5 ${c.headCls || ''}">${c.header}</th>`;
+  }).join('');
+  const body = rows.map(function (r, i) {
+    const cells = columns.map(function (c) {
+      return `<td class="py-1.5 text-sm ${c.cls || ''}">${c.render(r)}</td>`;
+    }).join('');
+    const rowAttrs = clickable
+      ? `class="border-t border-base-200 hover:bg-base-200/60 cursor-pointer transition-colors" onclick="window.__reportRowClick('${elId}', ${i})"`
+      : `class="border-t border-base-200"`;
+    return `<tr ${rowAttrs}>${cells}</tr>`;
+  }).join('');
+  el.innerHTML = `<div class="overflow-auto"><table class="table table-sm w-full"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  if (clickable) {
+    window.__reportRowClickData[elId] = { rows, onClick };
+  }
+}
+
+function memberName(r) {
+  const parts = [r.first_name, r.middle_name, r.last_name, r.suffix].filter(Boolean);
+  return parts.join(' ');
+}
+
+function reportsDateParams() {
+  const since = document.getElementById('reports-since-filter').value;
+  const until = document.getElementById('reports-until-filter').value;
+  const params = new URLSearchParams({ limit: 10, offset: 0 });
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  return params;
+}
+
+async function fetchReport(elId, url, params, render) {
+  const el = document.getElementById(elId);
+  el.innerHTML = REPORT_LOADING_STATE;
+  try {
+    const res = await fetch(url + '?' + params.toString());
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+    const data = await res.json();
+    if (!res.ok) {
+      el.innerHTML = REPORT_ERROR_STATE;
+      return;
+    }
+    render(data.results || []);
+  } catch (err) {
+    el.innerHTML = REPORT_ERROR_STATE;
+  }
+}
+
+const REPORT_GROUP_BY = { 'loan-duration': 'asset', 'condition-changes': 'asset' };
+
+function setReportGroupBy(report, groupBy) {
+  REPORT_GROUP_BY[report] = groupBy;
+  document.getElementById(`${report}-group-asset`).classList.toggle('btn-active', groupBy === 'asset');
+  document.getElementById(`${report}-group-category`).classList.toggle('btn-active', groupBy === 'category');
+  updateReportsExportLink();
+  if (report === 'loan-duration') fetchLoanDuration();
+  if (report === 'condition-changes') fetchConditionChanges();
+}
+
+function fetchMostBorrowedAssets() {
+  const params = reportsDateParams();
+  fetchReport('report-most-borrowed-assets', '/api/v1/stats/assets/most-borrowed', params, function (rows) {
+    renderBarChart('report-most-borrowed-assets', rows, {
+      label: (r) => r.name,
+      sublabel: (r) => r.category || 'Uncategorized',
+      value: (r) => r.borrow_count,
+      valueSuffix: ' borrows',
+      colorVar: '--color-primary',
+      onClick: (r) => openAssetDetails(r.id),
+    });
+  });
+}
+
+function fetchMostBorrowedCategories() {
+  const params = reportsDateParams();
+  fetchReport('report-most-borrowed-categories', '/api/v1/stats/categories/most-borrowed', params, function (rows) {
+    renderBarChart('report-most-borrowed-categories', rows, {
+      label: (r) => r.category,
+      value: (r) => r.borrow_count,
+      valueSuffix: ' borrows',
+      colorVar: '--color-info',
+    });
+  });
+}
+
+function fetchLeastBorrowedAssets() {
+  const params = reportsDateParams();
+  fetchReport('report-least-borrowed-assets', '/api/v1/stats/assets/least-borrowed', params, function (rows) {
+    renderTable('report-least-borrowed-assets', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')}</div>` },
+      { header: 'BORROWS', headCls: 'text-right', cls: 'text-right', render: (r) => r.borrow_count === 0 ? '<span class="text-warning font-medium">0</span>' : r.borrow_count },
+    ], { onClick: (r) => openAssetDetails(r.id) });
+  });
+}
+
+function fetchLoanDuration() {
+  const params = reportsDateParams();
+  const groupBy = REPORT_GROUP_BY['loan-duration'];
+  params.set('group_by', groupBy);
+  fetchReport('report-loan-duration', '/api/v1/stats/loan-duration', params, function (rows) {
+    renderTable('report-loan-duration', rows, [
+      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => escapeHtml(groupBy === 'asset' ? r.name : r.category) },
+      { header: 'AVG HOURS', headCls: 'text-right', cls: 'text-right', render: (r) => r.avg_loan_hours },
+    ], groupBy === 'asset' ? { onClick: (r) => openAssetDetails(r.group_id) } : {});
+  });
+}
+
+function fetchTopBorrowers() {
+  const params = reportsDateParams();
+  fetchReport('report-top-borrowers', '/api/v1/stats/members/top-borrowers', params, function (rows) {
+    renderBarChart('report-top-borrowers', rows, {
+      label: (r) => memberName(r),
+      sublabel: (r) => `${r.department} · ${r.member_code}`,
+      value: (r) => r.borrow_count,
+      valueSuffix: ' borrows',
+      colorVar: '--color-success',
+      onClick: (r) => openMemberProfile(r.id),
+    });
+  });
+}
+
+function fetchOverdueFrequency() {
+  const params = reportsDateParams();
+  fetchReport('report-overdue-frequency', '/api/v1/stats/members/overdue-frequency', params, function (rows) {
+    renderTable('report-overdue-frequency', rows, [
+      { header: 'MEMBER', render: (r) => `<div class="font-medium">${escapeHtml(memberName(r))}</div><div class="text-xs text-base-content/40">${escapeHtml(r.department)} · ${escapeHtml(r.member_code)}</div>` },
+      { header: 'OVERDUE', headCls: 'text-right', cls: 'text-right text-warning font-medium', render: (r) => r.overdue_count },
+      { header: 'STILL OPEN', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => r.still_open_count },
+    ], { onClick: (r) => openMemberProfile(r.id) });
+  });
+}
+
+function fetchConditionChanges() {
+  const params = reportsDateParams();
+  const groupBy = REPORT_GROUP_BY['condition-changes'];
+  params.set('group_by', groupBy);
+  fetchReport('report-condition-changes', '/api/v1/stats/assets/condition-changes', params, function (rows) {
+    renderTable('report-condition-changes', rows, [
+      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => escapeHtml(groupBy === 'asset' ? r.name : r.category) },
+      { header: 'RETURNS', headCls: 'text-right', cls: 'text-right', render: (r) => r.completed_returns },
+      { header: 'WORSENED', headCls: 'text-right', cls: 'text-right', render: (r) => r.worsened_count > 0 ? `<span class="text-error font-medium">${r.worsened_count}</span>` : r.worsened_count },
+    ], groupBy === 'asset' ? { onClick: (r) => openAssetDetails(r.group_id) } : {});
+  });
+}
+
+function fetchSummary() {
+  const params = reportsDateParams();
+  fetch('/api/v1/stats/summary?' + params.toString())
+    .then(function (res) {
+      if (res.status === 401) { showSessionTimeoutModal(); return null; }
+      return res.json();
+    })
+    .then(function (data) {
+      if (!data) return;
+      document.getElementById('kpi-total-checkouts').textContent = data.total_checkouts;
+      document.getElementById('kpi-unique-assets').textContent = data.unique_assets;
+      document.getElementById('kpi-unique-borrowers').textContent = data.unique_borrowers;
+      document.getElementById('kpi-overdue-rate').textContent = data.overdue_rate + '%';
+      document.getElementById('kpi-damage-rate').textContent = data.damage_rate + '%';
+    })
+    .catch(function () {
+      ['kpi-total-checkouts', 'kpi-unique-assets', 'kpi-unique-borrowers', 'kpi-overdue-rate', 'kpi-damage-rate'].forEach(function (id) {
+        document.getElementById(id).textContent = '—';
+      });
+    });
+}
+
+// Keeps the Export link's href current with whatever the page is showing
+// right now -- date range plus each toggle's group_by choice -- so the
+// download always matches what's on screen instead of needing its own
+// separate "confirm your filters" step.
+function updateReportsExportLink() {
+  const params = reportsDateParams();
+  params.delete('limit');
+  params.delete('offset');
+  params.set('loan_duration_group_by', REPORT_GROUP_BY['loan-duration']);
+  params.set('condition_changes_group_by', REPORT_GROUP_BY['condition-changes']);
+  document.getElementById('reports-export-btn').href = '/api/v1/stats/export?' + params.toString();
+}
+
+function fetchStaffActivity() {
+  // No-op (rather than erroring) for in_charge -- the card, and this
+  // endpoint, are both admin-only (see routes/stats.py's staff_activity
+  // docstring), so the element this targets simply isn't in the DOM for
+  // anyone else. fetchAllReports() below calls this unconditionally,
+  // same as every other fetch* here, rather than special-casing role
+  // checks in JS on top of what the template and backend already gate.
+  const el = document.getElementById('report-staff-activity');
+  if (!el) return;
+  const params = reportsDateParams();
+  fetchReport('report-staff-activity', '/api/v1/stats/staff/activity', params, function (rows) {
+    renderTable('report-staff-activity', rows, [
+      { header: 'STAFF', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">@${escapeHtml(r.username)} &middot; ${escapeHtml(r.role.replace('_', ' '))}</div>` },
+      { header: 'CHECKOUTS', headCls: 'text-right', cls: 'text-right', render: (r) => r.checkouts_processed },
+      { header: 'RETURNS', headCls: 'text-right', cls: 'text-right', render: (r) => r.returns_processed },
+      { header: 'LOGGED ACTIONS', headCls: 'text-right', cls: 'text-right', render: (r) => r.audit_actions },
+      { header: 'AVG SESSION', headCls: 'text-right', cls: 'text-right', render: (r) => r.avg_session_minutes != null ? `${r.avg_session_minutes}m` : '—' },
+    ], { onClick: (r) => openStaffProfile(r.id) });
+  });
+}
+
+function fetchAllReports() {
+  updateReportsDateFilterUI();
+  updateReportsExportLink();
+  fetchSummary();
+  fetchMostBorrowedAssets();
+  fetchMostBorrowedCategories();
+  fetchLeastBorrowedAssets();
+  fetchLoanDuration();
+  fetchTopBorrowers();
+  fetchOverdueFrequency();
+  fetchConditionChanges();
+  fetchStaffActivity();
+}
+
+function clearReportsDateFilter() {
+  const since = document.getElementById('reports-since-filter');
+  const until = document.getElementById('reports-until-filter');
+  if (since.value === '' && until.value === '') return;
+  since.value = '';
+  until.value = '';
+  fetchAllReports();
+}
+
+function formatDateLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// This Week / This Month / Last 30 Days / This Year / All Time -- same
+// preset-button idea as Audit Log/Notifications' Today/Yesterday, just a
+// wider set of ranges since a usage report is more often read over weeks
+// or months than single days.
+function setReportsDatePreset(which) {
+  const since = document.getElementById('reports-since-filter');
+  const until = document.getElementById('reports-until-filter');
+  const today = new Date();
+
+  if (which === 'all') {
+    since.value = '';
+    until.value = '';
+  } else if (which === 'week') {
+    const start = new Date(today);
+    start.setDate(today.getDate() - today.getDay());
+    since.value = formatDateLocal(start);
+    until.value = formatDateLocal(today);
+  } else if (which === 'month') {
+    since.value = formatDateLocal(new Date(today.getFullYear(), today.getMonth(), 1));
+    until.value = formatDateLocal(today);
+  } else if (which === '30d') {
+    since.value = formatDateLocal(new Date(Date.now() - 29 * 86400000));
+    until.value = formatDateLocal(today);
+  } else if (which === 'year') {
+    since.value = formatDateLocal(new Date(today.getFullYear(), 0, 1));
+    until.value = formatDateLocal(today);
+  }
+  fetchAllReports();
+}
+
+function updateReportsDateFilterUI() {
+  const since = document.getElementById('reports-since-filter');
+  const until = document.getElementById('reports-until-filter');
+  const active = since.value !== '' || until.value !== '';
+  document.getElementById('reports-date-filters').classList.toggle('ring-2', active);
+  document.getElementById('reports-date-filters').classList.toggle('ring-primary/40', active);
+  document.getElementById('reports-date-clear-btn').disabled = !active;
+
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay());
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const yearStart = new Date(today.getFullYear(), 0, 1);
+  const days30Start = new Date(Date.now() - 29 * 86400000);
+  const todayStr = formatDateLocal(today);
+
+  const presetMatches = {
+    'reports-preset-all': since.value === '' && until.value === '',
+    'reports-preset-week': since.value === formatDateLocal(weekStart) && until.value === todayStr,
+    'reports-preset-month': since.value === formatDateLocal(monthStart) && until.value === todayStr,
+    'reports-preset-30d': since.value === formatDateLocal(days30Start) && until.value === todayStr,
+    'reports-preset-year': since.value === formatDateLocal(yearStart) && until.value === todayStr,
+  };
+  Object.keys(presetMatches).forEach(function (id) {
+    document.getElementById(id).classList.toggle('btn-active', presetMatches[id]);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', fetchAllReports);
+
+// --- Keyboard shortcuts (Reports page) ---
+// Just Escape here -- this page has no search box, pagination, or modals
+// to guard against (every report is fetched inline, nothing opens
+// #modal-container), so none of the other tabs' bindings apply. The KPI
+// row above isn't clickable (nothing to filter into), so it doesn't add
+// any bindings either.
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key !== 'Escape') return;
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
+  clearReportsDateFilter();
+});
+</script>
+{% endblock %}

@@ -1,5 +1,17 @@
 from database import get_db_connection
 
+# Stored in staff.locked_until (a plain "%Y-%m-%d %H:%M:%S" string, same
+# column the failed-attempts auto-lockout uses) to represent "locked with
+# no expiry" without a schema change or a separate boolean column. Chosen
+# as the max value strptime/strftime with this format can round-trip
+# rather than datetime.max (which has a microsecond component this format
+# string drops, so it wouldn't compare equal after a round-trip through
+# the database). Both the login lockout check (routes/auth.py) and the
+# admin manual-lock UI (routes/staff.py, staff/_table.html) special-case
+# this exact string rather than showing a nonsense "try again in ~4
+# million minutes" message.
+INDEFINITE_LOCK_UNTIL = "9999-12-31 23:59:59"
+
 # Fallback values only -- the real, admin-editable numbers live in the
 # app_settings table (see migrations/0018_app_settings.sql and
 # routes/staff.py's manage-session-settings endpoints). Used if a key is

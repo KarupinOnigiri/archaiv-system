@@ -22,6 +22,13 @@
     <div class="relative mb-5">
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
+        <div id="audit-date-presets" class="join rounded-lg">
+          <button type="button" id="audit-preset-today" class="join-item btn btn-xs btn-outline"
+                  onclick="setAuditDatePreset('today')">Today</button>
+          <button type="button" id="audit-preset-yesterday" class="join-item btn btn-xs btn-outline"
+                  onclick="setAuditDatePreset('yesterday')">Yesterday</button>
+        </div>
+
         <div id="audit-date-filters" class="join rounded-lg transition-shadow" title="Date range">
           <button type="button" id="audit-date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
                   onclick="clearAuditDateFilter()" aria-label="Clear date range filter" title="Clear date range filter" disabled>
@@ -37,7 +44,7 @@
                  hx-target="#audit-log-table-container"
                  hx-swap="innerHTML"
                  hx-indicator="#table-spinner"
-                 hx-include="#audit-until-filter"
+                 hx-include="#audit-until-filter, #audit-staff-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
           <input type="date" id="audit-until-filter" name="until"
@@ -50,9 +57,39 @@
                  hx-target="#audit-log-table-container"
                  hx-swap="innerHTML"
                  hx-indicator="#table-spinner"
-                 hx-include="#audit-since-filter"
+                 hx-include="#audit-since-filter, #audit-staff-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
+
+        {% if staff.role == "admin" %}
+        <div id="audit-staff-filter-wrap" class="join rounded-lg transition-shadow" title="Staff">
+          <button type="button" id="audit-staff-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearAuditStaffFilter()" aria-label="Clear staff filter" title="Clear staff filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+          </button>
+          <select id="audit-staff-filter" name="staff_id"
+                  aria-label="Filter by staff"
+                  class="select select-bordered select-sm join-item w-44"
+                  hx-get="/api/v1/audit-log/table"
+                  hx-trigger="change"
+                  hx-target="#audit-log-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#table-spinner"
+                  hx-include="#audit-since-filter, #audit-until-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="">All staff</option>
+            {% for s in staff_options %}
+            <option value="{{ s.id }}" {% if request.args.get('staff_id') == s.id | string %}selected{% endif %}>{{ full_name(s.first_name, s.last_name, s.middle_name, s.suffix) }} (@{{ s.username }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <button type="button" id="audit-clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative"
+                onclick="clearAllAuditFilters()" title="Clear filters" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="audit-clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
 
         <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
       </div>
@@ -63,11 +100,52 @@
          hx-trigger="load"
          hx-target="#audit-log-table-container"
          hx-swap="innerHTML"
-         hx-include="#audit-since-filter, #audit-until-filter"
+         hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
          hx-vals='{"limit": {{ limit }}, "offset": {{ offset }} }'>
     </div>
   </div>
 </div>
+
+<!-- Audit log entry detail modal -- opened by clicking any row
+     (audit_log/_table.html's onclick="openAuditLogDetail(this)"), reading
+     the clicked row's own data-* attributes rather than a second request:
+     the table's response already carries every field this shows, the row
+     just doesn't have room to display DETAILS in full. Lives here (once,
+     on the parent page) rather than inside the htmx-swapped partial so
+     it isn't torn down and recreated on every filter/page change. -->
+<dialog id="audit-log-detail-modal" class="modal">
+  <div class="modal-box max-w-lg">
+    <h3 class="font-bold text-lg mb-4">Activity detail</h3>
+    <dl class="space-y-3 text-sm">
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">WHEN</dt>
+        <dd id="audit-detail-when" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">STAFF</dt>
+        <dd id="audit-detail-staff" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">ACTION</dt>
+        <dd class="mt-0.5"><span id="audit-detail-action" class="inline-block px-2 py-0.5 rounded-full bg-base-200 text-xs"></span></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">TARGET</dt>
+        <dd id="audit-detail-target" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">DETAILS</dt>
+        <dd id="audit-detail-details" class="mt-0.5 whitespace-pre-wrap break-words text-base-content/80"></dd>
+      </div>
+    </dl>
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn btn-sm">Close</button>
+      </form>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <style>
 .htmx-indicator { opacity: 0; }
@@ -75,22 +153,111 @@
 </style>
 
 <script>
+function openAuditLogDetail(rowEl) {
+  document.getElementById('audit-detail-when').textContent = rowEl.dataset.when;
+  document.getElementById('audit-detail-staff').textContent = rowEl.dataset.staff;
+  document.getElementById('audit-detail-action').textContent = rowEl.dataset.action;
+  document.getElementById('audit-detail-target').textContent = rowEl.dataset.target;
+  document.getElementById('audit-detail-details').textContent = rowEl.dataset.details;
+  document.getElementById('audit-log-detail-modal').showModal();
+}
+
+function formatDateLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Prefer htmx's own trigger API over a raw dispatchEvent -- more reliable
+// across htmx versions/config than relying on native event bubbling.
+function fireHtmxChange(el) {
+  if (window.htmx) {
+    htmx.trigger(el, 'change');
+  } else {
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function setAuditDatePreset(which) {
+  const since = document.getElementById('audit-since-filter');
+  const until = document.getElementById('audit-until-filter');
+  const target = new Date();
+  if (which === 'yesterday') target.setDate(target.getDate() - 1);
+  const dateStr = formatDateLocal(target);
+  since.value = dateStr;
+  until.value = dateStr;
+  fireHtmxChange(since);
+}
+
 function clearAuditDateFilter() {
   const since = document.getElementById('audit-since-filter');
   const until = document.getElementById('audit-until-filter');
   if (since.value === '' && until.value === '') return;
   since.value = '';
   until.value = '';
-  since.dispatchEvent(new Event('change', { bubbles: true }));
+  fireHtmxChange(since);
+}
+
+// No-op (rather than missing) when the staff filter isn't in the DOM at
+// all -- non-admins never get the dropdown (see audit_log_page()), so
+// updateAuditFilterUI()/clearAllAuditFilters() can call this unconditionally
+// without an admin-only guard of their own.
+function clearAuditStaffFilter() {
+  const staffFilter = document.getElementById('audit-staff-filter');
+  if (!staffFilter || staffFilter.value === '') return;
+  staffFilter.value = '';
+  fireHtmxChange(staffFilter);
+}
+
+// Clears date range and staff together in one request, rather than
+// clearAuditDateFilter()'s single fireHtmxChange triggering one request and
+// clearAuditStaffFilter() triggering a second right after.
+function clearAllAuditFilters() {
+  const since = document.getElementById('audit-since-filter');
+  const until = document.getElementById('audit-until-filter');
+  const staffFilter = document.getElementById('audit-staff-filter');
+  const dateActive = since.value !== '' || until.value !== '';
+  const staffActive = !!(staffFilter && staffFilter.value !== '');
+  if (!dateActive && !staffActive) return;
+  since.value = '';
+  until.value = '';
+  if (staffFilter) staffFilter.value = '';
+  fireHtmxChange(since);
 }
 
 function updateAuditFilterUI() {
   const since = document.getElementById('audit-since-filter');
   const until = document.getElementById('audit-until-filter');
+  const staffFilter = document.getElementById('audit-staff-filter');
   const dateActive = since.value !== '' || until.value !== '';
+  const staffActive = !!(staffFilter && staffFilter.value !== '');
+
   document.getElementById('audit-date-filters').classList.toggle('ring-2', dateActive);
   document.getElementById('audit-date-filters').classList.toggle('ring-primary/40', dateActive);
   document.getElementById('audit-date-filter-clear-btn').disabled = !dateActive;
+
+  const staffFilterWrap = document.getElementById('audit-staff-filter-wrap');
+  if (staffFilterWrap) {
+    staffFilterWrap.classList.toggle('ring-2', staffActive);
+    staffFilterWrap.classList.toggle('ring-primary/40', staffActive);
+    document.getElementById('audit-staff-filter-clear-btn').disabled = !staffActive;
+  }
+
+  const activeCount = (dateActive ? 1 : 0) + (staffActive ? 1 : 0);
+  const clearBtn = document.getElementById('audit-clear-filters-btn');
+  clearBtn.classList.toggle('hidden', activeCount === 0);
+  document.getElementById('audit-clear-filters-count').textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+
+  const today = formatDateLocal(new Date());
+  const yesterday = formatDateLocal(new Date(Date.now() - 86400000));
+  const isToday = since.value === today && until.value === today;
+  const isYesterday = since.value === yesterday && until.value === yesterday;
+  document.getElementById('audit-preset-today').classList.toggle('btn-active', isToday);
+  document.getElementById('audit-preset-yesterday').classList.toggle('btn-active', isYesterday);
 }
 
 document.addEventListener('htmx:configRequest', function (evt) {
@@ -99,7 +266,7 @@ document.addEventListener('htmx:configRequest', function (evt) {
   try {
     const params = evt.detail.parameters || {};
     const url = new URL(window.location.href);
-    ['since', 'until', 'limit', 'offset'].forEach(function (key) {
+    ['since', 'until', 'staff_id', 'limit', 'offset'].forEach(function (key) {
       if (params[key] !== undefined && params[key] !== '') {
         url.searchParams.set(key, params[key]);
       } else {
@@ -113,6 +280,54 @@ document.addEventListener('htmx:configRequest', function (evt) {
 document.addEventListener('htmx:afterSwap', function (evt) {
   if (evt.target && evt.target.id === 'audit-log-table-container') {
     updateAuditFilterUI();
+  }
+});
+
+// --- Keyboard shortcuts (Activity Log page) ---
+// Same isTypingTarget/isModalOpen guard pattern as every other tab
+// (assets/members/staff/transactions): shortcuts back off while typing in
+// a form control or while a modal is open, so they never hijack normal
+// typing or fire "through" a modal into the page behind it.
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  const detailModal = document.getElementById('audit-log-detail-modal');
+  return !!(container && container.querySelector(':scope > .modal')) || !!(detailModal && detailModal.open);
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
+  // pagination button is currently in the table footer.
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const container = document.getElementById('audit-log-table-container');
+    if (!container) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const btn = container.querySelector('button[aria-label="' + label + '"]');
+    if (btn && !btn.disabled) {
+      e.preventDefault();
+      btn.click();
+    }
+    return;
+  }
+
+  // Escape — with no modal open, reset every filter (date range, staff)
+  // back to blank and blur whatever was focused, same as clicking "Clear
+  // filters" by hand. When a modal *is* open, the shared Escape handler
+  // in base.html closes it instead -- this stays out of the way then.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllAuditFilters();
   }
 });
 

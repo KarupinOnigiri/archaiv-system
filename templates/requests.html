@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Approvals</h1>
+      <p class="text-sm text-base-content/50 mt-1">
+        {% if staff.role in ["admin", "in_charge"] %}
+          Every request waiting on review -- member unrestrictions and admin account deactivations.
+        {% else %}
+          Requests you've filed, plus any admin-deactivation requests your role can act on.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div class="flex items-center justify-between gap-4 mb-5">
+      <div role="tablist" class="tabs tabs-boxed w-fit">
+        <a role="tab" id="requests-tab-unrestriction" class="tab tab-active" onclick="switchRequestsTab('unrestriction')">
+          Unrestriction Requests
+          <span id="unrestriction-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
+        </a>
+        <a role="tab" id="requests-tab-deactivation" class="tab" onclick="switchRequestsTab('deactivation')">
+          Admin Deactivations
+          <span id="deactivation-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
+        </a>
+      </div>
+      <span id="requests-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
+    </div>
+
+    <!-- Unrestriction Requests panel -->
+    <div id="requests-panel-unrestriction">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <select id="unrestriction-status-filter" name="status"
+                aria-label="Filter unrestriction requests by status"
+                class="select select-bordered select-sm w-40"
+                hx-get="/api/v1/unrestriction-requests"
+                hx-trigger="change"
+                hx-target="#unrestriction-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#requests-spinner"
+                hx-include="#unrestriction-mine-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="pending" selected>Pending</option>
+          <option value="approved">Approved</option>
+          <option value="denied">Denied</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="">All statuses</option>
+        </select>
+        {% if staff.role in ["admin", "in_charge"] %}
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input type="checkbox" id="unrestriction-mine-filter" name="mine" value="1"
+                 class="toggle toggle-sm"
+                 hx-get="/api/v1/unrestriction-requests"
+                 hx-trigger="change"
+                 hx-target="#unrestriction-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#requests-spinner"
+                 hx-include="#unrestriction-status-filter"
+                 hx-vals='js:{"limit": {{ limit }}, "offset": 0, "mine": event.target.checked ? "1" : "0"}'>
+          Only mine
+        </label>
+        {% endif %}
+      </div>
+
+      <div id="unrestriction-table-container"
+           hx-get="/api/v1/unrestriction-requests"
+           hx-trigger="load"
+           hx-target="#unrestriction-table-container"
+           hx-swap="innerHTML"
+           hx-indicator="#requests-spinner"
+           hx-vals='{"limit": {{ limit }}, "offset": 0, "status": "pending"}'>
+      </div>
+    </div>
+
+    <!-- Admin Deactivation Requests panel -->
+    <div id="requests-panel-deactivation" class="hidden">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <select id="deactivation-status-filter" name="status"
+                aria-label="Filter admin deactivation requests by status"
+                class="select select-bordered select-sm w-40"
+                hx-get="/api/v1/admin-deactivation-requests"
+                hx-trigger="change"
+                hx-target="#deactivation-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#requests-spinner"
+                hx-include="#deactivation-mine-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="pending" selected>Pending</option>
+          <option value="approved">Approved</option>
+          <option value="denied">Denied</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="">All statuses</option>
+        </select>
+        {% if staff.role in ["admin", "in_charge"] %}
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input type="checkbox" id="deactivation-mine-filter" name="mine" value="1"
+                 class="toggle toggle-sm"
+                 hx-get="/api/v1/admin-deactivation-requests"
+                 hx-trigger="change"
+                 hx-target="#deactivation-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#requests-spinner"
+                 hx-include="#deactivation-status-filter"
+                 hx-vals='js:{"limit": {{ limit }}, "offset": 0, "mine": event.target.checked ? "1" : "0"}'>
+          Only mine
+        </label>
+        {% endif %}
+      </div>
+
+      <div id="deactivation-table-container"
+           hx-get="/api/v1/admin-deactivation-requests"
+           hx-trigger="load"
+           hx-target="#deactivation-table-container"
+           hx-swap="innerHTML"
+           hx-indicator="#requests-spinner"
+           hx-vals='{"limit": {{ limit }}, "offset": 0, "status": "pending"}'>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="modal-container"></div>
+
+<script>
+// Turns each row's data-created-at into a relative "waiting" label,
+// computed client-side so it stays accurate between refetches without a
+// server round-trip. Pending rows past 3 days get flagged in warning
+// color -- a queue with no aging signal makes a request that's been
+// sitting for two weeks look identical to one filed two minutes ago.
+const REQUEST_AGING_THRESHOLD_DAYS = 3;
+
+function formatWaiting(createdAt) {
+  // SQLite's datetime('now', 'localtime') format, "YYYY-MM-DD HH:MM:SS" --
+  // treated as local time by replacing the space with 'T' so the Date
+  // constructor doesn't parse it as UTC, matching how the rest of this
+  // app renders these timestamps (member/staff-record dates render as
+  // plain local strings, not iso-with-Z).
+  const then = new Date(createdAt.replace(' ', 'T'));
+  if (isNaN(then.getTime())) return { text: createdAt, days: 0 };
+  const diffMs = Date.now() - then.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const diffDays = diffHours / 24;
+  let text;
+  if (diffHours < 1) text = 'just now';
+  else if (diffHours < 24) text = `${Math.floor(diffHours)}h ago`;
+  else text = `${Math.floor(diffDays)}d ago`;
+  return { text, days: diffDays };
+}
+
+function renderWaitingBadges() {
+  document.querySelectorAll('.request-waiting-badge').forEach(function (el) {
+    const createdAt = el.dataset.createdAt;
+    if (!createdAt) return;
+    const isPending = el.dataset.pending === 'true';
+    const { text, days } = formatWaiting(createdAt);
+    el.textContent = text;
+    el.classList.toggle('text-warning', isPending && days >= REQUEST_AGING_THRESHOLD_DAYS);
+    el.classList.toggle('font-medium', isPending && days >= REQUEST_AGING_THRESHOLD_DAYS);
+    if (isPending && days >= REQUEST_AGING_THRESHOLD_DAYS) {
+      el.title = `Filed ${Math.floor(days)} day${Math.floor(days) === 1 ? '' : 's'} ago and still pending`;
+    }
+  });
+}
+
+// Keeps each tab's little count badge in sync with its table's pending
+// count -- only meaningful while that tab's filter is actually "Pending"
+// (the common/default case), so it's hidden entirely once someone switches
+// that tab's filter to something else rather than showing a stale number.
+document.addEventListener('htmx:afterSwap', function (evt) {
+  const container = evt.target;
+  let badgeId, filterId;
+  if (container.id === 'unrestriction-table-container') {
+    badgeId = 'unrestriction-tab-badge';
+    filterId = 'unrestriction-status-filter';
+  } else if (container.id === 'deactivation-table-container') {
+    badgeId = 'deactivation-tab-badge';
+    filterId = 'deactivation-status-filter';
+  } else {
+    return;
+  }
+  const badge = document.getElementById(badgeId);
+  const filter = document.getElementById(filterId);
+  const table = container.querySelector('table');
+  const count = table ? parseInt(table.dataset.totalCount || '0', 10) : 0;
+  if (filter.value === 'pending' && count > 0) {
+    badge.textContent = count;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+});
+
+function switchRequestsTab(tab) {
+  document.getElementById('requests-tab-unrestriction').classList.toggle('tab-active', tab === 'unrestriction');
+  document.getElementById('requests-tab-deactivation').classList.toggle('tab-active', tab === 'deactivation');
+  document.getElementById('requests-panel-unrestriction').classList.toggle('hidden', tab !== 'unrestriction');
+  document.getElementById('requests-panel-deactivation').classList.toggle('hidden', tab !== 'deactivation');
+}
+
+// Shared POST-and-refresh helper for every approve/deny/cancel action below --
+// mirrors staffAction() on the Staff page (same fetch+CSRF+reload shape). A
+// full reload (rather than an htmx table refresh) is deliberate: approving/
+// denying one request can change the *other* tab's contents too (e.g. an
+// admin deactivation finalizing changes who counts as an eligible approver
+// elsewhere), and the sidebar's Approvals badge needs to update either way.
+async function requestAction(url, body, successMessage) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const result = await res.json();
+
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+      return;
+    }
+
+    if (!res.ok) {
+      showToast(result.error || "That action couldn't be completed", 'error');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage || result.message, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showToast("That action couldn't be completed", 'error');
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+// Reads the request-row's own leftmost cell (member name / @target
+// username, both already rendered) rather than re-fetching anything, so
+// the confirm dialog can name who it's actually acting on.
+function rowSubjectName(triggerEl) {
+  const cell = triggerEl.closest('tr').querySelector('td:first-child');
+  return cell ? cell.innerText.trim() : 'this request';
+}
+
+// Plain yes/no confirm -- used for Approve and Cancel. Same backdrop/box
+// shape as confirmBulkDeactivate() on the Staff/Members pages, just
+// generalized (icon, colors, labels all passed in) since this needs four
+// different flavors of it (approve x2, cancel x2) rather than one.
+function showConfirmDialog({ iconPath, iconClass, title, message, confirmLabel, confirmClass, onConfirm }) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+  backdrop.innerHTML = `
+    <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="request-confirm-title">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full ${iconClass}/10 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 ${iconClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${iconPath}</svg>
+        </div>
+        <div class="min-w-0">
+          <h3 id="request-confirm-title" class="font-semibold">${escapeHtml(title)}</h3>
+          <p class="text-sm text-base-content/60 mt-1">${escapeHtml(message)}</p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" id="request-confirm-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+        <button type="button" id="request-confirm-ok-btn" class="btn ${confirmClass} btn-sm">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  function close() {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKeydown);
+  }
+  function onKeydown(e) {
+    if (e.key === 'Escape') close();
+  }
+  document.addEventListener('keydown', onKeydown);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('#request-confirm-cancel-btn').addEventListener('click', close);
+  backdrop.querySelector('#request-confirm-ok-btn').addEventListener('click', () => { close(); onConfirm(); });
+  backdrop.querySelector('#request-confirm-ok-btn').focus();
+}
+
+// Same shape as showConfirmDialog, plus a reason textarea -- used for Deny.
+// When reasonRequired is true the confirm button stays disabled until
+// something's typed, rather than letting an empty reason through and
+// having the server reject it after the dialog's already closed.
+function showReasonDialog({ iconPath, iconClass, title, message, placeholder, reasonRequired, confirmLabel, confirmClass, onConfirm }) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+  backdrop.innerHTML = `
+    <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-sm p-5" role="alertdialog" aria-modal="true" aria-labelledby="request-reason-title">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full ${iconClass}/10 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 ${iconClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${iconPath}</svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h3 id="request-reason-title" class="font-semibold">${escapeHtml(title)}</h3>
+          <p class="text-sm text-base-content/60 mt-1">${escapeHtml(message)}</p>
+          <textarea id="request-reason-input" rows="3"
+                    placeholder="${escapeHtml(placeholder)}"
+                    class="textarea textarea-bordered w-full mt-3 text-sm"></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="button" id="request-reason-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+        <button type="button" id="request-reason-ok-btn" class="btn ${confirmClass} btn-sm" ${reasonRequired ? 'disabled' : ''}>${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  const textarea = backdrop.querySelector('#request-reason-input');
+  const okBtn = backdrop.querySelector('#request-reason-ok-btn');
+
+  if (reasonRequired) {
+    textarea.addEventListener('input', () => { okBtn.disabled = textarea.value.trim() === ''; });
+  }
+
+  function close() {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKeydown);
+  }
+  function onKeydown(e) {
+    if (e.key === 'Escape') close();
+  }
+  document.addEventListener('keydown', onKeydown);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('#request-reason-cancel-btn').addEventListener('click', close);
+  okBtn.addEventListener('click', () => {
+    const reason = textarea.value.trim();
+    if (reasonRequired && !reason) return;
+    close();
+    onConfirm(reason);
+  });
+  textarea.focus();
+}
+
+const ICON_CHECK = '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>';
+const ICON_X = '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>';
+const ICON_WARN = '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>';
+
+function approveUnrestrictionRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showConfirmDialog({
+    iconPath: ICON_CHECK, iconClass: 'text-success',
+    title: 'Approve unrestriction request?',
+    message: `${name}'s restriction is lifted immediately once approved.`,
+    confirmLabel: 'Approve', confirmClass: 'btn-success',
+    onConfirm: () => requestAction(`/api/v1/unrestriction-requests/${id}/approve`, {}, 'Request approved, member unrestricted'),
+  });
+}
+
+function denyUnrestrictionRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showReasonDialog({
+    iconPath: ICON_X, iconClass: 'text-error',
+    title: 'Deny unrestriction request?',
+    message: `Explain why ${name}'s restriction should stay in place -- this is shown to the requester.`,
+    placeholder: 'Reason for denying (required)',
+    reasonRequired: true, confirmLabel: 'Deny', confirmClass: 'btn-error',
+    onConfirm: (reason) => requestAction(`/api/v1/unrestriction-requests/${id}/deny`, { review_notes: reason }, 'Request denied'),
+  });
+}
+
+function cancelUnrestrictionRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showConfirmDialog({
+    iconPath: ICON_WARN, iconClass: 'text-warning',
+    title: 'Cancel this request?',
+    message: `Withdraws your unrestriction request for ${name}. You can file a new one later if needed.`,
+    confirmLabel: 'Cancel Request', confirmClass: 'btn-warning',
+    onConfirm: () => requestAction(`/api/v1/unrestriction-requests/${id}/cancel`, {}, 'Request cancelled'),
+  });
+}
+
+function approveDeactivationRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showConfirmDialog({
+    iconPath: ICON_CHECK, iconClass: 'text-success',
+    title: 'Approve deactivation request?',
+    message: `Records your approval for deactivating ${name}. Their account is deactivated once enough approvals come in.`,
+    confirmLabel: 'Approve', confirmClass: 'btn-success',
+    onConfirm: () => requestAction(`/api/v1/admin-deactivation-requests/${id}/approve`, {}, 'Approval recorded'),
+  });
+}
+
+function denyDeactivationRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showReasonDialog({
+    iconPath: ICON_X, iconClass: 'text-error',
+    title: 'Deny deactivation request?',
+    message: `A single denial cancels this request outright for ${name} -- no consensus needed.`,
+    placeholder: 'Reason for denying (optional)',
+    reasonRequired: false, confirmLabel: 'Deny', confirmClass: 'btn-error',
+    onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/deny`, { denial_reason: reason || null }, 'Request denied'),
+  });
+}
+
+function cancelDeactivationRequest(id, btn) {
+  const name = rowSubjectName(btn);
+  showConfirmDialog({
+    iconPath: ICON_WARN, iconClass: 'text-warning',
+    title: 'Cancel this request?',
+    message: `Withdraws your deactivation request for ${name}. You can file a new one later if needed.`,
+    confirmLabel: 'Cancel Request', confirmClass: 'btn-warning',
+    onConfirm: () => requestAction(`/api/v1/admin-deactivation-requests/${id}/deny`, {}, 'Request cancelled'),
+  });
+}
+
+// --- Keyboard shortcuts (Approvals page) ---
+// Same isTypingTarget/isModalOpen guard pattern as every other tab. This
+// page had none of these before -- ArrowLeft/Right and Escape are scoped
+// to whichever of the two tabs (Unrestriction / Deactivation) is
+// currently visible, read from the DOM rather than tracked separately so
+// it can never drift out of sync with what switchRequestsTab() last set.
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  return !!(container && container.querySelector(':scope > .modal'));
+}
+
+function activeRequestsTab() {
+  const unrestrictionPanel = document.getElementById('requests-panel-unrestriction');
+  return unrestrictionPanel && !unrestrictionPanel.classList.contains('hidden') ? 'unrestriction' : 'deactivation';
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // ArrowLeft / ArrowRight — previous / next page, on whichever tab is
+  // currently showing.
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const tab = activeRequestsTab();
+    const container = document.getElementById(`${tab}-table-container`);
+    if (!container) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const btn = container.querySelector('button[aria-label="' + label + '"]');
+    if (btn && !btn.disabled) {
+      e.preventDefault();
+      btn.click();
+    }
+    return;
+  }
+
+  // Escape — with no modal open, reset the current tab's filters back to
+  // their default (status = Pending, "Only mine" off) and blur whatever
+  // was focused -- this page has no single combined "clear filters"
+  // button the way Assets/Members/Audit Log do, so Escape restores the
+  // default view instead of blanking it, but the intent (Escape = "get
+  // back to a clean slate") matches. When a modal *is* open, the shared
+  // Escape handler in base.html closes it instead.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    const tab = activeRequestsTab();
+    const statusFilter = document.getElementById(`${tab}-status-filter`);
+    const mineFilter = document.getElementById(`${tab}-mine-filter`);
+    if (!statusFilter) return;
+    const alreadyDefault = statusFilter.value === 'pending' && (!mineFilter || !mineFilter.checked);
+    if (alreadyDefault) return;
+    statusFilter.value = 'pending';
+    if (mineFilter) mineFilter.checked = false;
+    statusFilter.dispatchEvent(new Event('change'));
+  }
+});
+</script>
+{% endblock %}

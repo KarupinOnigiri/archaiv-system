@@ -1,0 +1,143 @@
+<div class="space-y-2">
+  {% for r in reports %}
+  <div class="border border-base-300 rounded-xl p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="badge badge-sm capitalize
+                       {% if r.category == 'bug' %}badge-error
+                       {% elif r.category == 'idea' %}badge-info
+                       {% else %}badge-ghost{% endif %}">{{ r.category }}</span>
+          {% if r.status == 'resolved' %}
+          <span class="badge badge-sm badge-success">Resolved</span>
+          {% endif %}
+          <span class="text-xs text-base-content/50">{{ full_name(r.first_name, r.last_name) }} (@{{ r.username }})</span>
+          <span class="text-xs text-base-content/30">&middot;</span>
+          <span class="text-xs text-base-content/40">{{ r.created_at | format_date }}</span>
+          {% if r.page_path %}
+          <span class="text-xs text-base-content/30">&middot;</span>
+          <span class="text-xs text-base-content/40 font-mono">{{ r.page_path }}</span>
+          {% endif %}
+        </div>
+        <p class="text-sm text-base-content mt-2 whitespace-pre-wrap break-words">{{ r.message }}</p>
+
+        {% set images = images_by_report.get(r.id, []) %}
+        {% if images %}
+        <div class="flex flex-wrap gap-2 mt-3">
+          {% for img in images %}
+          <button type="button" onclick="openFeedbackImageLightbox('{{ url_for('static', filename=img.image_path) }}')"
+                  class="block w-20 h-20 rounded-lg overflow-hidden border border-base-300 hover:opacity-80 transition-opacity">
+            <img src="{{ url_for('static', filename=img.image_path) }}" alt="Screenshot" class="w-full h-full object-cover">
+          </button>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if r.status == 'resolved' and r.resolved_at %}
+        <p class="text-xs text-base-content/40 mt-2">Resolved {{ r.resolved_at }}</p>
+        {% endif %}
+      </div>
+      <div class="shrink-0">
+        {% if r.status == 'open' %}
+        <button type="button" class="btn btn-outline btn-xs"
+                onclick="feedbackAction('/api/v1/feedback/{{ r.id }}/resolve', 'Marked resolved')">
+          Mark resolved
+        </button>
+        {% else %}
+        <button type="button" class="btn btn-ghost btn-xs"
+                onclick="feedbackAction('/api/v1/feedback/{{ r.id }}/reopen', 'Reopened')">
+          Reopen
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="flex items-center justify-center text-sm text-base-content/50 py-16">
+    {% if status == 'open' %}No open feedback -- all caught up.{% else %}No feedback matches these filters.{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+     members/staff/transactions/notifications. -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/feedback/table"
+            hx-trigger="change"
+            hx-target="#feedback-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#feedback-status-filter, #feedback-category-filter"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }}
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            aria-label="Previous page"
+            hx-get="/api/v1/feedback/table"
+            hx-target="#feedback-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#feedback-status-filter, #feedback-category-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/feedback/table"
+                hx-target="#feedback-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#feedback-status-filter, #feedback-category-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            aria-label="Next page"
+            hx-get="/api/v1/feedback/table"
+            hx-target="#feedback-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#feedback-status-filter, #feedback-category-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>

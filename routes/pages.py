@@ -153,7 +153,7 @@ def members_page():
 
 
 @pages_bp.route("/staff")
-@login_required
+@roles_required("admin")
 def staff_page():
     conn = get_db_connection()
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
@@ -198,6 +198,8 @@ def staff_page():
             "offset": 0,
             "show_inactive": False,
             "status": "",
+            "sort_by": "name",
+            "sort_dir": "asc",
         }
 
     # NOTE: matches templates/staff.html (top-level, no subfolder) --
@@ -318,7 +320,69 @@ def audit_log_page():
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 25, 0
-    return render_template("audit_log.html", staff=g.staff, limit=limit, offset=offset)
+
+    # Only admins can actually filter by staff_id (see get_audit_log_context
+    # -- non-admins get their own entries regardless of what they pass), so
+    # the dropdown that lets them pick one is populated here for admins only
+    # rather than querying every staff account for a control most viewers
+    # would never see.
+    staff_options = []
+    if g.staff["role"] == "admin":
+        conn = get_db_connection()
+        staff_options = conn.execute(
+            """
+            SELECT staff.id, staff.username,
+                   members.first_name, members.last_name, members.middle_name, members.suffix
+            FROM staff
+            JOIN members ON staff.member_id = members.id
+            ORDER BY members.last_name, members.first_name
+            """
+        ).fetchall()
+        conn.close()
+
+    return render_template(
+        "audit_log.html",
+        staff=g.staff,
+        limit=limit,
+        offset=offset,
+        staff_options=staff_options,
+    )
+
+
+@pages_bp.route("/requests")
+@login_required
+def requests_page():
+    """Approvals queue -- unrestriction requests and admin-deactivation
+    requests. The sidebar's "Approvals" link has pointed here all along
+    (base.html's nav_items), but until now nothing was actually
+    registered at this path, so it 404'd; the two request types were
+    otherwise only reachable by hitting their JSON list endpoints
+    directly with no page ever linking to them.
+
+    Not role-gated beyond login: list_unrestriction_requests and
+    list_admin_deactivation_requests (routes/requests.py, routes/staff.py)
+    each already scope what a given role sees -- their own filed requests
+    plus whichever admin-deactivation tier matches their role, vs.
+    everything for admin/in_charge -- so every role has something
+    relevant here, just not the same rows."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        limit, offset = 20, 0
+    return render_template("requests.html", staff=g.staff, limit=limit, offset=offset)
+
+
+@pages_bp.route("/reports")
+@roles_required("admin", "in_charge")
+def reports_page():
+    """Just the page shell -- every number on it comes from the 7 stats.py
+    endpoints (most/least-borrowed assets, most-borrowed categories, loan
+    duration, top borrowers, overdue frequency, condition changes), all of
+    which already existed as working JSON APIs with nothing ever rendering
+    them. Fetched and rendered client-side (see reports.html's own script),
+    same as frontend_roadmap.md's Phase 5 note calls for -- no htmx here,
+    this is the one page in the app where that's the right call, since
+    there's no HTML partial to swap in, just JSON to turn into bars/tables."""
+    return render_template("reports.html", staff=g.staff)
 
 
 @pages_bp.route("/system")
@@ -333,3 +397,17 @@ def system_page():
     newly added alongside them for lockout/notifications), so there's no
     new settings-storage logic here, only the landing page for it."""
     return render_template("system.html", staff=g.staff)
+
+
+@pages_bp.route("/feedback")
+@roles_required("admin")
+def feedback_page():
+    """Admin-only tab for reviewing in-app bug/issue reports submitted via
+    the account dropdown's "Give feedback" row (routes/feedback.py:
+    submit_feedback). The list itself loads via htmx (see feedback.html),
+    same cold-load pattern as Notifications -- this route only needs
+    limit/offset to seed the container's initial hx-vals."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        limit, offset = 20, 0
+    return render_template("feedback.html", staff=g.staff, limit=limit, offset=offset)

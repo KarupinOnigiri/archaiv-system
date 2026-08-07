@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Feedback &amp; bug reports</h1>
+      <p class="text-sm text-base-content/50 mt-1">Submitted by staff from the account dropdown's "Give feedback" row.</p>
+    </div>
+  </div>
+
+  <!-- Toolbar + list -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div class="relative mb-5">
+      <div id="filter-row" class="flex flex-wrap items-center gap-3">
+
+        <select id="feedback-status-filter" name="status"
+                aria-label="Filter by status"
+                class="select select-bordered select-sm w-36"
+                hx-get="/api/v1/feedback/table"
+                hx-trigger="change"
+                hx-target="#feedback-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#feedback-category-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="open" selected>Open</option>
+          <option value="resolved">Resolved</option>
+          <option value="all">All</option>
+        </select>
+
+        <select id="feedback-category-filter" name="category"
+                aria-label="Filter by category"
+                class="select select-bordered select-sm w-36"
+                hx-get="/api/v1/feedback/table"
+                hx-trigger="change"
+                hx-target="#feedback-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#feedback-status-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+          <option value="">All categories</option>
+          <option value="bug">Bug</option>
+          <option value="idea">Idea</option>
+          <option value="other">Other</option>
+        </select>
+
+        <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
+      </div>
+    </div>
+
+    <div id="feedback-table-container"
+         hx-get="/api/v1/feedback/table"
+         hx-trigger="load"
+         hx-target="#feedback-table-container"
+         hx-swap="innerHTML"
+         hx-include="#feedback-status-filter, #feedback-category-filter"
+         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }} }'>
+    </div>
+  </div>
+</div>
+
+<!-- Screenshot lightbox -- one shared element, opened by whichever
+     thumbnail was clicked (openFeedbackImageLightbox below), same
+     reasoning as the shared #sidebar-tooltip in base.html: simpler than a
+     per-thumbnail lightbox that'd need its own z-index/backdrop wiring. -->
+<dialog id="feedback-image-lightbox" class="modal">
+  <div class="modal-box max-w-3xl p-0 overflow-hidden bg-transparent shadow-none">
+    <img id="feedback-image-lightbox-img" src="" alt="Feedback screenshot" class="w-full h-auto rounded-2xl">
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<style>
+.htmx-indicator { opacity: 0; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>
+
+<script>
+function openFeedbackImageLightbox(src) {
+  document.getElementById('feedback-image-lightbox-img').src = src;
+  document.getElementById('feedback-image-lightbox').showModal();
+}
+
+async function feedbackAction(url, successMessage) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That action couldn't be completed", 'error');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showToast("That action couldn't be completed", 'error');
+  }
+}
+</script>
+{% endblock %}

@@ -1,6 +1,7 @@
-from flask import Blueprint, jsonify, g, request, render_template, make_response
+from flask import Blueprint, jsonify, g, request, render_template, make_response, url_for
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
+from utils.uploads import validate_image_upload, save_staff_photo, delete_staff_photo
 from services.admin_deactivation_service import (
     determine_approval_tier,
     finalize_if_ready,
@@ -20,12 +21,14 @@ from services.settings_service import (
     get_max_failed_attempts,
     get_lockout_minutes,
     get_due_soon_hours,
+    INDEFINITE_LOCK_UNTIL,
 )
 import sqlite3
 import csv
 import io
 import os
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from extensions import limiter
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -36,9 +39,25 @@ logger = logging.getLogger(__name__)
 
 staff_bp = Blueprint("staff", __name__)
 VALID_ROLES = ("admin", "in_charge", "tool_keeper")
+# Sanity cap on a manual lock's custom duration -- 1 year. Long enough that
+# nobody legitimately needs more (an indefinite lock covers that case
+# directly), short enough to catch a fat-fingered value like "500000"
+# minutes before it silently becomes a de facto indefinite lock that
+# doesn't say so.
+MAX_MANUAL_LOCK_MINUTES = 525600
 
 
 # # # LIST / VIEW ------------------------------------------------------------
+
+# "name" maps to two columns since there's no single stored full-name field
+# -- same convention as members.SORTABLE_COLUMNS.
+SORTABLE_STAFF_COLUMNS = {
+    "name": "members.last_name, members.first_name",
+    "username": "staff.username",
+    "staff_code": "staff.staff_code",
+    "role": "staff.role",
+    "department": "departments.name",
+}
 
 
 def get_staff_table_context(args):
@@ -112,6 +131,23 @@ def get_staff_table_context(args):
         params.append(department_id)
     where_clause = f"WHERE {' AND '.join(where)}" if where else ""
 
+    sort_by = args.get("sort_by", "name")
+    if sort_by not in SORTABLE_STAFF_COLUMNS:
+        return None, (
+            jsonify(
+                {"error": f"sort_by must be one of: {', '.join(SORTABLE_STAFF_COLUMNS)}"}
+            ),
+            400,
+        )
+    sort_dir = args.get("sort_dir", "asc").lower()
+    if sort_dir not in ("asc", "desc"):
+        return None, (jsonify({"error": "sort_dir must be 'asc' or 'desc'"}), 400)
+
+    dir_sql = sort_dir.upper()
+    order_by_sql = ", ".join(
+        f"{col.strip()} {dir_sql}" for col in SORTABLE_STAFF_COLUMNS[sort_by].split(",")
+    )
+
     conn = get_db_connection()
     total_count = conn.execute(
         f"""
@@ -130,13 +166,14 @@ def get_staff_table_context(args):
         SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
                staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
                staff.failed_login_attempts, staff.created_by_staff_id, staff.created_at,
+               staff.photo_path,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.barcode_id, departments.name AS department
         FROM staff
         JOIN members ON staff.member_id = members.id
         JOIN departments ON members.department_id = departments.id
         {where_clause}
-        ORDER BY staff.id
+        ORDER BY {order_by_sql}, staff.id {dir_sql}
         LIMIT ? OFFSET ?
         """,
         params + [limit, offset],
@@ -150,11 +187,13 @@ def get_staff_table_context(args):
         "offset": offset,
         "show_inactive": show_inactive,
         "status": status or "",
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
     }, None
 
 
 @staff_bp.route("/staff")
-@login_required
+@roles_required("admin")
 def view_staff():
     context, error = get_staff_table_context(request.args)
     if error:
@@ -186,6 +225,7 @@ def get_staff_by_id(id):
         """
         SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
                staff.assigned_end, staff.is_active, staff.created_by_staff_id, staff.created_at,
+               staff.photo_path,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                members.barcode_id, departments.name AS department
         FROM staff
@@ -201,6 +241,68 @@ def get_staff_by_id(id):
         return jsonify({"error": "Staff not found"}), 404
 
     return jsonify(dict(staff))
+
+
+@staff_bp.route("/staff/<int:id>/profile")
+@login_required
+def staff_profile(id):
+    """Renders the read-only profile modal opened by clicking a staff
+    table row -- mirrors members_bp.member_profile: staff details plus a
+    shell that the modal's own JS fills in by calling the existing
+    /api/v1/audit-log?staff_id=<id> endpoint for an Activity tab. That
+    endpoint only actually filters by staff_id for admin callers (see
+    get_audit_log_context above) -- non-admins get their own entries back
+    regardless of staff_id, which would look like the wrong person's
+    activity, so the Activity tab is admin-only here and the template
+    just omits it for everyone else."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
+               staff.assigned_start, staff.assigned_end, staff.is_active, staff.locked_until,
+               staff.created_at, staff.photo_path,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id, departments.name AS department
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+
+    # Same idea as members_bp.member_profile's pending_unrestriction_request:
+    # surfaces an already-pending deactivation request against this admin
+    # right on their profile, rather than only being discoverable via
+    # Approvals -- the create endpoint already 409s on a duplicate, this
+    # just makes what it already knows visible.
+    pending_deactivation_request = None
+    if staff_member is not None and staff_member["role"] == "admin" and staff_member["is_active"]:
+        pending_deactivation_request = conn.execute(
+            """
+            SELECT admin_deactivation_requests.id, admin_deactivation_requests.reason,
+                   admin_deactivation_requests.created_at, admin_deactivation_requests.required_tier,
+                   admin_deactivation_requests.required_approvals,
+                   staff.username AS requested_by_username,
+                   (SELECT COUNT(*) FROM admin_deactivation_approvals
+                    WHERE admin_deactivation_approvals.request_id = admin_deactivation_requests.id
+                   ) AS approvals_received
+            FROM admin_deactivation_requests
+            JOIN staff ON admin_deactivation_requests.requested_by_staff_id = staff.id
+            WHERE admin_deactivation_requests.target_staff_id = ? AND admin_deactivation_requests.status = 'pending'
+            """,
+            (id,),
+        ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    return render_template(
+        "staff/_profile_modal.html",
+        staff_member=staff_member,
+        pending_deactivation_request=pending_deactivation_request,
+    )
 
 
 def get_audit_log_context(args, staff):
@@ -249,8 +351,16 @@ def get_audit_log_context(args, staff):
         error = validate_date_string(until, "until")
         if error:
             return None, error
-        filters.append("audit_log.created_at <= ?")
-        params.append(until)
+        # created_at is a full timestamp, but `until` is a bare date, so a
+        # plain <= comparison as strings excludes the entire day named by
+        # `until` (e.g. "2026-08-06 14:32:00" <= "2026-08-06" is false).
+        # Compare against the start of the *next* day instead so the named
+        # day is fully included.
+        until_exclusive = (
+            datetime.strptime(until, "%Y-%m-%d") + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        filters.append("audit_log.created_at < ?")
+        params.append(until_exclusive)
 
     limit, offset, error = parse_pagination_params(args)
     if error:
@@ -702,26 +812,196 @@ def change_password_submit():
     return jsonify({"message": "Password changed successfully"})
 
 
-@staff_bp.route("/staff/<int:id>/reset-password", methods=["POST"])
-@roles_required("admin")
-@limiter.limit("10 per minute; 30 per hour")
-def reset_password_submit(id):
-    """Admin-initiated reset for forgotten passwords. No current password
-    needed since this is the recovery path — but every existing session
-    for the account is killed, since a reset usually means the account
-    may have been locked out or compromised."""
+# # # NOTIFICATION PREFERENCES --------------------------------------------
+# Personal display prefs, not the admin-wide due_soon_hours threshold
+# above (that controls WHEN an alert is generated at all; this controls
+# whether *this* staff member sees it once generated) -- see
+# 0022_staff_notification_prefs.sql and services/notification_service.py's
+# PREF_FILTER_SQL.
+
+_NOTIFY_PREF_COLUMNS = ("notify_due_soon", "notify_overdue", "notify_requests")
+
+
+@staff_bp.route("/staff/notification-prefs", methods=["POST"])
+@login_required
+def update_own_notification_prefs():
     data, error = get_json_or_error()
     if error:
         return error
 
-    new_password = data.get("new_password")
-    if not new_password:
-        return jsonify({"error": "Missing required field: new_password"}), 400
+    updates = {}
+    for col in _NOTIFY_PREF_COLUMNS:
+        if col in data:
+            if not isinstance(data[col], bool):
+                return jsonify({"error": f"{col} must be true or false"}), 400
+            updates[col] = 1 if data[col] else 0
 
-    error = validate_password_strength(new_password, "new_password")
-    if error:
-        return error
+    if not updates:
+        return jsonify({"error": "No recognized preference fields provided"}), 400
 
+    conn = get_db_connection()
+    try:
+        set_sql = ", ".join(f"{col} = ?" for col in updates)
+        conn.execute(
+            f"UPDATE staff SET {set_sql} WHERE id = ?",
+            (*updates.values(), g.staff["id"]),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return jsonify({"message": "Notification preferences updated", **updates})
+
+
+# # # PROFILE PHOTO -----------------------------------------------------
+
+
+@staff_bp.route("/staff/photo", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute; 30 per hour")
+def upload_own_photo():
+    """Self-service profile photo upload/replace, for the camera button on
+    the My Account modal. Mirrors the asset image replace flow in
+    routes/assets.py (edit_asset): validate before touching anything,
+    save the new file, update the DB, and only delete the old file once
+    that update has actually committed -- so a failure partway through
+    never leaves the staff record pointing at a file that's already
+    gone."""
+    photo_file = request.files.get("photo") if request.files else None
+    img_error = validate_image_upload(photo_file)
+    if img_error:
+        return jsonify({"error": img_error}), 400
+
+    saved_path, img_error = save_staff_photo(photo_file, g.staff["username"])
+    if img_error:
+        return jsonify({"error": img_error}), 400
+
+    old_photo_path = g.staff["photo_path"]
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE staff SET photo_path = ? WHERE id = ?",
+            (saved_path, g.staff["id"]),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        # The DB update never landed, so the just-saved file would
+        # otherwise be an orphan nothing ever points to or cleans up.
+        delete_staff_photo(saved_path)
+        raise
+    finally:
+        conn.close()
+
+    delete_staff_photo(old_photo_path)
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_own_photo",
+        target_table="staff",
+        target_id=g.staff["id"],
+        details=f"Staff {g.staff['username']} updated their profile photo",
+    )
+
+    return jsonify(
+        {
+            "message": "Profile photo updated successfully",
+            "photo_path": saved_path,
+            "photo_url": url_for("static", filename=saved_path),
+        }
+    )
+
+
+@staff_bp.route("/staff/photo", methods=["DELETE"])
+@login_required
+@limiter.limit("10 per minute; 30 per hour")
+def remove_own_photo():
+    """Self-service profile photo removal, for the "Remove" link on the My
+    Account modal. Reverts the avatar back to initials. No-ops (still 200)
+    if there was no photo to begin with, since the end state the caller
+    wants is the same either way."""
+    old_photo_path = g.staff["photo_path"]
+    if not old_photo_path:
+        return jsonify({"message": "No profile photo to remove", "photo_url": None})
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE staff SET photo_path = NULL WHERE id = ?",
+            (g.staff["id"],),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    delete_staff_photo(old_photo_path)
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="removed_own_photo",
+        target_table="staff",
+        target_id=g.staff["id"],
+        details=f"Staff {g.staff['username']} removed their profile photo",
+    )
+
+    return jsonify({"message": "Profile photo removed successfully", "photo_url": None})
+
+
+@staff_bp.route("/staff/<int:id>/reset-password-form")
+@roles_required("admin")
+def reset_password_form(id):
+    """Renders the confirm-before-reset modal. Mirrors lock_staff_form's
+    shape -- fetch the row, 404 if missing, hand off to the partial. The
+    actual reset (and the generated password it hands back) happens in
+    reset_password_submit below; this route only exists to get a
+    confirmation in front of it, same as every other destructive-ish
+    staff action in this file."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.username, staff.is_active,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    return render_template("staff/_reset_password_modal.html", staff_member=staff_member)
+
+
+@staff_bp.route("/staff/<int:id>/reset-password", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute; 30 per hour")
+def reset_password_submit(id):
+    """Admin-initiated reset for a staff member who forgot their password
+    -- no current password needed, since that's the whole point of this
+    being the recovery path. Takes no input: rather than trust an admin
+    to type a strong password on someone else's behalf (or reuse a weak
+    one out of habit), this generates a random one the same way
+    services/seed_service.py already does for the emergency temp-admin
+    account, and hands it back in the response -- once. It isn't stored
+    anywhere in plaintext and this endpoint can't be asked to reveal it
+    again; if it's lost before reaching the staff member, reset again.
+
+    Also clears any lockout alongside the password, since a staff member
+    who forgot their password very plausibly also got themselves locked
+    out trying to guess it -- a fresh temporary password would otherwise
+    be handed to someone who still can't log in with it. Every existing
+    session for the account is killed either way, since a reset usually
+    means the account may have been locked out or compromised."""
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
 
@@ -729,10 +1009,22 @@ def reset_password_submit(id):
         conn.close()
         return jsonify({"error": "Staff not found"}), 404
 
-    new_hash = generate_password_hash(new_password)
+    if not staff["is_active"]:
+        conn.close()
+        return jsonify({"error": "This account is deactivated"}), 400
+
+    temporary_password = secrets.token_urlsafe(12)
+    new_hash = generate_password_hash(temporary_password)
 
     try:
-        conn.execute("UPDATE staff SET password_hash = ? WHERE id = ?", (new_hash, id))
+        conn.execute(
+            """
+            UPDATE staff
+            SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL
+            WHERE id = ?
+            """,
+            (new_hash, id),
+        )
         conn.execute("DELETE FROM sessions WHERE staff_id = ?", (id,))
         conn.commit()
     except Exception:
@@ -746,10 +1038,162 @@ def reset_password_submit(id):
         action="reset_staff_password",
         target_table="staff",
         target_id=id,
-        details=f"Admin reset password for staff account: {staff['username']}",
+        details=f"Admin reset password for staff account: {staff['username']} (temporary password issued)",
     )
 
-    return jsonify({"message": "Password reset successfully"})
+    return jsonify(
+        {
+            "message": "Password reset successfully",
+            "temporary_password": temporary_password,
+        }
+    )
+
+
+@staff_bp.route("/staff/<int:id>/lock-form")
+@roles_required("admin")
+def lock_staff_form(id):
+    """Renders the manual-lock modal -- duration presets plus a custom
+    minutes field and an indefinite option. Mirrors delete_staff_form's
+    shape (fetch the row, 404 if missing, then hand off to the partial)."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.is_active, staff.locked_until,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    if id == g.staff["id"]:
+        return jsonify({"error": "You can't lock your own account"}), 403
+
+    if not staff_member["is_active"]:
+        return jsonify({"error": "This account is already deactivated"}), 400
+
+    return render_template("staff/_lock_modal.html", staff_member=staff_member)
+
+
+@staff_bp.route("/staff/<int:id>/lock", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def lock_staff(id):
+    """Manually locks an account -- direct admin action, independent of
+    the failed-attempts auto-lockout in routes/auth.py. Writes the same
+    staff.locked_until column that auto-lockout does (an indefinite lock
+    uses the INDEFINITE_LOCK_UNTIL sentinel -- see that constant's
+    docstring in services/settings_service.py), so the existing Unlock
+    action and the login-time lockout check both already handle it with
+    no changes needed there beyond the one message tweak in auth.py.
+
+    Deliberately doesn't touch failed_login_attempts -- that counter
+    tracks a different thing (consecutive bad passwords) that a manual
+    lock has nothing to do with, so it's left exactly as it was."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    if id == g.staff["id"]:
+        return jsonify({"error": "You can't lock your own account"}), 403
+
+    indefinite = bool(data.get("indefinite"))
+    duration_minutes = data.get("duration_minutes")
+
+    if not indefinite:
+        try:
+            duration_minutes = int(duration_minutes)
+        except (TypeError, ValueError):
+            return jsonify({"error": "duration_minutes must be a whole number of minutes"}), 400
+        if duration_minutes <= 0:
+            return jsonify({"error": "duration_minutes must be greater than 0"}), 400
+        if duration_minutes > MAX_MANUAL_LOCK_MINUTES:
+            return (
+                jsonify(
+                    {
+                        "error": f"duration_minutes can't exceed {MAX_MANUAL_LOCK_MINUTES} (1 year) -- use an indefinite lock instead"
+                    }
+                ),
+                400,
+            )
+
+    conn = get_db_connection()
+    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if staff is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if not staff["is_active"]:
+        conn.close()
+        return jsonify({"error": "This account is already deactivated"}), 400
+
+    locked_until = (
+        INDEFINITE_LOCK_UNTIL
+        if indefinite
+        else (datetime.now() + timedelta(minutes=duration_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    )
+
+    conn.execute(
+        "UPDATE staff SET locked_until = ? WHERE id = ?",
+        (locked_until, id),
+    )
+    # A lock is meant to actively cut the account off, not just block new
+    # logins later -- so any session already signed in gets dropped too,
+    # same reasoning as the password-reset/password-change flows above.
+    conn.execute("DELETE FROM sessions WHERE staff_id = ?", (id,))
+    conn.commit()
+    conn.close()
+
+    detail = (
+        f"Manually locked staff account (indefinite): {staff['username']}"
+        if indefinite
+        else f"Manually locked staff account for {duration_minutes} minute(s): {staff['username']}"
+    )
+    log_action(
+        staff_id=g.staff["id"],
+        action="locked_staff",
+        target_table="staff",
+        target_id=id,
+        details=detail,
+    )
+
+    return jsonify({"message": "Staff account locked successfully", "locked_until": locked_until})
+
+
+@staff_bp.route("/staff/<int:id>/unlock-form")
+@roles_required("admin")
+def unlock_staff_form(id):
+    """Renders the confirm-before-unlock modal -- previously this action
+    fired straight off a plain browser confirm() (see staffAction() in
+    staff.html), inconsistent with every other state-changing action in
+    this table (deactivate, lock, etc.) which all get a proper modal.
+    Mirrors lock_staff_form's shape."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.locked_until, staff.failed_login_attempts,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    if not staff_member["locked_until"] and staff_member["failed_login_attempts"] == 0:
+        return jsonify({"error": "This account is not currently locked"}), 400
+
+    return render_template("staff/_unlock_modal.html", staff_member=staff_member)
 
 
 @staff_bp.route("/staff/<int:id>/unlock", methods=["POST"])
@@ -914,6 +1358,167 @@ def reactivate_staff(id):
     )
 
     return jsonify({"message": "Staff reactivated successfully"})
+
+
+@staff_bp.route("/staff/bulk-deactivate", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def bulk_deactivate_staff():
+    """Deactivates multiple staff accounts in one request. Mirrors
+    bulk_deactivate_members's shape (deactivated/skipped, one bad row
+    doesn't fail the batch) and delete_staff's guards: admin accounts are
+    skipped rather than deactivated here, since those only ever leave
+    active status through the peer-approval request-deactivation flow,
+    not a direct action -- same as the single-row Actions dropdown, which
+    swaps "Deactivate" for "Request Deactivation" on admin rows instead of
+    wiring the direct action up at all."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return (
+            jsonify({"error": "Missing required field: ids (must be a non-empty list)"}),
+            400,
+        )
+
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    conn = get_db_connection()
+    deactivated, skipped = [], []
+
+    for staff_id in ids:
+        row = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
+
+        if row is None:
+            skipped.append({"id": staff_id, "reason": "Staff not found"})
+            continue
+
+        if row["role"] == "admin":
+            skipped.append(
+                {
+                    "id": staff_id,
+                    "name": row["username"],
+                    "reason": "Admin accounts require a deactivation request instead",
+                }
+            )
+            continue
+
+        if not row["is_active"]:
+            skipped.append({"id": staff_id, "name": row["username"], "reason": "Already deactivated"})
+            continue
+
+        try:
+            conn.execute(
+                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                (staff_id,),
+            )
+            conn.commit()
+            deactivated.append({"id": staff_id, "name": row["username"]})
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.error(f"IntegrityError during bulk deactivate of staff {staff_id}: {e}")
+            skipped.append(
+                {"id": staff_id, "name": row["username"], "reason": "A database constraint was violated"}
+            )
+
+    conn.close()
+
+    if deactivated:
+        log_action(
+            staff_id=g.staff["id"],
+            action="bulk_deactivated_staff",
+            target_table="staff",
+            details=(
+                f"Bulk deactivated {len(deactivated)} staff account(s): "
+                + ", ".join(s["name"] for s in deactivated)
+                + (f"; skipped {len(skipped)}" if skipped else "")
+            ),
+        )
+
+    return jsonify(
+        {
+            "deactivated_count": len(deactivated),
+            "deactivated": deactivated,
+            "skipped": skipped,
+        }
+    )
+
+
+@staff_bp.route("/staff/bulk-reactivate", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def bulk_reactivate_staff():
+    """Reactivates multiple staff accounts in one request. Sibling of
+    bulk_deactivate_staff above -- see that docstring for the shared
+    shape. No admin-role guard needed here: reactivating never routes
+    through peer approval the way deactivating an admin does."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return (
+            jsonify({"error": "Missing required field: ids (must be a non-empty list)"}),
+            400,
+        )
+
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    conn = get_db_connection()
+    reactivated, skipped = [], []
+
+    for staff_id in ids:
+        row = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
+
+        if row is None:
+            skipped.append({"id": staff_id, "reason": "Staff not found"})
+            continue
+
+        if row["is_active"]:
+            skipped.append({"id": staff_id, "name": row["username"], "reason": "Already active"})
+            continue
+
+        try:
+            conn.execute("UPDATE staff SET is_active = 1 WHERE id = ?", (staff_id,))
+            conn.commit()
+            reactivated.append({"id": staff_id, "name": row["username"]})
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.error(f"IntegrityError during bulk reactivate of staff {staff_id}: {e}")
+            skipped.append(
+                {"id": staff_id, "name": row["username"], "reason": "A database constraint was violated"}
+            )
+
+    conn.close()
+
+    if reactivated:
+        log_action(
+            staff_id=g.staff["id"],
+            action="bulk_reactivated_staff",
+            target_table="staff",
+            details=(
+                f"Bulk reactivated {len(reactivated)} staff account(s): "
+                + ", ".join(s["name"] for s in reactivated)
+                + (f"; skipped {len(skipped)}" if skipped else "")
+            ),
+        )
+
+    return jsonify(
+        {
+            "reactivated_count": len(reactivated),
+            "reactivated": reactivated,
+            "skipped": skipped,
+        }
+    )
 
 
 # # # API ROUTES (barcode-based staff lookup for login) -----------------
@@ -1236,6 +1841,12 @@ def list_admin_deactivation_requests():
     if g.staff["role"] not in ("admin", "in_charge"):
         where_clauses.append("admin_deactivation_requests.required_tier = ?")
         params.append(g.staff["role"])
+    elif request.args.get("mine") == "1":
+        # Same opt-in narrowing as list_unrestriction_requests's `mine`
+        # param -- admin/in_charge see everyone's by default, this lets
+        # them filter down to requests they personally filed.
+        where_clauses.append("admin_deactivation_requests.requested_by_staff_id = ?")
+        params.append(g.staff["id"])
 
     if status_filter:
         where_clauses.append("admin_deactivation_requests.status = ?")
@@ -1252,7 +1863,10 @@ def list_admin_deactivation_requests():
         SELECT admin_deactivation_requests.*,
                target.username AS target_username,
                requester.username AS requested_by_username,
-               denier.username AS denied_by_username
+               denier.username AS denied_by_username,
+               (SELECT COUNT(*) FROM admin_deactivation_approvals
+                WHERE admin_deactivation_approvals.request_id = admin_deactivation_requests.id
+               ) AS approvals_received
         FROM admin_deactivation_requests
         JOIN staff AS target ON admin_deactivation_requests.target_staff_id = target.id
         JOIN staff AS requester ON admin_deactivation_requests.requested_by_staff_id = requester.id
@@ -1264,6 +1878,19 @@ def list_admin_deactivation_requests():
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    context = {
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "status_filter": status_filter or "",
+        "requests_list": rows,
+    }
+
+    if request.headers.get("HX-Request") == "true":
+        return render_template(
+            "requests/_deactivation_table.html", staff=g.staff, **context
+        )
 
     return jsonify(
         {
@@ -1589,9 +2216,8 @@ def _default_staff_export_basename(show_inactive):
 def export_staff_form():
     """admin-only -- matches every other staff-page mutation/export-ish
     action on this page (Add Staff, Import CSV, Manage Loan Limits are
-    all admin-only here too, even though in_charge can view the page),
-    even though the underlying GET /staff listing itself is only
-    login_required."""
+    all admin-only here too), and the Staff tab itself (GET /staff,
+    both the page and the underlying list API) is admin-only as well."""
     show_inactive = request.args.get("show_inactive") == "1"
     return render_template(
         "staff/_export_modal.html",
@@ -1953,6 +2579,14 @@ def update_notification_settings():
                 "due_soon_hours": due_soon_hours,
             }
         )
-    response = make_response("", 200)
-    response.headers["HX-Redirect"] = "/system"
-    return response
+    # No HX-Redirect here, unlike the other System-page settings modals
+    # (session-settings/account-security/loan-limits) -- those are only
+    # ever opened from the System page itself, so redirecting there on
+    # save is a no-op-feeling refresh. This modal is also opened from the
+    # notification bell dropdown's gear icon on every page (see
+    # templates/base.html), where forcing a navigation to /system would
+    # yank an admin off whatever page they were actually on just to save a
+    # threshold. An empty body swapped into #global-modal-container simply
+    # clears/closes the modal in place instead -- see the htmx:afterRequest
+    # listener in base.html for the confirmation toast.
+    return make_response("", 200)

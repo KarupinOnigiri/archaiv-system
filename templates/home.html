@@ -1,9 +1,426 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
-<div class="min-h-screen flex flex-col items-center justify-center gap-4 bg-base-200">
-  <p class="text-lg">Logged in as <strong>{{ staff.username }}</strong> ({{ staff.role }}).</p>
-  <button hx-post="/api/v1/logout" hx-redirect="/login" class="btn btn-primary rounded-full">
-    Log out
-  </button>
+<!-- DASHBOARD -- deliberately built to fit one screen with no page-level
+     scroll: the wrapper takes exactly the height <main> (base.html) gives
+     it (h-full + min-h-0 down the whole flex/grid chain), and only the
+     individual list widgets (Recent Activity, Top Borrowed, Notifications)
+     scroll internally if they overflow -- the page itself never does. -->
+<div class="h-full min-h-0 flex flex-col gap-4 pt-6 pr-[1.875rem] pb-6 pl-6">
+
+  <!-- Greeting strip -->
+  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl border border-base-300 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4">
+    <div class="min-w-0">
+      <h2 id="dash-greeting" class="text-xl font-bold truncate">Welcome back</h2>
+      <p class="text-sm text-base-content/50 mt-0.5">Here's what's happening across the toolroom today.</p>
+    </div>
+    <div class="text-right shrink-0">
+      <p id="dash-clock" class="text-2xl font-bold tabular-nums leading-none"></p>
+      <p id="dash-date" class="text-xs text-base-content/50 mt-1"></p>
+    </div>
+  </div>
+
+  <!-- KPI row -->
+  <div class="shrink-0 grid grid-cols-6 gap-4">
+
+    <a href="/assets" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-primary/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">TOTAL ASSETS</p>
+        <p class="text-2xl font-bold mt-1">{{ dash_assets_total }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+      </div>
+    </a>
+
+    <a href="/assets?status=available" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-success/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">AVAILABLE</p>
+        <p class="text-2xl font-bold mt-1">{{ dash_assets_available }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><g transform="translate(-0.47,0)"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></g></svg>
+      </div>
+    </a>
+
+    <a href="/transactions?status=borrowed" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-info/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">BORROWED NOW</p>
+        <p class="text-2xl font-bold mt-1">{{ dash_loans_borrowed }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+      </div>
+    </a>
+
+    <a href="/transactions?status=overdue" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-error/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">OVERDUE</p>
+        <p class="text-2xl font-bold mt-1 {% if dash_loans_overdue %}text-error{% endif %}">{{ dash_loans_overdue }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      </div>
+    </a>
+
+    <a href="/members" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-primary/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">TOTAL MEMBERS</p>
+        <p class="text-2xl font-bold mt-1">{{ dash_members_total }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+    </a>
+
+    {% if staff.role in ["admin", "in_charge"] %}
+    <!-- Admin/in_charge: this is their actual job queue (review/decide),
+         so the 6th card is what needs THEIR action, not just a count they
+         can only look at. pending_approvals_count is already scoped
+         correctly for this role by get_pending_approvals_count (services/
+         approvals_service.py) -- everyone's pending requests, not just
+         their own. -->
+    <a href="/requests" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-warning/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">PENDING APPROVALS</p>
+        <p class="text-2xl font-bold mt-1 {% if pending_approvals_count %}text-warning{% endif %}">{{ pending_approvals_count }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+    </a>
+    {% else %}
+    <!-- tool_keeper: can't approve/deny anything (they can only file an
+         unrestriction request, then wait), so their own pending_approvals_
+         count would just be "requests I filed" -- less useful here than
+         plain visibility into who's currently restricted, which is what
+         they actually need before attempting a checkout. -->
+    <a href="/members?is_restricted=1" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-warning/30">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">RESTRICTED</p>
+        <p class="text-2xl font-bold mt-1">{{ dash_members_restricted }}</p>
+      </div>
+      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+      </div>
+    </a>
+    {% endif %}
+
+  </div>
+
+  <!-- Main grid -->
+  <div class="flex-1 min-h-0 grid grid-cols-12 gap-4">
+
+    <!-- Recent Activity -->
+    <div class="col-span-5 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+      <div class="flex items-center justify-between shrink-0 mb-3">
+        <h3 class="font-semibold text-sm">Recent Activity</h3>
+        <a href="/transactions" class="text-xs text-primary font-medium hover:underline">View all</a>
+      </div>
+      <div class="flex-1 min-h-0 overflow-y-auto -mx-1 px-1 space-y-1">
+        {% for a in dash_recent_activity %}
+        <a href="/transactions?member_id={{ a.member_id }}&amp;open_transaction={{ a.transaction_id }}"
+           class="flex items-center gap-3 py-2 px-1.5 rounded-lg hover:bg-base-200/60 transition-colors">
+          {% if a.event_type == 'returned' %}
+          <span class="bg-success/10 text-success rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><g transform="translate(-0.47,0)"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></g></svg>
+          </span>
+          {% else %}
+          <span class="bg-info/10 text-info rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+          </span>
+          {% endif %}
+          <div class="min-w-0 flex-1">
+            <p class="text-sm truncate">
+              <span class="font-medium">{{ a.member_name }}</span>
+              {% if a.event_type == 'returned' %}returned{% else %}borrowed{% endif %}
+              <span class="font-medium">{{ a.asset_name }}</span>
+            </p>
+            <p class="text-xs text-base-content/40 mt-0.5 dash-relative-time" data-timestamp="{{ a.event_time }}">{{ a.event_time }}</p>
+          </div>
+        </a>
+        {% else %}
+        <div class="h-full flex items-center justify-center text-sm text-base-content/50">
+          No activity yet.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Asset status + Top borrowed -->
+    <div class="col-span-4 min-h-0 flex flex-col gap-4">
+
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+        <h3 class="font-semibold text-sm shrink-0 mb-2">Asset Status</h3>
+        <div class="flex-1 min-h-0 flex items-center gap-4">
+          <div class="w-28 h-28 shrink-0 relative">
+            <canvas id="dash-status-chart"></canvas>
+          </div>
+          <div class="flex-1 min-w-0 space-y-1.5 text-sm">
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-success shrink-0"></span>Available</span>
+              <span class="font-semibold shrink-0">{{ dash_assets_available }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-info shrink-0"></span>Borrowed</span>
+              <span class="font-semibold shrink-0">{{ dash_assets_borrowed }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-warning shrink-0"></span>Reserved</span>
+              <span class="font-semibold shrink-0">{{ dash_assets_reserved }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-error shrink-0"></span>Maintenance</span>
+              <span class="font-semibold shrink-0">{{ dash_assets_maintenance }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+        <div class="flex items-center justify-between shrink-0 mb-2 gap-2">
+          <h3 class="font-semibold text-sm">Top Borrowed</h3>
+          <!-- w-40: daisyUI's .select defaults to a fixed 20rem width
+               regardless of content (clamp(3rem, 20rem, 100%)) -- way
+               more than a 4-option filter needs. Half that. -->
+          <select id="dash-top-borrowed-range" class="select select-bordered select-xs w-40"
+                  hx-get="/api/v1/dashboard/top-borrowed"
+                  hx-target="#dash-top-borrowed-list"
+                  hx-swap="innerHTML"
+                  hx-trigger="change"
+                  name="range">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d" selected>Last 30 Days</option>
+          </select>
+        </div>
+        <div id="dash-top-borrowed-list" class="flex-1 min-h-0 overflow-y-auto space-y-2">
+          {% include "dashboard/_top_borrowed_list.html" %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Quick actions + notifications -->
+    <div class="col-span-3 min-h-0 flex flex-col gap-4">
+
+      <div class="shrink-0 bg-base-100 rounded-xl border border-base-300 p-5">
+        <h3 class="font-semibold text-sm mb-3">Quick Actions</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="dash-new-checkout-btn" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  hx-get="/api/v1/checkout-sessions/start-form"
+                  hx-vals="js:{client_id: crypto.randomUUID()}"
+                  hx-target="#checkout-modal-container"
+                  hx-swap="beforeend"
+                  hx-trigger="click[Checkout.countOk()]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            <span class="text-xs font-medium">Checkout</span>
+          </button>
+          <button type="button" id="dash-return-items-btn" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  hx-get="/api/v1/transactions/return-scan-form"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            <span class="text-xs font-medium">Return</span>
+          </button>
+          {% if staff.role in ["admin", "in_charge"] %}
+          <button type="button" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  hx-get="/api/v1/members/add-form"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+            <span class="text-xs font-medium">Add Member</span>
+          </button>
+          <button type="button" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  hx-get="/api/v1/assets/add-form"
+                  hx-target="#modal-container"
+                  hx-swap="innerHTML">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            <span class="text-xs font-medium">Add Asset</span>
+          </button>
+          {% else %}
+          <a href="/assets" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            <span class="text-xs font-medium">Inventory</span>
+          </a>
+          <a href="/members" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            <span class="text-xs font-medium">Borrowers</span>
+          </a>
+          {% endif %}
+          {% if staff.role == "admin" %}
+          <!-- Admin-only third row: staff/system administration is a
+               whole separate responsibility from day-to-day inventory
+               ops, and had no presence on the dashboard at all before
+               this -- in_charge and tool_keeper never see these two,
+               same gate the sidebar itself uses for Staff/System. -->
+          <a href="/staff" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+            <span class="text-xs font-medium">Manage Staff</span>
+          </a>
+          <a href="/system" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            <span class="text-xs font-medium">System</span>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Due Soon -- not the notification bell repeated (that's already
+           one click away on every page, including this one; showing the
+           same list twice on one screen wasted space without adding
+           anything). This is the dashboard-specific angle on the same
+           underlying signal: not "here's an alert," but "here's exactly
+           what's about to go overdue and who has it," soonest first, so
+           it reads as an actionable to-do list instead of a duplicate
+           feed. -->
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+        <div class="flex items-center justify-between shrink-0 mb-2">
+          <h3 class="font-semibold text-sm">Due Soon</h3>
+          <a href="/transactions" class="text-xs text-primary font-medium hover:underline">View all</a>
+        </div>
+        <div class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
+          {% for d in dash_due_soon %}
+          <a href="/transactions?member_id={{ d.member_id }}&amp;open_transaction={{ d.transaction_id }}"
+             class="flex items-start gap-2 py-1.5 px-1 rounded-lg hover:bg-base-200/60 transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-warning"></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-medium leading-snug truncate">{{ d.asset_name }} &middot; {{ d.member_name }}</p>
+              <p class="text-xs text-warning mt-0.5 dash-due-in" data-due="{{ d.due_date }}">{{ d.due_date }}</p>
+            </div>
+          </a>
+          {% else %}
+          <div class="h-full flex items-center justify-center text-sm text-base-content/50">
+            Nothing due soon.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+
+  </div>
 </div>
+
+<div id="modal-container"></div>
+
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+<script>
+// # # # Greeting + live clock -------------------------------------------
+function dashUpdateClock() {
+  const now = new Date();
+  const hour = now.getHours();
+  const greetingWord = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const name = {{ (staff_first_name or 'there') | tojson }};
+  const greetingEl = document.getElementById('dash-greeting');
+  if (greetingEl) greetingEl.textContent = `${greetingWord}, ${name}`;
+
+  const clockEl = document.getElementById('dash-clock');
+  if (clockEl) clockEl.textContent = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const dateEl = document.getElementById('dash-date');
+  if (dateEl) dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+}
+dashUpdateClock();
+setInterval(dashUpdateClock, 30000);
+
+// # # # Relative timestamps for the Recent Activity feed -----------------
+// Server sends the raw "YYYY-MM-DD HH:MM:SS" (localtime) value in
+// data-timestamp; rendered as "5m ago"/"3h ago"/etc. here rather than a
+// fixed format server-side, so it stays accurate without a page reload
+// for however long the dashboard is left open.
+function dashRelativeTime(sqliteTimestamp) {
+  const iso = sqliteTimestamp.replace(' ', 'T');
+  const then = new Date(iso);
+  if (isNaN(then.getTime())) return sqliteTimestamp;
+  const diffSec = Math.max(0, Math.round((Date.now() - then.getTime()) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function dashRefreshRelativeTimes() {
+  document.querySelectorAll('.dash-relative-time').forEach(function (el) {
+    el.textContent = dashRelativeTime(el.dataset.timestamp);
+  });
+}
+dashRefreshRelativeTimes();
+setInterval(dashRefreshRelativeTimes, 60000);
+
+// # # # "Due in ..." countdowns for the Due Soon panel --------------------
+// Mirrors dashRelativeTime above but counts forward instead of back --
+// every row here is, by construction (dashboard_service.py's query),
+// still in the future, so this never needs to handle an already-past
+// timestamp gracefully the way a generic formatter would.
+function dashDueIn(sqliteTimestamp) {
+  const iso = sqliteTimestamp.replace(' ', 'T');
+  const due = new Date(iso);
+  if (isNaN(due.getTime())) return sqliteTimestamp;
+  const diffSec = Math.max(0, Math.round((due.getTime() - Date.now()) / 1000));
+  if (diffSec < 60) return 'due in <1m';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `due in ${diffMin}m`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `due in ${diffHr}h`;
+  const diffDay = Math.round(diffHr / 24);
+  return `due in ${diffDay}d`;
+}
+function dashRefreshDueIn() {
+  document.querySelectorAll('.dash-due-in').forEach(function (el) {
+    el.textContent = dashDueIn(el.dataset.due);
+  });
+}
+dashRefreshDueIn();
+setInterval(dashRefreshDueIn, 60000);
+
+// # # # Asset status doughnut chart ---------------------------------------
+function dashThemeColor(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+function dashRenderStatusChart() {
+  const canvas = document.getElementById('dash-status-chart');
+  if (!canvas) return;
+  if (window.__dashStatusChart) {
+    window.__dashStatusChart.destroy();
+  }
+  const data = [
+    {{ dash_assets_available }},
+    {{ dash_assets_borrowed }},
+    {{ dash_assets_reserved }},
+    {{ dash_assets_maintenance }},
+  ];
+  const colors = [
+    dashThemeColor('--color-success'),
+    dashThemeColor('--color-info'),
+    dashThemeColor('--color-warning'),
+    dashThemeColor('--color-error'),
+  ];
+  window.__dashStatusChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: ['Available', 'Borrowed', 'Reserved', 'Maintenance'],
+      datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '68%',
+      plugins: { legend: { display: false } },
+    },
+  });
+}
+dashRenderStatusChart();
+
+// Chart colors are read once at creation time (not watched live), so
+// redraw when the theme toggles -- same pattern reports.html uses for
+// its own charts.
+new MutationObserver(function (mutations) {
+  for (const m of mutations) {
+    if (m.attributeName === 'data-theme') dashRenderStatusChart();
+  }
+}).observe(document.documentElement, { attributes: true });
+</script>
 {% endblock %}
