@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, g, request, render_template, make_response
 import json
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
+from services.settings_service import is_feature_enabled, get_feature_label
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import parse_pagination_params, validate_lookup_id
@@ -20,6 +21,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 members_bp = Blueprint("members", __name__)
+
+
+@members_bp.before_request
+def _block_if_members_disabled():
+    if not is_feature_enabled("members"):
+        return jsonify({"error": f"{get_feature_label('members')} is currently disabled"}), 403
 VALID_MEMBER_TYPES = ("trainee", "trainer")
 
 
@@ -212,7 +219,7 @@ def member_by_barcode(barcode):
     act like they don't exist."""
     conn = get_db_connection()
     member = conn.execute(
-        "SELECT id FROM members WHERE barcode_id = ?", (barcode,)
+        "SELECT id FROM members WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)
     ).fetchone()
     conn.close()
     if member is None:
@@ -1336,7 +1343,7 @@ def get_member_by_barcode(barcode):
         SELECT members.*, departments.name AS department
         FROM members
         JOIN departments ON members.department_id = departments.id
-        WHERE members.barcode_id = ?
+        WHERE UPPER(members.barcode_id) = UPPER(?)
         """,
         (barcode,),
     ).fetchone()

@@ -18,7 +18,7 @@ from services.seed_service import seed_initial_admin
 from services.checkout_service import cleanup_stale_checkout_sessions
 from services.auth_service import cleanup_expired_sessions, require_session
 from utils.formatters import full_name, humanize_label
-from services.settings_service import INDEFINITE_LOCK_UNTIL
+from services.settings_service import INDEFINITE_LOCK_UNTIL, get_feature_flags
 from services.approvals_service import get_pending_approvals_count
 from apscheduler.schedulers.background import BackgroundScheduler
 from extensions import limiter
@@ -71,8 +71,12 @@ def inject_csrf_token():
     conn = get_db_connection()
     token = request.cookies.get("session_token")
     if not token:
+        # base.html's nav guards (feature_flags.assets etc.) run for every
+        # page, including the logged-out /login screen -- has to be
+        # present here too, not just on the logged-in path below.
+        feature_flags = get_feature_flags(conn)
         conn.close()
-        return {"csrf_token": "", "staff_first_name": ""}
+        return {"csrf_token": "", "staff_first_name": "", "feature_flags": feature_flags}
 
     session = conn.execute(
         "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
@@ -119,10 +123,16 @@ def inject_csrf_token():
         if staff_member and staff_member["role"] == "admin"
         else 0
     )
+    # Feature flags (see migrations/0033_feature_flags.sql) -- available in
+    # every template for free, same as the badge counts above, so
+    # base.html can gate nav links and page templates can gate dashboard
+    # widgets without each route having to pass it in explicitly.
+    feature_flags = get_feature_flags(conn)
     conn.close()
 
     return {
         "csrf_token": session["csrf_token"] if session else "",
+        "feature_flags": feature_flags,
         "staff_first_name": staff_member["first_name"] if staff_member else "",
         "staff_full_name": (
             full_name(staff_member["first_name"], staff_member["last_name"])

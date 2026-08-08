@@ -1,8 +1,9 @@
 from functools import wraps
 from database import get_db_connection
-from flask import jsonify, request, g
+from flask import jsonify, request, g, redirect
 from datetime import datetime, timedelta
-from services.settings_service import get_session_idle_minutes
+from services.settings_service import get_session_idle_minutes, is_feature_enabled, get_feature_label
+from urllib.parse import quote
 import hmac
 import logging
 
@@ -120,6 +121,38 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return wrapper
+
+
+def feature_required(name, redirect_to_dashboard=True):
+    """Gates a route behind an admin-controlled feature flag (see
+    services/settings_service.py's FEATURE_FLAGS, migrations/0033_feature_flags.sql).
+
+    redirect_to_dashboard=True (the default, for the *_page view functions
+    in routes/pages.py) sends a disabled-tab visit back to '/' with a
+    ?feature_disabled=<label> query param base.html's JS picks up and
+    toasts -- this app has no server-side flash(), so a query param is the
+    established way to hand a one-shot message across a redirect.
+
+    redirect_to_dashboard=False (for use in a blueprint's before_request,
+    see routes/assets.py etc.) returns a plain JSON 403 instead, matching
+    every other error response those API blueprints already give.
+
+    Stacks under @roles_required/@login_required -- put this decorator
+    closest to the view function so the role check still runs first."""
+
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            if not is_feature_enabled(name):
+                label = get_feature_label(name)
+                if redirect_to_dashboard:
+                    return redirect(f"/?feature_disabled={quote(label)}")
+                return jsonify({"error": f"{label} is currently disabled"}), 403
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def roles_required(*roles):

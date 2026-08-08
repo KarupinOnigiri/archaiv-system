@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request, make_response, g
 from database import get_db_connection
 from services.auth_service import roles_required
+from services.settings_service import is_feature_enabled, get_feature_label
 from services.report_widgets import WIDGETS, widgets_for_role, is_widget_allowed
 from services.report_layout_service import get_report_layout, save_report_layout, reset_report_layout
 from utils.validators import validate_date_string, parse_pagination_params
@@ -16,6 +17,12 @@ import zipfile
 from datetime import datetime
 
 stats_bp = Blueprint("stats", __name__)
+
+
+@stats_bp.before_request
+def _block_if_reports_disabled():
+    if not is_feature_enabled("reports"):
+        return jsonify({"error": f"{get_feature_label('reports')} is currently disabled"}), 403
 
 VALID_GROUP_BY = ("asset", "category")
 # Export sheets pull well past the 10 rows each card shows on-screen (a

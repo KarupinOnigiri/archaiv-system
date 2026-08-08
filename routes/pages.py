@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
-from services.auth_service import login_required, roles_required
+from services.auth_service import login_required, roles_required, feature_required
 from routes.assets import get_assets_table_context  # adjust the module path here to match wherever assets.py actually lives in your project (you mentioned routes/assets1.py earlier -- if so, use `from routes.assets1 import get_assets_table_context`)
 from routes.members import get_members_table_context  # same note as above -- adjust to match wherever members.py actually lives
 from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
@@ -49,6 +49,7 @@ def setup_page():
 
 @pages_bp.route("/assets")
 @login_required
+@feature_required("assets")
 def assets_page():
     conn = get_db_connection()
     stat_all = conn.execute(
@@ -131,6 +132,7 @@ def assets_page():
 
 @pages_bp.route("/members")
 @login_required
+@feature_required("members")
 def members_page():
     conn = get_db_connection()
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
@@ -247,6 +249,7 @@ def staff_page():
 
 @pages_bp.route("/transactions")
 @login_required
+@feature_required("transactions")
 def transactions_page():
     conn = get_db_connection()
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
@@ -380,20 +383,22 @@ def audit_log_page():
 
 @pages_bp.route("/requests")
 @login_required
+@feature_required("requests")
 def requests_page():
-    """Approvals queue -- unrestriction requests and admin-deactivation
-    requests. The sidebar's "Approvals" link has pointed here all along
-    (base.html's nav_items), but until now nothing was actually
-    registered at this path, so it 404'd; the two request types were
-    otherwise only reachable by hitting their JSON list endpoints
-    directly with no page ever linking to them.
+    """Approvals queue -- unrestriction requests, admin-deactivation
+    requests, and admin-promotion requests. The sidebar's "Approvals"
+    link has pointed here all along (base.html's nav_items), but until
+    now nothing was actually registered at this path, so it 404'd; the
+    request types were otherwise only reachable by hitting their JSON
+    list endpoints directly with no page ever linking to them.
 
-    Not role-gated beyond login: list_unrestriction_requests and
-    list_admin_deactivation_requests (routes/requests.py, routes/staff.py)
-    each already scope what a given role sees -- their own filed requests
-    plus whichever admin-deactivation tier matches their role, vs.
-    everything for admin/in_charge -- so every role has something
-    relevant here, just not the same rows."""
+    Not role-gated beyond login: list_unrestriction_requests,
+    list_admin_deactivation_requests, and list_admin_promotion_requests
+    (routes/requests.py, routes/staff.py) each already scope what a given
+    role sees -- their own filed requests plus whichever admin-
+    deactivation/promotion tier matches their role, vs. everything for
+    admin/in_charge -- so every role has something relevant here, just
+    not the same rows."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -402,6 +407,7 @@ def requests_page():
 
 @pages_bp.route("/reports")
 @roles_required("admin", "in_charge", "tool_keeper")
+@feature_required("reports")
 def reports_page():
     """Just the page shell -- every number on it comes from stats.py's
     report endpoints (most/least-borrowed assets, most-borrowed

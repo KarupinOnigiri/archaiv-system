@@ -185,6 +185,11 @@
               </li>
               {% else %}
               <li>
+                <a class="flex items-center gap-2" onclick="requestStaffPromotion({{ row.id }})">
+                  {{ icon_user_check() }} Request Promotion
+                </a>
+              </li>
+              <li>
                 <a class="flex items-center gap-2 text-error" hx-get="/api/v1/staff/{{ row.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Deactivate</a>
               </li>
               {% endif %}

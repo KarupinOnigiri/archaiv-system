@@ -157,7 +157,7 @@ def login():
                 SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
                 FROM staff
                 JOIN members ON staff.member_id = members.id
-                WHERE members.barcode_id = ?
+                WHERE UPPER(members.barcode_id) = UPPER(?)
                 """,
                 (username,),
             ).fetchone()
@@ -167,7 +167,7 @@ def login():
             SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
             FROM staff
             JOIN members ON staff.member_id = members.id
-            WHERE members.barcode_id = ?
+            WHERE UPPER(members.barcode_id) = UPPER(?)
             """,
             (barcode_id,),
         ).fetchone()
@@ -179,6 +179,12 @@ def login():
         check_password_hash(_DUMMY_PASSWORD_HASH, password)
         # return jsonify({"error": "Invalid credentials"}), 401
         return _login_response({"error": "Invalid credentials"}, 401)
+
+    # Mutable from here on -- the auto-unlock branch below needs to update
+    # failed_login_attempts/locked_until in place so the check just below
+    # it (on this same request) sees the cleared values, not the stale
+    # sqlite3.Row snapshot from the SELECT above.
+    staff = dict(staff)
 
     # Check lockout before even touching the password
     if staff["locked_until"]:
@@ -203,6 +209,22 @@ def login():
                 },
                 403,
             )
+        # Lockout window has elapsed. failed_login_attempts is only ever
+        # reset to 0 on a *successful* login further down -- without
+        # clearing it here too, it's still sitting at (or above)
+        # max_failed_attempts, so a single further wrong guess right after
+        # expiry would immediately re-trip the "too many attempts" branch
+        # below and re-lock the account for a full fresh window. That
+        # looked indistinguishable from "the lockout never actually
+        # expired" even though the time-based check above was working
+        # correctly the whole time.
+        conn.execute(
+            "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+            (staff["id"],),
+        )
+        conn.commit()
+        staff["failed_login_attempts"] = 0
+        staff["locked_until"] = None
 
     if not check_password_hash(staff["password_hash"], password):
         new_attempts = staff["failed_login_attempts"] + 1
@@ -421,7 +443,7 @@ def login_rfid():
         SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
         FROM staff
         JOIN members ON staff.member_id = members.id
-        WHERE staff.rfid_id = ? AND staff.role = 'admin'
+        WHERE UPPER(staff.rfid_id) = UPPER(?) AND staff.role = 'admin'
         """,
         (rfid_id,),
     ).fetchone()
@@ -434,6 +456,11 @@ def login_rfid():
         # can't distinguish those cases from a wrong PIN.
         check_password_hash(_DUMMY_PASSWORD_HASH, pin)
         return _login_response({"error": "Invalid credentials"}, 401)
+
+    # See the mirrored comment in login() above -- mutable so the
+    # auto-unlock branch below can update failed_login_attempts/
+    # locked_until in place for the rest of this same request.
+    staff = dict(staff)
 
     if staff["locked_until"]:
         if staff["locked_until"] == INDEFINITE_LOCK_UNTIL:
@@ -450,6 +477,15 @@ def login_rfid():
                 {"error": f"Account locked. Try again in {remaining} minute(s)."},
                 403,
             )
+        # Lockout window elapsed -- see login()'s identical fix above for
+        # why this has to happen here too, not just on a later success.
+        conn.execute(
+            "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
+            (staff["id"],),
+        )
+        conn.commit()
+        staff["failed_login_attempts"] = 0
+        staff["locked_until"] = None
 
     if not check_password_hash(staff["rfid_pin_hash"], pin):
         new_attempts = staff["failed_login_attempts"] + 1

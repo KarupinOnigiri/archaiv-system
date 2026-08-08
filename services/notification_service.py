@@ -1,6 +1,6 @@
 from database import get_db_connection
 from utils.formatters import full_name
-from services.settings_service import get_due_soon_hours
+from services.settings_service import get_due_soon_hours, is_feature_enabled
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,12 @@ def sync_loan_notifications():
     duplicate, cleared or not."""
     conn = get_db_connection()
     try:
+        if not is_feature_enabled("transactions", conn):
+            # Borrow & Return is disabled -- no point generating due/overdue
+            # alerts for a workflow an admin has turned off (see
+            # migrations/0033_feature_flags.sql).
+            return
+
         due_soon_hours = get_due_soon_hours(conn)
 
         candidates = conn.execute(
@@ -239,6 +245,50 @@ def create_unrestriction_resolved_notification(conn, request_id, requester_staff
         VALUES ('unrestriction_resolved', ?, ?, ?)
         """,
         (request_id, requester_staff_id, message),
+    )
+
+
+# # # FEEDBACK LIFECYCLE ----------------------------------------------------
+# Same one-shot-imperative shape as the unrestriction functions above --
+# fired once from routes/feedback.py at the exact point each event
+# happens (submit / resolve), not a periodic reconciliation job.
+
+
+def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id, submitter_name, category):
+    """Two rows per submission: a broadcast to every admin so the report
+    actually lands somewhere they'll see it (not just the /feedback tab
+    they'd have to remember to check), and a personal confirmation back
+    to whoever filed it -- so hitting 'Submit' doesn't feel like shouting
+    into a void, same reason a real support-ticket form emails you a
+    receipt. Sent to the submitter regardless of role (including an admin
+    reporting their own bug) -- simpler than special-casing which roles
+    get confirmed, and there's no downside to an admin also getting one."""
+    conn.execute(
+        """
+        INSERT INTO notifications (type, feedback_report_id, recipient_role, message)
+        VALUES ('feedback_submitted', ?, 'admin', ?)
+        """,
+        (report_id, f"{submitter_name} submitted {category} feedback"),
+    )
+    conn.execute(
+        """
+        INSERT INTO notifications (type, feedback_report_id, recipient_staff_id, message)
+        VALUES ('feedback_submitted', ?, ?, 'Your feedback was sent to the admins.')
+        """,
+        (report_id, submitter_staff_id),
+    )
+
+
+def create_feedback_resolved_notification(conn, report_id, submitter_staff_id, response):
+    """Notifies the original submitter once an admin resolves their
+    report, carrying the admin's actual reply text -- not a silent status
+    flip. Not sent on reopen; there's nothing new to tell them yet."""
+    conn.execute(
+        """
+        INSERT INTO notifications (type, feedback_report_id, recipient_staff_id, message)
+        VALUES ('feedback_resolved', ?, ?, ?)
+        """,
+        (report_id, submitter_staff_id, f"Your feedback was resolved: {response}"),
     )
 
 

@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, g, request, render_template
-from database import get_db_connection
+from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required, roles_required
 from utils.logger import log_action
 from utils.formatters import full_name
@@ -10,6 +10,10 @@ from utils.uploads import (
 )
 from utils.validators import parse_pagination_params
 from extensions import limiter
+from services.notification_service import (
+    create_feedback_submitted_notifications,
+    create_feedback_resolved_notification,
+)
 
 feedback_bp = Blueprint("feedback", __name__)
 
@@ -80,6 +84,16 @@ def submit_feedback():
                 "INSERT INTO feedback_report_images (feedback_report_id, image_path) VALUES (?, ?)",
                 (report_id, relative_path),
             )
+
+        # Same connection/transaction as the insert above -- a submitted
+        # report should never exist without also notifying admins of it.
+        # g.staff only carries the staff table's own columns (no joined
+        # members row here), so username -- not a full name -- is what's
+        # on hand, same as create_unrestriction_requested_notifications
+        # uses for its "requester_username" arg.
+        create_feedback_submitted_notifications(
+            conn, report_id, g.staff["id"], g.staff["username"], category
+        )
 
         conn.commit()
     except Exception:
@@ -214,6 +228,25 @@ def view_feedback_table():
 @feedback_bp.route("/feedback/<int:id>/resolve", methods=["POST"])
 @roles_required("admin")
 def resolve_feedback(id):
+    """Resolving requires an actual reply (e.g. 'Fixed', 'Testing this
+    now', 'Not applicable') -- not just a silent status flip, so the
+    submitter gets told what happened, not just that something did. Sent
+    to them as a notification (see create_feedback_resolved_notification)
+    the same way a real support inbox replies rather than closing a
+    ticket in silence."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    response = (data.get("response") or "").strip()
+    if not response:
+        return jsonify({"error": "A reply is required to mark feedback resolved"}), 400
+    if len(response) > 2000:
+        return jsonify({"error": "Reply must be 2000 characters or fewer"}), 400
+
     conn = get_db_connection()
     report = conn.execute(
         "SELECT * FROM feedback_reports WHERE id = ?", (id,)
@@ -225,11 +258,13 @@ def resolve_feedback(id):
     conn.execute(
         """
         UPDATE feedback_reports
-        SET status = 'resolved', resolved_at = datetime('now', 'localtime'), resolved_by_staff_id = ?
+        SET status = 'resolved', resolved_at = datetime('now', 'localtime'),
+            resolved_by_staff_id = ?, admin_response = ?
         WHERE id = ?
         """,
-        (g.staff["id"], id),
+        (g.staff["id"], response, id),
     )
+    create_feedback_resolved_notification(conn, id, report["staff_id"], response)
     conn.commit()
     conn.close()
 
@@ -238,6 +273,7 @@ def resolve_feedback(id):
         action="resolved_feedback",
         target_table="feedback_reports",
         target_id=id,
+        details=f"response={response}",
     )
 
     return jsonify({"message": "Marked resolved"})
@@ -257,7 +293,7 @@ def reopen_feedback(id):
     conn.execute(
         """
         UPDATE feedback_reports
-        SET status = 'open', resolved_at = NULL, resolved_by_staff_id = NULL
+        SET status = 'open', resolved_at = NULL, resolved_by_staff_id = NULL, admin_response = NULL
         WHERE id = ?
         """,
         (id,),

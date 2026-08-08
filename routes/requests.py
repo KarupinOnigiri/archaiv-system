@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
+from services.settings_service import is_feature_enabled, get_feature_label
 from utils.logger import log_action
 from utils.formatters import full_name
 from utils.validators import parse_pagination_params
@@ -17,6 +18,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 requests_bp = Blueprint("requests", __name__)
+
+
+@requests_bp.before_request
+def _block_if_requests_disabled():
+    if not is_feature_enabled("requests"):
+        return jsonify({"error": f"{get_feature_label('requests')} is currently disabled"}), 403
 
 
 VALID_STATUSES = ("pending", "approved", "denied", "cancelled")

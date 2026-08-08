@@ -707,6 +707,36 @@ async function requestStaffDeactivation(id) {
     showToast("That request couldn't be submitted", 'error');
   }
 }
+
+// "Hand over" the admin role to a non-admin staff member -- also routes
+// through peer approval (see request_admin_promotion in routes/staff.py)
+// rather than a direct role change, same reasoning as deactivation: one
+// admin shouldn't be able to unilaterally hand the role to an ally.
+async function requestStaffPromotion(id) {
+  const reason = prompt("Why should this staff member be promoted to admin? This request will need peer approval.");
+  if (!reason) return;
+
+  try {
+    const res = await fetch(`/api/v1/staff/${id}/request-promotion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ reason }),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That request couldn't be submitted", 'error');
+      return;
+    }
+
+    showToast("Promotion request submitted", 'success');
+  } catch (err) {
+    showToast("That request couldn't be submitted", 'error');
+  }
+}
 </script>
 
 <script>

@@ -24,6 +24,32 @@ DEFAULT_SETTINGS = {
     "max_failed_attempts": 5,
     "lockout_minutes": 15,
     "due_soon_hours": 24,
+    "default_loan_days": 2,
+    "damage_restriction_threshold": 2,
+}
+
+# Feature-flag keys (see migrations/0033_feature_flags.sql) all default to
+# enabled -- a missing/unparseable row should never silently lock a feature
+# out, the same "fail open to the old behavior" rule DEFAULT_SETTINGS above
+# already follows for the numeric settings.
+DEFAULT_FEATURE_FLAGS = {
+    "feature_assets_enabled": True,
+    "feature_members_enabled": True,
+    "feature_transactions_enabled": True,
+    "feature_requests_enabled": True,
+    "feature_reports_enabled": True,
+}
+
+# Short name (used by feature_required(), templates' feature_flags.*, and
+# the System page form) -> (app_settings key, human label used in the
+# "<label> is currently disabled" messages and the ?feature_disabled=
+# redirect toast).
+FEATURE_FLAGS = {
+    "assets": ("feature_assets_enabled", "Inventory"),
+    "members": ("feature_members_enabled", "Members"),
+    "transactions": ("feature_transactions_enabled", "Borrow & Return"),
+    "requests": ("feature_requests_enabled", "Approvals"),
+    "reports": ("feature_reports_enabled", "Reports"),
 }
 
 
@@ -69,3 +95,60 @@ def get_lockout_minutes(conn=None):
 
 def get_due_soon_hours(conn=None):
     return get_setting_int("due_soon_hours", conn)
+
+
+def get_default_loan_days(conn=None):
+    return get_setting_int("default_loan_days", conn)
+
+
+def get_damage_restriction_threshold(conn=None):
+    return get_setting_int("damage_restriction_threshold", conn)
+
+
+def get_setting_bool(key, conn=None):
+    """Same fallback-on-missing/unparseable pattern as get_setting_int, for
+    the '1'/'0' feature-flag rows. Stored as text like every other
+    app_settings value -- '1' is enabled, anything else is disabled."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return DEFAULT_FEATURE_FLAGS.get(key, True)
+        return row["value"] == "1"
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def get_feature_flags(conn=None):
+    """Returns {short_name: enabled_bool} for every entry in FEATURE_FLAGS
+    -- fed to the base.html context processor (app.py) so every template
+    can gate nav links/dashboard widgets on it, and to feature_required()
+    (services/auth_service.py) for route-level enforcement."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_db_connection()
+    try:
+        return {
+            name: get_setting_bool(key, conn)
+            for name, (key, _label) in FEATURE_FLAGS.items()
+        }
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def is_feature_enabled(name, conn=None):
+    """Single-flag convenience wrapper around get_feature_flags for callers
+    (feature_required, sync_loan_notifications) that only care about one
+    feature and shouldn't have to build the whole dict."""
+    key, _label = FEATURE_FLAGS[name]
+    return get_setting_bool(key, conn)
+
+
+def get_feature_label(name):
+    return FEATURE_FLAGS[name][1]

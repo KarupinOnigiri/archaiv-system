@@ -4,8 +4,11 @@ from services.seed_service import seed_initial_admin
 
 def determine_approval_tier(conn, requester_id, target_id):
     """Decides which staff tier must approve a pending admin-deactivation
-    request, based on staff counts at request-creation time. Snapshotted
-    once and stored on the request row — never recalculated later.
+    OR admin-promotion request (same generic staff-count logic serves
+    both -- see finalize_promotion_if_ready below and routes/staff.py's
+    request_admin_promotion), based on staff counts at request-creation
+    time. Snapshotted once and stored on the request row — never
+    recalculated later.
 
     Tiers, in order (first available wins):
       - admin:       a third active admin exists (not requester, not
@@ -141,5 +144,93 @@ def finalize_if_ready(request_row, conn):
     # admins, seed the temporary setup admin immediately rather than
     # waiting for the next app restart.
     seed_initial_admin()
+
+    return True
+
+
+# # # PROMOTION (hand-over) request lifecycle --------------------------------
+# Structurally mirrors the deactivation lifecycle above (determine_approval_
+# tier is shared as-is) but kept as its own table/function pair rather than
+# folded into the same one -- see migrations/0036_admin_promotion_requests.sql
+# for why. No "last admin" floor check here the way finalize_if_ready has
+# one: promoting someone can only ever increase the admin count, never zero
+# it out, so there's nothing analogous to guard against.
+
+
+def finalize_promotion_if_ready(request_row, conn):
+    """Checks whether a pending admin-promotion request has reached its
+    required approval count, and if so, promotes the target to admin and
+    marks the request resolved. Returns True if finalized, False if still
+    waiting on more approvals.
+
+    Auto-denies instead of finalizing if the target is no longer eligible
+    by the time quorum is reached (deactivated, or already promoted to
+    admin some other way in the meantime) -- the approvals collected are
+    still real, but there's nothing left to apply them to."""
+    target = conn.execute(
+        "SELECT username, role, is_active FROM staff WHERE id = ?",
+        (request_row["target_staff_id"],),
+    ).fetchone()
+    target_username = target["username"] if target else None
+    target_label = target_username or f"staff #{request_row['target_staff_id']}"
+
+    approval_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM admin_promotion_approvals WHERE request_id = ?",
+        (request_row["id"],),
+    ).fetchone()["cnt"]
+
+    if approval_count < request_row["required_approvals"]:
+        return False
+
+    if target is None or not target["is_active"] or target["role"] == "admin":
+        conn.execute(
+            """
+            UPDATE admin_promotion_requests
+            SET status = 'denied', denial_reason = ?, resolved_at = datetime('now', 'localtime')
+            WHERE id = ?
+            """,
+            (
+                "Automatically denied: target is no longer an active non-admin account",
+                request_row["id"],
+            ),
+        )
+        conn.commit()
+
+        log_action(
+            staff_id=None,
+            action="admin_promotion_auto_denied",
+            target_table="admin_promotion_requests",
+            target_id=request_row["id"],
+            target_name=target_username,
+            details=(
+                f"Request #{request_row['id']} auto-denied on finalization: "
+                f"target {target_label} is no longer an active non-admin account"
+            ),
+        )
+        return False
+
+    conn.execute("UPDATE staff SET role = 'admin' WHERE id = ?", (request_row["target_staff_id"],))
+    conn.execute(
+        """
+        UPDATE admin_promotion_requests
+        SET status = 'approved', resolved_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (request_row["id"],),
+    )
+    conn.commit()
+
+    log_action(
+        staff_id=None,
+        action="promoted_to_admin_via_approval",
+        target_table="staff",
+        target_id=request_row["target_staff_id"],
+        target_name=target_username,
+        details=(
+            f"{target_label} promoted to admin after reaching "
+            f"{request_row['required_approvals']} {request_row['required_tier']} "
+            f"approval(s) (request #{request_row['id']})"
+        ),
+    )
 
     return True

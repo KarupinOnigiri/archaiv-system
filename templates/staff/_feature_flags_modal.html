@@ -1,0 +1,123 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-md">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Feature Access</h3>
+        <p class="text-sm text-base-content/50 mt-1">Turning a tab off hides it from the sidebar for everyone and blocks its pages/actions directly. Notifications, Feedback, Staff, Activity Log, and System always stay on.</p>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
+    {% endif %}
+
+    <!-- No password field here on purpose -- picking toggles and
+         confirming your password are two separate steps now (see
+         openFeatureFlagsPasswordConfirm below), not one form submitted
+         all at once. onsubmit intercepts the actual POST until that
+         second step passes. -->
+    <form id="feature-flags-form" onsubmit="return openFeatureFlagsPasswordConfirm(event)" class="space-y-3">
+
+      {% for name, label in [
+          ("assets", "Inventory"),
+          ("members", "Members"),
+          ("transactions", "Borrow & Return"),
+          ("requests", "Approvals"),
+          ("reports", "Reports"),
+      ] %}
+      <label class="flex items-center justify-between gap-3 py-1">
+        <span class="text-sm">{{ label }}</span>
+        <input type="checkbox" name="flag_{{ name }}" class="toggle toggle-primary toggle-sm"
+               {% if feature_flags[name] %}checked{% endif %}>
+      </label>
+      {% endfor %}
+
+      <div class="modal-action flex justify-end items-center gap-2 mt-6">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Password confirmation -- shown only after Save Changes, so an admin
+     picks their toggle changes first and only then has to prove it's
+     really them, rather than typing a password upfront before even
+     deciding what to change. Submits straight to the JSON form of
+     /api/v1/feature-flags/update (routes/staff.py's update_feature_flags
+     already accepts {flags, current_password} JSON, same endpoint the
+     htmx form used before). -->
+<dialog id="feature-flags-confirm-dialog" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Confirm your password</h3>
+    <p class="text-xs text-base-content/50 mb-3">Re-enter your password to apply this change to Feature Access.</p>
+
+    <div id="feature-flags-confirm-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+
+    <input type="password" id="feature-flags-confirm-password" placeholder="Current password"
+           autocomplete="current-password" class="input input-bordered input-sm w-full">
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('feature-flags-confirm-dialog').close()">Cancel</button>
+      <button type="button" id="feature-flags-confirm-submit-btn" class="btn btn-primary btn-sm" onclick="submitFeatureFlagsUpdate()">Confirm</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script>
+function openFeatureFlagsPasswordConfirm(event) {
+  event.preventDefault();
+  document.getElementById('feature-flags-confirm-password').value = '';
+  document.getElementById('feature-flags-confirm-error').classList.add('hidden');
+  document.getElementById('feature-flags-confirm-dialog').showModal();
+  return false;
+}
+
+async function submitFeatureFlagsUpdate() {
+  const errorEl = document.getElementById('feature-flags-confirm-error');
+  errorEl.classList.add('hidden');
+
+  const password = document.getElementById('feature-flags-confirm-password').value;
+  if (!password) {
+    errorEl.textContent = 'Enter your current password to confirm this change';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  const flags = {};
+  document.querySelectorAll('#feature-flags-form input[type="checkbox"]').forEach(function (cb) {
+    flags[cb.name.replace(/^flag_/, '')] = cb.checked;
+  });
+
+  const btn = document.getElementById('feature-flags-confirm-submit-btn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/feature-flags/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ flags: flags, current_password: password }),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = result.error || "That action couldn't be completed";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Feature access updated', type: 'success' }));
+    window.location.href = '/system';
+  } catch (err) {
+    errorEl.textContent = "That action couldn't be completed";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+  }
+}
+</script>

@@ -1,0 +1,167 @@
+{% from "_icons.html" import icon_shield_check, icon_shield_alert %}
+
+{% set can_review = staff.role in ["admin", "in_charge"] %}
+
+<table class="table table-sm w-full" data-total-count="{{ total_count }}">
+  <thead>
+    <tr class="text-xs text-base-content/50">
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">TARGET</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">REQUESTED BY</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">REASON</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">PROGRESS</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">STATUS</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">WAITING</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">REVIEW</th>
+      <th class="py-2 text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for req in requests_list %}
+    {% set is_eligible_reviewer = staff.role == req.required_tier and staff.id not in [req.target_staff_id, req.requested_by_staff_id] %}
+    <tr class="border-t border-base-200">
+      <td class="py-2 text-sm">
+        <a class="link link-hover font-medium" hx-get="/api/v1/staff/{{ req.target_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend">@{{ req.target_username }}</a>
+      </td>
+      <td class="py-2 text-sm text-base-content/70">
+        <a class="link link-hover" hx-get="/api/v1/staff/{{ req.requested_by_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend">@{{ req.requested_by_username }}</a>
+      </td>
+      <td class="py-2 text-sm text-base-content/70 max-w-xs truncate" title="{{ req.reason }}">{{ req.reason }}</td>
+      <td class="py-2 text-sm text-base-content/70 whitespace-nowrap">
+        {{ req.approvals_received }}/{{ req.required_approvals }} <span class="text-base-content/40">{{ req.required_tier.replace("_", " ") }}</span>
+      </td>
+      <td class="py-2">
+        {% if req.status == "pending" %}
+        <span class="px-2 py-0.5 rounded-full bg-warning/10 text-warning text-xs font-medium">Pending</span>
+        {% elif req.status == "approved" %}
+        <span class="px-2 py-0.5 rounded-full bg-success/10 text-success text-xs font-medium">Approved</span>
+        {% elif req.status == "denied" %}
+        <span class="px-2 py-0.5 rounded-full bg-error/10 text-error text-xs font-medium">Denied</span>
+        {% else %}
+        <span class="px-2 py-0.5 rounded-full bg-base-300 text-base-content/60 text-xs font-medium">Cancelled</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-sm whitespace-nowrap">
+        <span class="request-waiting-badge {% if req.status != 'pending' %}text-base-content/40{% endif %}" data-created-at="{{ req.created_at }}" data-pending="{{ 'true' if req.status == 'pending' else 'false' }}"></span>
+      </td>
+      <td class="py-2 text-sm text-base-content/60 max-w-xs truncate" title="{{ req.denial_reason or '' }}">
+        {% if req.status == "approved" %}
+        Finalized{% if req.resolved_at %} {{ req.resolved_at | format_date('%b %d, %Y') }}{% endif %}
+        {% elif req.denied_by_username %}
+        @{{ req.denied_by_username }}{% if req.denial_reason %}: {{ req.denial_reason }}{% endif %}
+        {% elif req.status == "cancelled" %}
+        Cancelled by requester
+        {% else %}
+        &mdash;
+        {% endif %}
+      </td>
+      <td class="py-2 text-right">
+        {% if req.status == "pending" %}
+          {% if is_eligible_reviewer %}
+          <button type="button" class="btn btn-ghost btn-xs text-success" title="Approve" onclick="approvePromotionRequest({{ req.id }}, this)">
+            {{ icon_shield_check() }}
+          </button>
+          <button type="button" class="btn btn-ghost btn-xs text-error" title="Deny" onclick="denyPromotionRequest({{ req.id }}, this)">
+            {{ icon_shield_alert() }}
+          </button>
+          {% endif %}
+          {% if req.requested_by_staff_id == staff.id %}
+          <button type="button" class="btn btn-ghost btn-xs" onclick="cancelPromotionRequest({{ req.id }}, this)">Cancel</button>
+          {% endif %}
+        {% else %}
+        <span class="text-base-content/30 text-xs">&mdash;</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="8" class="py-16 text-center text-sm text-base-content/50">No admin promotion requests match this filter.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Pagination footer -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/admin-promotion-requests"
+            hx-trigger="change"
+            hx-target="#promotion-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#requests-spinner"
+            hx-include="#promotion-status-filter, #promotion-mine-filter"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }}
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            data-tooltip="Previous page (←)" aria-label="Previous page"
+            hx-get="/api/v1/admin-promotion-requests"
+            hx-target="#promotion-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#requests-spinner"
+            hx-include="#promotion-status-filter, #promotion-mine-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/admin-promotion-requests"
+                hx-target="#promotion-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#requests-spinner"
+                hx-include="#promotion-status-filter, #promotion-mine-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            data-tooltip="Next page (→)" aria-label="Next page"
+            hx-get="/api/v1/admin-promotion-requests"
+            hx-target="#promotion-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#requests-spinner"
+            hx-include="#promotion-status-filter, #promotion-mine-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>
+
+<script>
+if (window.renderWaitingBadges) renderWaitingBadges();
+</script>

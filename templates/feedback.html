@@ -5,8 +5,8 @@
   <!-- Page header -->
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold">Feedback &amp; bug reports</h1>
-      <p class="text-sm text-base-content/50 mt-1">Submitted by staff from the account dropdown's "Give feedback" row.</p>
+      <h1 class="text-2xl font-bold">Feedback &amp; Bug Reports</h1>
+      
     </div>
   </div>
 
@@ -73,6 +73,23 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+<!-- Resolve-with-reply -- resolving requires an actual message back to
+     whoever filed the report (see routes/feedback.py's resolve_feedback),
+     the same way a real support inbox replies instead of silently
+     closing a ticket. -->
+<dialog id="feedback-resolve-dialog" class="modal">
+  <div class="modal-box max-w-md">
+    <h3 class="font-bold text-lg mb-1">Reply &amp; mark resolved</h3>
+    <p class="text-sm text-base-content/50 mb-3">Let the reporter know what happened -- e.g. "Fixed", "Testing this now", "Not applicable".</p>
+    <textarea id="feedback-resolve-reply" class="textarea textarea-bordered w-full" rows="3" placeholder="Your reply..."></textarea>
+    <div class="modal-action">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('feedback-resolve-dialog').close()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitFeedbackResolve()">Mark resolved</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <style>
 .htmx-indicator { opacity: 0; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
@@ -100,6 +117,44 @@ async function feedbackAction(url, successMessage) {
     }
 
     sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showToast("That action couldn't be completed", 'error');
+  }
+}
+
+let feedbackResolveTargetId = null;
+
+function openFeedbackResolveDialog(reportId) {
+  feedbackResolveTargetId = reportId;
+  document.getElementById('feedback-resolve-reply').value = '';
+  document.getElementById('feedback-resolve-dialog').showModal();
+}
+
+async function submitFeedbackResolve() {
+  const reply = document.getElementById('feedback-resolve-reply').value.trim();
+  if (!reply) {
+    showToast('Enter a reply before marking this resolved', 'error');
+    return;
+  }
+  try {
+    const res = await fetch(`/api/v1/feedback/${feedbackResolveTargetId}/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ response: reply }),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      showToast(result.error || "That action couldn't be completed", 'error');
+      return;
+    }
+
+    document.getElementById('feedback-resolve-dialog').close();
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Marked resolved', type: 'success' }));
     window.location.reload();
   } catch (err) {
     showToast("That action couldn't be completed", 'error');

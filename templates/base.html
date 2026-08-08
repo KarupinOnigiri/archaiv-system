@@ -78,10 +78,18 @@
     width: 4.25rem;
   }
   /* While collapsed, clicking anywhere on the rail expands it (see the
-     sidebar click handler below), so the whole thing should read as
-     clickable -- unlike the expanded state, where only #sidebar-toggle
-     itself does anything and gets its own explicit cursor instead. */
+     sidebar click handler below) -- an ew-resize cursor reads as "this
+     affects the sidebar's width" (the same affordance VS Code/Gemini-
+     style collapsible rails use), which is a clearer hint than a plain
+     pointer for something that isn't a normal link/button. Nav links and
+     the account trigger are real, individually-clickable controls with
+     their own destination, though, so they keep an ordinary pointer
+     rather than inheriting the resize cursor from the rail around them. */
   #sidebar.collapsed {
+    cursor: ew-resize;
+  }
+  #sidebar.collapsed a,
+  #sidebar.collapsed #sidebar-account {
     cursor: pointer;
   }
   #sidebar.collapsed .sidebar-label,
@@ -118,6 +126,28 @@
      actually transition via opacity instead. */
   #sidebar-toggle {
     transition: opacity 0.05s ease 0.18s;
+  }
+  /* Hover affordance (Gemini-style panel-left-close/-open icon): the
+     chevron lives INSIDE the same panel glyph, in its wider right-hand
+     section, rather than swapping the whole icon out for a separate
+     floating arrow -- both chevrons are already part of the one <svg>
+     markup (see the button below), just opacity:0 until hovered. Only
+     one is ever shown at a time, matching which direction the sidebar is
+     about to move on click. Only ever visible while expanded -- the
+     button itself is hidden while collapsed (rule below), by design;
+     the collapsed rail's own ew-resize cursor is that state's
+     equivalent hint instead. aria-expanded is already kept in sync with
+     collapsed state by the JS toggle below, so which chevron applies
+     needs no separate JS-managed class. */
+  #sidebar-toggle .toggle-chevron {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  #sidebar-toggle:not([aria-expanded="false"]):hover .toggle-chevron-left {
+    opacity: 1;
+  }
+  #sidebar-toggle[aria-expanded="false"]:hover .toggle-chevron-right {
+    opacity: 1;
   }
   #sidebar.collapsed #sidebar-toggle,
   html.sidebar-collapsed-init #sidebar #sidebar-toggle {
@@ -500,7 +530,12 @@
         </div>
         <button type="button" id="sidebar-toggle" class="sidebar-label shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content cursor-pointer"
                 aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="9" y1="3" x2="9" y2="21"/>
+            <path class="toggle-chevron toggle-chevron-left" d="m15 15-3-3 3-3"/>
+            <path class="toggle-chevron toggle-chevron-right" d="m13 9 3 3-3 3"/>
+          </svg>
         </button>
       </div>
 
@@ -508,6 +543,11 @@
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
+        {% if href != "/assets" or feature_flags.assets %}
+        {% if href != "/members" or feature_flags.members %}
+        {% if href != "/transactions" or feature_flags.transactions %}
+        {% if href != "/requests" or feature_flags.requests %}
+        {% if href != "/reports" or feature_flags.reports %}
         <a href="{{ href }}" data-tooltip="{{ label }}" data-tooltip-rail aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -555,6 +595,11 @@
           {% endif %}
         </a>
         {% endif %}
+        {% endif %}
+        {% endif %}
+        {% endif %}
+        {% endif %}
+        {% endif %}
         {% endfor %}
 
         {% if staff and staff.role == "admin" %}
@@ -586,12 +631,19 @@
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             {% if open_feedback_count %}
-            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full items-center justify-center leading-none">{{ "9+" if open_feedback_count > 9 else open_feedback_count }}</span>
+            <!-- Same active/inactive flip as Notifications' badges (both
+                 the collapsed dot here and the expanded pill below) --
+                 .sidebar-link-active paints the whole row that same blue
+                 while /feedback is the active tab, so a plain bg-primary
+                 dot would disappear into it without the flip. -->
+            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
+                         {% if request.path == '/feedback' %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if open_feedback_count > 9 else open_feedback_count }}</span>
             {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Feedback</span>
           {% if open_feedback_count %}
-          <span class="sidebar-label ml-auto bg-base-content text-base-100 text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ open_feedback_count }}</span>
+          <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
+                       {% if request.path == '/feedback' %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if open_feedback_count > 9 else open_feedback_count }}</span>
           {% endif %}
         </a>
         {% endif %}
@@ -1104,6 +1156,31 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
       </dialog>
 
+      <!-- Reusable password/PIN field with a login.html-style show/hide
+           eye toggle -- the button only appears once the field has
+           content (toggleFieldVisibility's paired input listener, wired
+           for every field id passed here in the script block below), and
+           only the `type` attribute flips between password/text; any
+           other attributes (inputmode/pattern/minlength/maxlength for
+           the PIN fields) pass through via extra_attrs untouched. -->
+      {% macro password_toggle_field(field_id, placeholder, extra_attrs='') %}
+      <div class="relative">
+        <input type="password" id="{{ field_id }}" placeholder="{{ placeholder }}" {{ extra_attrs | safe }}
+               class="input input-bordered input-sm w-full pr-9" />
+        <button type="button" id="{{ field_id }}-toggle-btn" onclick="toggleFieldVisibility('{{ field_id }}')"
+                aria-label="Show password" tabindex="-1"
+                class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content">
+          <svg id="{{ field_id }}-eye-open" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+            <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <svg id="{{ field_id }}-eye-closed" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.98 8.223A10.477 10.477 0 001.934 12c1.292 4.338 5.31 7.5 10.066 7.5.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0112 4.5c4.756 0 8.774 3.162 10.065 7.498a10.522 10.522 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+          </svg>
+        </button>
+      </div>
+      {% endmacro %}
+
       <!-- Change password modal -->
       <dialog id="change-password-modal" class="modal" onclose="resetChangePasswordForm()">
         <div class="modal-box max-w-sm">
@@ -1114,12 +1191,9 @@
 
           <form id="change-password-form" onsubmit="return submitChangePassword(event)">
             <div class="space-y-2">
-              <input type="password" id="cp-current" placeholder="Current password" autocomplete="current-password"
-                     class="input input-bordered input-sm w-full" />
-              <input type="password" id="cp-new" placeholder="New password (min. 8 characters)" autocomplete="new-password"
-                     class="input input-bordered input-sm w-full" />
-              <input type="password" id="cp-confirm" placeholder="Confirm new password" autocomplete="new-password"
-                     class="input input-bordered input-sm w-full" />
+              {{ password_toggle_field('cp-current', 'Current password', 'autocomplete="current-password"') }}
+              {{ password_toggle_field('cp-new', 'New password (min. 8 characters)', 'autocomplete="new-password"') }}
+              {{ password_toggle_field('cp-confirm', 'Confirm new password', 'autocomplete="new-password"') }}
             </div>
 
             <div class="modal-action">
@@ -1153,12 +1227,9 @@
 
           <form id="change-rfid-pin-form" onsubmit="return submitChangeRfidPin(event)">
             <div class="space-y-2">
-              <input type="password" id="crp-current-password" placeholder="Current password" autocomplete="current-password"
-                     class="input input-bordered input-sm w-full" />
-              <input type="password" id="crp-new-pin" placeholder="New PIN (exactly 6 digits)" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"
-                     class="input input-bordered input-sm w-full" />
-              <input type="password" id="crp-confirm-pin" placeholder="Confirm new PIN" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"
-                     class="input input-bordered input-sm w-full" />
+              {{ password_toggle_field('crp-current-password', 'Current password', 'autocomplete="current-password"') }}
+              {{ password_toggle_field('crp-new-pin', 'New PIN (exactly 6 digits)', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
+              {{ password_toggle_field('crp-confirm-pin', 'Confirm new PIN', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
             </div>
 
             <div class="modal-action">
@@ -1261,6 +1332,27 @@
                      {% if staff.notify_requests %}checked{% endif %}
                      onchange="updateNotificationPref('notify_requests', this.checked)">
             </label>
+
+            <!-- Toast display duration -- personal, this account only (see
+                 routes/staff.py's update_own_notification_prefs and the
+                 staff.toast_duration_seconds column, migrations/0038).
+                 Drives TOAST_DEFAULT_DURATION_MS/TOAST_ACTION_DURATION_MS
+                 below rather than a per-toast-call value, so it's a
+                 one-time page-load setting, not something that can change
+                 mid-session without a reload. -->
+            <div class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl">
+              <span class="flex-1">
+                <span class="block text-sm font-medium text-base-content">Toast display duration</span>
+                <span class="block text-xs text-base-content/50">How long a toast notification stays on screen before fading out</span>
+              </span>
+              <div class="flex items-center gap-2 shrink-0">
+                <input type="number" id="toast-duration-input" min="2" max="15"
+                       value="{{ staff.toast_duration_seconds or 4 }}"
+                       class="input input-bordered input-xs w-14 text-center"
+                       onchange="updateToastDuration(this.value)">
+                <span class="text-xs text-base-content/50">sec</span>
+              </div>
+            </div>
           </div>
 
           <div class="modal-action">
@@ -1764,6 +1856,25 @@
   toggleBtn.addEventListener('click', hideTooltip);
 })();
 
+// A disabled-tab redirect (services/auth_service.py's feature_required)
+// lands here as '/?feature_disabled=<label>' -- this app has no
+// server-side flash(), so the one-shot message rides a query param
+// instead and gets toasted client-side. Wrapped in DOMContentLoaded (even
+// though this script tag already runs after the DOM is parsed) so it
+// runs after showToast's own <script> block further down the page has
+// executed, regardless of where in the document this ends up.
+document.addEventListener('DOMContentLoaded', function () {
+  const params = new URLSearchParams(window.location.search);
+  const disabledFeature = params.get('feature_disabled');
+  if (disabledFeature) {
+    showToast(`${disabledFeature} is currently disabled`, 'warning');
+    params.delete('feature_disabled');
+    const newSearch = params.toString();
+    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+    history.replaceState(null, '', newUrl);
+  }
+});
+
 // Accumulated across possibly-repeated "Add screenshot" clicks -- a plain
 // <input multiple> alone would replace its file list on every pick, so
 // this array (and the previews rendered from it) is the actual source of
@@ -1885,6 +1996,54 @@ async function submitGiveFeedback(event) {
   return false;
 }
 
+// Generalizes login.html's togglePassword() to any field id -- expects a
+// sibling button #<fieldId>-toggle-btn and two SVGs #<fieldId>-eye-open/
+// -eye-closed, all emitted together by base.html's password_toggle_field
+// macro. Only the `type` attribute flips (password <-> text); nothing
+// else about the field (inputmode/pattern for the PIN fields) is touched.
+function toggleFieldVisibility(fieldId) {
+  const field = document.getElementById(fieldId);
+  const eyeOpen = document.getElementById(fieldId + '-eye-open');
+  const eyeClosed = document.getElementById(fieldId + '-eye-closed');
+  if (!field) return;
+  if (field.type === 'password') {
+    field.type = 'text';
+    eyeOpen.classList.remove('hidden');
+    eyeClosed.classList.add('hidden');
+  } else {
+    field.type = 'password';
+    eyeOpen.classList.add('hidden');
+    eyeClosed.classList.remove('hidden');
+  }
+}
+
+// Same "only show the toggle once there's something to reveal" behavior
+// as login.html's password field -- wired once per field id here rather
+// than repeated inline per input.
+function wirePasswordToggleField(fieldId) {
+  const field = document.getElementById(fieldId);
+  const btn = document.getElementById(fieldId + '-toggle-btn');
+  if (!field || !btn) return;
+  field.addEventListener('input', function () {
+    btn.classList.toggle('hidden', this.value.length === 0);
+  });
+}
+
+['cp-current', 'cp-new', 'cp-confirm', 'crp-current-password', 'crp-new-pin', 'crp-confirm-pin']
+  .forEach(wirePasswordToggleField);
+
+// Restores every password_toggle_field back to its default hidden-text,
+// toggle-hidden state -- form.reset() clears values but not a `type`
+// attribute changed imperatively by toggleFieldVisibility, so a field
+// left toggled to "text" would otherwise still show as "text" the next
+// time this modal opens even after being reset/closed.
+function resetPasswordToggleField(fieldId) {
+  const field = document.getElementById(fieldId);
+  const btn = document.getElementById(fieldId + '-toggle-btn');
+  if (field) field.type = 'password';
+  if (btn) btn.classList.add('hidden');
+}
+
 function resetChangePasswordForm() {
   const form = document.getElementById('change-password-form');
   if (form) form.reset();
@@ -1892,6 +2051,7 @@ function resetChangePasswordForm() {
   if (errorEl) errorEl.classList.add('hidden');
   const btn = document.getElementById('change-password-submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Update password'; }
+  ['cp-current', 'cp-new', 'cp-confirm'].forEach(resetPasswordToggleField);
 }
 
 async function submitChangePassword(event) {
@@ -1978,6 +2138,7 @@ function resetChangeRfidPinForm() {
   if (errorEl) errorEl.classList.add('hidden');
   const btn = document.getElementById('change-rfid-pin-submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Update PIN'; }
+  ['crp-current-password', 'crp-new-pin', 'crp-confirm-pin'].forEach(resetPasswordToggleField);
 }
 
 async function submitChangeRfidPin(event) {
@@ -2499,6 +2660,38 @@ function updateNotificationPref(field, checked) {
   });
 }
 
+// Same shape as updateNotificationPref above, for the toast-duration
+// number input -- note the newly-saved duration only takes effect for
+// toasts shown *after* a reload (TOAST_DEFAULT_DURATION_MS/
+// TOAST_ACTION_DURATION_MS below are computed once at page-render time),
+// not the confirmation toast this very call triggers.
+function updateToastDuration(value) {
+  const seconds = parseInt(value, 10);
+  if (isNaN(seconds) || seconds < 2 || seconds > 15) {
+    showToast('Toast duration must be between 2 and 15 seconds', 'error');
+    return;
+  }
+
+  fetch('/api/v1/staff/notification-prefs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    },
+    body: JSON.stringify({ toast_duration_seconds: seconds }),
+  }).then((res) => {
+    if (res.status === 401) {
+      showSessionTimeoutModal();
+    } else if (!res.ok) {
+      showToast("Couldn't save that preference", 'error');
+    } else {
+      showToast('Toast duration saved -- applies after your next page load', 'success');
+    }
+  }).catch(() => {
+    showToast("Couldn't save that preference", 'error');
+  });
+}
+
 function setNotifTab(tab) {
   document.querySelectorAll('.notif-tab').forEach((btn) => {
     const active = btn.id === `notif-tab-${tab}`;
@@ -2615,8 +2808,17 @@ function toggleToastStyle() {
   showToast(`Notification style set to ${TOAST_STYLE_LABELS[TOAST_STYLE]}`, 'success');
 }
 
-const TOAST_DEFAULT_DURATION_MS = 4000;
-const TOAST_ACTION_DURATION_MS = 6000;
+// Per-staff preference (staff.toast_duration_seconds, migrations/0038,
+// routes/staff.py's update_own_notification_prefs, the Settings &
+// privacy modal above) -- "if staff else" rather than "staff.toast_...
+// or 4" since this script runs outside the Jinja "staff is truthy" guard
+// further up the page (e.g. an anonymous /login render), and unlike a
+// plain "or" expression, Jinja's inline if/else never evaluates the
+// untaken branch, so staff.toast_duration_seconds is never touched when
+// staff itself is undefined. The action-toast bonus stays a flat +2s on
+// top, same gap as the old hardcoded 4000/6000 pair.
+const TOAST_DEFAULT_DURATION_MS = {{ (staff.toast_duration_seconds if staff else 4) * 1000 }};
+const TOAST_ACTION_DURATION_MS = TOAST_DEFAULT_DURATION_MS + 2000;
 
 const SESSION_TIMEOUT_REDIRECT_SECONDS = 3;
 

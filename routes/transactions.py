@@ -1,9 +1,11 @@
 from flask import Blueprint, jsonify, g, request, render_template, make_response
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required, roles_required
+from services.settings_service import is_feature_enabled, get_feature_label, get_default_loan_days
 from services.loan_service import (
     check_and_restrict_overdue_member,
     check_and_lift_restriction_if_resolved,
+    check_and_restrict_damaged_returns,
 )
 from utils.logger import log_action
 from utils.formatters import full_name
@@ -22,6 +24,16 @@ from extensions import limiter
 transactions_bp = Blueprint("transactions", __name__)
 
 
+@transactions_bp.before_request
+def _block_if_transactions_disabled():
+    if not is_feature_enabled("transactions"):
+        return jsonify({"error": f"{get_feature_label('transactions')} is currently disabled"}), 403
+
+
+# Fallback only -- the real, admin-editable default lives in app_settings
+# (see services/settings_service.py's get_default_loan_days and
+# routes/staff.py's loan-duration manage-form/update pair). What this
+# constant backs up is DEFAULT_SETTINGS, not the checkout flow directly.
 DEFAULT_LOAN_DAYS = 2
 # Fallback only -- the real, admin-editable caps live in the loan_limits
 # table (see routes/staff.py's manage-loan-limits endpoints and
@@ -646,7 +658,7 @@ def create_checkout_session():
         ).fetchone()
     else:
         member = conn.execute(
-            "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+            "SELECT * FROM members WHERE UPPER(barcode_id) = UPPER(?)", (member_barcode,)
         ).fetchone()
 
     if member is None:
@@ -814,7 +826,7 @@ def add_item_to_session(id):
         return error
 
     asset = conn.execute(
-        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
+        "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
         (asset_code, asset_code),
     ).fetchone()
 
@@ -1050,6 +1062,8 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
 
     conn.commit()
     check_and_lift_restriction_if_resolved(member["id"], conn)
+    if final_condition != "functional":
+        check_and_restrict_damaged_returns(member["id"], conn)
 
     return {
         "final_condition": final_condition,
@@ -1068,7 +1082,7 @@ def _find_open_transaction_for_scan(asset_code, member_barcode, conn):
     error_response); error_response is None on success, in which case all
     three of the others are populated."""
     asset = conn.execute(
-        "SELECT * FROM assets WHERE (barcode_id = ? OR rfid_id = ?) AND deleted_at IS NULL",
+        "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
         (asset_code, asset_code),
     ).fetchone()
     if asset is None:
@@ -1082,7 +1096,7 @@ def _find_open_transaction_for_scan(asset_code, member_barcode, conn):
         return None, None, None, (jsonify({"error": "This asset has no open borrow transaction"}), 400)
 
     member = conn.execute(
-        "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+        "SELECT * FROM members WHERE UPPER(barcode_id) = UPPER(?)", (member_barcode,)
     ).fetchone()
     if member is None:
         return None, None, None, (jsonify({"error": "member not found"}), 404)
@@ -1191,7 +1205,7 @@ def member_open_loans():
 
     conn = get_db_connection()
     member = conn.execute(
-        "SELECT * FROM members WHERE barcode_id = ?", (member_barcode,)
+        "SELECT * FROM members WHERE UPPER(barcode_id) = UPPER(?)", (member_barcode,)
     ).fetchone()
     if member is None:
         conn.close()
@@ -1679,12 +1693,13 @@ def checkout_session(id):
     error = validate_due_date(due_date)
     if error:
         return error
-    if due_date is None:
-        due_date = (datetime.now() + timedelta(days=DEFAULT_LOAN_DAYS)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
 
     conn = get_db_connection()
+
+    if due_date is None:
+        due_date = (
+            datetime.now() + timedelta(days=get_default_loan_days(conn))
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
     session = conn.execute(
         "SELECT * FROM checkout_sessions WHERE id = ?", (id,)

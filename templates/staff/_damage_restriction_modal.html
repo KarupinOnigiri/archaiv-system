@@ -1,0 +1,37 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-md">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Damage Restriction</h3>
+        <p class="text-sm text-base-content/50 mt-1">Auto-restricts a member's account after they've returned too many items damaged.</p>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
+    {% endif %}
+
+    <form id="damage-restriction-form"
+          hx-post="/api/v1/damage-restriction/update"
+          hx-target="#modal-container"
+          hx-swap="innerHTML"
+          class="space-y-4">
+
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RETURNS BEFORE AUTO-RESTRICTION</label>
+        <input type="number" name="damage_restriction_threshold" min="1" max="50" required
+               value="{{ damage_restriction_threshold }}"
+               class="input input-bordered input-sm w-full mt-1">
+        <p class="text-xs text-base-content/40 mt-1">
+          Once a member has returned this many items marked inoperable, for repair, or disposed, their account is automatically restricted -- same as an overdue restriction, but it stays restricted until an admin or in-charge staff reviews and approves an unrestriction request (it doesn't clear on its own).
+        </p>
+      </div>
+
+      <div class="modal-action flex justify-end items-center gap-2 mt-6">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+      </div>
+    </form>
+  </div>
+</div>

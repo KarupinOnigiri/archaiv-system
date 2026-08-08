@@ -36,11 +36,17 @@
         {% if r.status == 'resolved' and r.resolved_at %}
         <p class="text-xs text-base-content/40 mt-2">Resolved {{ r.resolved_at }}</p>
         {% endif %}
+        {% if r.status == 'resolved' and r.admin_response %}
+        <div class="mt-2 bg-base-200/60 rounded-lg px-3 py-2 text-sm">
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-0.5">REPLY</p>
+          <p class="whitespace-pre-wrap break-words">{{ r.admin_response }}</p>
+        </div>
+        {% endif %}
       </div>
       <div class="shrink-0">
         {% if r.status == 'open' %}
         <button type="button" class="btn btn-outline btn-xs"
-                onclick="feedbackAction('/api/v1/feedback/{{ r.id }}/resolve', 'Marked resolved')">
+                onclick="openFeedbackResolveDialog({{ r.id }})">
           Mark resolved
         </button>
         {% else %}

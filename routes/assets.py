@@ -10,6 +10,7 @@ from flask import (
 )
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
+from services.settings_service import is_feature_enabled, get_feature_label
 from utils.logger import log_action
 from datetime import datetime
 from utils.validators import (
@@ -34,6 +35,17 @@ from openpyxl.utils import get_column_letter
 logger = logging.getLogger(__name__)
 
 assets_bp = Blueprint("assets", __name__)
+
+
+@assets_bp.before_request
+def _block_if_assets_disabled():
+    """Blocks every route in this blueprint (create/edit/delete/table
+    partials/export -- not just the /assets page, which routes/pages.py
+    already gates via @feature_required) when an admin has disabled the
+    Inventory tab. JSON 403, not a redirect -- every route here already
+    returns JSON/htmx fragments, never a full page."""
+    if not is_feature_enabled("assets"):
+        return jsonify({"error": f"{get_feature_label('assets')} is currently disabled"}), 403
 
 ADDITIONAL_IMAGE_SLOTS = (1, 2)
 
@@ -2274,7 +2286,7 @@ def get_asset_by_barcode(barcode):
         SELECT assets.*, categories.name AS category
         FROM assets
         LEFT JOIN categories ON assets.category_id = categories.id
-        WHERE (assets.barcode_id = ? OR assets.rfid_id = ?) AND assets.deleted_at IS NULL
+        WHERE (UPPER(assets.barcode_id) = UPPER(?) OR UPPER(assets.rfid_id) = UPPER(?)) AND assets.deleted_at IS NULL
         """,
         (barcode, barcode),
     ).fetchone()
@@ -2384,7 +2396,7 @@ def asset_by_barcode(barcode):
     response to render, not an error condition."""
     conn = get_db_connection()
     asset = conn.execute(
-        "SELECT id FROM assets WHERE barcode_id = ?", (barcode,)
+        "SELECT id FROM assets WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)
     ).fetchone()
     conn.close()
     if asset is None:

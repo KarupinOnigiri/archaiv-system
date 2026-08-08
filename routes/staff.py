@@ -5,6 +5,7 @@ from utils.uploads import validate_image_upload, save_staff_photo, delete_staff_
 from services.admin_deactivation_service import (
     determine_approval_tier,
     finalize_if_ready,
+    finalize_promotion_if_ready,
 )
 from utils.logger import log_action
 from utils.validators import (
@@ -23,6 +24,10 @@ from services.settings_service import (
     get_lockout_minutes,
     get_due_soon_hours,
     INDEFINITE_LOCK_UNTIL,
+    FEATURE_FLAGS,
+    get_feature_flags,
+    get_default_loan_days,
+    get_damage_restriction_threshold,
 )
 import sqlite3
 import csv
@@ -957,6 +962,11 @@ _NOTIFY_PREF_COLUMNS = ("notify_due_soon", "notify_overdue", "notify_requests")
 @staff_bp.route("/staff/notification-prefs", methods=["POST"])
 @login_required
 def update_own_notification_prefs():
+    """Started as the three boolean notify_* toggles (_NOTIFY_PREF_COLUMNS
+    above); also handles toast_duration_seconds here now -- a personal
+    display preference (templates/base.html's toast auto-dismiss timer),
+    not a permission, so it belongs in this "my own account settings"
+    endpoint rather than an admin-only System page one."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -967,6 +977,15 @@ def update_own_notification_prefs():
             if not isinstance(data[col], bool):
                 return jsonify({"error": f"{col} must be true or false"}), 400
             updates[col] = 1 if data[col] else 0
+
+    if "toast_duration_seconds" in data:
+        try:
+            seconds = int(data["toast_duration_seconds"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "toast_duration_seconds must be a whole number"}), 400
+        if not (2 <= seconds <= 15):
+            return jsonify({"error": "toast_duration_seconds must be between 2 and 15"}), 400
+        updates["toast_duration_seconds"] = seconds
 
     if not updates:
         return jsonify({"error": "No recognized preference fields provided"}), 400
@@ -992,7 +1011,10 @@ def update_own_notification_prefs():
         target_id=g.staff["id"],
         target_name=g.staff["username"],
         details="Updated own notification preferences: "
-        + ", ".join(f"{col}={'on' if val else 'off'}" for col, val in updates.items()),
+        + ", ".join(
+            f"{col}={val}" if col == "toast_duration_seconds" else f"{col}={'on' if val else 'off'}"
+            for col, val in updates.items()
+        ),
     )
 
     return jsonify({"message": "Notification preferences updated", **updates})
@@ -2065,6 +2087,359 @@ def list_admin_deactivation_requests():
     )
 
 
+# # # ADMIN PROMOTION (peer-approved hand-over) requests ---------------------
+# Structurally mirrors the admin-deactivation routes just above --
+# request/approve/deny/list, same tier/eligibility rules -- but for the
+# opposite direction: nominating a non-admin staff member to become an
+# admin, instead of removing one. See services/admin_deactivation_service.py's
+# finalize_promotion_if_ready and migrations/0036_admin_promotion_requests.sql.
+
+
+@staff_bp.route("/staff/<int:id>/request-promotion", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def request_admin_promotion(id):
+    """Nominates a non-admin staff member for promotion to admin -- takes
+    effect automatically once enough peer approvals come in, the same
+    quorum shape as request_admin_deactivation, so one admin can't
+    unilaterally hand the role to an ally."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    reason = data.get("reason")
+    if not reason:
+        return jsonify({"error": "Missing required field: reason"}), 400
+
+    conn = get_db_connection()
+    target = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+
+    if target is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if target["role"] == "admin":
+        conn.close()
+        return jsonify({"error": "This staff member is already an admin"}), 400
+
+    if not target["is_active"]:
+        conn.close()
+        return jsonify({"error": "Cannot promote a deactivated staff account"}), 400
+
+    existing_pending = conn.execute(
+        "SELECT id FROM admin_promotion_requests WHERE target_staff_id = ? AND status = 'pending'",
+        (id,),
+    ).fetchone()
+
+    if existing_pending is not None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "A pending promotion request already exists for this staff member",
+                    "request_id": existing_pending["id"],
+                }
+            ),
+            409,
+        )
+
+    tier, required_approvals = determine_approval_tier(conn, g.staff["id"], id)
+
+    if tier is None:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "No eligible approvers currently exist to process this request",
+                    "reason": "Promoting this staff member requires approval from another admin, or at least 2 in_charge accounts, or at least 1 tool_keeper — none are currently available.",
+                }
+            ),
+            409,
+        )
+
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO admin_promotion_requests
+                (target_staff_id, requested_by_staff_id, reason, required_tier, required_approvals)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (id, g.staff["id"], reason, tier, required_approvals),
+        )
+        conn.commit()
+        request_id = cursor.lastrowid
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        logger.error(f"IntegrityError: {e}")
+        return jsonify({"error": "A database constraint was violated."}), 400
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="requested_admin_promotion",
+        target_table="admin_promotion_requests",
+        target_id=request_id,
+        target_name=target["username"],
+        details=(
+            f"Requested promotion of {target['username']} to admin: {reason} "
+            f"(requires {required_approvals} {tier} approval(s))"
+        ),
+    )
+
+    return (
+        jsonify(
+            {
+                "message": "Promotion request submitted",
+                "id": request_id,
+                "required_tier": tier,
+                "required_approvals": required_approvals,
+            }
+        ),
+        201,
+    )
+
+
+@staff_bp.route("/admin-promotion-requests/<int:id>/approve", methods=["POST"])
+@login_required
+@limiter.limit("20 per minute")
+def approve_admin_promotion(id):
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_promotion_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    if req["status"] != "pending":
+        conn.close()
+        return jsonify({"error": f"This request has already been {req['status']}"}), 409
+
+    if g.staff["role"] != req["required_tier"]:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": f"This request requires approval from {req['required_tier']} accounts"
+                }
+            ),
+            403,
+        )
+
+    if g.staff["id"] in (req["target_staff_id"], req["requested_by_staff_id"]):
+        conn.close()
+        return (
+            jsonify(
+                {"error": "You cannot approve a request you filed or are the target of"}
+            ),
+            403,
+        )
+
+    try:
+        conn.execute(
+            "INSERT INTO admin_promotion_approvals (request_id, approver_staff_id) VALUES (?, ?)",
+            (id, g.staff["id"]),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "You have already approved this request"}), 400
+
+    target_staff_row = conn.execute(
+        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
+    ).fetchone()
+    log_action(
+        staff_id=g.staff["id"],
+        action="approved_admin_promotion",
+        target_table="admin_promotion_requests",
+        target_id=id,
+        target_name=target_staff_row["username"] if target_staff_row else None,
+        details=f"Approved promotion request #{id} for staff {req['target_staff_id']}",
+    )
+
+    approval_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM admin_promotion_approvals WHERE request_id = ?",
+        (id,),
+    ).fetchone()["cnt"]
+
+    finalized = finalize_promotion_if_ready(req, conn)
+    conn.close()
+
+    if finalized:
+        return jsonify(
+            {
+                "message": "Approval recorded — required approvals reached, staff member promoted to admin"
+            }
+        )
+
+    return jsonify(
+        {
+            "message": "Approval recorded",
+            "approvals_received": approval_count,
+            "approvals_required": req["required_approvals"],
+        }
+    )
+
+
+@staff_bp.route("/admin-promotion-requests/<int:id>/deny", methods=["POST"])
+@login_required
+@limiter.limit("20 per minute")
+def deny_admin_promotion(id):
+    """A single denial from anyone eligible to approve this request's tier
+    cancels it outright -- same as admin-deactivation's deny. The
+    requester can also cancel their own pending request."""
+    data, error = get_json_or_error()
+    denial_reason = data.get("denial_reason") if not error else None
+
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_promotion_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    if req["status"] != "pending":
+        conn.close()
+        return jsonify({"error": f"This request has already been {req['status']}"}), 409
+
+    is_requester = g.staff["id"] == req["requested_by_staff_id"]
+    is_eligible_denier = g.staff["role"] == req["required_tier"] and g.staff[
+        "id"
+    ] not in (req["target_staff_id"], req["requested_by_staff_id"])
+
+    if not (is_requester or is_eligible_denier):
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "error": "You are not authorized to deny this request",
+                    "reason": f"Only the requester (to cancel it) or a {req['required_tier']} account (other than the requester or target) can deny this request",
+                }
+            ),
+            403,
+        )
+
+    new_status = "cancelled" if is_requester else "denied"
+
+    target_staff_row = conn.execute(
+        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
+    ).fetchone()
+
+    conn.execute(
+        """
+        UPDATE admin_promotion_requests
+        SET status = ?, denied_by_staff_id = ?, denial_reason = ?, resolved_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (new_status, g.staff["id"], denial_reason, id),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action=(
+            "cancelled_admin_promotion"
+            if is_requester
+            else "denied_admin_promotion"
+        ),
+        target_name=target_staff_row["username"] if target_staff_row else None,
+        target_table="admin_promotion_requests",
+        target_id=id,
+        details=f"Request #{id} {new_status}"
+        + (f": {denial_reason}" if denial_reason else ""),
+    )
+
+    return jsonify({"message": f"Request {new_status}"})
+
+
+@staff_bp.route("/admin-promotion-requests")
+@login_required
+def list_admin_promotion_requests():
+    """Same visibility rules as list_admin_deactivation_requests: admin/
+    in_charge see every request (supervisory view), everyone else only
+    sees requests whose required_tier matches their own role."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    valid_statuses = ("pending", "approved", "denied", "cancelled")
+    status_filter = request.args.get("status")
+    if status_filter and status_filter not in valid_statuses:
+        return (
+            jsonify({"error": f"status must be one of: {', '.join(valid_statuses)}"}),
+            400,
+        )
+
+    where_clauses = []
+    params = []
+
+    if g.staff["role"] not in ("admin", "in_charge"):
+        where_clauses.append("admin_promotion_requests.required_tier = ?")
+        params.append(g.staff["role"])
+    elif request.args.get("mine") == "1":
+        where_clauses.append("admin_promotion_requests.requested_by_staff_id = ?")
+        params.append(g.staff["id"])
+
+    if status_filter:
+        where_clauses.append("admin_promotion_requests.status = ?")
+        params.append(status_filter)
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    conn = get_db_connection()
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM admin_promotion_requests {where_sql}", params
+    ).fetchone()["cnt"]
+
+    rows = conn.execute(
+        f"""
+        SELECT admin_promotion_requests.*,
+               target.username AS target_username,
+               requester.username AS requested_by_username,
+               denier.username AS denied_by_username,
+               (SELECT COUNT(*) FROM admin_promotion_approvals
+                WHERE admin_promotion_approvals.request_id = admin_promotion_requests.id
+               ) AS approvals_received
+        FROM admin_promotion_requests
+        JOIN staff AS target ON admin_promotion_requests.target_staff_id = target.id
+        JOIN staff AS requester ON admin_promotion_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS denier ON admin_promotion_requests.denied_by_staff_id = denier.id
+        {where_sql}
+        ORDER BY admin_promotion_requests.created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        params + [limit, offset],
+    ).fetchall()
+    conn.close()
+
+    context = {
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "status_filter": status_filter or "",
+        "requests_list": rows,
+    }
+
+    if request.headers.get("HX-Request") == "true":
+        return render_template(
+            "requests/_promotion_table.html", staff=g.staff, **context
+        )
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [dict(row) for row in rows],
+        }
+    )
+
+
 # # # LOAN LIMITS (per-member-type concurrent-loan caps) ----------------------
 
 
@@ -2753,3 +3128,240 @@ def update_notification_settings():
     # clears/closes the modal in place instead -- see the htmx:afterRequest
     # listener in base.html for the confirmation toast.
     return make_response("", 200)
+
+
+# # # LOAN DURATION (admin-editable default checkout due date) --------------
+
+
+@staff_bp.route("/loan-duration/manage-form")
+@roles_required("admin")
+def manage_loan_duration_form():
+    return render_template(
+        "staff/_loan_duration_modal.html",
+        default_loan_days=get_default_loan_days(),
+        error=None,
+    )
+
+
+@staff_bp.route("/loan-duration/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_loan_duration():
+    """Updates the admin-editable fallback due-date length that
+    routes/transactions.py's checkout_session() reads when a checkout is
+    submitted with no due date explicitly picked."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg):
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_loan_duration_modal.html",
+                default_loan_days=get_default_loan_days(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    try:
+        default_loan_days = int(data.get("default_loan_days"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Default loan duration must be a whole number of days")
+    if not (1 <= default_loan_days <= 90):
+        return _rerender_with_error("Default loan duration must be between 1 and 90 days")
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'default_loan_days'",
+        (str(default_loan_days),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_loan_duration",
+        target_table="app_settings",
+        details=f"Set default_loan_days={default_loan_days}",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {
+                "message": "Loan duration updated successfully",
+                "default_loan_days": default_loan_days,
+            }
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
+# # # DAMAGE RESTRICTION (admin-editable auto-restrict occurrence threshold) --
+
+
+@staff_bp.route("/damage-restriction/manage-form")
+@roles_required("admin")
+def manage_damage_restriction_form():
+    return render_template(
+        "staff/_damage_restriction_modal.html",
+        damage_restriction_threshold=get_damage_restriction_threshold(),
+        error=None,
+    )
+
+
+@staff_bp.route("/damage-restriction/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_damage_restriction():
+    """Updates the admin-editable occurrence threshold that
+    services/loan_service.py's check_and_restrict_damaged_returns() reads
+    at return time -- how many damaged-condition returns a member can
+    have on record before their account is auto-restricted."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg):
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_damage_restriction_modal.html",
+                damage_restriction_threshold=get_damage_restriction_threshold(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    try:
+        threshold = int(data.get("damage_restriction_threshold"))
+    except (TypeError, ValueError):
+        return _rerender_with_error("Damage restriction threshold must be a whole number")
+    if not (1 <= threshold <= 50):
+        return _rerender_with_error("Damage restriction threshold must be between 1 and 50")
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'damage_restriction_threshold'",
+        (str(threshold),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_damage_restriction_threshold",
+        target_table="app_settings",
+        details=f"Set damage_restriction_threshold={threshold}",
+    )
+
+    if request.is_json:
+        return jsonify(
+            {
+                "message": "Damage restriction threshold updated successfully",
+                "damage_restriction_threshold": threshold,
+            }
+        )
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
+# # # FEATURE ACCESS (admin-editable tab/workflow toggles) --------------------
+
+
+@staff_bp.route("/feature-flags/manage-form")
+@roles_required("admin")
+def manage_feature_flags_form():
+    return render_template(
+        "staff/_feature_flags_modal.html",
+        feature_flags=get_feature_flags(),
+        error=None,
+    )
+
+
+@staff_bp.route("/feature-flags/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_feature_flags():
+    """Flips one or more of the toggles on the System page's Feature
+    Access card (see migrations/0033_feature_flags.sql,
+    services/settings_service.py's FEATURE_FLAGS/get_feature_flags,
+    services/auth_service.py's feature_required). Requires the admin's
+    current password, same check_password_hash pattern change_password_
+    submit/change_rfid_pin_submit already use for other sensitive
+    self-service actions -- required going either direction (enabling or
+    disabling) since both are a real access-control change worth
+    re-confirming, not just disabling."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    def _rerender_with_error(error_msg, status=400):
+        if request.is_json:
+            return jsonify({"error": error_msg}), status
+        return (
+            render_template(
+                "staff/_feature_flags_modal.html",
+                feature_flags=get_feature_flags(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    current_password = (data.get("current_password") or "").strip()
+    if not current_password:
+        return _rerender_with_error("Enter your current password to confirm this change")
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return _rerender_with_error("Current password is incorrect", status=401)
+
+    # Checkbox fields are only present in form data when checked -- an
+    # unchecked toggle simply doesn't show up in `data` at all, unlike a
+    # JSON body where the caller can explicitly send `false`. Handle both:
+    # a JSON caller sends {"flags": {"assets": true, ...}}; the htmx form
+    # sends flag_<name> only for the checked ones.
+    if request.is_json:
+        submitted = data.get("flags") or {}
+        new_values = {name: bool(submitted.get(name, current)) for name, current in get_feature_flags().items()}
+    else:
+        new_values = {name: (f"flag_{name}" in data) for name in FEATURE_FLAGS}
+
+    conn = get_db_connection()
+    current_flags = get_feature_flags(conn)
+    changed = {name: val for name, val in new_values.items() if val != current_flags[name]}
+    for name, enabled in changed.items():
+        key, _label = FEATURE_FLAGS[name]
+        conn.execute(
+            "UPDATE app_settings SET value = ? WHERE key = ?",
+            ("1" if enabled else "0", key),
+        )
+    conn.commit()
+    conn.close()
+
+    for name, enabled in changed.items():
+        _key, label = FEATURE_FLAGS[name]
+        log_action(
+            staff_id=g.staff["id"],
+            action="enabled_feature" if enabled else "disabled_feature",
+            target_table="app_settings",
+            target_name=label,
+        )
+
+    if request.is_json:
+        return jsonify({"message": "Feature access updated", "feature_flags": new_values})
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response

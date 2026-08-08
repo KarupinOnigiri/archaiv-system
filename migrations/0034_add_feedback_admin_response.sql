@@ -1,0 +1,12 @@
+-- 0034_add_feedback_admin_response.sql
+-- Feedback used to be resolved with a silent status flip (routes/feedback.py's
+-- resolve_feedback) -- no record of *why* or *what happened*, unlike a real
+-- support inbox where the reporter gets an actual reply ("fixed", "testing",
+-- "not applicable", etc). This column stores that reply text, set at the
+-- same time as resolved_at/resolved_by_staff_id and cleared on reopen, same
+-- lifecycle those two already follow.
+--
+-- Plain ALTER ADD COLUMN -- unlike the notifications table (0021, 0035),
+-- feedback_reports has no CHECK constraint or NOT NULL to fight, so no
+-- table rebuild is needed here.
+ALTER TABLE feedback_reports ADD COLUMN admin_response TEXT;
