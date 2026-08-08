@@ -34,18 +34,30 @@
        staff-entered text). #}
     <tr class="border-t border-base-200 hover:bg-base-200/40 cursor-pointer transition-colors"
         data-when="{{ log.created_at | format_date }}"
-        data-staff="{{ log.staff_username or '—' }}"
+        data-staff="{{ log.staff_username or 'System' }}"
         data-action="{{ log.action.replace('_', ' ') }}"
-        data-target="{% if log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}"
+        data-target="{% if log.target_name %}{{ log.target_table | humanize }}: {{ log.target_name }}{% elif log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}"
         data-details="{{ log.details or '—' }}"
         onclick="openAuditLogDetail(this)">
       <td class="py-2 text-sm whitespace-nowrap truncate">{{ log.created_at | format_date }}</td>
-      <td class="py-2 text-sm truncate">{{ log.staff_username or "—" }}</td>
+      <!-- staff_id is NULL for actions no human triggered -- auto-restrict/
+           unrestrict on overdue sweep (services/loan_service.py), stale
+           checkout session cleanup (services/checkout_service.py), an
+           admin-deactivation request finalizing on its own
+           (services/admin_deactivation_service.py). "System" makes that
+           explicit instead of reading as a missing/broken value. -->
+      <td class="py-2 text-sm truncate">{{ log.staff_username or "System" }}</td>
       <td class="py-2 text-sm truncate">
         <span class="px-2 py-0.5 rounded-full bg-base-200 text-xs">{{ log.action.replace('_', ' ') }}</span>
       </td>
       <td class="py-2 text-sm text-base-content/70 truncate">
-        {% if log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}
+        {% if log.target_name %}
+        <span class="text-base-content/40">{{ log.target_table | humanize }}:</span> {{ log.target_name }}
+        {% elif log.target_table %}
+        {{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}
+        {% else %}
+        —
+        {% endif %}
       </td>
       <td class="py-2 text-sm text-base-content/70 truncate" title="{{ log.details or '' }}">{{ log.details or "—" }}</td>
     </tr>

@@ -156,6 +156,7 @@ def complete_setup():
         action="completed_initial_setup",
         target_table="staff",
         target_id=new_staff_id,
+        target_name=data["username"],
         details=(
             f"Created first real admin ({data['username']}) and retired "
             f"the temporary setup admin (staff #{temp_admin_id})"

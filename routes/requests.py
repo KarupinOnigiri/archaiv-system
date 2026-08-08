@@ -107,6 +107,7 @@ def create_unrestriction_request():
         action="requested_unrestriction",
         target_table="unrestriction_requests",
         target_id=request_id,
+        target_name=updated_name,
         details=f"Requested unrestriction for member {updated_name}: {reason}",
     )
 
@@ -161,6 +162,13 @@ def cancel_unrestriction_request(id):
         conn.rollback()
         raise
     finally:
+        # req itself (a plain SELECT * from unrestriction_requests) has no
+        # member name, only member_id -- looked up here before conn.close()
+        # purely for a readable Activity Log target.
+        cancel_req_member = conn.execute(
+            "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
+            (req["member_id"],),
+        ).fetchone()
         conn.close()
 
     log_action(
@@ -168,6 +176,10 @@ def cancel_unrestriction_request(id):
         action="cancelled_unrestriction_request",
         target_table="unrestriction_requests",
         target_id=id,
+        target_name=(
+            full_name(cancel_req_member['first_name'], cancel_req_member['last_name'], cancel_req_member['middle_name'], cancel_req_member['suffix'])
+            if cancel_req_member else None
+        ),
         details=f"Requester cancelled their own unrestriction request #{id}"
         + (f": {review_notes}" if review_notes else ""),
     )
@@ -365,6 +377,7 @@ def approve_unrestriction_request(id):
         action="approved_unrestriction_request",
         target_table="unrestriction_requests",
         target_id=id,
+        target_name=updated_name,
         details=f"Approved unrestriction for member {updated_name}",
     )
 
@@ -425,6 +438,7 @@ def deny_unrestriction_request(id):
         action="denied_unrestriction_request",
         target_table="unrestriction_requests",
         target_id=id,
+        target_name=updated_name,
         details=f"Denied unrestriction request: {review_notes}",
     )
 

@@ -404,6 +404,7 @@ def add_member_submit():
         action="created_member",
         target_table="members",
         target_id=new_member_id,
+        target_name=full_name(data['first_name'], data['last_name'], data.get('middle_name'), data.get('suffix')),
         details=f"Created member {full_name(data['first_name'], data['last_name'], data.get('middle_name'), data.get('suffix'))}",
     )
 
@@ -566,6 +567,7 @@ def edit_member_submit(id):
         action="updated_member",
         target_table="members",
         target_id=member["id"],
+        target_name=updated_name,
         details=f"Updated member {updated_name}",
     )
 
@@ -576,6 +578,7 @@ def edit_member_submit(id):
                 action="restricted_member",
                 target_table="members",
                 target_id=member["id"],
+                target_name=updated_name,
                 details=f"Restricted member {updated_name}: {data.get('restriction_reason', 'No reason given')}",
             )
         else:
@@ -584,6 +587,7 @@ def edit_member_submit(id):
                 action="unrestricted_member",
                 target_table="members",
                 target_id=member["id"],
+                target_name=updated_name,
                 details=f"Lifted restriction on member {updated_name}",
             )
 
@@ -686,6 +690,7 @@ def restrict_member(id):
         action="restricted_member",
         target_table="members",
         target_id=id,
+        target_name=updated_name,
         details=f"Restricted member {updated_name}: {restriction_reason}",
     )
 
@@ -791,6 +796,7 @@ def unrestrict_member(id):
         action="unrestricted_member",
         target_table="members",
         target_id=id,
+        target_name=updated_name,
         details=f"Lifted restriction on member {updated_name}",
     )
 
@@ -964,6 +970,7 @@ def delete_member(id):
         action="deactivated_member",
         target_table="members",
         target_id=id,
+        target_name=full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix']),
         details=f"Deactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
 
@@ -973,6 +980,7 @@ def delete_member(id):
             action="deactivated_staff_cascade",
             target_table="staff",
             target_id=linked_staff["id"],
+            target_name=linked_staff["username"],
             details=f"Staff account {linked_staff['username']} auto-deactivated because linked member was deactivated",
         )
 
@@ -1053,6 +1061,7 @@ def reactivate_member(id):
         action="reactivated_member",
         target_table="members",
         target_id=id,
+        target_name=full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix']),
         details=f"Reactivated member {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
     )
 
@@ -1533,6 +1542,7 @@ def add_department():
         action="created_department",
         target_table="departments",
         target_id=new_id,
+        target_name=name,
         details=f"Created department: {name}",
     )
 
@@ -1579,6 +1589,7 @@ def edit_department(id):
         action="renamed_department",
         target_table="departments",
         target_id=id,
+        target_name=name,
         details=f"Renamed department '{department['name']}' to '{name}'",
     )
 
@@ -1706,6 +1717,7 @@ def delete_department(id):
         action="deleted_department",
         target_table="departments",
         target_id=id,
+        target_name=department["name"],
         details=f"Deleted department: {department['name']}",
     )
 

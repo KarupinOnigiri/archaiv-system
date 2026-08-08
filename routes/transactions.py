@@ -712,6 +712,7 @@ def create_checkout_session():
         action="started_checkout_session",
         target_table="checkout_sessions",
         target_id=session_id,
+        target_name=full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix']),
         details=(
             f"Started checkout session for member "
             f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}"
@@ -877,6 +878,7 @@ def add_item_to_session(id):
         action="added_item_to_checkout_session",
         target_table="checkout_session_items",
         target_id=item_id,
+        target_name=f"{asset['asset_id']} — {asset['name']}",
         details=f"Added asset {asset['asset_id']} to checkout session {id}",
     )
 
@@ -926,6 +928,10 @@ def remove_item_from_session(id, item_id):
             409,
         )
 
+    asset = conn.execute(
+        "SELECT asset_id, name FROM assets WHERE id = ?", (item["asset_id"],)
+    ).fetchone()
+
     try:
         conn.execute("DELETE FROM checkout_session_items WHERE id = ?", (item_id,))
         conn.execute(
@@ -942,6 +948,15 @@ def remove_item_from_session(id, item_id):
         raise
     finally:
         conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="removed_item_from_checkout_session",
+        target_table="checkout_session_items",
+        target_id=item_id,
+        target_name=f"{asset['asset_id']} — {asset['name']}" if asset else None,
+        details=f"Removed asset from checkout session {id}",
+    )
 
     return jsonify({"message": "Item removed from cart"})
 
@@ -1129,6 +1144,7 @@ def return_asset():
         action="returned_asset",
         target_table="transactions",
         target_id=asset["id"],
+        target_name=f"{asset['asset_id']} — {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
         details=(
             f"Asset {asset['asset_id']} returned by member "
             f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
@@ -1142,6 +1158,7 @@ def return_asset():
             action="disposed_asset",
             target_table="assets",
             target_id=asset["id"],
+            target_name=f"{asset['asset_id']} — {asset['name']}",
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
@@ -1328,6 +1345,7 @@ def return_transaction_by_id(id):
         action="returned_asset",
         target_table="transactions",
         target_id=transaction["id"],
+        target_name=f"{asset['asset_id']} — {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
         details=(
             f"Asset {asset['asset_id']} returned by member "
             f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
@@ -1341,6 +1359,7 @@ def return_transaction_by_id(id):
             action="disposed_asset",
             target_table="assets",
             target_id=asset["id"],
+            target_name=f"{asset['asset_id']} — {asset['name']}",
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
@@ -1495,6 +1514,7 @@ def batch_return_transactions():
             action="returned_asset",
             target_table="transactions",
             target_id=transaction["id"],
+            target_name=f"{asset['asset_id']} — {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
             details=(
                 f"Asset {asset['asset_id']} returned (batch) by member "
                 f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
@@ -1507,6 +1527,7 @@ def batch_return_transactions():
                 action="disposed_asset",
                 target_table="assets",
                 target_id=asset["id"],
+                target_name=f"{asset['asset_id']} — {asset['name']}",
                 details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
             )
 
@@ -1592,6 +1613,17 @@ def renew_transaction(id):
     # return flow runs after _finalize_return, reused here so "no longer
     # has anything overdue" means the same thing from either path.
     check_and_lift_restriction_if_resolved(transaction["member_id"], conn)
+
+    # transaction itself (a plain SELECT * from transactions) has no
+    # asset/member names, only their ids -- looked up before conn.close()
+    # below purely for a readable Activity Log target.
+    txn_asset = conn.execute(
+        "SELECT asset_id FROM assets WHERE id = ?", (transaction["asset_id"],)
+    ).fetchone()
+    txn_member = conn.execute(
+        "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
+        (transaction["member_id"],),
+    ).fetchone()
     conn.close()
 
     log_action(
@@ -1599,6 +1631,11 @@ def renew_transaction(id):
         action="renewed_loan",
         target_table="transactions",
         target_id=id,
+        target_name=(
+            f"{txn_asset['asset_id']} — {full_name(txn_member['first_name'], txn_member['last_name'], txn_member['middle_name'], txn_member['suffix'])}"
+            if txn_asset and txn_member
+            else None
+        ),
         details=f"Due date extended from {old_due_date or '—'} to {new_due_date}",
     )
 
@@ -1785,6 +1822,7 @@ def checkout_session(id):
         action="checked_out_session",
         target_table="checkout_sessions",
         target_id=id,
+        target_name=full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix']),
         details=(
             f"Checked out {len(items)} asset(s) to member "
             f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}"
@@ -1841,6 +1879,10 @@ def cancel_checkout_session(id):
         conn.rollback()
         raise
     finally:
+        cancel_member = conn.execute(
+            "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
+            (session["member_id"],),
+        ).fetchone()
         conn.close()
 
     log_action(
@@ -1848,6 +1890,10 @@ def cancel_checkout_session(id):
         action="cancelled_checkout_session",
         target_table="checkout_sessions",
         target_id=id,
+        target_name=(
+            full_name(cancel_member['first_name'], cancel_member['last_name'], cancel_member['middle_name'], cancel_member['suffix'])
+            if cancel_member else None
+        ),
         details=f"Cancelled checkout session {id}, released reserved assets",
     )
 

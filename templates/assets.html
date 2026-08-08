@@ -684,6 +684,7 @@ function updateStatCardUI(archived, currentStatus) {
     const accentClasses = STAT_CARD_ACCENTS[card.dataset.status].split(' ');
     card.classList.toggle('ring-2', isActive);
     card.classList.toggle('shadow-md', isActive);
+    card.classList.toggle('stat-card-active', isActive);
     accentClasses.forEach(function (cls) { card.classList.toggle(cls, isActive); });
 
     // Status filters don't apply to the archived view, so the cards

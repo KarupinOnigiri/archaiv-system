@@ -1,0 +1,15 @@
+-- 0031_add_audit_log_target_name.sql
+-- audit_log previously only recorded target_table + target_id (e.g. the
+-- Activity Log's Target column showed "members #5", "assets #3") --
+-- meaningless at a glance without cross-referencing the record itself,
+-- which may since have changed name or been archived/deleted. Adds a
+-- snapshot of the target's human-readable name/label, captured at the
+-- moment the action happened (by whichever code path calls log_action --
+-- see utils/logger.py), the same way `details` already snapshots
+-- free-text context rather than being resolved live. A live JOIN at
+-- read time was considered and rejected: several target tables
+-- (checkout_sessions, checkout_session_items, unrestriction_requests,
+-- admin_deactivation_requests) have rows that get cleaned up/deleted
+-- once resolved, so a join would just go blank for exactly the
+-- historical entries someone is most likely to be looking back at.
+ALTER TABLE audit_log ADD COLUMN target_name TEXT;

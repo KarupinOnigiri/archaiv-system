@@ -61,21 +61,22 @@ def validate_password_strength(password, field_name="password"):
     return None
 
 
-RFID_PIN_LENGTH_RANGE = (4, 8)
+RFID_PIN_LENGTH = 6
 
 
 def validate_rfid_pin(pin):
-    """4-8 digits, numeric only — a PIN paired with an RFID card is meant
-    to be fast to type at a card reader, not a second password. Still a
-    real second factor: see routes/staff.py (where it's set, hashed the
+    """Exactly 6 digits, numeric only — a PIN paired with an RFID card is
+    meant to be fast to type at a card reader, not a second password. Still
+    a real second factor: see routes/staff.py (where it's set, hashed the
     same way a password is) and routes/auth.py:login_rfid (where it's
-    checked)."""
-    min_len, max_len = RFID_PIN_LENGTH_RANGE
-    if not pin or not pin.isdigit() or not (min_len <= len(pin) <= max_len):
+    checked). Fixed-length (rather than the old 4-8 range) so it reads
+    consistently at a glance and matches the login form's fixed-width PIN
+    field."""
+    if not pin or not pin.isdigit() or len(pin) != RFID_PIN_LENGTH:
         return (
             jsonify(
                 {
-                    "error": f"PIN must be {min_len}-{max_len} digits"
+                    "error": f"PIN must be exactly {RFID_PIN_LENGTH} digits"
                 }
             ),
             400,

@@ -56,6 +56,13 @@ def finalize_if_ready(request_row, conn):
     consensus governs *who* can deactivate an admin, not *whether the
     system can be left with zero admins*, so that floor is enforced here
     regardless of how many approvals came in."""
+    # Fetched up front purely for a readable Activity Log target below.
+    target_staff_row = conn.execute(
+        "SELECT username FROM staff WHERE id = ?", (request_row["target_staff_id"],)
+    ).fetchone()
+    target_username = target_staff_row["username"] if target_staff_row else None
+    target_label = target_username or f"staff #{request_row['target_staff_id']}"
+
     approval_count = conn.execute(
         "SELECT COUNT(*) AS cnt FROM admin_deactivation_approvals WHERE request_id = ?",
         (request_row["id"],),
@@ -88,9 +95,10 @@ def finalize_if_ready(request_row, conn):
             action="admin_deactivation_auto_denied",
             target_table="admin_deactivation_requests",
             target_id=request_row["id"],
+            target_name=target_username,
             details=(
                 f"Request #{request_row['id']} auto-denied on finalization: "
-                f"target {request_row['target_staff_id']} is the last active admin"
+                f"target {target_label} is the last active admin"
             ),
         )
         return False
@@ -121,9 +129,11 @@ def finalize_if_ready(request_row, conn):
         action="deactivated_admin_via_approval",
         target_table="staff",
         target_id=request_row["target_staff_id"],
+        target_name=target_username,
         details=(
-            f"Admin account deactivated after reaching {request_row['required_approvals']} "
-            f"{request_row['required_tier']} approval(s) (request #{request_row['id']})"
+            f"Admin account {target_label} deactivated after reaching "
+            f"{request_row['required_approvals']} {request_row['required_tier']} "
+            f"approval(s) (request #{request_row['id']})"
         ),
     )
 

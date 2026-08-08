@@ -5,7 +5,7 @@
   <!-- Page header -->
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold">Borrowers Summary</h1>
+      <h1 class="text-2xl font-bold">Members Summary</h1>
       <!--  <p class="text-sm text-base-content/50 mt-1">Everyone who can borrow tools &mdash; trainees, trainers, and their current standing.</p>-->
     </div>
     <div class="flex items-center gap-2">
@@ -630,6 +630,7 @@ function updateMemberStatCardUI() {
     const isActive = currentStandingFilter === card.dataset.standing;
     card.classList.toggle('ring-2', isActive);
     card.classList.toggle('shadow-md', isActive);
+    card.classList.toggle('stat-card-active', isActive);
     Object.values(STANDING_CARD_ACCENTS).forEach(function (cls) {
       cls.split(' ').forEach(function (c) { card.classList.remove(c); });
     });

@@ -401,16 +401,24 @@ def requests_page():
 
 
 @pages_bp.route("/reports")
-@roles_required("admin", "in_charge")
+@roles_required("admin", "in_charge", "tool_keeper")
 def reports_page():
-    """Just the page shell -- every number on it comes from the 7 stats.py
-    endpoints (most/least-borrowed assets, most-borrowed categories, loan
-    duration, top borrowers, overdue frequency, condition changes), all of
-    which already existed as working JSON APIs with nothing ever rendering
-    them. Fetched and rendered client-side (see reports.html's own script),
-    same as frontend_roadmap.md's Phase 5 note calls for -- no htmx here,
-    this is the one page in the app where that's the right call, since
-    there's no HTML partial to swap in, just JSON to turn into bars/tables."""
+    """Just the page shell -- every number on it comes from stats.py's
+    report endpoints (most/least-borrowed assets, most-borrowed
+    categories, loan duration, top borrowers, overdue frequency, condition
+    changes, staff activity, plus tool_keeper's own-activity-only trio),
+    all of which already existed as working JSON APIs with nothing ever
+    rendering them. Fetched and rendered client-side (see reports.html's
+    own script), same as frontend_roadmap.md's Phase 5 note calls for --
+    no htmx here, this is the one page in the app where that's the right
+    call, since there's no HTML partial to swap in, just JSON to turn into
+    bars/tables.
+
+    tool_keeper is allowed onto this page too (previously admin/in_charge
+    only) but sees a deliberately smaller widget set -- see
+    services/report_widgets.py; every widget/query available to them is
+    scoped to their own activity only, never other staff's or an
+    all-borrowers view."""
     return render_template("reports.html", staff=g.staff)
 
 

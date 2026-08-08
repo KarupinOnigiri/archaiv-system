@@ -31,6 +31,19 @@
     <h1 class="text-2xl font-semibold text-center mb-1.5 text-base-content">Welcome back!</h1>
     <p class="text-sm text-base-content/50 text-center mb-9">Sign in to your account</p>
 
+    <!-- The password form and the RFID form below are stacked in the same
+         grid cell (both row-start-1/col-start-1) rather than toggled with
+         `hidden`. `hidden` (display:none) removes an element from layout
+         entirely, so the card's height used to come from whichever form
+         happened to be visible -- switching modes made the card jump
+         whenever the two forms' natural heights didn't match exactly.
+         With both always present in the grid cell, the row is always
+         sized to the taller of the two, so the card's height is constant
+         no matter which mode is active; only `invisible` (keeps the box's
+         layout footprint, just doesn't paint or accept focus/clicks) is
+         toggled by toggleRfidLogin() below. -->
+    <div class="grid grid-cols-1">
+    <div id="password-login-block" class="col-start-1 row-start-1">
     <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate class="space-y-4">
 
       <div class="form-control">
@@ -117,14 +130,20 @@
          enforces this server-side too), hidden behind a toggle rather
          than shown alongside the password form by default: it's a
          secondary path for staff who actually have a card issued, not
-         the primary way most staff sign in. -->
+         the primary way most staff sign in. A real button (btn-outline),
+         not a plain text link -- matches every other actionable control
+         on this card (Sign in, Change photo, etc. elsewhere in the app
+         all use the same convention: text links are for secondary
+         *information* like "Contact your administrator" below, buttons
+         are for things that actually do something). -->
     <button type="button" id="show-rfid-login-btn" onclick="toggleRfidLogin(true)"
-            class="w-full text-center text-sm text-base-content/50 hover:text-base-content mt-4 flex items-center justify-center gap-1.5">
+            class="btn btn-outline w-full rounded-[18px] mt-3 gap-1.5">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
       Admin? Sign in with RFID card
     </button>
+    </div>
 
-    <form id="rfid-login-form" novalidate class="space-y-4 hidden">
+    <form id="rfid-login-form" novalidate class="space-y-4 col-start-1 row-start-1 invisible pointer-events-none">
       <div class="form-control">
         <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
@@ -148,10 +167,11 @@
             type="password"
             id="rfid-pin-field"
             inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="8"
+            pattern="[0-9]{6}"
+            minlength="6"
+            maxlength="6"
             autocomplete="off"
-            placeholder="PIN"
+            placeholder="6-digit PIN"
             class="grow bg-transparent border-none outline-none focus:outline-none"
           >
         </label>
@@ -164,13 +184,18 @@
         <span id="rfid-login-error-text"></span>
       </div>
 
-      <button type="submit" class="btn btn-primary w-full rounded-[18px] py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
+      <p class="text-right text-sm text-base-content/50 -mt-1">
+        Forgot your PIN? <span class="text-secondary font-medium">Contact your administrator</span>
+      </p>
+
+      <button type="submit" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
         Sign in with RFID
       </button>
-      <button type="button" onclick="toggleRfidLogin(false)" class="w-full text-center text-sm text-base-content/50 hover:text-base-content">
+      <button type="button" onclick="toggleRfidLogin(false)" class="btn btn-outline w-full rounded-[18px] mt-3">
         Use username/password instead
       </button>
     </form>
+    </div>
 
   </div>
 
@@ -254,15 +279,27 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
 // ever visible/interactive at a time; switching back to password mode
 // also clears whatever was typed into the RFID fields, same reasoning
 // as a password field never being resubmitted on reload.
+//
+// Uses `invisible`+`pointer-events-none` rather than `hidden` -- both
+// blocks live in the same grid cell (see the markup above) so the card's
+// height is always the max of the two; `hidden` (display:none) would pull
+// the inactive block out of layout entirely and defeat that. `invisible`
+// also makes the inactive block's inputs/buttons non-focusable, so tabbing
+// through the form can't land on the hidden one.
 function toggleRfidLogin(showRfid) {
-  document.getElementById('login-form').classList.toggle('hidden', showRfid);
-  document.getElementById('show-rfid-login-btn').classList.toggle('hidden', showRfid);
-  document.getElementById('rfid-login-form').classList.toggle('hidden', !showRfid);
+  const passwordBlock = document.getElementById('password-login-block');
+  const rfidForm = document.getElementById('rfid-login-form');
+  passwordBlock.classList.toggle('invisible', showRfid);
+  passwordBlock.classList.toggle('pointer-events-none', showRfid);
+  rfidForm.classList.toggle('invisible', !showRfid);
+  rfidForm.classList.toggle('pointer-events-none', !showRfid);
   document.getElementById('rfid-login-error').classList.add('hidden');
   if (showRfid) {
     document.getElementById('rfid-id-field').value = '';
     document.getElementById('rfid-pin-field').value = '';
     document.getElementById('rfid-id-field').focus();
+  } else {
+    document.getElementById('username-field').focus();
   }
 }
 
@@ -284,6 +321,16 @@ document.getElementById('rfid-login-form').addEventListener('submit', async func
   if (!rfidId || !pin) {
     errorText.textContent = 'Scan your card and enter your PIN.';
     errorBox.classList.remove('hidden');
+    return;
+  }
+
+  // The `pattern`/`maxlength` attributes on the PIN field are decorative
+  // for this fetch-based submit (no reportValidity() call happens before
+  // it), so the 6-digit-numeric rule is enforced explicitly here too.
+  if (!/^[0-9]{6}$/.test(pin)) {
+    errorText.textContent = 'PIN must be exactly 6 digits.';
+    errorBox.classList.remove('hidden');
+    document.getElementById('rfid-pin-field').value = '';
     return;
   }
 

@@ -114,8 +114,15 @@
       <td class="py-2 text-base-content/70 truncate">
         {% if row.assigned_start or row.assigned_end %}
         {{ row.assigned_start or "—" }} &rarr; {{ row.assigned_end or "—" }}
+        {% elif row.role in ("admin", "in_charge") %}
+        <!-- Admin/in_charge accounts never have an assigned window -- see
+             routes/auth.py's login() (only tool_keeper checks
+             assigned_start/assigned_end) -- so a blank pair here isn't a
+             missing setup step the way it would be for a tool_keeper,
+             it's just "this role doesn't expire". -->
+        <span class="text-base-content/50">Permanent</span>
         {% else %}
-        —
+        <span class="text-warning" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
         {% endif %}
       </td>
 

@@ -343,6 +343,7 @@ def add_category():
         action="created_category",
         target_table="categories",
         target_id=new_id,
+        target_name=name,
         details=f"Created category: {name}",
     )
 
@@ -385,6 +386,7 @@ def edit_category(id):
         action="renamed_category",
         target_table="categories",
         target_id=id,
+        target_name=name,
         details=f"Renamed category '{category['name']}' to '{name}'",
     )
 
@@ -499,6 +501,7 @@ def delete_category(id):
         action="deleted_category",
         target_table="categories",
         target_id=id,
+        target_name=category["name"],
         details=f"Deleted category: {category['name']}",
     )
 
@@ -719,6 +722,7 @@ def add_asset_submit():
         action="created_asset",
         target_table="assets",
         target_id=new_asset_id,
+        target_name=f"{generated_code} — {data['name']}",
         details=f"Created asset {generated_code}",
     )
 
@@ -1724,6 +1728,10 @@ def edit_asset_submit(id):
         action="updated_asset",
         target_table="assets",
         target_id=asset["id"],
+        # asset["name"] is the pre-edit row fetched earlier -- this
+        # reflects the actually-saved name (possibly just changed by
+        # this same edit), same expression the UPDATE itself used.
+        target_name=f"{asset['asset_id']} — {data.get('name', asset['name'])}",
         details=f"Updated asset {asset['asset_id']}",
     )
 
@@ -1733,6 +1741,7 @@ def edit_asset_submit(id):
             action="disposed_asset",
             target_table="assets",
             target_id=asset["id"],
+            target_name=f"{asset['asset_id']} — {data.get('name', asset['name'])}",
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
@@ -1851,6 +1860,7 @@ def delete_asset(id):
         action="deleted_asset",
         target_table="assets",
         target_id=id,
+        target_name=f"{asset['asset_id']} — {asset['name']}",
         details=f"Soft-deleted asset {asset['asset_id']}",
     )
 
@@ -1925,6 +1935,7 @@ def undo_delete_asset(id):
         action="undid_asset_delete",
         target_table="assets",
         target_id=id,
+        target_name=f"{asset['asset_id']} — {asset['name']}",
         details=f"Undid delete of asset {asset['asset_id']}",
     )
 
@@ -2222,6 +2233,7 @@ def restore_asset(id):
         action="restored_asset",
         target_table="assets",
         target_id=id,
+        target_name=f"{asset['asset_id']} — {asset['name']}",
         details=f"Restored asset {asset['asset_id']} (condition set to '{new_condition}')",
     )
 

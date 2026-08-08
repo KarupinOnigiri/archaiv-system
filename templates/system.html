@@ -10,7 +10,10 @@
     </div>
   </div>
 
-  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <!-- 3 columns (was 2) once there's room -- 6 cards at 2-per-row made 3
+       rows tall enough to need the page to scroll on a typical laptop
+       screen; 3-per-row is 2 rows, which fits in one view without it. -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
     <!-- Session Settings -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
@@ -112,7 +115,7 @@
          daily-visit destination, so it doesn't get its own sidebar tab.
          This card is the only entry point on purpose (see barcodes_page
          in routes/pages.py) -- no toolbar shortcut on Inventory/
-         Borrowers, to keep this to one door in rather than scattering
+         Members, to keep this to one door in rather than scattering
          entry points across pages. -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
       <div>

@@ -52,7 +52,7 @@
   {% set page_titles = {
     '/': 'Dashboard',
     '/assets': 'Inventory',
-    '/members': 'Borrowers',
+    '/members': 'Members',
     '/transactions': 'Borrow & Return',
     '/requests': 'Approvals',
     '/notifications': 'Notifications',
@@ -333,6 +333,15 @@
   .stat-card-glow:hover::after {
     opacity: 0.15;
   }
+  /* Same glow, held on rather than only appearing on hover -- applied
+     alongside the ring/border highlight (see each page's own
+     updateXStatCardUI()) to whichever stat card represents the currently
+     active filter, so a clicked/selected card reads as "the same kind of
+     highlighted" as one you're just hovering over, not a visually
+     different treatment. */
+  .stat-card-glow.stat-card-active::after {
+    opacity: 0.15;
+  }
 
   /* The sidebar logo normally swaps to its light-colored (for-dark-
      backgrounds) variant only in the native Dark theme (see the
@@ -435,7 +444,7 @@
   </div>
 
   <!-- Order follows standard sidebar IA: overview first, then the primary
-       data entities (Inventory/Borrowers), then the transactional workflow
+       data entities (Inventory/Members), then the transactional workflow
        that acts on them (Borrow & Return), then the two action queues tied
        to that workflow (Approvals -- decisions waiting on you -- ahead of
        Notifications -- passive due/overdue alerts), then Reports as the
@@ -445,7 +454,7 @@
   {% set nav_items = [
     ("Dashboard", "/", "grid"),
     ("Inventory", "/assets", "box"),
-    ("Borrowers", "/members", "users"),
+    ("Members", "/members", "users"),
     ("Borrow & Return", "/transactions", "swap"),
     ("Approvals", "/requests", "check"),
     ("Notifications", "/notifications", "bell"),
@@ -498,7 +507,7 @@
 
       <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
-        {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge"]) %}
+        {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
         <a href="{{ href }}" data-tooltip="{{ label }}" data-tooltip-rail aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -559,7 +568,7 @@
         </a>
         {% endif %}
 
-        {% if staff and staff.role == "admin" %}
+        {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
         <a href="/audit-log" data-tooltip="Activity Log" data-tooltip-rail aria-label="Activity Log"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -995,6 +1004,25 @@
             </button>
           </div>
 
+          {% if staff and staff.role == "admin" %}
+          <!-- RFID PIN change is admin-only, matching RFID login itself
+               (routes/auth.py:login_rfid) being admin-only -- no point
+               offering this to a role that can never use it. -->
+          <div class="border-t border-base-200 my-3"></div>
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-base-content">RFID PIN</p>
+              <p class="text-xs text-base-content/50 mt-0.5">Used with your RFID card to sign in.</p>
+            </div>
+            <button type="button"
+                    onclick="document.getElementById('my-account-modal').close(); document.getElementById('change-rfid-pin-modal').showModal()"
+                    class="btn btn-outline btn-sm">
+              Change PIN
+            </button>
+          </div>
+          {% endif %}
+
           <div class="modal-action">
             <form method="dialog">
               <button class="btn btn-sm">Close</button>
@@ -1110,6 +1138,46 @@
           <button>close</button>
         </form>
       </dialog>
+
+      {% if staff and staff.role == "admin" %}
+      <!-- Change RFID PIN modal -- admin-only, mirrors change-password-
+           modal above exactly (current password required as
+           confirmation, not the current PIN -- see change_rfid_pin_submit
+           in routes/staff.py for why). -->
+      <dialog id="change-rfid-pin-modal" class="modal" onclose="resetChangeRfidPinForm()">
+        <div class="modal-box max-w-sm">
+          <h3 class="font-bold text-lg mb-1">Change RFID PIN</h3>
+          <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
+
+          <div id="change-rfid-pin-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+
+          <form id="change-rfid-pin-form" onsubmit="return submitChangeRfidPin(event)">
+            <div class="space-y-2">
+              <input type="password" id="crp-current-password" placeholder="Current password" autocomplete="current-password"
+                     class="input input-bordered input-sm w-full" />
+              <input type="password" id="crp-new-pin" placeholder="New PIN (exactly 6 digits)" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"
+                     class="input input-bordered input-sm w-full" />
+              <input type="password" id="crp-confirm-pin" placeholder="Confirm new PIN" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"
+                     class="input input-bordered input-sm w-full" />
+            </div>
+
+            <div class="modal-action">
+              <button type="button"
+                      onclick="document.getElementById('change-rfid-pin-modal').close(); document.getElementById('my-account-modal').showModal()"
+                      class="btn btn-sm">
+                Back
+              </button>
+              <button type="submit" id="change-rfid-pin-submit-btn" class="btn btn-primary btn-sm">
+                Update PIN
+              </button>
+            </div>
+          </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      {% endif %}
 
       <!-- Display & accessibility modal -->
       <dialog id="display-accessibility-modal" class="modal">
@@ -1243,11 +1311,16 @@
             </div>
             <div>
               <p class="text-sm font-semibold text-base-content">Is there a list of keyboard shortcuts?</p>
-              <p class="text-xs text-base-content/60 mt-1">Yes — see "Keyboard shortcuts" in this same account menu, or just press <kbd class="kbd kbd-xs">?</kbd> from anywhere.</p>
+              <p class="text-xs text-base-content/60 mt-1">Yes — press <kbd class="kbd kbd-xs">?</kbd> from anywhere, or use the button below.</p>
             </div>
           </div>
 
-          <div class="modal-action">
+          <div class="modal-action items-center justify-between">
+            <button type="button" class="btn btn-outline btn-sm gap-1.5"
+                    onclick="document.getElementById('help-support-modal').close(); document.getElementById('keyboard-shortcuts-modal').showModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M10 12h.01"/><path d="M14 12h.01"/><path d="M18 12h.01"/><path d="M7 16h10"/></svg>
+              View keyboard shortcuts
+            </button>
             <form method="dialog">
               <button class="btn btn-sm">Close</button>
             </form>
@@ -1297,7 +1370,7 @@
             </div>
 
             <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Borrowers</p>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Members</p>
               <div class="space-y-1">
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show inactive</span><kbd class="kbd kbd-sm">`</kbd></div>
@@ -1341,6 +1414,8 @@
             <div>
               <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Reports</p>
               <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Customize widgets</span><kbd class="kbd kbd-sm">Alt+C</kbd></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Export</span><kbd class="kbd kbd-sm">Alt+E</kbd></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear date range filter</span><kbd class="kbd kbd-sm">Esc</kbd></div>
               </div>
             </div>
@@ -1357,7 +1432,9 @@
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
               </div>
             </div>
+            {% endif %}
 
+            {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
             <div>
               <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Activity Log</p>
               <div class="space-y-1">
@@ -1889,6 +1966,91 @@ async function submitChangePassword(event) {
   return false;
 }
 
+// Change RFID PIN -- mirrors resetChangePasswordForm/submitChangePassword
+// above exactly, just pointed at /api/v1/staff/change-rfid-pin and a
+// 6-digit PIN instead of a password. See that endpoint (routes/
+// staff.py) for why current *password* (not current PIN) is what
+// confirms this request.
+function resetChangeRfidPinForm() {
+  const form = document.getElementById('change-rfid-pin-form');
+  if (form) form.reset();
+  const errorEl = document.getElementById('change-rfid-pin-error');
+  if (errorEl) errorEl.classList.add('hidden');
+  const btn = document.getElementById('change-rfid-pin-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Update PIN'; }
+}
+
+async function submitChangeRfidPin(event) {
+  event.preventDefault();
+
+  const errorEl = document.getElementById('change-rfid-pin-error');
+  errorEl.classList.add('hidden');
+
+  const currentPassword = document.getElementById('crp-current-password').value;
+  const newPin = document.getElementById('crp-new-pin').value;
+  const confirmPin = document.getElementById('crp-confirm-pin').value;
+
+  if (!currentPassword || !newPin || !confirmPin) {
+    errorEl.textContent = 'Fill in all three fields.';
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+  if (newPin !== confirmPin) {
+    errorEl.textContent = "New PIN and confirmation don't match.";
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+  if (!/^\d{6}$/.test(newPin)) {
+    errorEl.textContent = 'New PIN must be exactly 6 digits.';
+    errorEl.classList.remove('hidden');
+    return false;
+  }
+
+  const btn = document.getElementById('change-rfid-pin-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+
+  try {
+    const res = await fetch('/api/v1/staff/change-rfid-pin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ current_password: currentPassword, new_pin: newPin }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    // Same reasoning as submitChangePassword's identical check -- 401
+    // here can mean "wrong current password" (expected form error) or
+    // "your session expired" (require_session), and only the second one
+    // should pop the session-timeout modal.
+    if (res.status === 401 && data.error !== 'Current password is incorrect') {
+      showSessionTimeoutModal();
+      return false;
+    }
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't change PIN. Please try again.";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Update PIN';
+      return false;
+    }
+
+    document.getElementById('change-rfid-pin-modal').close();
+    showToast('RFID PIN changed successfully', 'success');
+  } catch (err) {
+    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Update PIN';
+  }
+
+  return false;
+}
+
 const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5MB
 const PROFILE_PHOTO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -1935,7 +2097,7 @@ function openPhotoLightbox() {
 }
 
 function copyUsername() {
-  const username = {{ staff.username | tojson if staff else '""' }};
+  const username = {{ (staff.username if staff else '') | tojson }};
   navigator.clipboard.writeText(username)
     .then(() => showToast('Username copied', 'success'))
     .catch(() => showToast("Couldn't copy — select and copy manually", 'error'));

@@ -6,64 +6,28 @@
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold">Reports</h1>
-      <p class="text-sm text-base-content/50 mt-1">Usage patterns across assets, categories, and borrowers.</p>
+      <p class="text-sm text-base-content/50 mt-1">
+        {% if staff.role == "tool_keeper" %}
+          Your own checkout/return activity.
+        {% else %}
+          Usage patterns across assets, categories, and borrowers.
+        {% endif %}
+      </p>
     </div>
-    <a id="reports-export-btn" class="btn btn-outline btn-sm" href="#" target="_blank" rel="noopener">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-      Export
-    </a>
-  </div>
-
-  <!-- At-a-glance KPIs -- summarizes the same date range every report card
-       below is scoped to, refreshed alongside them by fetchAllReports().
-       Purely informational (unlike Staff/Members/Assets' clickable stat
-       cards, nothing here is a shortcut into a filtered view -- there's no
-       single-metric "view" of a report to jump to). -->
-  <div id="reports-kpi-row" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">TOTAL CHECKOUTS</p>
-        <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">&mdash;</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-      </div>
-    </div>
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSETS BORROWED</p>
-        <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">&mdash;</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
-      </div>
-    </div>
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">BORROWERS</p>
-        <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">&mdash;</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      </div>
-    </div>
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">OVERDUE RATE</p>
-        <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">&mdash;</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-      </div>
-    </div>
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between">
-      <div>
-        <p class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RATE</p>
-        <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">&mdash;</p>
-      </div>
-      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-      </div>
+    <div class="flex items-center gap-2">
+      <!-- Customize -- opens a reorderable/toggleable list of every widget
+           this role can see (services/report_widgets.py), rather than
+           dragging cards directly in the live grid: a modal list keeps
+           reordering well-defined even while some widgets are hidden,
+           which a free-form grid full of display:none gaps wouldn't. -->
+      <button type="button" id="reports-customize-btn" class="btn btn-outline btn-sm gap-1.5" onclick="openCustomizeModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Customize
+      </button>
+      <button type="button" id="reports-export-btn" class="btn btn-outline btn-sm gap-1.5" onclick="openExportModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        Export
+      </button>
     </div>
   </div>
 
@@ -91,133 +55,372 @@
     <span class="text-xs text-base-content/40">Leave blank for all-time. Applies to every report below.</span>
   </div>
 
-  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+  <!-- Every widget this role could ever see lives in the DOM unconditionally
+       -- /api/v1/stats/layout (role-scoped server-side, see
+       services/report_widgets.py) decides which ones actually get shown and
+       in what order; applyReportLayout() below hides/orders the rest. This
+       keeps "what am I allowed to see" defined in exactly one place (the
+       backend registry) instead of duplicated in Jinja role-check
+       conditionals here too. -->
+  <div id="reports-widgets" class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+
+    <!-- Summary KPIs -->
+    <div class="report-widget xl:col-span-2" data-widget-id="summary">
+      <div id="reports-kpi-row" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">TOTAL CHECKOUTS</p>
+            <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">&mdash;</p>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+          </div>
+        </div>
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSETS BORROWED</p>
+            <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">&mdash;</p>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-info/30 to-info/5 ring-1 ring-info/20 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+          </div>
+        </div>
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">BORROWERS</p>
+            <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">&mdash;</p>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-success/30 to-success/5 ring-1 ring-success/20 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+        </div>
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">OVERDUE RATE</p>
+            <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-warning/30 to-warning/5 ring-1 ring-warning/20 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+        </div>
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-error/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RATE</p>
+            <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-error/30 to-error/5 ring-1 ring-error/20 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Most Borrowed Assets -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
-        </span>
-        <h3 class="font-semibold">Most Borrowed Assets</h3>
+    <div class="report-widget" data-widget-id="most_borrowed_assets">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            </span>
+            <h3 class="font-semibold">Most Borrowed Assets</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['most_borrowed_assets'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Top 10 by number of checkouts. Click a bar for details.</p>
+        <div id="report-most-borrowed-assets" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Top 10 by number of checkouts. Click a row for details.</p>
-      <div id="report-most-borrowed-assets" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Most Borrowed Categories -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-info/10 text-info flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        </span>
-        <h3 class="font-semibold">Most Borrowed Categories</h3>
+    <div class="report-widget" data-widget-id="most_borrowed_categories">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </span>
+            <h3 class="font-semibold">Most Borrowed Categories</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['most_borrowed_categories'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Which kind of tool moves the most.</p>
+        <div id="report-most-borrowed-categories" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Which kind of tool moves the most.</p>
-      <div id="report-most-borrowed-categories" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Least Borrowed Assets -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-base-300 text-base-content/50 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
-        </span>
-        <h3 class="font-semibold">Least Borrowed Assets</h3>
+    <div class="report-widget" data-widget-id="least_borrowed_assets">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-base-300 text-base-content/50 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            </span>
+            <h3 class="font-semibold">Least Borrowed Assets</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['least_borrowed_assets'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Idle stock, including tools never checked out. Click a row for details.</p>
+        <div id="report-least-borrowed-assets" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Idle stock, including tools never checked out. Click a row for details.</p>
-      <div id="report-least-borrowed-assets" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Average Loan Duration -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center justify-between mb-0.5">
-        <div class="flex items-center gap-2.5">
-          <span class="w-8 h-8 rounded-full bg-info/10 text-info flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          </span>
-          <h3 class="font-semibold">Average Loan Duration</h3>
+    <div class="report-widget" data-widget-id="avg_loan_duration">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </span>
+            <h3 class="font-semibold">Average Loan Duration</h3>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="join">
+              <button type="button" id="loan-duration-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('loan-duration', 'asset')">By Asset</button>
+              <button type="button" id="loan-duration-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('loan-duration', 'category')">By Category</button>
+            </div>
+            <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['avg_loan_duration'])" data-tooltip="Export this widget" aria-label="Export this widget">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            </button>
+          </div>
         </div>
-        <div class="join">
-          <button type="button" id="loan-duration-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('loan-duration', 'asset')">By Asset</button>
-          <button type="button" id="loan-duration-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('loan-duration', 'category')">By Category</button>
-        </div>
+        <p class="text-xs text-base-content/50 mb-3">Hours between checkout and return, completed loans only. Click an asset row for details.</p>
+        <div id="report-loan-duration" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Hours between checkout and return, completed loans only. Click an asset row for details.</p>
-      <div id="report-loan-duration" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Top Borrowers -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-        </span>
-        <h3 class="font-semibold">Top Borrowers</h3>
+    <div class="report-widget" data-widget-id="top_borrowers">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            </span>
+            <h3 class="font-semibold">Top Borrowers</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['top_borrowers'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Members with the most checkouts. Click a bar for their profile.</p>
+        <div id="report-top-borrowers" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Members with the most checkouts. Click a row for their profile.</p>
-      <div id="report-top-borrowers" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Overdue Frequency -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-warning/10 text-warning flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        </span>
-        <h3 class="font-semibold">Overdue Frequency</h3>
+    <div class="report-widget" data-widget-id="overdue_frequency">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </span>
+            <h3 class="font-semibold">Overdue Frequency</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['overdue_frequency'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Members who return late (or are currently overdue) most often. Click a row for their profile.</p>
+        <div id="report-overdue-frequency" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Members who return late (or are currently overdue) most often. Click a row for their profile.</p>
-      <div id="report-overdue-frequency" class="report-body min-h-[8rem]"></div>
     </div>
 
     <!-- Condition Changes -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 xl:col-span-2">
-      <div class="flex items-center justify-between mb-0.5">
-        <div class="flex items-center gap-2.5">
-          <span class="w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-          </span>
-          <h3 class="font-semibold">Condition Changes</h3>
+    <div class="report-widget xl:col-span-2" data-widget-id="condition_changes">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-error/25 to-error/5 text-error flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            </span>
+            <h3 class="font-semibold">Condition Changes</h3>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="join">
+              <button type="button" id="condition-changes-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('condition-changes', 'asset')">By Asset</button>
+              <button type="button" id="condition-changes-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('condition-changes', 'category')">By Category</button>
+            </div>
+            <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['condition_changes'])" data-tooltip="Export this widget" aria-label="Export this widget">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            </button>
+          </div>
         </div>
-        <div class="join">
-          <button type="button" id="condition-changes-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('condition-changes', 'asset')">By Asset</button>
-          <button type="button" id="condition-changes-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('condition-changes', 'category')">By Category</button>
-        </div>
+        <p class="text-xs text-base-content/50 mb-3">How often something comes back in worse condition than it went out. Click an asset row for details.</p>
+        <div id="report-condition-changes" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">How often something comes back in worse condition than it went out. Click an asset row for details.</p>
-      <div id="report-condition-changes" class="report-body min-h-[8rem]"></div>
     </div>
 
-    {% if staff.role == "admin" %}
     <!-- Staff Activity -- admin-only (see routes/stats.py's staff_activity
          endpoint docstring for why: staff oversight is admin territory
-         everywhere else in the app, in_charge doesn't get this one).
-         Deliberately a plain table (not a bar chart) and sorted
-         alphabetically server-side, not by any count -- workload
-         visibility, not a leaderboard. -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 xl:col-span-2">
-      <div class="flex items-center gap-2.5 mb-0.5">
-        <span class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-        </span>
-        <h3 class="font-semibold">Staff Activity</h3>
+         everywhere else in the app, in_charge doesn't get this one). The
+         role gate is enforced by /api/v1/stats/layout never listing this
+         widget for non-admins, not by a Jinja role check here -- see the note
+         above the widgets container. Deliberately a plain table (not a bar
+         chart) and sorted alphabetically server-side, not by any count --
+         workload visibility, not a leaderboard. -->
+    <div class="report-widget xl:col-span-2" data-widget-id="staff_activity">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-secondary/25 to-secondary/5 text-secondary flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+            </span>
+            <h3 class="font-semibold">Staff Activity</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['staff_activity'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Workload coverage across active staff accounts -- who's processing checkouts/returns, and whether an account is being used at all. Click a row for their profile.</p>
+        <div id="report-staff-activity" class="report-body min-h-[8rem]"></div>
       </div>
-      <p class="text-xs text-base-content/50 mb-3">Workload coverage across active staff accounts -- who's processing checkouts/returns, and whether an account is being used at all. Click a row for their profile.</p>
-      <div id="report-staff-activity" class="report-body min-h-[8rem]"></div>
     </div>
-    {% endif %}
+
+    <!-- Tool Keeper's "own activity only" widgets -- see
+         services/report_widgets.py: never shown to admin/in_charge (the
+         layout endpoint won't list them), and every query behind them
+         filters to the requesting staff member's own id server-side
+         regardless of what role asks. -->
+    <div class="report-widget" data-widget-id="my_checkouts">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+            </span>
+            <h3 class="font-semibold">My Checkouts Processed</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['my_checkouts'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Checkouts you personally handed out in this range.</p>
+        <div id="report-my-checkouts" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
+
+    <div class="report-widget" data-widget-id="my_returns">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 1l-4 4 4 4"/><path d="M21 11V9a4 4 0 00-4-4H3"/><path d="M17 23l4-4-4-4"/><path d="M3 13v2a4 4 0 004 4h14"/></svg>
+            </span>
+            <h3 class="font-semibold">My Returns Processed</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['my_returns'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Returns you personally processed in this range.</p>
+        <div id="report-my-returns" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
+
+    <div class="report-widget" data-widget-id="my_overdue_handled">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </span>
+            <h3 class="font-semibold">My Overdue Handled</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['my_overdue_handled'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Loans you checked out that ended up overdue.</p>
+        <div id="report-my-overdue-handled" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
 
   </div>
 </div>
 
 <div id="modal-container"></div>
 
-<!-- Vendored locally (static/js/chart.min.js), same as htmx.min.js -- not
-     loaded from a CDN, so it works the same whether or not this
-     deployment has internet access. Only pulled in on this page, since
-     it's the only one that uses it. -->
+<!-- Customize modal -- reorder (drag rows) and show/hide every widget this
+     role can see. Native HTML5 drag-and-drop (draggable + dragstart/
+     dragover/drop) on a plain vertical list, not a vendored library: a
+     linear list reorder is simple enough for it to be robust, and it
+     keeps this page dependency-free the same way the rest of the app's
+     drag interactions (base.html's avatar-crop widget) already are. -->
+<dialog id="customize-modal" class="modal">
+  <div class="modal-box max-w-md">
+    <h3 class="font-bold text-lg mb-1">Customize Reports</h3>
+    <p class="text-xs text-base-content/50 mb-4">Drag <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 inline" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg> to reorder, toggle to show or hide. Saved to your account.</p>
+    <ul id="customize-widget-list" class="space-y-1.5 max-h-[55vh] overflow-y-auto pr-1"></ul>
+    <div class="modal-action items-center justify-between">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="resetReportLayout()">Reset to default</button>
+      <div class="flex gap-2">
+        <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveReportLayout()">Save layout</button>
+      </div>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Export modal -- per-section checkboxes (pre-scoped to one widget when
+     opened via a card's own export icon) and a format choice. XLSX/CSV
+     are built server-side (routes/stats.py export_stats, sections= param);
+     PDF is assembled client-side with the already-vendored jsPDF, reusing
+     the exact same on-screen chart images/row data rather than a second
+     server round trip. -->
+<dialog id="export-modal" class="modal">
+  <div class="modal-box max-w-md">
+    <h3 class="font-bold text-lg mb-1">Export Reports</h3>
+    <p class="text-xs text-base-content/50 mb-4">Same date range as the page. Pick what to include.</p>
+
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs font-semibold text-base-content/50 tracking-wide">SECTIONS</span>
+      <div class="flex gap-3 text-xs">
+        <button type="button" class="link link-primary" onclick="setExportSectionsChecked(true)">All</button>
+        <button type="button" class="link link-primary" onclick="setExportSectionsChecked(false)">None</button>
+      </div>
+    </div>
+    <ul id="export-section-list" class="space-y-1 max-h-[35vh] overflow-y-auto pr-1 mb-4"></ul>
+
+    <div class="mb-2">
+      <span class="text-xs font-semibold text-base-content/50 tracking-wide">FORMAT</span>
+    </div>
+    <div class="join w-full mb-1">
+      <input type="radio" name="export-format" id="export-format-xlsx" class="join-item btn btn-sm flex-1" aria-label="Excel (.xlsx)" value="xlsx" checked>
+      <input type="radio" name="export-format" id="export-format-csv" class="join-item btn btn-sm flex-1" aria-label="CSV" value="csv">
+      <input type="radio" name="export-format" id="export-format-pdf" class="join-item btn btn-sm flex-1" aria-label="PDF" value="pdf">
+    </div>
+    <p class="text-[11px] text-base-content/40 mb-4">XLSX: one workbook, one sheet per section. CSV: one file per section (zipped if more than one). PDF: a formatted snapshot with charts.</p>
+
+    <div id="export-error" class="hidden alert alert-error text-sm py-2 mb-3"></div>
+
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+      <button type="button" id="export-confirm-btn" class="btn btn-primary btn-sm gap-1.5" onclick="runExport()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        Export
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Vendored locally (static/js/chart.min.js, static/js/jspdf.umd.min.js),
+     same as htmx.min.js -- not loaded from a CDN, so this works the same
+     whether or not this deployment has internet access. Only pulled in on
+     this page, since it's the only one that uses either. -->
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/jspdf.umd.min.js') }}"></script>
 
 <script>
 function escapeHtml(str) {
@@ -271,20 +474,22 @@ function themeColor(varName) {
 }
 
 const REPORT_CHARTS = {}; // elId -> Chart instance, so a refetch can destroy-and-recreate instead of leaking canvases
+const REPORT_LAST_ROWS = {}; // elId -> last-rendered rows, reused by the PDF export builder below
 
 // Real bar chart (Chart.js, vendored locally -- static/js/chart.min.js,
 // see the <script> tag above) for the three pure "ranking" reports, where
 // a chart genuinely earns its place: one metric, ranked, nothing else to
-// show per row. The other four reports (Least Borrowed, Loan Duration,
-// Overdue Frequency, Condition Changes) stay as tables -- multiple
+// show per row. The other reports stay as tables -- multiple
 // differently-shaped columns don't compress into one chart cleanly, and a
 // table already reads better for those than forcing a chart would.
 //
-// onClick(row), when given, opens the matching Inventory/Members modal
-// clicking a bar. Tooltips always show the exact value and (if given) a
-// sublabel line, not just what the bar's relative length implies.
+// Bars use a top-to-bottom gradient fill (solid theme color fading toward
+// transparent) rather than a flat fill, rounded corners, and a themed
+// tooltip box -- purely cosmetic, same underlying data/interaction as
+// before (onClick still opens the matching Inventory/Members modal).
 function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', colorVar, onClick = null }) {
   const el = document.getElementById(elId);
+  REPORT_LAST_ROWS[elId] = rows;
   if (REPORT_CHARTS[elId]) {
     REPORT_CHARTS[elId].destroy();
     delete REPORT_CHARTS[elId];
@@ -293,9 +498,19 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
 
   el.innerHTML = `<div style="height: ${Math.max(160, rows.length * 32)}px"><canvas id="${elId}-canvas"></canvas></div>`;
   const canvas = document.getElementById(`${elId}-canvas`);
+  const ctx2d = canvas.getContext('2d');
   const barColor = themeColor(colorVar);
   const gridColor = themeColor('--color-base-300');
   const textColor = themeColor('--color-base-content');
+  const baseColor = themeColor('--color-base-100');
+
+  // Horizontal gradient (bars are indexAxis: 'y', so the bar's "length"
+  // runs left-to-right) -- full-strength color at the base, fading out
+  // toward the tip, so longer bars don't just look like a solid color
+  // block sitting next to shorter ones.
+  const gradient = ctx2d.createLinearGradient(0, 0, canvas.width || 400, 0);
+  gradient.addColorStop(0, barColor);
+  gradient.addColorStop(1, barColor.startsWith('oklch') ? barColor.replace(')', ' / 0.55)') : barColor);
 
   const chart = new Chart(canvas, {
     type: 'bar',
@@ -303,8 +518,10 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
       labels: rows.map(label),
       datasets: [{
         data: rows.map(value),
-        backgroundColor: barColor,
-        borderRadius: 4,
+        backgroundColor: gradient,
+        hoverBackgroundColor: barColor,
+        borderRadius: 8,
+        borderSkipped: false,
         maxBarThickness: 22,
       }],
     },
@@ -312,6 +529,7 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 400, easing: 'easeOutQuart' },
       onClick: typeof onClick === 'function' ? function (evt, elements) {
         if (!elements.length) return;
         onClick(rows[elements[0].index]);
@@ -322,6 +540,14 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
       plugins: {
         legend: { display: false },
         tooltip: {
+          backgroundColor: baseColor,
+          titleColor: textColor,
+          bodyColor: textColor,
+          borderColor: gridColor,
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 8,
+          displayColors: false,
           callbacks: {
             label: function (ctx) { return ctx.parsed.x + valueSuffix; },
             afterLabel: sublabel ? function (ctx) { return sublabel(rows[ctx.dataIndex]); } : undefined,
@@ -358,6 +584,7 @@ new MutationObserver(function () {
 
 function renderTable(elId, rows, columns, { onClick = null } = {}) {
   const el = document.getElementById(elId);
+  REPORT_LAST_ROWS[elId] = rows;
   if (rows.length === 0) { el.innerHTML = REPORT_EMPTY_STATE; return; }
   const clickable = typeof onClick === 'function';
   const head = columns.map(function (c) {
@@ -418,12 +645,12 @@ function setReportGroupBy(report, groupBy) {
   REPORT_GROUP_BY[report] = groupBy;
   document.getElementById(`${report}-group-asset`).classList.toggle('btn-active', groupBy === 'asset');
   document.getElementById(`${report}-group-category`).classList.toggle('btn-active', groupBy === 'category');
-  updateReportsExportLink();
   if (report === 'loan-duration') fetchLoanDuration();
   if (report === 'condition-changes') fetchConditionChanges();
 }
 
 function fetchMostBorrowedAssets() {
+  if (isWidgetHiddenForRole('most_borrowed_assets')) return;
   const params = reportsDateParams();
   fetchReport('report-most-borrowed-assets', '/api/v1/stats/assets/most-borrowed', params, function (rows) {
     renderBarChart('report-most-borrowed-assets', rows, {
@@ -438,6 +665,7 @@ function fetchMostBorrowedAssets() {
 }
 
 function fetchMostBorrowedCategories() {
+  if (isWidgetHiddenForRole('most_borrowed_categories')) return;
   const params = reportsDateParams();
   fetchReport('report-most-borrowed-categories', '/api/v1/stats/categories/most-borrowed', params, function (rows) {
     renderBarChart('report-most-borrowed-categories', rows, {
@@ -450,6 +678,7 @@ function fetchMostBorrowedCategories() {
 }
 
 function fetchLeastBorrowedAssets() {
+  if (isWidgetHiddenForRole('least_borrowed_assets')) return;
   const params = reportsDateParams();
   fetchReport('report-least-borrowed-assets', '/api/v1/stats/assets/least-borrowed', params, function (rows) {
     renderTable('report-least-borrowed-assets', rows, [
@@ -460,6 +689,7 @@ function fetchLeastBorrowedAssets() {
 }
 
 function fetchLoanDuration() {
+  if (isWidgetHiddenForRole('avg_loan_duration')) return;
   const params = reportsDateParams();
   const groupBy = REPORT_GROUP_BY['loan-duration'];
   params.set('group_by', groupBy);
@@ -472,6 +702,7 @@ function fetchLoanDuration() {
 }
 
 function fetchTopBorrowers() {
+  if (isWidgetHiddenForRole('top_borrowers')) return;
   const params = reportsDateParams();
   fetchReport('report-top-borrowers', '/api/v1/stats/members/top-borrowers', params, function (rows) {
     renderBarChart('report-top-borrowers', rows, {
@@ -486,6 +717,7 @@ function fetchTopBorrowers() {
 }
 
 function fetchOverdueFrequency() {
+  if (isWidgetHiddenForRole('overdue_frequency')) return;
   const params = reportsDateParams();
   fetchReport('report-overdue-frequency', '/api/v1/stats/members/overdue-frequency', params, function (rows) {
     renderTable('report-overdue-frequency', rows, [
@@ -497,6 +729,7 @@ function fetchOverdueFrequency() {
 }
 
 function fetchConditionChanges() {
+  if (isWidgetHiddenForRole('condition_changes')) return;
   const params = reportsDateParams();
   const groupBy = REPORT_GROUP_BY['condition-changes'];
   params.set('group_by', groupBy);
@@ -510,6 +743,7 @@ function fetchConditionChanges() {
 }
 
 function fetchSummary() {
+  if (isWidgetHiddenForRole('summary')) return;
   const params = reportsDateParams();
   fetch('/api/v1/stats/summary?' + params.toString())
     .then(function (res) {
@@ -531,28 +765,12 @@ function fetchSummary() {
     });
 }
 
-// Keeps the Export link's href current with whatever the page is showing
-// right now -- date range plus each toggle's group_by choice -- so the
-// download always matches what's on screen instead of needing its own
-// separate "confirm your filters" step.
-function updateReportsExportLink() {
-  const params = reportsDateParams();
-  params.delete('limit');
-  params.delete('offset');
-  params.set('loan_duration_group_by', REPORT_GROUP_BY['loan-duration']);
-  params.set('condition_changes_group_by', REPORT_GROUP_BY['condition-changes']);
-  document.getElementById('reports-export-btn').href = '/api/v1/stats/export?' + params.toString();
-}
-
 function fetchStaffActivity() {
-  // No-op (rather than erroring) for in_charge -- the card, and this
-  // endpoint, are both admin-only (see routes/stats.py's staff_activity
-  // docstring), so the element this targets simply isn't in the DOM for
-  // anyone else. fetchAllReports() below calls this unconditionally,
-  // same as every other fetch* here, rather than special-casing role
-  // checks in JS on top of what the template and backend already gate.
+  // No-op (rather than erroring) for anyone without this widget in their
+  // layout -- see applyReportLayout(), which hides the whole card, but
+  // this can still be called by fetchAllReports() unconditionally.
   const el = document.getElementById('report-staff-activity');
-  if (!el) return;
+  if (!el || isWidgetHiddenForRole('staff_activity')) return;
   const params = reportsDateParams();
   fetchReport('report-staff-activity', '/api/v1/stats/staff/activity', params, function (rows) {
     renderTable('report-staff-activity', rows, [
@@ -565,9 +783,46 @@ function fetchStaffActivity() {
   });
 }
 
+// --- Tool Keeper "my activity" widgets -----------------------------------
+
+function fetchMyCheckouts() {
+  if (isWidgetHiddenForRole('my_checkouts')) return;
+  const params = reportsDateParams();
+  fetchReport('report-my-checkouts', '/api/v1/stats/my/checkouts', params, function (rows) {
+    renderTable('report-my-checkouts', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
+      { header: 'CHECKED OUT', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => r.time_out },
+    ]);
+  });
+}
+
+function fetchMyReturns() {
+  if (isWidgetHiddenForRole('my_returns')) return;
+  const params = reportsDateParams();
+  fetchReport('report-my-returns', '/api/v1/stats/my/returns', params, function (rows) {
+    renderTable('report-my-returns', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
+      { header: 'RETURNED', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => r.time_in },
+    ]);
+  });
+}
+
+function fetchMyOverdueHandled() {
+  if (isWidgetHiddenForRole('my_overdue_handled')) return;
+  const params = reportsDateParams();
+  fetchReport('report-my-overdue-handled', '/api/v1/stats/my/overdue-handled', params, function (rows) {
+    renderTable('report-my-overdue-handled', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
+      { header: 'DUE', headCls: 'text-right', cls: 'text-right text-warning font-medium', render: (r) => r.due_date },
+    ]);
+  });
+}
+
 function fetchAllReports() {
   updateReportsDateFilterUI();
-  updateReportsExportLink();
   fetchSummary();
   fetchMostBorrowedAssets();
   fetchMostBorrowedCategories();
@@ -577,6 +832,9 @@ function fetchAllReports() {
   fetchOverdueFrequency();
   fetchConditionChanges();
   fetchStaffActivity();
+  fetchMyCheckouts();
+  fetchMyReturns();
+  fetchMyOverdueHandled();
 }
 
 function clearReportsDateFilter() {
@@ -653,15 +911,398 @@ function updateReportsDateFilterUI() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', fetchAllReports);
+// ===========================================================================
+// Customizable / draggable widget layout
+// ===========================================================================
+
+let REPORTS_LAYOUT = []; // [{widget_id, visible, position}], role-scoped order from the server
+let REPORTS_ROLE_WIDGETS = []; // [{id, title, type}], role-scoped catalog from the server
+
+function isWidgetHiddenForRole(widgetId) {
+  const entry = REPORTS_LAYOUT.find((w) => w.widget_id === widgetId);
+  // Not in the layout at all (role doesn't get this widget) counts as
+  // hidden too -- fetch* functions use this to skip a request their role
+  // isn't allowed to make in the first place.
+  return !entry;
+}
+
+async function loadReportLayout() {
+  try {
+    const res = await fetch('/api/v1/stats/layout');
+    if (!res.ok) return;
+    const data = await res.json();
+    REPORTS_LAYOUT = data.layout || [];
+    REPORTS_ROLE_WIDGETS = data.widgets || [];
+    applyReportLayout();
+  } catch (err) {
+    // Falls back to the DOM's own default order (source order) and every
+    // widget visible -- better than a blank page if this one call fails.
+  }
+}
+
+function applyReportLayout() {
+  const container = document.getElementById('reports-widgets');
+  const roleIds = new Set(REPORTS_ROLE_WIDGETS.map((w) => w.id));
+
+  document.querySelectorAll('.report-widget').forEach((el) => {
+    const wid = el.dataset.widgetId;
+    if (!roleIds.has(wid)) {
+      // Not in this role's catalog at all (e.g. an admin viewing
+      // tool_keeper-only "My Checkouts") -- always hidden, customize
+      // panel doesn't even list it.
+      el.classList.add('hidden');
+      return;
+    }
+    const entry = REPORTS_LAYOUT.find((w) => w.widget_id === wid);
+    const visible = entry ? entry.visible : true;
+    el.classList.toggle('hidden', !visible);
+    el.style.order = entry ? entry.position : 999;
+  });
+}
+
+function openCustomizeModal() {
+  const list = document.getElementById('customize-widget-list');
+  const order = REPORTS_LAYOUT.length
+    ? REPORTS_LAYOUT.map((e) => e.widget_id)
+    : REPORTS_ROLE_WIDGETS.map((w) => w.id);
+  const titleFor = (id) => (REPORTS_ROLE_WIDGETS.find((w) => w.id === id) || {}).title || id;
+  const visibleFor = (id) => {
+    const entry = REPORTS_LAYOUT.find((w) => w.widget_id === id);
+    return entry ? entry.visible : true;
+  };
+
+  list.innerHTML = order.map((id) => `
+    <li draggable="true" data-widget-id="${id}"
+        class="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-base-300 bg-base-100 cursor-grab"
+        ondragstart="customizeDragStart(event)" ondragover="customizeDragOver(event)" ondrop="customizeDrop(event)" ondragend="customizeDragEnd(event)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+      <span class="flex-1 text-sm">${escapeHtml(titleFor(id))}</span>
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" ${visibleFor(id) ? 'checked' : ''} onchange="void 0">
+    </li>
+  `).join('');
+
+  document.getElementById('customize-modal').showModal();
+}
+
+let __customizeDragEl = null;
+function customizeDragStart(e) {
+  __customizeDragEl = e.currentTarget;
+  e.currentTarget.classList.add('opacity-40');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function customizeDragOver(e) {
+  e.preventDefault();
+  const target = e.currentTarget;
+  if (!__customizeDragEl || target === __customizeDragEl) return;
+  const list = document.getElementById('customize-widget-list');
+  const items = [...list.children];
+  const dragIdx = items.indexOf(__customizeDragEl);
+  const targetIdx = items.indexOf(target);
+  if (dragIdx < targetIdx) {
+    target.after(__customizeDragEl);
+  } else {
+    target.before(__customizeDragEl);
+  }
+}
+function customizeDrop(e) {
+  e.preventDefault();
+}
+function customizeDragEnd(e) {
+  e.currentTarget.classList.remove('opacity-40');
+  __customizeDragEl = null;
+}
+
+async function saveReportLayout() {
+  const list = document.getElementById('customize-widget-list');
+  const layout = [...list.children].map((li) => ({
+    widget_id: li.dataset.widgetId,
+    visible: li.querySelector('input[type=checkbox]').checked,
+  }));
+  try {
+    const res = await fetch('/api/v1/stats/layout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ layout }),
+    });
+    if (res.status === 401) { showSessionTimeoutModal(); return; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
+    REPORTS_LAYOUT = data.layout || [];
+    applyReportLayout();
+    fetchAllReports();
+    document.getElementById('customize-modal').close();
+    showToast('Layout saved', 'success');
+  } catch (err) {
+    // Surface the real reason (e.g. a stale CSRF token, session timeout)
+    // instead of a blanket "check your connection" -- much faster to
+    // diagnose than guessing at a network issue that isn't the actual cause.
+    showToast(err.message || 'Could not save layout — check your connection', 'error');
+  }
+}
+
+async function resetReportLayout() {
+  try {
+    const res = await fetch('/api/v1/stats/layout/reset', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+    });
+    if (res.status === 401) { showSessionTimeoutModal(); return; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Reset failed (${res.status})`);
+    REPORTS_LAYOUT = data.layout || [];
+    applyReportLayout();
+    fetchAllReports();
+    openCustomizeModal();
+    showToast('Layout reset to default', 'success');
+  } catch (err) {
+    showToast(err.message || 'Could not reset layout — check your connection', 'error');
+  }
+}
+
+// ===========================================================================
+// Export (CSV / XLSX server-side, PDF client-side)
+// ===========================================================================
+
+let EXPORT_SCOPE = null; // null = every visible widget; an array = pre-scoped to specific widget id(s)
+
+function openExportModal(widgetIds) {
+  EXPORT_SCOPE = Array.isArray(widgetIds) && widgetIds.length ? widgetIds : null;
+  const list = document.getElementById('export-section-list');
+  const visibleIds = REPORTS_LAYOUT.filter((e) => e.visible).map((e) => e.widget_id);
+  const candidateIds = REPORTS_ROLE_WIDGETS.map((w) => w.id).filter((id) => visibleIds.includes(id) || (EXPORT_SCOPE && EXPORT_SCOPE.includes(id)));
+  const titleFor = (id) => (REPORTS_ROLE_WIDGETS.find((w) => w.id === id) || {}).title || id;
+
+  list.innerHTML = candidateIds.map((id) => {
+    const checked = EXPORT_SCOPE ? EXPORT_SCOPE.includes(id) : true;
+    return `
+      <li class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-base-200">
+        <input type="checkbox" class="checkbox checkbox-sm export-section-checkbox" data-widget-id="${id}" ${checked ? 'checked' : ''}>
+        <span class="text-sm flex-1">${escapeHtml(titleFor(id))}</span>
+      </li>`;
+  }).join('');
+
+  document.getElementById('export-error').classList.add('hidden');
+  document.getElementById('export-modal').showModal();
+}
+
+function setExportSectionsChecked(checked) {
+  document.querySelectorAll('.export-section-checkbox').forEach((cb) => { cb.checked = checked; });
+}
+
+function selectedExportSections() {
+  return [...document.querySelectorAll('.export-section-checkbox:checked')].map((cb) => cb.dataset.widgetId);
+}
+
+async function runExport() {
+  const sections = selectedExportSections();
+  const errEl = document.getElementById('export-error');
+  errEl.classList.add('hidden');
+  if (sections.length === 0) {
+    errEl.textContent = 'Pick at least one section to export.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const format = document.querySelector('input[name="export-format"]:checked').value;
+  const btn = document.getElementById('export-confirm-btn');
+  btn.disabled = true;
+
+  try {
+    if (format === 'pdf') {
+      await exportSectionsAsPdf(sections);
+    } else {
+      const params = reportsDateParams();
+      params.delete('limit');
+      params.delete('offset');
+      params.set('sections', sections.join(','));
+      params.set('format', format);
+      params.set('loan_duration_group_by', REPORT_GROUP_BY['loan-duration']);
+      params.set('condition_changes_group_by', REPORT_GROUP_BY['condition-changes']);
+      window.location.href = '/api/v1/stats/export?' + params.toString();
+    }
+    document.getElementById('export-modal').close();
+  } catch (err) {
+    errEl.textContent = 'Export failed — check your connection and try again.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Maps a widget id to the chart/table element it renders into (so the PDF
+// builder can grab either the live chart image or the last-rendered rows,
+// exactly what's already on screen) and the column labels for table
+// widgets whose REPORT_LAST_ROWS shape isn't self-describing.
+const EXPORT_WIDGET_MAP = {
+  summary: { kind: 'summary' },
+  most_borrowed_assets: { kind: 'chart', el: 'report-most-borrowed-assets', title: 'Most Borrowed Assets' },
+  most_borrowed_categories: { kind: 'chart', el: 'report-most-borrowed-categories', title: 'Most Borrowed Categories' },
+  top_borrowers: { kind: 'chart', el: 'report-top-borrowers', title: 'Top Borrowers' },
+  least_borrowed_assets: {
+    kind: 'table', el: 'report-least-borrowed-assets', title: 'Least Borrowed Assets',
+    columns: ['Asset', 'Category', 'Borrows'],
+    row: (r) => [r.name, r.category || 'Uncategorized', r.borrow_count],
+  },
+  avg_loan_duration: {
+    kind: 'table', el: 'report-loan-duration', title: 'Average Loan Duration',
+    columns: () => [REPORT_GROUP_BY['loan-duration'] === 'asset' ? 'Asset' : 'Category', 'Avg Hours'],
+    row: (r) => [REPORT_GROUP_BY['loan-duration'] === 'asset' ? r.name : r.category, r.avg_loan_hours],
+  },
+  overdue_frequency: {
+    kind: 'table', el: 'report-overdue-frequency', title: 'Overdue Frequency',
+    columns: ['Member', 'Department', 'Overdue', 'Still Open'],
+    row: (r) => [memberName(r), r.department, r.overdue_count, r.still_open_count],
+  },
+  condition_changes: {
+    kind: 'table', el: 'report-condition-changes', title: 'Condition Changes',
+    columns: () => [REPORT_GROUP_BY['condition-changes'] === 'asset' ? 'Asset' : 'Category', 'Returns', 'Worsened'],
+    row: (r) => [REPORT_GROUP_BY['condition-changes'] === 'asset' ? r.name : r.category, r.completed_returns, r.worsened_count],
+  },
+  staff_activity: {
+    kind: 'table', el: 'report-staff-activity', title: 'Staff Activity',
+    columns: ['Staff', 'Role', 'Checkouts', 'Returns', 'Logged Actions'],
+    row: (r) => [r.name, r.role, r.checkouts_processed, r.returns_processed, r.audit_actions],
+  },
+  my_checkouts: {
+    kind: 'table', el: 'report-my-checkouts', title: 'My Checkouts Processed',
+    columns: ['Asset', 'Member', 'Checked Out'],
+    row: (r) => [r.asset_name, r.member_name, r.time_out],
+  },
+  my_returns: {
+    kind: 'table', el: 'report-my-returns', title: 'My Returns Processed',
+    columns: ['Asset', 'Member', 'Returned'],
+    row: (r) => [r.asset_name, r.member_name, r.time_in],
+  },
+  my_overdue_handled: {
+    kind: 'table', el: 'report-my-overdue-handled', title: 'My Overdue Handled',
+    columns: ['Asset', 'Member', 'Due'],
+    row: (r) => [r.asset_name, r.member_name, r.due_date],
+  },
+};
+
+async function exportSectionsAsPdf(sectionIds) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  let y = margin;
+
+  const since = document.getElementById('reports-since-filter').value || 'All time';
+  const until = document.getElementById('reports-until-filter').value || 'Present';
+
+  doc.setFontSize(16);
+  doc.text('Reports', margin, y);
+  y += 7;
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text(`${since} to ${until} — generated ${new Date().toLocaleString()}`, margin, y);
+  doc.setTextColor(20);
+  y += 10;
+
+  function ensureSpace(needed) {
+    if (y + needed > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  }
+
+  function drawSectionTitle(title) {
+    ensureSpace(12);
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(title, margin, y);
+    doc.setFont(undefined, 'normal');
+    y += 6;
+  }
+
+  function drawTable(columns, rows) {
+    const usableWidth = pageWidth - margin * 2;
+    const colWidth = usableWidth / columns.length;
+    ensureSpace(8);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    columns.forEach((c, i) => doc.text(String(c), margin + i * colWidth, y));
+    doc.setFont(undefined, 'normal');
+    y += 1.5;
+    doc.setDrawColor(200);
+    doc.line(margin, y, margin + usableWidth, y);
+    y += 4.5;
+    rows.forEach((row) => {
+      ensureSpace(6);
+      row.forEach((cell, i) => {
+        const text = cell == null ? '' : String(cell);
+        doc.text(text.length > 28 ? text.slice(0, 27) + '…' : text, margin + i * colWidth, y);
+      });
+      y += 5.5;
+    });
+    y += 4;
+  }
+
+  for (const id of sectionIds) {
+    const spec = EXPORT_WIDGET_MAP[id];
+    if (!spec) continue;
+
+    if (spec.kind === 'summary') {
+      drawSectionTitle('Summary');
+      const rows = [
+        ['Total checkouts', document.getElementById('kpi-total-checkouts').textContent],
+        ['Assets borrowed', document.getElementById('kpi-unique-assets').textContent],
+        ['Borrowers', document.getElementById('kpi-unique-borrowers').textContent],
+        ['Overdue rate', document.getElementById('kpi-overdue-rate').textContent],
+        ['Damage rate', document.getElementById('kpi-damage-rate').textContent],
+      ];
+      drawTable(['Metric', 'Value'], rows);
+      continue;
+    }
+
+    drawSectionTitle(spec.title);
+
+    if (spec.kind === 'chart' && REPORT_CHARTS[spec.el]) {
+      const img = REPORT_CHARTS[spec.el].toBase64Image();
+      const imgWidth = pageWidth - margin * 2;
+      const canvas = document.getElementById(`${spec.el}-canvas`);
+      const imgHeight = canvas ? (canvas.height / canvas.width) * imgWidth : 60;
+      ensureSpace(imgHeight + 4);
+      doc.addImage(img, 'PNG', margin, y, imgWidth, imgHeight);
+      y += imgHeight + 6;
+      continue;
+    }
+
+    const rows = REPORT_LAST_ROWS[spec.el] || [];
+    if (rows.length === 0) {
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text('No data for this range.', margin, y);
+      doc.setTextColor(20);
+      y += 8;
+      continue;
+    }
+    const columns = typeof spec.columns === 'function' ? spec.columns() : spec.columns;
+    drawTable(columns, rows.map(spec.row));
+  }
+
+  const basename = `reports_${new Date().toISOString().slice(0, 10)}`;
+  doc.save(`${basename}.pdf`);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  loadReportLayout().then(fetchAllReports);
+});
 
 // --- Keyboard shortcuts (Reports page) ---
-// Just Escape here -- this page has no search box, pagination, or modals
-// to guard against (every report is fetched inline, nothing opens
-// #modal-container), so none of the other tabs' bindings apply. The KPI
-// row above isn't clickable (nothing to filter into), so it doesn't add
-// any bindings either.
+// Escape clears the date range (as before). Alt+C/Alt+E open Customize/
+// Export, following the same Alt-shortcut convention Inventory/Members
+// use for their primary actions.
 document.addEventListener('keydown', function (e) {
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (isTypingTargetReports(e.target)) return;
+    if (e.key.toLowerCase() === 'c') { e.preventDefault(); openCustomizeModal(); return; }
+    if (e.key.toLowerCase() === 'e') { e.preventDefault(); openExportModal(); return; }
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key !== 'Escape') return;
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -669,5 +1310,11 @@ document.addEventListener('keydown', function (e) {
   }
   clearReportsDateFilter();
 });
+
+function isTypingTargetReports(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
 </script>
 {% endblock %}

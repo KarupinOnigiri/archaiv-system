@@ -651,6 +651,7 @@ def add_staff_submit():
         action="created_staff",
         target_table="staff",
         target_id=new_staff_id,
+        target_name=data["username"],
         details=f"Created staff account: {data['username']}",
     )
 
@@ -794,6 +795,7 @@ def edit_staff_submit(id):
         action="updated_staff",
         target_table="staff",
         target_id=staff["id"],
+        target_name=staff["username"],
         details=f"Updated staff account: {staff['username']}",
     )
 
@@ -857,10 +859,89 @@ def change_password_submit():
         action="changed_own_password",
         target_table="staff",
         target_id=g.staff["id"],
+        target_name=g.staff["username"],
         details=f"Staff {g.staff['username']} changed their own password",
     )
 
     return jsonify({"message": "Password changed successfully"})
+
+
+@staff_bp.route("/staff/change-rfid-pin", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute; 30 per hour")
+def change_rfid_pin_submit():
+    """Self-service RFID PIN change -- mirrors change_password_submit
+    above exactly (current password required as confirmation, not the
+    current PIN itself -- a password is the stronger, unrelated secret,
+    so this doesn't degrade into "prove you know the PIN to change the
+    PIN"). Admin-only, matching RFID login itself (routes/auth.py:
+    login_rfid) being admin-only -- there's no point letting a
+    non-admin set a PIN that can never actually log anyone in.
+
+    This is also the intended answer to "should a newly-issued RFID PIN
+    be a fixed default like 000000, or random?" -- neither. Whoever
+    assigns the card (an admin, via staff/_edit_modal.html) types a real
+    starting PIN themselves, exactly like a new staff account already
+    gets a real starting password typed by whoever creates it (see
+    add_staff_submit's TEMPORARY PASSWORD field) rather than a
+    predictable system default -- and this endpoint is what lets the
+    new admin change it to something only they know once they've logged
+    in, the same way changing an initial password already works."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_pin = data.get("new_pin")
+
+    if not current_password or not new_pin:
+        return (
+            jsonify({"error": "current_password and new_pin are required"}),
+            400,
+        )
+
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    error = validate_rfid_pin(new_pin)
+    if error:
+        return error
+
+    new_hash = generate_password_hash(new_pin)
+    current_token = request.cookies.get("session_token")
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE staff SET rfid_pin_hash = ? WHERE id = ?",
+            (new_hash, g.staff["id"]),
+        )
+        # Same reasoning as change_password_submit -- a PIN change should
+        # invalidate every other active session on this account (someone
+        # else could be mid-session on a shared kiosk with the old PIN
+        # still valid there otherwise), but not the one making this
+        # request.
+        conn.execute(
+            "DELETE FROM sessions WHERE staff_id = ? AND token != ?",
+            (g.staff["id"], current_token),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="changed_own_rfid_pin",
+        target_table="staff",
+        target_id=g.staff["id"],
+        target_name=g.staff["username"],
+        details=f"Staff {g.staff['username']} changed their own RFID PIN",
+    )
+
+    return jsonify({"message": "RFID PIN changed successfully"})
 
 
 # # # NOTIFICATION PREFERENCES --------------------------------------------
@@ -903,6 +984,16 @@ def update_own_notification_prefs():
         raise
     finally:
         conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_own_notification_prefs",
+        target_table="staff",
+        target_id=g.staff["id"],
+        target_name=g.staff["username"],
+        details="Updated own notification preferences: "
+        + ", ".join(f"{col}={'on' if val else 'off'}" for col, val in updates.items()),
+    )
 
     return jsonify({"message": "Notification preferences updated", **updates})
 
@@ -955,6 +1046,7 @@ def upload_own_photo():
         action="updated_own_photo",
         target_table="staff",
         target_id=g.staff["id"],
+        target_name=g.staff["username"],
         details=f"Staff {g.staff['username']} updated their profile photo",
     )
 
@@ -999,6 +1091,7 @@ def remove_own_photo():
         action="removed_own_photo",
         target_table="staff",
         target_id=g.staff["id"],
+        target_name=g.staff["username"],
         details=f"Staff {g.staff['username']} removed their profile photo",
     )
 
@@ -1089,6 +1182,7 @@ def reset_password_submit(id):
         action="reset_staff_password",
         target_table="staff",
         target_id=id,
+        target_name=staff["username"],
         details=f"Admin reset password for staff account: {staff['username']} (temporary password issued)",
     )
 
@@ -1211,6 +1305,7 @@ def lock_staff(id):
         action="locked_staff",
         target_table="staff",
         target_id=id,
+        target_name=staff["username"],
         details=detail,
     )
 
@@ -1279,6 +1374,7 @@ def unlock_staff(id):
         action="unlocked_staff",
         target_table="staff",
         target_id=id,
+        target_name=staff["username"],
         details=f"Manually cleared lockout for staff account: {staff['username']}",
     )
 
@@ -1362,6 +1458,7 @@ def delete_staff(id):
         action="deactivated_staff",
         target_table="staff",
         target_id=id,
+        target_name=staff["username"],
         details=f"Deactivated staff account: {staff['username']}",
     )
 
@@ -1405,6 +1502,7 @@ def reactivate_staff(id):
         action="reactivated_staff",
         target_table="staff",
         target_id=id,
+        target_name=staff["username"],
         details=f"Reactivated staff account: {staff['username']}",
     )
 
@@ -1698,6 +1796,7 @@ def request_admin_deactivation(id):
         action="requested_admin_deactivation",
         target_table="admin_deactivation_requests",
         target_id=request_id,
+        target_name=target["username"],
         details=(
             f"Requested deactivation of admin {target['username']}: {reason} "
             f"(requires {required_approvals} {tier} approval(s))"
@@ -1765,11 +1864,17 @@ def approve_admin_deactivation(id):
         conn.close()
         return jsonify({"error": "You have already approved this request"}), 400
 
+    # req is a plain SELECT * from admin_deactivation_requests, no join --
+    # target_username isn't a column on it, has to be looked up separately.
+    target_staff_row = conn.execute(
+        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
+    ).fetchone()
     log_action(
         staff_id=g.staff["id"],
         action="approved_admin_deactivation",
         target_table="admin_deactivation_requests",
         target_id=id,
+        target_name=target_staff_row["username"] if target_staff_row else None,
         details=f"Approved deactivation request #{id} for staff {req['target_staff_id']}",
     )
 
@@ -1839,6 +1944,12 @@ def deny_admin_deactivation(id):
 
     new_status = "cancelled" if is_requester else "denied"
 
+    # Looked up before conn.close() below -- req itself (a plain SELECT *
+    # from admin_deactivation_requests) has no target_username column.
+    target_staff_row = conn.execute(
+        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
+    ).fetchone()
+
     conn.execute(
         """
         UPDATE admin_deactivation_requests
@@ -1857,6 +1968,7 @@ def deny_admin_deactivation(id):
             if is_requester
             else "denied_admin_deactivation"
         ),
+        target_name=target_staff_row["username"] if target_staff_row else None,
         target_table="admin_deactivation_requests",
         target_id=id,
         details=f"Request #{id} {new_status}"

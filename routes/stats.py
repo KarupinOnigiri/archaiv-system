@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify, request, make_response, g
 from database import get_db_connection
 from services.auth_service import roles_required
+from services.report_widgets import WIDGETS, widgets_for_role, is_widget_allowed
+from services.report_layout_service import get_report_layout, save_report_layout, reset_report_layout
 from utils.validators import validate_date_string, parse_pagination_params
 from utils.exports import sanitize_export_filename
 from utils.formatters import full_name
@@ -8,7 +10,9 @@ from extensions import limiter
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
+import csv
 import io
+import zipfile
 from datetime import datetime
 
 stats_bp = Blueprint("stats", __name__)
@@ -753,6 +757,233 @@ def staff_activity():
     )
 
 
+# # # TOOL KEEPER "MY ACTIVITY" -------------------------------------------
+# Reports was previously admin/in_charge only -- Tool Keeper now gets in,
+# but deliberately scoped to their own activity only (no cross-staff
+# comparisons, no other borrowers' aggregate stats): every query below
+# filters to g.staff["id"] unconditionally, regardless of role, so even if
+# an admin/in_charge account requests one of these (they can, the widgets
+# just aren't in their default registry entry) it still only ever shows
+# *their own* processed checkouts/returns, never anyone else's.
+
+
+@stats_bp.route("/stats/my/checkouts")
+@roles_required("admin", "in_charge", "tool_keeper")
+@limiter.limit("20 per minute")
+def my_checkouts():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+    date_filter, date_params, error = _parse_date_range(request.args, column="transactions.time_out")
+    if error:
+        return error
+
+    where_clauses = ["transactions.borrowed_by_staff_id = ?"]
+    params = [g.staff["id"]]
+    if date_filter:
+        where_clauses.append(date_filter)
+        params += date_params
+    where_sql = f"WHERE {' AND '.join(where_clauses)}"
+
+    conn = get_db_connection()
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM transactions {where_sql}", params
+    ).fetchone()["cnt"]
+    rows = conn.execute(
+        f"""
+        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               transactions.time_out, transactions.status
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        {where_sql}
+        ORDER BY transactions.time_out DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, limit, offset),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [
+                {
+                    "id": r["id"],
+                    "asset_id": r["asset_id"],
+                    "asset_name": r["asset_name"],
+                    "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+                    "time_out": r["time_out"],
+                    "status": r["status"],
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+@stats_bp.route("/stats/my/returns")
+@roles_required("admin", "in_charge", "tool_keeper")
+@limiter.limit("20 per minute")
+def my_returns():
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+    date_filter, date_params, error = _parse_date_range(request.args, column="transactions.time_in")
+    if error:
+        return error
+
+    where_clauses = ["transactions.returned_by_staff_id = ?"]
+    params = [g.staff["id"]]
+    if date_filter:
+        where_clauses.append(date_filter)
+        params += date_params
+    where_sql = f"WHERE {' AND '.join(where_clauses)}"
+
+    conn = get_db_connection()
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM transactions {where_sql}", params
+    ).fetchone()["cnt"]
+    rows = conn.execute(
+        f"""
+        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               transactions.time_in, transactions.condition_in
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        {where_sql}
+        ORDER BY transactions.time_in DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, limit, offset),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [
+                {
+                    "id": r["id"],
+                    "asset_id": r["asset_id"],
+                    "asset_name": r["asset_name"],
+                    "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+                    "time_in": r["time_in"],
+                    "condition_in": r["condition_in"],
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+@stats_bp.route("/stats/my/overdue-handled")
+@roles_required("admin", "in_charge", "tool_keeper")
+@limiter.limit("20 per minute")
+def my_overdue_handled():
+    """Transactions this staff member checked out that ended up overdue --
+    same 'overdue' definition as overdue_frequency() (late return, or still
+    open and past due right now), just scoped to loans this staff member
+    personally handed out rather than every member's."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+    date_filter, date_params, error = _parse_date_range(request.args, column="transactions.time_out")
+    if error:
+        return error
+
+    where_clauses = [
+        "transactions.borrowed_by_staff_id = ?",
+        "transactions.due_date IS NOT NULL",
+        "COALESCE(transactions.time_in, datetime('now', 'localtime')) > transactions.due_date",
+    ]
+    params = [g.staff["id"]]
+    if date_filter:
+        where_clauses.append(date_filter)
+        params += date_params
+    where_sql = f"WHERE {' AND '.join(where_clauses)}"
+
+    conn = get_db_connection()
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM transactions {where_sql}", params
+    ).fetchone()["cnt"]
+    rows = conn.execute(
+        f"""
+        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               transactions.due_date, transactions.time_in, transactions.status
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        JOIN members ON transactions.member_id = members.id
+        {where_sql}
+        ORDER BY transactions.due_date DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, limit, offset),
+    ).fetchall()
+    conn.close()
+
+    return jsonify(
+        {
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "results": [
+                {
+                    "id": r["id"],
+                    "asset_id": r["asset_id"],
+                    "asset_name": r["asset_name"],
+                    "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+                    "due_date": r["due_date"],
+                    "time_in": r["time_in"],
+                    "status": r["status"],
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+# # # LAYOUT (customizable/draggable widget order + visibility) -----------
+
+
+@stats_bp.route("/stats/layout")
+@roles_required("admin", "in_charge", "tool_keeper")
+def get_layout():
+    return jsonify(
+        {
+            "layout": get_report_layout(g.staff["id"], g.staff["role"]),
+            "widgets": [
+                {"id": w["id"], "title": w["title"], "type": w["type"]}
+                for w in widgets_for_role(g.staff["role"])
+            ],
+        }
+    )
+
+
+@stats_bp.route("/stats/layout", methods=["POST"])
+@roles_required("admin", "in_charge", "tool_keeper")
+def post_layout():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("layout"), list):
+        return jsonify({"error": "Expected {\"layout\": [...]}"}), 400
+    saved = save_report_layout(g.staff["id"], g.staff["role"], data["layout"])
+    return jsonify({"layout": saved})
+
+
+@stats_bp.route("/stats/layout/reset", methods=["POST"])
+@roles_required("admin", "in_charge", "tool_keeper")
+def post_layout_reset():
+    reset_report_layout(g.staff["id"])
+    return jsonify({"layout": get_report_layout(g.staff["id"], g.staff["role"])})
+
+
 # # # EXPORT --------------------------------------------------------------
 
 
@@ -779,33 +1010,16 @@ def _write_sheet(wb, title, headers, rows_as_lists):
     ws.freeze_panes = "A2"
 
 
-@stats_bp.route("/stats/export")
-@roles_required("admin", "in_charge")
-@limiter.limit("10 per minute")
-def export_stats():
-    """One workbook, one sheet per report, all scoped to the same
-    since/until range as the Reports page itself (and the group_by choice
-    the page's own toggles were on when Export was clicked, passed through
-    as loan_duration_group_by / condition_changes_group_by) -- a static
-    snapshot of exactly what was on screen, not a separate live query
-    someone could later find disagreeing with it."""
-    date_filter, date_params, error = _parse_date_range(request.args)
-    if error:
-        return error
-    where_sql = f"WHERE {date_filter}" if date_filter else ""
+# -- Per-widget (headers, rows_as_lists) builders --------------------------
+# Each one is the exact query/shape a report card on screen is built from,
+# just returning plain (title, headers, rows) instead of talking to a
+# specific output format -- export_stats() below picks CSV/XLSX per section
+# from this same set, so "export this one" and "export everything" are
+# never two different code paths that could quietly drift apart.
 
-    loan_group_by = request.args.get("loan_duration_group_by", "asset")
-    condition_group_by = request.args.get("condition_changes_group_by", "asset")
-    if loan_group_by not in VALID_GROUP_BY:
-        loan_group_by = "asset"
-    if condition_group_by not in VALID_GROUP_BY:
-        condition_group_by = "asset"
 
-    conn = get_db_connection()
-    wb = Workbook()
-    wb.remove(wb.active)  # replaced by named sheets below, in display order
-
-    # -- Summary --
+def _section_summary(conn, ctx):
+    date_filter, date_params, where_sql = ctx["date_filter"], ctx["date_params"], ctx["where_sql"]
     totals = conn.execute(
         f"""
         SELECT COUNT(*) AS total_checkouts, COUNT(DISTINCT asset_id) AS unique_assets,
@@ -835,10 +1049,10 @@ def export_stats():
     ).fetchone()
     damage_rate = round(100 * damage_row["worsened_count"] / damage_row["completed_returns"], 1) if damage_row["completed_returns"] else 0
 
-    since_label = request.args.get("since") or "all time"
-    until_label = request.args.get("until") or "present"
-    _write_sheet(
-        wb, "Summary",
+    since_label = ctx["since"] or "all time"
+    until_label = ctx["until"] or "present"
+    return (
+        "Summary",
         ["Metric", "Value"],
         [
             ["Date range", f"{since_label} to {until_label}"],
@@ -850,38 +1064,47 @@ def export_stats():
         ],
     )
 
-    # -- Most Borrowed Assets --
+
+def _section_most_borrowed_assets(conn, ctx):
     rows = conn.execute(
         f"""
         SELECT assets.asset_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         LEFT JOIN categories ON assets.category_id = categories.id
-        {where_sql}
+        {ctx['where_sql']}
         GROUP BY assets.id ORDER BY borrow_count DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Most Borrowed Assets", ["Asset Code", "Name", "Category", "Borrows"],
-                 [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows])
+    return (
+        "Most Borrowed Assets",
+        ["Asset Code", "Name", "Category", "Borrows"],
+        [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
+    )
 
-    # -- Most Borrowed Categories --
+
+def _section_most_borrowed_categories(conn, ctx):
     rows = conn.execute(
         f"""
         SELECT COALESCE(categories.name, 'Uncategorized') AS category, COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         LEFT JOIN categories ON assets.category_id = categories.id
-        {where_sql}
+        {ctx['where_sql']}
         GROUP BY category ORDER BY borrow_count DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Most Borrowed Categories", ["Category", "Borrows"],
-                 [[r["category"], r["borrow_count"]] for r in rows])
+    return (
+        "Most Borrowed Categories",
+        ["Category", "Borrows"],
+        [[r["category"], r["borrow_count"]] for r in rows],
+    )
 
-    # -- Least Borrowed Assets --
-    join_filter = f"AND {date_filter}" if date_filter else ""
+
+def _section_least_borrowed_assets(conn, ctx):
+    join_filter = f"AND {ctx['date_filter']}" if ctx["date_filter"] else ""
     rows = conn.execute(
         f"""
         SELECT assets.asset_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
@@ -891,14 +1114,20 @@ def export_stats():
         WHERE assets.deleted_at IS NULL
         GROUP BY assets.id ORDER BY borrow_count ASC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Least Borrowed Assets", ["Asset Code", "Name", "Category", "Borrows"],
-                 [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows])
+    return (
+        "Least Borrowed Assets",
+        ["Asset Code", "Name", "Category", "Borrows"],
+        [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
+    )
 
-    # -- Average Loan Duration --
+
+def _section_avg_loan_duration(conn, ctx):
+    date_filter = ctx["date_filter"]
+    group_by = ctx["loan_group_by"]
     ld_where = ["transactions.status = 'returned'", "transactions.time_in IS NOT NULL"] + ([date_filter] if date_filter else [])
-    if loan_group_by == "asset":
+    if group_by == "asset":
         select_group, group_clause = "assets.asset_id, assets.name", "assets.id"
         headers = ["Asset Code", "Name", "Avg Hours"]
     else:
@@ -914,13 +1143,17 @@ def export_stats():
         WHERE {' AND '.join(ld_where)}
         GROUP BY {group_clause} ORDER BY avg_loan_hours DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Avg Loan Duration", headers,
-                 [([r["asset_id"], r["name"], r["avg_loan_hours"]] if loan_group_by == "asset"
-                   else [r["category"], r["avg_loan_hours"]]) for r in rows])
+    return (
+        "Avg Loan Duration",
+        headers,
+        [([r["asset_id"], r["name"], r["avg_loan_hours"]] if group_by == "asset"
+          else [r["category"], r["avg_loan_hours"]]) for r in rows],
+    )
 
-    # -- Top Borrowers --
+
+def _section_top_borrowers(conn, ctx):
     rows = conn.execute(
         f"""
         SELECT members.member_code, members.first_name, members.last_name, members.middle_name, members.suffix,
@@ -928,16 +1161,21 @@ def export_stats():
         FROM transactions
         JOIN members ON transactions.member_id = members.id
         JOIN departments ON members.department_id = departments.id
-        {where_sql}
+        {ctx['where_sql']}
         GROUP BY members.id ORDER BY borrow_count DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Top Borrowers", ["Member Code", "Name", "Department", "Borrows"],
-                 [[r["member_code"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
-                   r["department"], r["borrow_count"]] for r in rows])
+    return (
+        "Top Borrowers",
+        ["Member Code", "Name", "Department", "Borrows"],
+        [[r["member_code"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+          r["department"], r["borrow_count"]] for r in rows],
+    )
 
-    # -- Overdue Frequency --
+
+def _section_overdue_frequency(conn, ctx):
+    date_filter = ctx["date_filter"]
     od_where = ["transactions.due_date IS NOT NULL",
                 "COALESCE(transactions.time_in, datetime('now', 'localtime')) > transactions.due_date"] + ([date_filter] if date_filter else [])
     rows = conn.execute(
@@ -951,15 +1189,22 @@ def export_stats():
         WHERE {' AND '.join(od_where)}
         GROUP BY members.id ORDER BY overdue_count DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Overdue Frequency", ["Member Code", "Name", "Department", "Overdue", "Still Open"],
-                 [[r["member_code"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
-                   r["department"], r["overdue_count"], r["still_open_count"]] for r in rows])
+    return (
+        "Overdue Frequency",
+        ["Member Code", "Name", "Department", "Overdue", "Still Open"],
+        [[r["member_code"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+          r["department"], r["overdue_count"], r["still_open_count"]] for r in rows],
+    )
 
-    # -- Condition Changes --
+
+def _section_condition_changes(conn, ctx):
+    date_filter = ctx["date_filter"]
+    group_by = ctx["condition_group_by"]
     cc_where = ["transactions.status = 'returned'", "transactions.condition_in IS NOT NULL"] + ([date_filter] if date_filter else [])
-    if condition_group_by == "asset":
+    out_rank, in_rank = _condition_rank_case("transactions.condition_out"), _condition_rank_case("transactions.condition_in")
+    if group_by == "asset":
         select_group, group_clause = "assets.asset_id, assets.name", "assets.id"
         headers = ["Asset Code", "Name", "Completed Returns", "Worsened"]
     else:
@@ -975,73 +1220,219 @@ def export_stats():
         WHERE {' AND '.join(cc_where)}
         GROUP BY {group_clause} HAVING completed_returns > 0 ORDER BY worsened_count DESC LIMIT ?
         """,
-        (*date_params, EXPORT_ROW_LIMIT),
+        (*ctx["date_params"], EXPORT_ROW_LIMIT),
     ).fetchall()
-    _write_sheet(wb, "Condition Changes", headers,
-                 [([r["asset_id"], r["name"], r["completed_returns"], r["worsened_count"]] if condition_group_by == "asset"
-                   else [r["category"], r["completed_returns"], r["worsened_count"]]) for r in rows])
+    return (
+        "Condition Changes",
+        headers,
+        [([r["asset_id"], r["name"], r["completed_returns"], r["worsened_count"]] if group_by == "asset"
+          else [r["category"], r["completed_returns"], r["worsened_count"]]) for r in rows],
+    )
 
-    # -- Staff Activity -- admin-only, same boundary as the standalone
-    # /stats/staff/activity endpoint above: in_charge can export every
-    # other sheet in this workbook (this route is roles_required("admin",
-    # "in_charge")), but not this one, so it's added conditionally rather
-    # than gating the whole export route more strictly.
-    if g.staff["role"] == "admin":
-        checkout_clause = f"AND {date_filter.replace('transactions.time_out', 'time_out')}" if date_filter else ""
-        return_clause = f"AND {date_filter.replace('transactions.time_out', 'time_in')}" if date_filter else ""
-        audit_clause = f"AND {date_filter.replace('transactions.time_out', 'created_at')}" if date_filter else ""
-        session_clause = audit_clause
+
+def _section_staff_activity(conn, ctx):
+    date_filter, date_params = ctx["date_filter"], ctx["date_params"]
+    checkout_clause = f"AND {date_filter.replace('transactions.time_out', 'time_out')}" if date_filter else ""
+    return_clause = f"AND {date_filter.replace('transactions.time_out', 'time_in')}" if date_filter else ""
+    audit_clause = f"AND {date_filter.replace('transactions.time_out', 'created_at')}" if date_filter else ""
+    session_clause = audit_clause
+    rows = conn.execute(
+        f"""
+        SELECT staff.username, staff.role,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               COALESCE(co.cnt, 0) AS checkouts_processed,
+               COALESCE(ret.cnt, 0) AS returns_processed,
+               COALESCE(al.cnt, 0) AS audit_actions,
+               ROUND(cs.avg_minutes, 1) AS avg_session_minutes
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        LEFT JOIN (
+            SELECT borrowed_by_staff_id AS staff_id, COUNT(*) AS cnt
+            FROM transactions WHERE borrowed_by_staff_id IS NOT NULL {checkout_clause}
+            GROUP BY borrowed_by_staff_id
+        ) co ON co.staff_id = staff.id
+        LEFT JOIN (
+            SELECT returned_by_staff_id AS staff_id, COUNT(*) AS cnt
+            FROM transactions WHERE returned_by_staff_id IS NOT NULL {return_clause}
+            GROUP BY returned_by_staff_id
+        ) ret ON ret.staff_id = staff.id
+        LEFT JOIN (
+            SELECT staff_id, COUNT(*) AS cnt
+            FROM audit_log WHERE staff_id IS NOT NULL {audit_clause}
+            GROUP BY staff_id
+        ) al ON al.staff_id = staff.id
+        LEFT JOIN (
+            SELECT staff_id, AVG((julianday(completed_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
+            FROM checkout_sessions
+            WHERE status = 'completed' AND staff_id IS NOT NULL AND completed_at IS NOT NULL {session_clause}
+            GROUP BY staff_id
+        ) cs ON cs.staff_id = staff.id
+        WHERE staff.is_active = 1
+        ORDER BY members.last_name COLLATE NOCASE, members.first_name COLLATE NOCASE
+        """,
+        (*date_params, *date_params, *date_params, *date_params),
+    ).fetchall()
+    return (
+        "Staff Activity",
+        ["Username", "Role", "Name", "Checkouts Processed", "Returns Processed", "Logged Actions", "Avg Session (min)"],
+        [[r["username"], r["role"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+          r["checkouts_processed"], r["returns_processed"], r["audit_actions"], r["avg_session_minutes"]] for r in rows],
+    )
+
+
+def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
+    """Factory for the three near-identical Tool Keeper "my activity"
+    sections -- same shape as my_checkouts/my_returns/my_overdue_handled
+    above, just as an export sheet instead of a paginated JSON list."""
+
+    def builder(conn, ctx):
         rows = conn.execute(
             f"""
-            SELECT staff.username, staff.role,
+            SELECT assets.asset_id, assets.name AS asset_name,
                    members.first_name, members.last_name, members.middle_name, members.suffix,
-                   COALESCE(co.cnt, 0) AS checkouts_processed,
-                   COALESCE(ret.cnt, 0) AS returns_processed,
-                   COALESCE(al.cnt, 0) AS audit_actions,
-                   ROUND(cs.avg_minutes, 1) AS avg_session_minutes
-            FROM staff
-            JOIN members ON staff.member_id = members.id
-            LEFT JOIN (
-                SELECT borrowed_by_staff_id AS staff_id, COUNT(*) AS cnt
-                FROM transactions WHERE borrowed_by_staff_id IS NOT NULL {checkout_clause}
-                GROUP BY borrowed_by_staff_id
-            ) co ON co.staff_id = staff.id
-            LEFT JOIN (
-                SELECT returned_by_staff_id AS staff_id, COUNT(*) AS cnt
-                FROM transactions WHERE returned_by_staff_id IS NOT NULL {return_clause}
-                GROUP BY returned_by_staff_id
-            ) ret ON ret.staff_id = staff.id
-            LEFT JOIN (
-                SELECT staff_id, COUNT(*) AS cnt
-                FROM audit_log WHERE staff_id IS NOT NULL {audit_clause}
-                GROUP BY staff_id
-            ) al ON al.staff_id = staff.id
-            LEFT JOIN (
-                SELECT staff_id, AVG((julianday(completed_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
-                FROM checkout_sessions
-                WHERE status = 'completed' AND staff_id IS NOT NULL AND completed_at IS NOT NULL {session_clause}
-                GROUP BY staff_id
-            ) cs ON cs.staff_id = staff.id
-            WHERE staff.is_active = 1
-            ORDER BY members.last_name COLLATE NOCASE, members.first_name COLLATE NOCASE
+                   transactions.{date_col} AS date_col, transactions.{extra_col} AS extra_col
+            FROM transactions
+            JOIN assets ON transactions.asset_id = assets.id
+            JOIN members ON transactions.member_id = members.id
+            WHERE transactions.{staff_col} = ?
+            ORDER BY transactions.{date_col} DESC
+            LIMIT ?
             """,
-            (*date_params, *date_params, *date_params, *date_params),
+            (ctx["staff_id"], EXPORT_ROW_LIMIT),
         ).fetchall()
-        _write_sheet(
-            wb, "Staff Activity",
-            ["Username", "Role", "Name", "Checkouts Processed", "Returns Processed", "Logged Actions", "Avg Session (min)"],
-            [[r["username"], r["role"], full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
-              r["checkouts_processed"], r["returns_processed"], r["audit_actions"], r["avg_session_minutes"]] for r in rows],
+        return (
+            title,
+            ["Asset Code", "Asset Name", "Member", date_col.replace("_", " ").title(), extra_header],
+            [[r["asset_id"], r["asset_name"],
+              full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+              r["date_col"], r["extra_col"]] for r in rows],
         )
 
-    conn.close()
+    return builder
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    file_bytes = buf.getvalue()
 
-    basename = sanitize_export_filename(None, f"reports_{datetime.now().strftime('%Y%m%d')}")
-    response = make_response(file_bytes)
-    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    response.headers["Content-Disposition"] = f"attachment; filename={basename}.xlsx"
+SECTION_BUILDERS = {
+    "summary": _section_summary,
+    "most_borrowed_assets": _section_most_borrowed_assets,
+    "most_borrowed_categories": _section_most_borrowed_categories,
+    "least_borrowed_assets": _section_least_borrowed_assets,
+    "avg_loan_duration": _section_avg_loan_duration,
+    "top_borrowers": _section_top_borrowers,
+    "overdue_frequency": _section_overdue_frequency,
+    "condition_changes": _section_condition_changes,
+    "staff_activity": _section_staff_activity,
+    "my_checkouts": _my_activity_section("My Checkouts Processed", "borrowed_by_staff_id", "time_out", "status", "Status"),
+    "my_returns": _my_activity_section("My Returns Processed", "returned_by_staff_id", "time_in", "condition_in", "Condition In"),
+    "my_overdue_handled": _my_activity_section("My Overdue Handled", "borrowed_by_staff_id", "due_date", "status", "Status"),
+}
+
+
+def _rows_to_csv_bytes(headers, rows_as_lists):
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(headers)
+    writer.writerows(rows_as_lists)
+    return buf.getvalue().encode("utf-8-sig")  # BOM so Excel opens UTF-8 CSVs correctly
+
+
+@stats_bp.route("/stats/export")
+@roles_required("admin", "in_charge", "tool_keeper")
+@limiter.limit("10 per minute")
+def export_stats():
+    """Exports a chosen set of report sections (`sections=` -- a
+    comma-separated list of widget ids, defaulting to every widget the
+    caller's role can see), in a chosen format (`format=xlsx|csv`,
+    default xlsx). All scoped to the same since/until range as the Reports
+    page itself (and the group_by choices its own toggles were on when
+    Export was clicked, passed through as loan_duration_group_by /
+    condition_changes_group_by) -- a static snapshot of exactly what was
+    on screen, not a separate live query someone could later find
+    disagreeing with it.
+
+    `sections` is validated against services/report_widgets.py's registry
+    for the caller's actual role, not trusted from the request -- a
+    tool_keeper (or a tampered in_charge request) asking for
+    "staff_activity" gets it silently dropped, not a 403 that would leak
+    whether the id exists at all."""
+    role = g.staff["role"]
+    allowed_ids = {w["id"] for w in widgets_for_role(role)}
+
+    requested = request.args.get("sections")
+    if requested:
+        section_ids = [s for s in requested.split(",") if s in allowed_ids]
+    else:
+        section_ids = list(allowed_ids)
+    # Keep registry order regardless of request order, and drop unknown ids
+    # entirely (is_widget_allowed already excludes them from allowed_ids).
+    section_ids = [w["id"] for w in WIDGETS if w["id"] in section_ids]
+
+    if not section_ids:
+        return jsonify({"error": "No exportable sections selected"}), 400
+
+    export_format = request.args.get("format", "xlsx")
+    if export_format not in ("xlsx", "csv"):
+        return jsonify({"error": "format must be xlsx or csv"}), 400
+
+    date_filter, date_params, error = _parse_date_range(request.args)
+    if error:
+        return error
+
+    loan_group_by = request.args.get("loan_duration_group_by", "asset")
+    condition_group_by = request.args.get("condition_changes_group_by", "asset")
+    if loan_group_by not in VALID_GROUP_BY:
+        loan_group_by = "asset"
+    if condition_group_by not in VALID_GROUP_BY:
+        condition_group_by = "asset"
+
+    ctx = {
+        "date_filter": date_filter,
+        "date_params": date_params,
+        "where_sql": f"WHERE {date_filter}" if date_filter else "",
+        "since": request.args.get("since"),
+        "until": request.args.get("until"),
+        "loan_group_by": loan_group_by,
+        "condition_group_by": condition_group_by,
+        "staff_id": g.staff["id"],
+    }
+
+    conn = get_db_connection()
+    try:
+        sections = [(wid, *SECTION_BUILDERS[wid](conn, ctx)) for wid in section_ids]
+    finally:
+        conn.close()
+
+    date_label = datetime.now().strftime("%Y%m%d")
+    basename = sanitize_export_filename(None, f"reports_{date_label}")
+
+    if export_format == "xlsx":
+        wb = Workbook()
+        wb.remove(wb.active)
+        for _wid, title, headers, rows in sections:
+            _write_sheet(wb, title, headers, rows)
+        buf = io.BytesIO()
+        wb.save(buf)
+        response = make_response(buf.getvalue())
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        response.headers["Content-Disposition"] = f"attachment; filename={basename}.xlsx"
+        return response
+
+    # CSV -- a single section downloads as one .csv; more than one is
+    # zipped (one .csv per section) rather than concatenated, since
+    # sections have different column shapes and a single CSV can't
+    # represent that.
+    if len(sections) == 1:
+        _wid, title, headers, rows = sections[0]
+        response = make_response(_rows_to_csv_bytes(headers, rows))
+        response.headers["Content-Type"] = "text/csv; charset=utf-8"
+        response.headers["Content-Disposition"] = f"attachment; filename={basename}.csv"
+        return response
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for _wid, title, headers, rows in sections:
+            safe_title = sanitize_export_filename(None, title)
+            zf.writestr(f"{safe_title}.csv", _rows_to_csv_bytes(headers, rows))
+    response = make_response(zip_buf.getvalue())
+    response.headers["Content-Type"] = "application/zip"
+    response.headers["Content-Disposition"] = f"attachment; filename={basename}.zip"
     return response

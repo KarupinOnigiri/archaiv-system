@@ -14,6 +14,7 @@ from flask import (
 )
 from utils.formatters import full_name
 from utils.logger import log_action
+from utils.validators import RFID_PIN_LENGTH
 from services.auth_service import login_required
 from services.settings_service import (
     get_session_idle_minutes,
@@ -223,6 +224,7 @@ def login():
                 action="account_locked",
                 target_table="staff",
                 target_id=staff["id"],
+                target_name=staff["username"],
                 details=f"Account locked after {new_attempts} failed login attempts",
             )
 
@@ -294,6 +296,18 @@ def login():
     finally:
         session_conn.close()
 
+    # Symmetric with login_rfid's "logged_in_rfid" audit entry below --
+    # every successful sign-in (password/barcode here, RFID+PIN there)
+    # should leave a trace, for every role, not just the RFID admin path.
+    log_action(
+        staff_id=staff["id"],
+        action="logged_in",
+        target_table="staff",
+        target_id=staff["id"],
+        target_name=staff["username"],
+        details=f"Logged in via username/barcode + password: {staff['username']}",
+    )
+
     response = _login_response(
         {
             "message": "Login successful",
@@ -353,6 +367,15 @@ def login_rfid():
 
     if not rfid_id or not pin:
         return jsonify({"error": "Provide rfid_id and pin"}), 400
+
+    # PINs are always exactly RFID_PIN_LENGTH digits (see
+    # utils/validators.py:validate_rfid_pin, used when a PIN is set).
+    # Malformed input here can't be a legitimate near-miss guess of a real
+    # PIN, so it's safe to reject before even touching the DB -- same
+    # generic message as a wrong PIN so it doesn't leak the format rule to
+    # anyone probing the endpoint.
+    if not pin.isdigit() or len(pin) != RFID_PIN_LENGTH:
+        return jsonify({"error": "Invalid credentials"}), 401
 
     conn = get_db_connection()
 
@@ -448,6 +471,7 @@ def login_rfid():
                 action="account_locked",
                 target_table="staff",
                 target_id=staff["id"],
+                target_name=staff["username"],
                 details=f"Account locked after {new_attempts} failed RFID PIN attempts",
             )
 
@@ -506,6 +530,7 @@ def login_rfid():
         action="logged_in_rfid",
         target_table="staff",
         target_id=staff["id"],
+        target_name=staff["username"],
         details=f"Logged in via RFID card + PIN: {staff['username']}",
     )
 

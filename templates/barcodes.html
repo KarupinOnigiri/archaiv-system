@@ -27,7 +27,7 @@
       </button>
       <button type="button" id="barcode-tab-members" onclick="BarcodeLabels.setTab('members')"
               class="btn btn-sm btn-ghost rounded-full">
-        Borrowers <span class="opacity-60">({{ members|length }})</span>
+        Members <span class="opacity-60">({{ members|length }})</span>
       </button>
     </div>
 
@@ -235,7 +235,7 @@ const BarcodeLabels = (function () {
   }
 
   // Clicking anywhere on a row toggles its checkbox, same convenience
-  // Inventory/Borrowers rows offer -- except when the click landed on
+  // Inventory/Members rows offer -- except when the click landed on
   // the checkbox itself (which already toggled) or something else
   // interactive inside the row.
   function rowClick(evt, row) {
@@ -374,7 +374,7 @@ const BarcodeLabels = (function () {
 
 // Supports a ?tab=members deep link (unused by the one entry point this
 // page has today -- the System page card -- but harmless to keep for
-// anyone bookmarking/sharing a direct link straight to the Borrowers tab).
+// anyone bookmarking/sharing a direct link straight to the Members tab).
 if (new URLSearchParams(location.search).get('tab') === 'members') {
   BarcodeLabels.setTab('members');
 }

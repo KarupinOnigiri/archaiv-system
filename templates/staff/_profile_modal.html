@@ -91,8 +91,10 @@
               <span class="text-sm font-medium text-right">
                 {% if staff_member.assigned_start or staff_member.assigned_end %}
                 {{ staff_member.assigned_start or "—" }} &rarr; {{ staff_member.assigned_end or "—" }}
+                {% elif staff_member.role in ("admin", "in_charge") %}
+                <span class="text-base-content/50 font-normal">Permanent</span>
                 {% else %}
-                —
+                <span class="text-warning font-normal" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
                 {% endif %}
               </span>
             </div>

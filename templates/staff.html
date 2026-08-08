@@ -567,6 +567,7 @@ function updateStaffStatCardUI() {
     const isActive = currentStaffStatusFilter === card.dataset.status;
     card.classList.toggle('ring-2', isActive);
     card.classList.toggle('shadow-md', isActive);
+    card.classList.toggle('stat-card-active', isActive);
     Object.values(STAFF_STATUS_CARD_ACCENTS).forEach(function (cls) {
       cls.split(' ').forEach(function (c) { card.classList.remove(c); });
     });

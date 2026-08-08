@@ -135,6 +135,7 @@ def seed_initial_admin():
         action="seeded_temporary_admin",
         target_table="staff",
         target_id=staff_id,
+        target_name=username,
         details="No active admin found — (re)seeded the temporary setup admin account",
     )
 
