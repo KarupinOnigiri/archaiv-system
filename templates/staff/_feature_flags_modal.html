@@ -55,13 +55,19 @@
 
     <div id="feature-flags-confirm-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
 
-    <input type="password" id="feature-flags-confirm-password" placeholder="Current password"
-           autocomplete="current-password" class="input input-bordered input-sm w-full">
+    <!-- Wrapped in its own form (was a bare input) so pressing Enter in
+         the password field submits it, matching every other password
+         prompt in the app (change-password-form, RFID PIN, etc.) instead
+         of requiring a mouse click on Confirm. -->
+    <form onsubmit="submitFeatureFlagsUpdate(event); return false;">
+      <input type="password" id="feature-flags-confirm-password" placeholder="Current password"
+             autocomplete="current-password" class="input input-bordered input-sm w-full">
 
-    <div class="modal-action">
-      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('feature-flags-confirm-dialog').close()">Cancel</button>
-      <button type="button" id="feature-flags-confirm-submit-btn" class="btn btn-primary btn-sm" onclick="submitFeatureFlagsUpdate()">Confirm</button>
-    </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('feature-flags-confirm-dialog').close()">Cancel</button>
+        <button type="submit" id="feature-flags-confirm-submit-btn" class="btn btn-primary btn-sm">Confirm</button>
+      </div>
+    </form>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
@@ -75,7 +81,8 @@ function openFeatureFlagsPasswordConfirm(event) {
   return false;
 }
 
-async function submitFeatureFlagsUpdate() {
+async function submitFeatureFlagsUpdate(event) {
+  if (event) event.preventDefault();
   const errorEl = document.getElementById('feature-flags-confirm-error');
   errorEl.classList.add('hidden');
 

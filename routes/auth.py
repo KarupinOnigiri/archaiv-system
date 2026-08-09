@@ -349,13 +349,25 @@ def login():
         # pages.setup_page's docstring for why.
         redirect_to=url_for("pages.setup_page") if staff["is_system_seeded"] else url_for("home"),
     )
+    # No max_age here on purpose -- omitting it makes this a session
+    # cookie (the browser discards it when the browser itself closes)
+    # rather than a persistent one written to disk. This is a shared
+    # toolroom terminal, not a personal device, so surviving a browser
+    # close/OS restart is the wrong default: the next person to sit down
+    # should get a fresh login, not silently inherit whoever was signed
+    # in before. The actual expiry enforcement doesn't depend on this at
+    # all -- `expires_at` (absolute_hours out, above) and the idle-timeout
+    # check are both re-verified server-side on every request (see the
+    # session_is_live check earlier in this function/module), so someone
+    # bypassing session-cookie semantics some other way still hits the
+    # same wall. This only controls how long the browser itself is
+    # willing to hang onto the token.
     response.set_cookie(
         "session_token",
         token,
         httponly=True,
         samesite="Lax",
         secure=_COOKIE_SECURE,
-        max_age=absolute_hours * 3600,
     )
     return response
 
@@ -586,13 +598,25 @@ def login_rfid():
         200,
         redirect_to=url_for("home"),
     )
+    # No max_age here on purpose -- omitting it makes this a session
+    # cookie (the browser discards it when the browser itself closes)
+    # rather than a persistent one written to disk. This is a shared
+    # toolroom terminal, not a personal device, so surviving a browser
+    # close/OS restart is the wrong default: the next person to sit down
+    # should get a fresh login, not silently inherit whoever was signed
+    # in before. The actual expiry enforcement doesn't depend on this at
+    # all -- `expires_at` (absolute_hours out, above) and the idle-timeout
+    # check are both re-verified server-side on every request (see the
+    # session_is_live check earlier in this function/module), so someone
+    # bypassing session-cookie semantics some other way still hits the
+    # same wall. This only controls how long the browser itself is
+    # willing to hang onto the token.
     response.set_cookie(
         "session_token",
         token,
         httponly=True,
         samesite="Lax",
         secure=_COOKIE_SECURE,
-        max_age=absolute_hours * 3600,
     )
     return response
 

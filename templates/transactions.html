@@ -162,6 +162,24 @@
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
 
+        <!-- Today/Yesterday -- one-click shortcuts for the two ranges
+             people actually reach for the date picker for most often
+             (start/end of shift review), same "quick preset next to the
+             full picker" pattern the Audit Log page already uses for its
+             own date range. Each sets both from/to to the same date
+             (a single-day window), then fires the exact same htmx
+             request the pickers themselves would. -->
+        <div id="date-quick-filters" class="join rounded-lg" title="Quick date filter">
+          <button type="button" id="date-quick-today-btn" class="join-item btn btn-outline btn-sm"
+                  onclick="applyDateQuickFilter('today')" data-tooltip="Filter to today's transactions (t)">
+            Today
+          </button>
+          <button type="button" id="date-quick-yesterday-btn" class="join-item btn btn-outline btn-sm"
+                  onclick="applyDateQuickFilter('yesterday')" data-tooltip="Filter to yesterday's transactions (y)">
+            Yesterday
+          </button>
+        </div>
+
         <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
@@ -330,6 +348,27 @@ function clearDateFilter() {
   from.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+// Today/Yesterday quick filter -- sets the from/to range to a single
+// local calendar day (matching how the Audit Log's own Today/Yesterday
+// presets and the dashboard's Top Borrowed "today"/"yesterday" ranges
+// all reason about "today": local midnight-to-midnight, not a rolling
+// 24 hours) and fires the table refetch through the same date input
+// that change-triggers it, so this behaves identically to typing the
+// date into the picker by hand.
+function applyDateQuickFilter(which) {
+  const target = new Date();
+  if (which === 'yesterday') target.setDate(target.getDate() - 1);
+  const iso = target.getFullYear() + '-'
+    + String(target.getMonth() + 1).padStart(2, '0') + '-'
+    + String(target.getDate()).padStart(2, '0');
+
+  const from = document.getElementById('time-out-from-filter');
+  const to = document.getElementById('time-out-to-filter');
+  from.value = iso;
+  to.value = iso;
+  from.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 // Single source of truth for "what does the filter row currently say" --
 // used by filterByStatus() and clearAllFilters() so a stat-card click (or
 // the 1-4 shortcut) never silently drops whatever search text or date
@@ -411,6 +450,18 @@ function updateFilterUI() {
   document.getElementById('date-filters').classList.toggle('ring-2', dateActive);
   document.getElementById('date-filters').classList.toggle('ring-primary/40', dateActive);
   document.getElementById('date-filter-clear-btn').disabled = !dateActive;
+
+  // Highlights whichever quick-filter button (if any) matches the
+  // current from/to range exactly, so picking "Today" then coming back
+  // to this page still shows it as the active choice instead of just a
+  // plain unlabeled date range.
+  const todayIso = new Date();
+  const isoOf = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const yesterdayIso = new Date();
+  yesterdayIso.setDate(yesterdayIso.getDate() - 1);
+  const singleDay = dateFrom.value !== '' && dateFrom.value === dateTo.value;
+  document.getElementById('date-quick-today-btn').classList.toggle('btn-active', singleDay && dateFrom.value === isoOf(todayIso));
+  document.getElementById('date-quick-yesterday-btn').classList.toggle('btn-active', singleDay && dateFrom.value === isoOf(yesterdayIso));
 
   const anyActive = searchActive || statusActive || dateActive;
   const activeCount = [searchActive, statusActive, dateActive].filter(Boolean).length;
@@ -554,6 +605,20 @@ document.addEventListener('keydown', function (e) {
       e.preventDefault();
       pageBtn.click();
     }
+    return;
+  }
+
+  // t / y — Today / Yesterday quick date filter.
+  if (!e.altKey && (e.key === 't' || e.key === 'T')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    applyDateQuickFilter('today');
+    return;
+  }
+  if (!e.altKey && (e.key === 'y' || e.key === 'Y')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    applyDateQuickFilter('yesterday');
     return;
   }
 

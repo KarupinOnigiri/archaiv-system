@@ -53,14 +53,22 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED START</label>
-            <input type="date" name="assigned_start" value="{{ staff_member.assigned_start or '' }}"
+            <input type="date" name="assigned_start" id="edit-staff-assigned-start" value="{{ staff_member.assigned_start or '' }}"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED END</label>
-            <input type="date" name="assigned_end" value="{{ staff_member.assigned_end or '' }}"
+            <input type="date" name="assigned_end" id="edit-staff-assigned-end" value="{{ staff_member.assigned_end or '' }}"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
+        </div>
+        <!-- Same quick-set presets as the Add Staff modal -- see its
+             comment for why "Permanent" writes a sentinel date rather
+             than leaving assigned_end blank. -->
+        <div class="flex flex-wrap gap-2 -mt-2">
+          <button type="button" class="btn btn-xs btn-outline" onclick="setEditStaffAssignedPreset('permanent')">Permanent</button>
+          <button type="button" class="btn btn-xs btn-outline" onclick="setEditStaffAssignedPreset(180)">6 Months</button>
+          <button type="button" class="btn btn-xs btn-outline" onclick="setEditStaffAssignedPreset(365)">1 Year</button>
         </div>
         <p class="text-xs text-base-content/40 -mt-2">To reset a password or unlock this account, use the row actions on the staff table.</p>
 
@@ -106,6 +114,33 @@
 </div>
 
 <script>
+// Assigned-window quick presets -- see the Add Staff modal's identical
+// helper for the full reasoning. Duplicated rather than shared since
+// these two modals' scripts each load independently as htmx partials
+// with no shared module system between them.
+const EDIT_STAFF_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
+
+function formatDateLocalEditStaff(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function setEditStaffAssignedPreset(preset) {
+  const startInput = document.getElementById('edit-staff-assigned-start');
+  const endInput = document.getElementById('edit-staff-assigned-end');
+  if (!startInput.value) startInput.value = formatDateLocalEditStaff(new Date());
+
+  if (preset === 'permanent') {
+    endInput.value = EDIT_STAFF_PERMANENT_ASSIGNED_END;
+    return;
+  }
+  const end = new Date(startInput.value + 'T00:00:00');
+  end.setDate(end.getDate() + preset);
+  endInput.value = formatDateLocalEditStaff(end);
+}
+
 // /api/v1/staff/<id>/edit is a JSON-only endpoint (get_json_or_error() +
 // jsonify() responses) that only ever touches role/assigned_start/
 // assigned_end -- so this posts via fetch rather than a plain htmx form

@@ -26,9 +26,9 @@
                 hx-indicator="#table-spinner"
                 hx-include="#feedback-category-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="open" selected>Open</option>
-          <option value="resolved">Resolved</option>
-          <option value="all">All</option>
+          <option value="open" {% if status == "open" %}selected{% endif %}>Open</option>
+          <option value="resolved" {% if status == "resolved" %}selected{% endif %}>Resolved</option>
+          <option value="all" {% if status == "all" %}selected{% endif %}>All</option>
         </select>
 
         <select id="feedback-category-filter" name="category"
@@ -41,10 +41,10 @@
                 hx-indicator="#table-spinner"
                 hx-include="#feedback-status-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="">All categories</option>
-          <option value="bug">Bug</option>
-          <option value="idea">Idea</option>
-          <option value="other">Other</option>
+          <option value="" {% if not category %}selected{% endif %}>All categories</option>
+          <option value="bug" {% if category == "bug" %}selected{% endif %}>Bug</option>
+          <option value="idea" {% if category == "idea" %}selected{% endif %}>Idea</option>
+          <option value="other" {% if category == "other" %}selected{% endif %}>Other</option>
         </select>
 
         <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
@@ -57,7 +57,7 @@
          hx-target="#feedback-table-container"
          hx-swap="innerHTML"
          hx-include="#feedback-status-filter, #feedback-category-filter"
-         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }} }'>
+         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }}, "status": {{ status | tojson }}, "category": {{ category | tojson }} }'>
     </div>
   </div>
 </div>
@@ -160,5 +160,72 @@ async function submitFeedbackResolve() {
     showToast("That action couldn't be completed", 'error');
   }
 }
+
+// Keyboard shortcuts -- this page had none before; brought up to the
+// same baseline as assets/members/staff/transactions/requests/etc.
+// (see templates/transactions.html for the pattern this copies).
+// "?" for the shortcuts help and Escape-to-close are already handled
+// globally in base.html, so only the page-specific ones live here.
+function isTypingTarget(el) {
+  return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
+}
+
+function isModalOpen() {
+  return !!document.querySelector('dialog[open]');
+}
+
+// Keeps the address bar in sync with status/category/paging -- same
+// htmx:configRequest -> history.replaceState pattern as assets.html/
+// members.html/transactions.html/staff.html, so a bookmarked or
+// refreshed /feedback?status=resolved URL actually reproduces that view
+// (routes/pages.py's feedback_page now reads status/category back out
+// of the URL to pre-select these dropdowns on load).
+document.body.addEventListener('htmx:configRequest', function (evt) {
+  const tableContainer = document.getElementById('feedback-table-container');
+  if (evt.detail.target !== tableContainer) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['status', 'category', 'limit', 'offset'].forEach(function (key) {
+      url.searchParams.delete(key);
+    });
+    Object.keys(params).forEach(function (key) {
+      const value = params[key];
+      if (value !== '' && value !== null && value !== undefined) {
+        url.searchParams.set(key, value);
+      }
+    });
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // URL sync is a non-critical enhancement -- never let it break the actual request.
+  }
+});
+
+document.addEventListener('keydown', function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (isTypingTarget(e.target) || isModalOpen()) return;
+
+  // 1 / 2 / 3 — jump to the matching status filter (Open / Resolved / All).
+  if (['1', '2', '3'].includes(e.key)) {
+    const statusByKey = { '1': 'open', '2': 'resolved', '3': 'all' };
+    e.preventDefault();
+    const select = document.getElementById('feedback-status-filter');
+    select.value = statusByKey[e.key];
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  // ArrowLeft / ArrowRight — previous / next page, same pattern as
+  // staff.html/transactions.html (clicks the real button so the
+  // disabled-at-the-edges state is respected automatically).
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const pageBtn = document.querySelector('#feedback-table-container button[aria-label="' + label + '"]');
+    if (pageBtn && !pageBtn.disabled) {
+      e.preventDefault();
+      pageBtn.click();
+    }
+  }
+});
 </script>
 {% endblock %}

@@ -12,6 +12,19 @@ from database import get_db_connection
 # million minutes" message.
 INDEFINITE_LOCK_UNTIL = "9999-12-31 23:59:59"
 
+# Same sentinel idea as INDEFINITE_LOCK_UNTIL just above, but for
+# staff.assigned_end (a DATE column, not a full datetime) -- lets a
+# tool_keeper's assignment be "Permanent" without a schema change or a
+# separate boolean/nullable-means-forever column. login()'s tool_keeper
+# check (routes/auth.py) still requires assigned_start/assigned_end to be
+# set at all (NULL still means "no assignment period, can't log in"), so
+# this is what the "Permanent" quick-option in the Add/Edit/Reassign
+# staff modals writes instead of leaving assigned_end blank -- it reads
+# as far enough in the future to never actually expire, and
+# compute_usage_status (routes/staff.py) special-cases this exact string
+# the same way the login lockout check special-cases INDEFINITE_LOCK_UNTIL.
+PERMANENT_ASSIGNED_END = "9999-12-31"
+
 # Fallback values only -- the real, admin-editable numbers live in the
 # app_settings table (see migrations/0018_app_settings.sql and
 # routes/staff.py's manage-session-settings endpoints). Used if a key is
@@ -26,6 +39,7 @@ DEFAULT_SETTINGS = {
     "due_soon_hours": 24,
     "default_loan_days": 2,
     "damage_restriction_threshold": 2,
+    "auto_backup_interval_hours": 24,
 }
 
 # Feature-flag keys (see migrations/0033_feature_flags.sql) all default to
@@ -105,6 +119,10 @@ def get_damage_restriction_threshold(conn=None):
     return get_setting_int("damage_restriction_threshold", conn)
 
 
+def get_auto_backup_interval_hours(conn=None):
+    return get_setting_int("auto_backup_interval_hours", conn)
+
+
 def get_setting_bool(key, conn=None):
     """Same fallback-on-missing/unparseable pattern as get_setting_int, for
     the '1'/'0' feature-flag rows. Stored as text like every other
@@ -122,6 +140,15 @@ def get_setting_bool(key, conn=None):
     finally:
         if owns_conn:
             conn.close()
+
+
+def get_auto_backup_enabled(conn=None):
+    """Reuses get_setting_bool's fallback-to-True behavior (its missing-row
+    fallback is `DEFAULT_FEATURE_FLAGS.get(key, True)`, which resolves to
+    plain `True` for any key -- like this one -- that isn't an actual
+    feature flag) -- same "never silently turn a safety net off" default
+    as the feature flags themselves."""
+    return get_setting_bool("auto_backup_enabled", conn)
 
 
 def get_feature_flags(conn=None):

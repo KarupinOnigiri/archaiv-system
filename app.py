@@ -18,7 +18,7 @@ from services.seed_service import seed_initial_admin
 from services.checkout_service import cleanup_stale_checkout_sessions
 from services.auth_service import cleanup_expired_sessions, require_session
 from utils.formatters import full_name, humanize_label
-from services.settings_service import INDEFINITE_LOCK_UNTIL, get_feature_flags
+from services.settings_service import INDEFINITE_LOCK_UNTIL, PERMANENT_ASSIGNED_END, get_feature_flags
 from services.approvals_service import get_pending_approvals_count
 from apscheduler.schedulers.background import BackgroundScheduler
 from extensions import limiter
@@ -32,6 +32,7 @@ from services.notification_service import (
     get_notification_bell_context,
 )
 from services.dashboard_service import get_dashboard_context
+from services.backup_service import run_scheduled_backup
 from routes.dashboard import dashboard_bp
 from datetime import datetime
 
@@ -159,6 +160,12 @@ app.jinja_env.globals["full_name"] = full_name
 # an ordinary timed one without duplicating that sentinel string in Jinja.
 app.jinja_env.globals["INDEFINITE_LOCK_UNTIL"] = INDEFINITE_LOCK_UNTIL
 
+# Same idea, for telling a "Permanent" assignment window
+# (services.settings_service.PERMANENT_ASSIGNED_END) apart from an
+# ordinary dated one in staff/_table.html, staff/_profile_modal.html, and
+# the Add/Edit/Reassign staff modals' "Permanent" quick-option buttons.
+app.jinja_env.globals["PERMANENT_ASSIGNED_END"] = PERMANENT_ASSIGNED_END
+
 
 limiter.init_app(app)
 
@@ -213,6 +220,13 @@ scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 scheduler.add_job(sync_loan_notifications, "interval", minutes=15)
+# 30-minute poll, not "every auto_backup_interval_hours" -- see
+# services/backup_service.py's module docstring for why: it lets an
+# admin's System-page change to the interval/enabled toggle take effect
+# within 30 minutes instead of waiting out whatever the previous
+# interval had left. The function itself decides whether a given poll
+# actually backs anything up.
+scheduler.add_job(run_scheduled_backup, "interval", minutes=30)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 

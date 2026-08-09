@@ -765,6 +765,35 @@ document.addEventListener('DOMContentLoaded', function () {
     swap: 'innerHTML'
   });
 });
+
+// Keeps the address bar in sync with search/filters/sort/paging as they
+// change -- same htmx:configRequest pattern as assets.html/members.html/
+// transactions.html, brought here so a bookmark or hard refresh on a
+// filtered Staff view actually reproduces it (the cold-load replay above
+// already reads these back out of the URL; this is the other half, that
+// was missing before). Only reacts to requests bound for the staff
+// table so opening the Add/Edit/Reassign/Feature-Flags modals (which
+// target #modal-container) never leaks their own params into the URL.
+document.body.addEventListener('htmx:configRequest', function (evt) {
+  const tableContainer = document.getElementById('staff-table-container');
+  if (evt.detail.target !== tableContainer) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['q', 'role', 'department_id', 'show_inactive', 'status', 'limit', 'offset', 'sort_by', 'sort_dir'].forEach(function (key) {
+      url.searchParams.delete(key);
+    });
+    Object.keys(params).forEach(function (key) {
+      const value = params[key];
+      if (value !== '' && value !== null && value !== undefined) {
+        url.searchParams.set(key, value);
+      }
+    });
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // URL sync is a non-critical enhancement -- never let it break the actual request.
+  }
+});
 </script>
 
 <script>

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, g, request, render_template, make_response, url_for
+from flask import Blueprint, jsonify, g, request, render_template, make_response, url_for, send_file
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from utils.uploads import validate_image_upload, save_staff_photo, delete_staff_photo
@@ -24,11 +24,17 @@ from services.settings_service import (
     get_lockout_minutes,
     get_due_soon_hours,
     INDEFINITE_LOCK_UNTIL,
+    PERMANENT_ASSIGNED_END,
     FEATURE_FLAGS,
     get_feature_flags,
     get_default_loan_days,
     get_damage_restriction_threshold,
+    get_auto_backup_enabled,
+    get_auto_backup_interval_hours,
 )
+from services.backup_service import get_last_backup_at, run_backup_now
+import backup_db
+import re
 import sqlite3
 import csv
 import io
@@ -64,6 +70,75 @@ SORTABLE_STAFF_COLUMNS = {
     "role": "staff.role",
     "department": "departments.name",
 }
+
+# How many days out from expiry an assignment window starts showing as
+# "Expiring Soon" instead of "Active" in the staff table's USAGE column --
+# mirrors the fixed-threshold style of get_due_soon_hours, but this one
+# isn't an admin-configurable app_setting (assignment windows are usually
+# measured in months, not hours, so a week's notice is plenty and doesn't
+# need its own settings-page control).
+USAGE_EXPIRING_SOON_DAYS = 7
+
+
+# assigned_end is a DATE column and every write path (edit_staff_submit,
+# the Add Staff form) stores plain "YYYY-MM-DD" -- but this parses either
+# that or a full "YYYY-MM-DD HH:MM:SS" too, the same two formats
+# utils/validators.py's date checks accept, in case any older/manually-
+# edited row ever picked up a time component. Returns None (not a raise)
+# on anything else so a single malformed row degrades to "usage unknown"
+# instead of 500ing the whole staff table.
+_ASSIGNED_END_FORMATS = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S")
+
+
+def _parse_assigned_end(value):
+    for fmt in _ASSIGNED_END_FORMATS:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def compute_usage_status(role, assigned_end):
+    """Derives the staff table's USAGE badge (and the matching remaining-
+    days count) from a staff account's assignment window.
+
+    Only "admin" always comes back as "permanent" (their access never
+    expires -- login() (routes/auth.py) never checks an admin's
+    assigned_start/end at all). in_charge is treated exactly like
+    tool_keeper here -- both can have a real assignment window set via
+    the Add/Edit/Reassign forms (those forms don't restrict the fields
+    by role), so in_charge's USAGE reflects whatever date is actually on
+    the row instead of being forced to "Indefinite" regardless of it.
+    (Note: login() itself currently only *enforces* the window for
+    tool_keeper -- an in_charge account past its assigned_end can still
+    log in. This function only affects what's displayed; it doesn't
+    change that enforcement gap.)
+
+    A tool_keeper/in_charge with no assigned_end set yet returns
+    (None, None) -- already flagged as "Not set" in the ASSIGNED column;
+    a second warning here would be redundant. Otherwise returns
+    (status, days_left) where status is one of "permanent" / "active" /
+    "expiring_soon" / "expired". days_left is None for "permanent"
+    (nothing counting down), 0-or-positive for "active"/"expiring_soon",
+    and negative for "expired" (how many days ago it lapsed) -- the
+    template turns that single number into "X days left" / "Expired Xd
+    ago" without needing its own date math."""
+    if role == "admin":
+        return "permanent", None
+    if not assigned_end:
+        return None, None
+    if assigned_end == PERMANENT_ASSIGNED_END:
+        return "permanent", None
+    end_date = _parse_assigned_end(assigned_end)
+    if end_date is None:
+        return None, None
+    days_left = (end_date - datetime.now().date()).days
+    if days_left < 0:
+        return "expired", days_left
+    if days_left <= USAGE_EXPIRING_SOON_DAYS:
+        return "expiring_soon", days_left
+    return "active", days_left
 
 
 def get_staff_table_context(args):
@@ -185,6 +260,18 @@ def get_staff_table_context(args):
         params + [limit, offset],
     ).fetchall()
     conn.close()
+
+    # Converted to plain dicts (from sqlite3.Row) so usage_status can be
+    # bolted on here -- it's derived, not a real column, so there's no
+    # SQL expression for it to ride along on the SELECT above. Jinja
+    # reads dict keys via the same `row.attr` syntax as Row objects, so
+    # staff/_table.html doesn't need to change how it accesses anything
+    # else on these rows.
+    staff_list = [dict(row) for row in staff_list]
+    for row in staff_list:
+        row["usage_status"], row["usage_days_left"] = compute_usage_status(
+            row["role"], row["assigned_end"]
+        )
 
     return {
         "staff_list": staff_list,
@@ -330,10 +417,16 @@ def staff_profile(id):
     if staff_member is None:
         return jsonify({"error": "Staff not found"}), 404
 
+    usage_status, usage_days_left = compute_usage_status(
+        staff_member["role"], staff_member["assigned_end"]
+    )
+
     return render_template(
         "staff/_profile_modal.html",
         staff_member=staff_member,
         pending_deactivation_request=pending_deactivation_request,
+        usage_status=usage_status,
+        usage_days_left=usage_days_left,
     )
 
 
@@ -702,6 +795,48 @@ def edit_staff_form(id):
         return jsonify({"error": "Staff not found"}), 404
 
     return render_template("staff/_edit_modal.html", staff_member=staff_member)
+
+
+@staff_bp.route("/staff/<int:id>/reassign-form")
+@roles_required("admin")
+def reassign_usage_form(id):
+    """Renders the quick "Reassign Usage" modal -- a stripped-down
+    alternative to the full Edit Staff modal for the one thing that gets
+    touched far more often than role/RFID: extending or shortening an
+    assignment window. Posts to the exact same /staff/<id>/edit endpoint
+    as the full edit form (it already treats any field not present in
+    the JSON body as "leave unchanged"), so there's no new write path to
+    keep in sync -- just a faster door to the existing one.
+
+    Available for in_charge as well as tool_keeper -- only admin is
+    blocked below. in_charge accounts can have a real assigned_start/end
+    set (the Add/Edit forms don't restrict those fields by role) and
+    compute_usage_status treats in_charge the same as tool_keeper for
+    display, so the reassign shortcut needs to match that, not treat
+    in_charge as permanently exempt the way admin actually is."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.role, staff.staff_code, staff.assigned_start, staff.assigned_end,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    if staff_member["role"] == "admin":
+        return (
+            jsonify({"error": "Admin accounts don't have an assignment window to reassign"}),
+            400,
+        )
+
+    return render_template("staff/_reassign_modal.html", staff_member=staff_member)
 
 
 @staff_bp.route("/staff/<int:id>/edit", methods=["POST"])
@@ -2444,7 +2579,7 @@ def list_admin_promotion_requests():
 
 
 @staff_bp.route("/loan-limits/manage-form")
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 def manage_loan_limits_form():
     conn = get_db_connection()
     limits = conn.execute(
@@ -2455,7 +2590,7 @@ def manage_loan_limits_form():
 
 
 @staff_bp.route("/loan-limits/update", methods=["POST"])
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_loan_limits():
     """Updates the admin-editable per-member-type concurrent-loan caps that
@@ -3052,7 +3187,7 @@ def update_account_security():
 
 
 @staff_bp.route("/notification-settings/manage-form")
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 def manage_notification_settings_form():
     return render_template(
         "staff/_notification_settings_modal.html",
@@ -3062,7 +3197,7 @@ def manage_notification_settings_form():
 
 
 @staff_bp.route("/notification-settings/update", methods=["POST"])
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_notification_settings():
     """Updates the admin-editable due-soon threshold that
@@ -3134,7 +3269,7 @@ def update_notification_settings():
 
 
 @staff_bp.route("/loan-duration/manage-form")
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 def manage_loan_duration_form():
     return render_template(
         "staff/_loan_duration_modal.html",
@@ -3144,7 +3279,7 @@ def manage_loan_duration_form():
 
 
 @staff_bp.route("/loan-duration/update", methods=["POST"])
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_loan_duration():
     """Updates the admin-editable fallback due-date length that
@@ -3207,7 +3342,7 @@ def update_loan_duration():
 
 
 @staff_bp.route("/damage-restriction/manage-form")
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 def manage_damage_restriction_form():
     return render_template(
         "staff/_damage_restriction_modal.html",
@@ -3217,7 +3352,7 @@ def manage_damage_restriction_form():
 
 
 @staff_bp.route("/damage-restriction/update", methods=["POST"])
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_damage_restriction():
     """Updates the admin-editable occurrence threshold that
@@ -3358,6 +3493,11 @@ def update_feature_flags():
             action="enabled_feature" if enabled else "disabled_feature",
             target_table="app_settings",
             target_name=label,
+            details=(
+                f"{label} was turned on -- its tab/routes are visible and usable again for everyone"
+                if enabled
+                else f"{label} was turned off -- its nav link is hidden and its routes/actions are blocked for everyone"
+            ),
         )
 
     if request.is_json:
@@ -3365,3 +3505,297 @@ def update_feature_flags():
     response = make_response("", 200)
     response.headers["HX-Redirect"] = "/system"
     return response
+
+
+# # # BARCODE LABEL ACTIVITY LOGGING ---------------------------------------
+# Barcode Labels (templates/barcodes.html) generates and downloads labels
+# entirely client-side (JsBarcode + jsPDF, no server round-trip for the
+# actual rendering) -- these two endpoints exist purely so those two
+# actions still leave an audit trail, the same way every other
+# meaningful action in this app does. Both take the exact selection the
+# browser already built (asset/member code + display label + which kind)
+# rather than re-deriving it server-side, since the server never sees
+# which checkboxes were ticked otherwise.
+
+
+def _describe_barcode_selection(asset_items, member_items):
+    """Turns the two item lists into the human-readable "N asset(s)
+    (CODE - Name, ...); N member(s) (CODE - Name, ...)" string used in
+    both endpoints' audit_log details -- same "count + comma-joined
+    names" shape as bulk_deactivate_staff's log entry above."""
+    parts = []
+    if asset_items:
+        parts.append(
+            f"{len(asset_items)} asset(s) ("
+            + ", ".join(f"{i.get('code', '?')} - {i.get('label', '?')}" for i in asset_items)
+            + ")"
+        )
+    if member_items:
+        parts.append(
+            f"{len(member_items)} member(s) ("
+            + ", ".join(f"{i.get('code', '?')} - {i.get('label', '?')}" for i in member_items)
+            + ")"
+        )
+    return "; ".join(parts) if parts else "no items"
+
+
+def _split_barcode_items(items):
+    asset_items = [i for i in items if i.get("type") == "asset"]
+    member_items = [i for i in items if i.get("type") == "member"]
+    return asset_items, member_items
+
+
+@staff_bp.route("/barcodes/log-generate", methods=["POST"])
+@roles_required("admin", "in_charge")
+def log_barcode_generate():
+    """Called by barcodes.html's generate() right after it opens the
+    label preview -- records which specific assets/members were picked,
+    not just "someone opened the barcode page" (routes/pages.py's
+    barcodes_page doesn't log anything itself; viewing the picker isn't
+    an action worth an audit entry, generating a concrete label sheet
+    for named items is)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    items = data.get("items") or []
+    if not items:
+        return jsonify({"error": "items is required"}), 400
+
+    asset_items, member_items = _split_barcode_items(items)
+    log_action(
+        staff_id=g.staff["id"],
+        action="generated_barcode_labels",
+        details=f"Generated a label preview for {_describe_barcode_selection(asset_items, member_items)}",
+    )
+    return jsonify({"logged": True})
+
+
+@staff_bp.route("/barcodes/log-download", methods=["POST"])
+@roles_required("admin", "in_charge")
+def log_barcode_download():
+    """Mirrors log_barcode_generate above, called right after
+    confirmDownload() actually saves the PDF -- kept as a separate
+    action/entry (not folded into the generate log) since someone can
+    preview a sheet and back out without ever downloading it, and the
+    two are meaningfully different events to see in the Activity Log."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    items = data.get("items") or []
+    if not items:
+        return jsonify({"error": "items is required"}), 400
+    size = data.get("size") or "regular"
+    if size not in ("small", "regular", "large"):
+        size = "regular"
+
+    asset_items, member_items = _split_barcode_items(items)
+    log_action(
+        staff_id=g.staff["id"],
+        action="downloaded_barcode_labels",
+        details=f"Downloaded a {size} PDF for {_describe_barcode_selection(asset_items, member_items)}",
+    )
+    return jsonify({"logged": True})
+
+
+# # # ONLINE STAFF ----------------------------------------------------------
+
+
+def get_online_staff(conn, roles=None):
+    """Staff with a currently-live session -- the exact same "live"
+    definition require_session (services/auth_service.py) uses to decide
+    whether a request's own session cookie is still good: not past
+    expires_at, and not idle past get_session_idle_minutes. login()
+    (routes/auth.py) always deletes any existing session row for that
+    staff_id before inserting a fresh one, so there's at most one session
+    row per staff member -- this is just "join staff to its live session
+    row", no need to dedupe multiple sessions per person.
+
+    `roles`, if given, restricts to that subset (e.g. in_charge's view of
+    this only wants tool_keeper, not other in_charge/admin -- see
+    view_online_staff below)."""
+    idle_minutes = get_session_idle_minutes(conn)
+    where_role = ""
+    params = [f"-{idle_minutes} minutes"]
+    if roles:
+        placeholders = ",".join("?" * len(roles))
+        where_role = f"AND staff.role IN ({placeholders})"
+        params.extend(roles)
+    return conn.execute(
+        f"""
+        SELECT staff.id, staff.username, staff.role, staff.photo_path,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               departments.name AS department, sessions.last_active_at
+        FROM sessions
+        JOIN staff ON staff.id = sessions.staff_id
+        JOIN members ON staff.member_id = members.id
+        JOIN departments ON members.department_id = departments.id
+        WHERE sessions.expires_at > datetime('now', 'localtime')
+          AND sessions.last_active_at >= datetime('now', 'localtime', ?)
+          {where_role}
+        ORDER BY sessions.last_active_at DESC
+        """,
+        params,
+    ).fetchall()
+
+
+@staff_bp.route("/staff/online")
+@roles_required("admin", "in_charge")
+def view_online_staff():
+    """Backs the Dashboard's "Currently Online" widget
+    (templates/dashboard/_online_staff.html), polled every 30s via htmx
+    so it stays live without a full page refresh. admin sees everyone
+    with a live session; in_charge only sees tool_keeper -- they already
+    know whether they themselves (or another in_charge/admin) are
+    logged in, the actually useful signal for them is specifically
+    "is a tool_keeper on right now", which is exactly what asked for
+    this feature."""
+    conn = get_db_connection()
+    roles = None if g.staff["role"] == "admin" else ("tool_keeper",)
+    online_staff = get_online_staff(conn, roles=roles)
+    conn.close()
+    return render_template(
+        "dashboard/_online_staff.html",
+        online_staff=online_staff,
+        viewer_role=g.staff["role"],
+        viewer_id=g.staff["id"],
+    )
+
+
+# # # DATABASE BACKUPS -------------------------------------------------------
+# Admin-only System page card -- lets an admin see/change whether
+# services/backup_service.py's scheduled job (app.py) is running, how
+# often, and trigger an out-of-band backup right now, plus download any
+# existing backup file. backup_db.py's own DEFAULT_BACKUP_DIR/
+# KEEP_LAST_N stay the single source of truth for where backups live and
+# how many are kept -- nothing here duplicates that.
+
+# Matches exactly what backup_db.py's own backup_database() writes
+# (toolroom_YYYYMMDD_HHMMSS.db) -- the allowlist the download route
+# checks a requested filename against, so it can only ever serve a real
+# backup file this app created, never an arbitrary path.
+_BACKUP_FILENAME_RE = re.compile(r"^toolroom_\d{8}_\d{6}\.db$")
+
+
+def _list_backups():
+    """Newest-first list of {name, size_bytes, created_at} for every
+    backup file currently on disk -- shown in the manage-form modal so
+    an admin can see backup history isn't just a claim, and download any
+    of them. Empty list (not an error) if the backup directory doesn't
+    exist yet -- true before the very first backup has ever run."""
+    backup_dir = backup_db.DEFAULT_BACKUP_DIR
+    if not os.path.isdir(backup_dir):
+        return []
+    entries = []
+    for name in os.listdir(backup_dir):
+        if not _BACKUP_FILENAME_RE.match(name):
+            continue
+        path = os.path.join(backup_dir, name)
+        stat = os.stat(path)
+        entries.append(
+            {
+                "name": name,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+    entries.sort(key=lambda e: e["name"], reverse=True)
+    return entries
+
+
+@staff_bp.route("/backup-settings/manage-form")
+@roles_required("admin")
+def manage_backup_settings_form():
+    conn = get_db_connection()
+    enabled = get_auto_backup_enabled(conn)
+    interval_hours = get_auto_backup_interval_hours(conn)
+    last_backup_at = get_last_backup_at(conn)
+    conn.close()
+    return render_template(
+        "staff/_backup_settings_modal.html",
+        enabled=enabled,
+        interval_hours=interval_hours,
+        last_backup_at=last_backup_at,
+        backups=_list_backups(),
+        keep_last_n=backup_db.KEEP_LAST_N,
+    )
+
+
+@staff_bp.route("/backup-settings/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_backup_settings():
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    enabled = bool(data.get("enabled"))
+    try:
+        interval_hours = int(data.get("interval_hours"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "interval_hours must be a whole number"}), 400
+    if interval_hours < 1 or interval_hours > 168:
+        return jsonify({"error": "interval_hours must be between 1 and 168 (one week)"}), 400
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'auto_backup_enabled'",
+        ("1" if enabled else "0",),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'auto_backup_interval_hours'",
+        (str(interval_hours),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_backup_settings",
+        target_table="app_settings",
+        details=f"Automatic backups {'enabled' if enabled else 'disabled'}, every {interval_hours}h",
+    )
+
+    return jsonify({"message": "Backup settings updated", "enabled": enabled, "interval_hours": interval_hours})
+
+
+@staff_bp.route("/backup-settings/run-now", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def run_backup_now_route():
+    """Manual, out-of-band backup -- runs unconditionally regardless of
+    the enabled toggle/interval (see services/backup_service.py's
+    run_backup_now docstring), same as clicking "Backup Now" ought to
+    mean "do it right now," not "do it if the schedule agrees.\""""
+    ok = run_backup_now()
+    if not ok:
+        return (
+            jsonify({"error": "Backup failed -- check the server log for details."}),
+            500,
+        )
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="ran_manual_backup",
+        target_table="app_settings",
+        details="Triggered an on-demand database backup from the System page",
+    )
+    return jsonify({"message": "Backup completed", "backups": _list_backups()})
+
+
+@staff_bp.route("/backup-settings/download/<filename>")
+@roles_required("admin")
+def download_backup(filename):
+    if not _BACKUP_FILENAME_RE.match(filename):
+        return jsonify({"error": "Invalid backup filename"}), 400
+
+    path = os.path.realpath(os.path.join(backup_db.DEFAULT_BACKUP_DIR, filename))
+    backup_dir_real = os.path.realpath(backup_db.DEFAULT_BACKUP_DIR)
+    # Belt-and-suspenders on top of the regex above: confirms the
+    # resolved path actually lands inside the backup directory before
+    # ever handing a path to send_file.
+    if not path.startswith(backup_dir_real + os.sep) or not os.path.isfile(path):
+        return jsonify({"error": "Backup not found"}), 404
+
+    return send_file(path, as_attachment=True, download_name=filename)

@@ -63,6 +63,39 @@ def _bootstrap_pre_migration_db(conn, applied):
     return applied
 
 
+def _write_schema_snapshot(conn):
+    """Regenerates instance/schema.sql from the live database's actual
+    schema -- CREATE TABLE/INDEX/TRIGGER/VIEW statements only, never row
+    data (unlike sqlite3.Connection.iterdump(), which would also dump
+    every table's actual contents -- exactly what a version-controlled
+    reference file must NOT contain). No ORDER BY on purpose: sqlite_master
+    returns rows in original creation order, which is what made the old
+    hand-dumped schema.sql (`sqlite3 toolroom.db .schema > schema.sql`)
+    read the way it does -- matching that means this replacement doesn't
+    reshuffle the file's whole layout on the next migration.
+
+    This file was never read by the app itself (see BASELINE_MIGRATION's
+    docstring -- migrations/*.sql, replayed incrementally, is the actual
+    source of truth); it's a checked-in, at-a-glance reference for anyone
+    reading the codebase without spinning up the database. Called from
+    init_db() only when at least one migration just ran, so an ordinary
+    startup with nothing pending doesn't rewrite this file for no reason."""
+    rows = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"
+    ).fetchall()
+    schema_path = os.path.join(INSTANCE_DIR, "schema.sql")
+    try:
+        with open(schema_path, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(row["sql"].rstrip())
+                f.write(";\n")
+        logger.info("Refreshed instance/schema.sql from the live schema.")
+    except OSError as e:
+        # A stale schema.sql is a paper-cut, not a reason to fail startup
+        # -- the migration itself already committed successfully above.
+        logger.warning(f"Could not refresh instance/schema.sql: {e}")
+
+
 def init_db():
     """Applies any migration files in migrations/ that haven't run yet, in
     filename order. Safe to call on every app startup — no-op if everything
@@ -95,6 +128,9 @@ def init_db():
             conn.rollback()
             conn.close()
             raise RuntimeError(f"Migration {filename} failed: {e}") from e
+
+    if pending:
+        _write_schema_snapshot(conn)
 
     conn.close()
 

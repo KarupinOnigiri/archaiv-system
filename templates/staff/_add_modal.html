@@ -94,14 +94,27 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED START</label>
-            <input type="date" name="assigned_start" class="input input-bordered w-full mt-1 bg-base-100">
+            <input type="date" name="assigned_start" id="add-staff-assigned-start" class="input input-bordered w-full mt-1 bg-base-100">
           </div>
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED END</label>
-            <input type="date" name="assigned_end" class="input input-bordered w-full mt-1 bg-base-100">
+            <input type="date" name="assigned_end" id="add-staff-assigned-end" class="input input-bordered w-full mt-1 bg-base-100">
           </div>
         </div>
-        <p class="text-xs text-base-content/40 -mt-2">Optional -- leave blank for an open-ended assignment.</p>
+        <!-- Quick-set shortcuts -- Tool Keeper accounts actually require
+             both dates to log in (routes/auth.py's login()), so "leave it
+             blank" below isn't really an option for that role in
+             practice; these cover the three durations staff get assigned
+             for most often without hand-picking an end date. Permanent
+             writes PERMANENT_ASSIGNED_END (a Jinja global set in app.py)
+             rather than leaving assigned_end blank, since blank still
+             means "not set, can't log in" for a Tool Keeper. -->
+        <div class="flex flex-wrap gap-2 -mt-2">
+          <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset('permanent')">Permanent</button>
+          <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset(180)">6 Months</button>
+          <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset(365)">1 Year</button>
+        </div>
+        <p class="text-xs text-base-content/40 -mt-2">Optional for Admin/In Charge; a Tool Keeper needs both dates set before they can sign in.</p>
 
         <div class="bg-info/10 rounded-lg p-3 flex gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
@@ -125,6 +138,34 @@
 </div>
 
 <script>
+// Assigned-window quick presets -- see the comment above the buttons in
+// the form for why "Permanent" writes a sentinel date instead of leaving
+// assigned_end blank. Start defaults to today only if it's still empty,
+// so re-clicking a different preset after already picking a start date
+// doesn't stomp on it.
+const ADD_STAFF_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
+
+function formatDateLocalAddStaff(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function setAddStaffAssignedPreset(preset) {
+  const startInput = document.getElementById('add-staff-assigned-start');
+  const endInput = document.getElementById('add-staff-assigned-end');
+  if (!startInput.value) startInput.value = formatDateLocalAddStaff(new Date());
+
+  if (preset === 'permanent') {
+    endInput.value = ADD_STAFF_PERMANENT_ASSIGNED_END;
+    return;
+  }
+  const end = new Date(startInput.value + 'T00:00:00');
+  end.setDate(end.getDate() + preset);
+  endInput.value = formatDateLocalAddStaff(end);
+}
+
 // Type-ahead member picker: clicking a search result (rendered by
 // staff/_eligible_member_results.html) calls this to record the choice
 // and swap the search box for a confirmation card. Reads id/label off

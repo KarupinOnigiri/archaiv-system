@@ -14,15 +14,15 @@
 
     <div class="flex items-center justify-between gap-4 mb-5">
       <div role="tablist" class="tabs tabs-boxed w-fit">
-        <a role="tab" id="requests-tab-unrestriction" class="tab tab-active" onclick="switchRequestsTab('unrestriction')">
+        <a role="tab" id="requests-tab-unrestriction" class="tab {% if active_tab == 'unrestriction' %}tab-active{% endif %}" onclick="switchRequestsTab('unrestriction')">
           Unrestriction Requests
           <span id="unrestriction-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
         </a>
-        <a role="tab" id="requests-tab-deactivation" class="tab" onclick="switchRequestsTab('deactivation')">
+        <a role="tab" id="requests-tab-deactivation" class="tab {% if active_tab == 'deactivation' %}tab-active{% endif %}" onclick="switchRequestsTab('deactivation')">
           Admin Deactivations
           <span id="deactivation-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
         </a>
-        <a role="tab" id="requests-tab-promotion" class="tab" onclick="switchRequestsTab('promotion')">
+        <a role="tab" id="requests-tab-promotion" class="tab {% if active_tab == 'promotion' %}tab-active{% endif %}" onclick="switchRequestsTab('promotion')">
           Admin Promotions
           <span id="promotion-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
         </a>
@@ -31,7 +31,7 @@
     </div>
 
     <!-- Unrestriction Requests panel -->
-    <div id="requests-panel-unrestriction">
+    <div id="requests-panel-unrestriction" {% if active_tab != 'unrestriction' %}class="hidden"{% endif %}>
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <select id="unrestriction-status-filter" name="status"
                 aria-label="Filter unrestriction requests by status"
@@ -43,16 +43,16 @@
                 hx-indicator="#requests-spinner"
                 hx-include="#unrestriction-mine-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" selected>Pending</option>
-          <option value="approved">Approved</option>
-          <option value="denied">Denied</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="">All statuses</option>
+          <option value="pending" {% if u_status == "pending" %}selected{% endif %}>Pending</option>
+          <option value="approved" {% if u_status == "approved" %}selected{% endif %}>Approved</option>
+          <option value="denied" {% if u_status == "denied" %}selected{% endif %}>Denied</option>
+          <option value="cancelled" {% if u_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+          <option value="" {% if u_status == "" %}selected{% endif %}>All statuses</option>
         </select>
         {% if staff.role in ["admin", "in_charge"] %}
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input type="checkbox" id="unrestriction-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm"
+                 class="toggle toggle-sm" {% if u_mine %}checked{% endif %}
                  hx-get="/api/v1/unrestriction-requests"
                  hx-trigger="change"
                  hx-target="#unrestriction-table-container"
@@ -71,12 +71,12 @@
            hx-target="#unrestriction-table-container"
            hx-swap="innerHTML"
            hx-indicator="#requests-spinner"
-           hx-vals='{"limit": {{ limit }}, "offset": 0, "status": "pending"}'>
+           hx-vals='{"limit": {{ limit }}, "offset": {{ u_offset }}, "status": {{ u_status | tojson }}, "mine": {{ "1" if u_mine else "0" }} }'>
       </div>
     </div>
 
     <!-- Admin Deactivation Requests panel -->
-    <div id="requests-panel-deactivation" class="hidden">
+    <div id="requests-panel-deactivation" {% if active_tab != 'deactivation' %}class="hidden"{% endif %}>
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <select id="deactivation-status-filter" name="status"
                 aria-label="Filter admin deactivation requests by status"
@@ -88,16 +88,16 @@
                 hx-indicator="#requests-spinner"
                 hx-include="#deactivation-mine-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" selected>Pending</option>
-          <option value="approved">Approved</option>
-          <option value="denied">Denied</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="">All statuses</option>
+          <option value="pending" {% if d_status == "pending" %}selected{% endif %}>Pending</option>
+          <option value="approved" {% if d_status == "approved" %}selected{% endif %}>Approved</option>
+          <option value="denied" {% if d_status == "denied" %}selected{% endif %}>Denied</option>
+          <option value="cancelled" {% if d_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+          <option value="" {% if d_status == "" %}selected{% endif %}>All statuses</option>
         </select>
         {% if staff.role in ["admin", "in_charge"] %}
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input type="checkbox" id="deactivation-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm"
+                 class="toggle toggle-sm" {% if d_mine %}checked{% endif %}
                  hx-get="/api/v1/admin-deactivation-requests"
                  hx-trigger="change"
                  hx-target="#deactivation-table-container"
@@ -116,12 +116,12 @@
            hx-target="#deactivation-table-container"
            hx-swap="innerHTML"
            hx-indicator="#requests-spinner"
-           hx-vals='{"limit": {{ limit }}, "offset": 0, "status": "pending"}'>
+           hx-vals='{"limit": {{ limit }}, "offset": {{ d_offset }}, "status": {{ d_status | tojson }}, "mine": {{ "1" if d_mine else "0" }} }'>
       </div>
     </div>
 
     <!-- Admin Promotion Requests panel -->
-    <div id="requests-panel-promotion" class="hidden">
+    <div id="requests-panel-promotion" {% if active_tab != 'promotion' %}class="hidden"{% endif %}>
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <select id="promotion-status-filter" name="status"
                 aria-label="Filter admin promotion requests by status"
@@ -133,16 +133,16 @@
                 hx-indicator="#requests-spinner"
                 hx-include="#promotion-mine-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" selected>Pending</option>
-          <option value="approved">Approved</option>
-          <option value="denied">Denied</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="">All statuses</option>
+          <option value="pending" {% if p_status == "pending" %}selected{% endif %}>Pending</option>
+          <option value="approved" {% if p_status == "approved" %}selected{% endif %}>Approved</option>
+          <option value="denied" {% if p_status == "denied" %}selected{% endif %}>Denied</option>
+          <option value="cancelled" {% if p_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+          <option value="" {% if p_status == "" %}selected{% endif %}>All statuses</option>
         </select>
         {% if staff.role in ["admin", "in_charge"] %}
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input type="checkbox" id="promotion-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm"
+                 class="toggle toggle-sm" {% if p_mine %}checked{% endif %}
                  hx-get="/api/v1/admin-promotion-requests"
                  hx-trigger="change"
                  hx-target="#promotion-table-container"
@@ -161,7 +161,7 @@
            hx-target="#promotion-table-container"
            hx-swap="innerHTML"
            hx-indicator="#requests-spinner"
-           hx-vals='{"limit": {{ limit }}, "offset": 0, "status": "pending"}'>
+           hx-vals='{"limit": {{ limit }}, "offset": {{ p_offset }}, "status": {{ p_status | tojson }}, "mine": {{ "1" if p_mine else "0" }} }'>
       </div>
     </div>
 
@@ -249,7 +249,52 @@ function switchRequestsTab(tab) {
   document.getElementById('requests-panel-unrestriction').classList.toggle('hidden', tab !== 'unrestriction');
   document.getElementById('requests-panel-deactivation').classList.toggle('hidden', tab !== 'deactivation');
   document.getElementById('requests-panel-promotion').classList.toggle('hidden', tab !== 'promotion');
+
+  // Persists which tab is showing into the URL -- routes/pages.py's
+  // requests_page reads this ?tab= back on load so a bookmarked or
+  // refreshed link reopens on the same tab instead of always resetting
+  // to Unrestriction.
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // Non-critical.
+  }
 }
+
+// Keeps each panel's own status/mine/offset in the URL under its own
+// prefix (u_/d_/p_, matching routes/pages.py's requests_page) so all
+// three tabs' filter state round-trips independently through one query
+// string -- same htmx:configRequest pattern as every other filtered
+// table in the app, just fanned out over three containers instead of
+// one.
+const REQUESTS_URL_PREFIX_BY_CONTAINER = {
+  'unrestriction-table-container': 'u',
+  'deactivation-table-container': 'd',
+  'promotion-table-container': 'p',
+};
+
+document.body.addEventListener('htmx:configRequest', function (evt) {
+  const prefix = REQUESTS_URL_PREFIX_BY_CONTAINER[evt.detail.target && evt.detail.target.id];
+  if (!prefix) return;
+  try {
+    const params = evt.detail.parameters || {};
+    const url = new URL(window.location.href);
+    ['status', 'mine', 'offset'].forEach(function (key) {
+      const value = params[key];
+      const urlKey = `${prefix}_${key}`;
+      if (value !== '' && value !== null && value !== undefined && !(key === 'mine' && value === '0')) {
+        url.searchParams.set(urlKey, value);
+      } else {
+        url.searchParams.delete(urlKey);
+      }
+    });
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // URL sync is a non-critical enhancement -- never let it break the actual request.
+  }
+});
 
 // Shared POST-and-refresh helper for every approve/deny/cancel action below --
 // mirrors staffAction() on the Staff page (same fetch+CSRF+reload shape). A

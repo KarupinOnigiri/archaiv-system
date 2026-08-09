@@ -90,14 +90,47 @@
               <span class="text-xs text-base-content/50">Assigned</span>
               <span class="text-sm font-medium text-right">
                 {% if staff_member.assigned_start or staff_member.assigned_end %}
-                {{ staff_member.assigned_start or "—" }} &rarr; {{ staff_member.assigned_end or "—" }}
-                {% elif staff_member.role in ("admin", "in_charge") %}
+                  {% if staff_member.assigned_end == PERMANENT_ASSIGNED_END %}
+                  {{ staff_member.assigned_start or "—" }} &rarr; <span class="font-normal text-base-content/50">Permanent</span>
+                  {% else %}
+                  {{ staff_member.assigned_start or "—" }} &rarr; {{ staff_member.assigned_end or "—" }}
+                  {% endif %}
+                {% elif staff_member.role == "admin" %}
                 <span class="text-base-content/50 font-normal">Permanent</span>
+                {% elif staff_member.role == "in_charge" %}
+                <span class="text-warning font-normal" data-tooltip="No assignment period set for this In Charge account yet">Not set</span>
                 {% else %}
                 <span class="text-warning font-normal" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
                 {% endif %}
               </span>
             </div>
+            <!-- Usage -- same remaining-days/Indefinite/Expired reasoning
+                 as the staff table's USAGE column (routes/staff.py's
+                 compute_usage_status), just spelled out in full sentence
+                 form here instead of a compact badge since there's room
+                 for it. Omitted entirely for admin/in_charge (usage_status
+                 is None for them) and for a tool_keeper with no window
+                 set yet -- the Assigned row above already covers both of
+                 those cases ("Permanent" / "Not set"), so repeating either
+                 here would be redundant rather than informative. -->
+            {% if usage_status %}
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Usage</span>
+              <span class="text-sm font-medium text-right">
+                {% if usage_status == "permanent" %}
+                <span class="text-base-content/50 font-normal">Indefinite</span>
+                {% elif usage_status == "expired" %}
+                <span class="text-error">Expired &middot; {{ -usage_days_left }} day{{ "s" if -usage_days_left != 1 else "" }} ago</span>
+                {% elif usage_status == "expiring_soon" %}
+                <span class="text-warning">
+                  {% if usage_days_left == 0 %}Expires today{% elif usage_days_left == 1 %}1 day left{% else %}{{ usage_days_left }} days left{% endif %}
+                </span>
+                {% else %}
+                <span class="text-success">{{ usage_days_left }} days left</span>
+                {% endif %}
+              </span>
+            </div>
+            {% endif %}
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Staff since</span>
               <span class="text-sm font-medium text-right">{{ staff_member.created_at | format_date('%b %d, %Y') }}</span>
@@ -226,6 +259,24 @@
         <button type="button" class="btn btn-outline btn-success"
                 onclick="staffAction('/api/v1/staff/{{ staff_member.id }}/reactivate', 'Reactivate this account?', 'Account reactivated')">
           Reactivate
+        </button>
+        {% endif %}
+
+        {% if staff_member.role != "admin" %}
+        <!-- Reassign Usage -- same quick door as the staff table's row
+             action (staff/_table.html); shown here too since this
+             profile panel is the other place someone's likely to be
+             looking right before deciding to extend/reassign someone's
+             access. Always available for a tool_keeper account, not
+             gated behind it already being expired/expiring -- reassigning
+             ahead of time (e.g. extending someone who's still well
+             within their window) is just as valid a use as fixing one
+             that's already lapsed. -->
+        <button type="button" class="btn btn-outline"
+                hx-get="/api/v1/staff/{{ staff_member.id }}/reassign-form"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
+          Reassign Usage
         </button>
         {% endif %}
 

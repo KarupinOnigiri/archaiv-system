@@ -6,7 +6,7 @@ from routes.members import get_members_table_context  # same note as above -- ad
 from routes.staff import get_staff_table_context  # same note as above -- adjust to match wherever staff.py actually lives
 from routes.transactions import get_transactions_table_context  # same note as above -- adjust to match wherever transactions.py actually lives
 from utils.formatters import full_name
-from utils.validators import parse_pagination_params
+from utils.validators import parse_pagination_params, validate_date_string
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -402,7 +402,37 @@ def requests_page():
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
-    return render_template("requests.html", staff=g.staff, limit=limit, offset=offset)
+
+    # tab + each panel's own status/mine/offset are read back from the
+    # URL (prefixed u_/d_/p_ so all three tabs' state can round-trip
+    # independently through the same query string) so a bookmarked or
+    # refreshed Approvals URL reopens on the right tab with the right
+    # filters instead of always resetting to Unrestriction/Pending --
+    # requests.html's own JS keeps these in sync on every later tab
+    # switch or filter change, same htmx:configRequest -> replaceState
+    # pattern used on Assets/Members/Transactions/Staff/Feedback.
+    tab = request.args.get("tab", "unrestriction")
+    if tab not in ("unrestriction", "deactivation", "promotion"):
+        tab = "unrestriction"
+
+    valid_statuses = ("pending", "approved", "denied", "cancelled", "")
+
+    def _panel_status(prefix):
+        value = request.args.get(f"{prefix}_status", "pending")
+        return value if value in valid_statuses else "pending"
+
+    def _panel_offset(prefix):
+        try:
+            return max(0, int(request.args.get(f"{prefix}_offset", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    return render_template(
+        "requests.html", staff=g.staff, limit=limit, offset=offset, active_tab=tab,
+        u_status=_panel_status("u"), u_offset=_panel_offset("u"), u_mine=request.args.get("u_mine") == "1",
+        d_status=_panel_status("d"), d_offset=_panel_offset("d"), d_mine=request.args.get("d_mine") == "1",
+        p_status=_panel_status("p"), p_offset=_panel_offset("p"), p_mine=request.args.get("p_mine") == "1",
+    )
 
 
 @pages_bp.route("/reports")
@@ -424,8 +454,26 @@ def reports_page():
     only) but sees a deliberately smaller widget set -- see
     services/report_widgets.py; every widget/query available to them is
     scoped to their own activity only, never other staff's or an
-    all-borrowers view."""
-    return render_template("reports.html", staff=g.staff)
+    all-borrowers view.
+
+    since/until are read back from the URL (a bad/unparseable value is
+    just dropped rather than erroring the whole page out, since this is
+    a page load, not a JSON API) so a bookmarked or refreshed
+    /reports?since=...&until=... reopens with that same range applied
+    instead of always resetting to All Time -- reports.html's own JS
+    keeps these two in sync on every later preset click, manual date
+    pick, or Escape-clear."""
+
+    def _report_date(param):
+        value = request.args.get(param, "")
+        if value and validate_date_string(value, param) is not None:
+            return ""
+        return value
+
+    return render_template(
+        "reports.html", staff=g.staff,
+        since=_report_date("since"), until=_report_date("until"),
+    )
 
 
 @pages_bp.route("/barcodes")
@@ -473,16 +521,29 @@ def barcodes_page():
 
 
 @pages_bp.route("/system")
-@roles_required("admin")
+@roles_required("admin", "in_charge")
 def system_page():
-    """Admin-only hub for the app-wide policy knobs that used to be
-    hardcoded Python constants scattered across auth.py/transactions.py/
+    """Hub for the app-wide policy knobs that used to be hardcoded Python
+    constants scattered across auth.py/transactions.py/
     notification_service.py -- session timeouts, account lockout, loan
     limits, and the notification due-soon threshold. Just a launcher
     page: each card opens the same modal+endpoint that already existed
     (moved here from the Staff tab for loan limits/session settings, or
     newly added alongside them for lockout/notifications), so there's no
-    new settings-storage logic here, only the landing page for it."""
+    new settings-storage logic here, only the landing page for it.
+
+    in_charge gets in here too (previously admin-only) but system.html
+    itself hides the Session Settings/Account Security/Feature Access
+    cards from anyone but admin -- those three are security/access-control
+    knobs (session lifetime, lockout policy, and the master per-tab
+    kill switch), a different category from the operational settings
+    (loan limits/duration, due-soon threshold, damage-restriction
+    threshold, barcode labels) in_charge is meant to help manage day to
+    day. The three admin-only endpoints behind those cards
+    (session-settings/account-security/feature-flags, routes/staff.py)
+    are still @roles_required("admin") independent of this page-level
+    gate, so hiding the cards isn't the only thing stopping an in_charge
+    from reaching them directly."""
     return render_template("system.html", staff=g.staff)
 
 
@@ -493,8 +554,24 @@ def feedback_page():
     the account dropdown's "Give feedback" row (routes/feedback.py:
     submit_feedback). The list itself loads via htmx (see feedback.html),
     same cold-load pattern as Notifications -- this route only needs
-    limit/offset to seed the container's initial hx-vals."""
+    limit/offset to seed the container's initial hx-vals.
+
+    status/category are also read here (not just limit/offset) so a
+    bookmarked or refreshed filtered URL -- e.g. /feedback?status=resolved
+    -- actually re-selects that option on load instead of always showing
+    the hardcoded "Open" default; feedback.html's own JS keeps the URL in
+    sync with these on every later filter change the same way assets/
+    members/transactions/staff already do."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
-    return render_template("feedback.html", staff=g.staff, limit=limit, offset=offset)
+    status = request.args.get("status", "open")
+    if status not in ("open", "resolved", "all"):
+        status = "open"
+    category = request.args.get("category", "")
+    if category not in ("", "bug", "idea", "other"):
+        category = ""
+    return render_template(
+        "feedback.html", staff=g.staff, limit=limit, offset=offset,
+        status=status, category=category,
+    )

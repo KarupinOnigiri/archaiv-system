@@ -40,10 +40,10 @@
               onclick="clearReportsDateFilter()" aria-label="Clear date range" data-tooltip="Clear date range (Esc)" disabled>
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
       </button>
-      <input type="date" id="reports-since-filter" aria-label="From date" title="From"
+      <input type="date" id="reports-since-filter" aria-label="From date" title="From" value="{{ since }}"
              class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
       <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
-      <input type="date" id="reports-until-filter" aria-label="To date" title="To"
+      <input type="date" id="reports-until-filter" aria-label="To date" title="To" value="{{ until }}"
              class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
     </div>
     <span class="text-xs text-base-content/40">Leave blank for all-time. Applies to every report below.</span>
@@ -815,8 +815,30 @@ function fetchMyOverdueHandled() {
   });
 }
 
+// Keeps the address bar in sync with the current since/until range --
+// this page has no htmx requests to hook a configRequest listener onto
+// (everything's a plain fetch(), see the module docstring in
+// routes/pages.py's reports_page), so the sync just lives right here at
+// the one function every date change (manual pick, preset click, Clear,
+// Escape) already funnels through. routes/pages.py reads since/until
+// back out of the URL on load so a bookmarked or refreshed
+// /reports?since=...&until=... reopens with that same range applied.
+function syncReportsDateUrl() {
+  try {
+    const since = document.getElementById('reports-since-filter').value;
+    const until = document.getElementById('reports-until-filter').value;
+    const url = new URL(window.location.href);
+    if (since) url.searchParams.set('since', since); else url.searchParams.delete('since');
+    if (until) url.searchParams.set('until', until); else url.searchParams.delete('until');
+    history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+  } catch (e) {
+    // URL sync is a non-critical enhancement -- never let it break the actual request.
+  }
+}
+
 function fetchAllReports() {
   updateReportsDateFilterUI();
+  syncReportsDateUrl();
   fetchSummary();
   fetchMostBorrowedAssets();
   fetchMostBorrowedCategories();

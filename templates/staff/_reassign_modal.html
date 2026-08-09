@@ -1,0 +1,122 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-md">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Reassign Usage</h3>
+        <p class="text-sm text-base-content/50 mt-1">
+          {{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}
+          &middot; {{ staff_member.staff_code or "—" }}
+        </p>
+      </div>
+    </div>
+
+    <div id="reassign-usage-error" class="alert alert-error text-sm mb-4 py-2 hidden"></div>
+
+    <form id="reassign-usage-form" onsubmit="submitReassignUsageForm(event, {{ staff_member.id }})">
+      <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED START</label>
+            <input type="date" name="assigned_start" id="reassign-start" value="{{ staff_member.assigned_start or '' }}"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED END</label>
+            <input type="date" name="assigned_end" id="reassign-end" value="{{ staff_member.assigned_end or '' }}"
+                   class="input input-bordered w-full mt-1 bg-base-100">
+          </div>
+        </div>
+
+        <!-- Quick-extend shortcuts -- the whole point of this modal over
+             the full Edit Staff form: no date picker fumbling for the
+             common case of "just push the end date out". Each button
+             extends from whichever is later, today or the current
+             assigned_end, so re-clicking one after it's already expired
+             doesn't backdate the new window. -->
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-1.5">QUICK EXTEND</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(30)">+30 days</button>
+            <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(90)">+90 days</button>
+            <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(180)">+6 months</button>
+            <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(365)">+1 year</button>
+            <!-- Sets assigned_end to the PERMANENT_ASSIGNED_END sentinel
+                 (see app.py's jinja global / services/settings_service.py)
+                 instead of extending by a day count -- the account still
+                 needs *some* assigned_end to pass login()'s tool_keeper
+                 check, this is just one far enough out to never matter. -->
+            <button type="button" class="btn btn-xs btn-outline" onclick="setReassignPermanent()">Permanent</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-action flex justify-end gap-2 mt-6">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const REASSIGN_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
+
+function setReassignPermanent() {
+  const startInput = document.getElementById('reassign-start');
+  if (!startInput.value) startInput.value = new Date().toISOString().slice(0, 10);
+  document.getElementById('reassign-end').value = REASSIGN_PERMANENT_ASSIGNED_END;
+}
+
+function extendReassignEnd(days) {
+  const endInput = document.getElementById('reassign-end');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const current = endInput.value ? new Date(endInput.value + 'T00:00:00') : today;
+  const base = current > today ? current : today;
+  base.setDate(base.getDate() + days);
+  endInput.value = base.toISOString().slice(0, 10);
+}
+
+// Mirrors submitEditStaffForm's fetch-based JSON submit (staff/_edit_modal.html)
+// but only ever sends assigned_start/assigned_end -- /staff/<id>/edit already
+// leaves role/RFID untouched when they're absent from the body, so this
+// never risks clobbering anything this modal doesn't show.
+async function submitReassignUsageForm(event, id) {
+  event.preventDefault();
+  const form = document.getElementById('reassign-usage-form');
+  const errorBox = document.getElementById('reassign-usage-error');
+  errorBox.classList.add('hidden');
+
+  const payload = {
+    assigned_start: form.assigned_start.value || null,
+    assigned_end: form.assigned_end.value || null,
+  };
+
+  try {
+    const res = await fetch(`/api/v1/staff/${id}/edit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorBox.textContent = result.error || "That account's usage couldn't be reassigned";
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Usage reassigned', type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    errorBox.textContent = "That account's usage couldn't be reassigned";
+    errorBox.classList.remove('hidden');
+  }
+}
+</script>

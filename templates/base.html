@@ -4,16 +4,19 @@
   <meta charset="UTF-8">
   <script>
     try {
-      // Three modes now, not two -- Mixed (dark sidebar/main-shell, light
-      // content card -- this is what "tesda" alone always looked like) is
-      // still the app-wide default, unchanged. Light is the new addition:
-      // same "tesda" color tokens, but the sidebar stays light too instead
-      // of being forced dark -- toggled by data-sidebar, independent of
-      // data-theme, since Mixed and Light share the exact same palette and
-      // only differ in whether that one override applies (see the
-      // data-sidebar CSS rules further down). Dark is the native dark
-      // theme, unchanged. Read this early, before <body>, so there's no
-      // flash of the wrong look on load.
+      // Four modes now -- Mixed (dark sidebar/main-shell, light content
+      // card -- this is what "tesda" alone always looked like) is still
+      // the app-wide default, unchanged. Light is the same "tesda" color
+      // tokens, but the sidebar stays light too instead of being forced
+      // dark -- toggled by data-sidebar, independent of data-theme, since
+      // Mixed and Light share the exact same palette and only differ in
+      // whether that one override applies (see the data-sidebar CSS rules
+      // further down). Dark is the native dark theme, unchanged. Modern
+      // Dark is a distinct 4th theme (data-theme="tesda-modern", see
+      // static/css/input.css) with its own deeper, tonal-elevation
+      // surfaces and real shadows -- not a re-skin of Dark. Read this
+      // early, before <body>, so there's no flash of the wrong look on
+      // load.
       var staffKey = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
       var savedMode = localStorage.getItem('app-theme:' + staffKey);
       // Back-compat: earlier versions stored the raw data-theme value here
@@ -27,6 +30,8 @@
         document.documentElement.setAttribute('data-sidebar', 'light');
       } else if (savedMode === 'dark') {
         document.documentElement.setAttribute('data-theme', 'tesda-dark');
+      } else if (savedMode === 'modern') {
+        document.documentElement.setAttribute('data-theme', 'tesda-modern');
       }
     } catch (e) {
     }
@@ -180,10 +185,12 @@
   .logo-theme-dark {
     display: none;
   }
-  html[data-theme="tesda-dark"] .logo-theme-light {
+  html[data-theme="tesda-dark"] .logo-theme-light,
+  html[data-theme="tesda-modern"] .logo-theme-light {
     display: none;
   }
-  html[data-theme="tesda-dark"] .logo-theme-dark {
+  html[data-theme="tesda-dark"] .logo-theme-dark,
+  html[data-theme="tesda-modern"] .logo-theme-dark {
     display: inline-block;
   }
 
@@ -306,6 +313,38 @@
     --color-base-100: #2a2a30;
     --color-base-200: #323238;
     --color-base-300: #3a3a41;
+    --color-base-content: #e8e8e8;
+  }
+
+  /* ======================================================================
+     "Modern Dark" (tesda-modern) -- its own elevation ramp, separate from
+     tesda-dark above, one full tier deeper (sidebar is the *backmost*
+     MD3 layer here, in front of nothing, so it should read as the
+     darkest thing on screen) with the content card, popups, and modals
+     each a further step lighter -- a real 4-tier ramp instead of
+     everything competing at similar darkness. The content card also
+     gets a real shadow (Dark's doesn't) -- input.css's matching
+     elevation-shadow section covers modals/dropdowns/.sheet-panel for
+     this theme, but #content-card is a plain always-visible div, not
+     one of those, so it needs its own here.
+     ====================================================================== */
+  html[data-theme="tesda-modern"] #sidebar,
+  html[data-theme="tesda-modern"] #main-shell {
+    --color-base-100: #0c0d0e;
+    --color-base-200: #141518;
+    --color-base-300: #1c1d20;
+  }
+  html[data-theme="tesda-modern"] #content-card {
+    --color-base-100: #1a1b1e;
+    --color-base-200: #232427;
+    --color-base-300: #2c2d31;
+    --color-base-content: #e8e8e8;
+    box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.55);
+  }
+  html[data-theme="tesda-modern"] #sidebar .dropdown-content {
+    --color-base-100: #26272b;
+    --color-base-200: #303136;
+    --color-base-300: #3a3b40;
     --color-base-content: #e8e8e8;
   }
 
@@ -650,8 +689,11 @@
 
         <!-- System (settings) intentionally last -- the near-universal
              convention of pinning Settings at the very bottom of the nav,
-             below every other admin tool. -->
-        {% if staff and staff.role == "admin" %}
+             below every other admin tool. in_charge sees this too now
+             (system.html itself hides the admin-only cards -- Session
+             Settings/Account Security/Feature Access -- from anyone but
+             admin), just tool_keeper doesn't. -->
+        {% if staff and staff.role in ("admin", "in_charge") %}
         <a href="/system" data-tooltip="System" data-tooltip-rail aria-label="System"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path in ['/system', '/barcodes'] %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
@@ -1479,6 +1521,7 @@
               <div class="space-y-1">
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active loans / Overdue / Returned</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Quick date filter: Today / Yesterday</span><span class="flex gap-1"><kbd class="kbd kbd-sm">T</kbd><kbd class="kbd kbd-sm">Y</kbd></span></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">New checkout</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
                 <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Return items</span><kbd class="kbd kbd-sm">Alt+R</kbd></div>
@@ -1525,6 +1568,14 @@
               </div>
             </div>
             {% endif %}
+
+            <div>
+              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Feedback &amp; Bug Reports</p>
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: Open / Resolved / All</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd></span></div>
+                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
+              </div>
+            </div>
 
             {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
             <div>
@@ -2713,27 +2764,35 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
-// Three modes now, not two -- see the head boot script's comment at the
-// top of this file for the full reasoning. Each maps to a (data-theme,
-// data-sidebar) pair; Mixed and Light share data-theme="tesda" (same
-// color tokens throughout) and differ only in data-sidebar, which the
-// CSS overrides further up this file key off of. Cycling order
-// (Mixed -> Light -> Dark -> Mixed -> ...) keeps the old default first,
-// so an existing saved "tesda" preference (mapped to 'mixed' below)
-// lands in the exact same visual spot it always has.
-const THEME_MODES = ['mixed', 'light', 'dark'];
+// Four modes now -- see the head boot script's comment at the top of
+// this file for the full reasoning. Mixed and Light share
+// data-theme="tesda" (same color tokens throughout) and differ only in
+// data-sidebar, which the CSS overrides further up this file key off
+// of. Dark and Modern Dark are two fully separate themes
+// (data-theme="tesda-dark" / "tesda-modern") -- Modern Dark isn't a
+// variant of Dark, it has its own deeper surfaces/shadows defined in
+// static/css/input.css. Cycling order (Mixed -> Light -> Dark -> Modern
+// Dark -> Mixed -> ...) keeps the old default first and Dark right
+// after it, so an existing saved "tesda"/"tesda-dark" preference (mapped
+// to 'mixed'/'dark' below) lands in the exact same visual spot it always
+// has -- Modern Dark is purely additive at the end of the cycle.
+const THEME_MODES = ['mixed', 'light', 'dark', 'modern'];
 const THEME_MODE_ATTRS = {
   mixed: { theme: 'tesda', sidebar: 'dark' },
   light: { theme: 'tesda', sidebar: 'light' },
   dark: { theme: 'tesda-dark', sidebar: 'dark' },
+  modern: { theme: 'tesda-modern', sidebar: 'dark' },
 };
-const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode' };
+const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode', modern: 'Modern Dark' };
 const THEME_MODE_ICONS = {
   // Contrast glyph (half-filled circle) -- distinct from the plain sun/moon
   // below, reads as "part light, part dark" at a glance.
   mixed: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>',
   light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
+  // Moon + sparkle -- distinct from plain Dark's bare crescent, reads as
+  // "dark, plus something extra" at a glance.
+  modern: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12.79A9 9 0 1110.21 3a7 7 0 008.79 9.79z" fill="currentColor" stroke="none"/><path d="M19 3v4M17 5h4"/></svg>',
 };
 
 const STAFF_KEY = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
@@ -2742,6 +2801,7 @@ function currentThemeMode() {
   const theme = document.documentElement.getAttribute('data-theme');
   const sidebar = document.documentElement.getAttribute('data-sidebar');
   if (theme === 'tesda-dark') return 'dark';
+  if (theme === 'tesda-modern') return 'modern';
   if (theme === 'tesda' && sidebar === 'light') return 'light';
   return 'mixed';
 }

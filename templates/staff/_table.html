@@ -37,13 +37,14 @@
          keeps the column count -- and everything to its right, including the
          pagination footer -- from shifting sideways depending on who's viewing it. -->
     <col style="width: 2.5rem">
-    <col style="width: 19%">
+    <col style="width: 17%">
+    <col style="width: 10%">
+    <col style="width: 9%">
+    <col style="width: 9%">
+    <col style="width: 14%">
+    <col style="width: 13%">
     <col style="width: 11%">
-    <col style="width: 10%">
-    <col style="width: 10%">
-    <col style="width: 16%">
-    <col style="width: 16%">
-    <col style="width: 10%">
+    <col style="width: 9%">
     <col style="width: 5rem">
   </colgroup>
   <thead>
@@ -60,6 +61,7 @@
       {{ sort_header("ROLE", "role") }}
       {{ sort_header("DEPARTMENT", "department") }}
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">ASSIGNED</th>
+      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">USAGE</th>
       <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">STATUS</th>
       <th class="py-2 font-semibold text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
     </tr>
@@ -101,11 +103,18 @@
 
       <td class="py-2">
         {% if row.role == "admin" %}
-        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-primary/10 text-primary">Admin</span>
+        <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-primary/10 text-primary">Admin</span>
         {% elif row.role == "in_charge" %}
-        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-info/10 text-info">In Charge</span>
+        <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-info/10 text-info">In Charge</span>
         {% else %}
-        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/70">Tool Keeper</span>
+        <!-- whitespace-nowrap -- "Tool Keeper" was wrapping onto two lines
+             in this column's tight width, inflating every row's height.
+             The badge is allowed to overflow its <td> a touch instead
+             (table-fixed only fixes column *track* widths, not content
+             clipping) -- a few px of visual overflow into the roomy
+             DEPARTMENT column next to it reads far better than every row
+             in the table being twice as tall. -->
+        <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/70">Tool Keeper</span>
         {% endif %}
       </td>
 
@@ -113,16 +122,51 @@
 
       <td class="py-2 text-base-content/70 truncate">
         {% if row.assigned_start or row.assigned_end %}
-        {{ row.assigned_start or "—" }} &rarr; {{ row.assigned_end or "—" }}
-        {% elif row.role in ("admin", "in_charge") %}
-        <!-- Admin/in_charge accounts never have an assigned window -- see
-             routes/auth.py's login() (only tool_keeper checks
-             assigned_start/assigned_end) -- so a blank pair here isn't a
+          {% if row.assigned_end == PERMANENT_ASSIGNED_END %}
+          {{ row.assigned_start or "—" }} &rarr; <span class="text-base-content/50">Permanent</span>
+          {% else %}
+          {{ row.assigned_start or "—" }} &rarr; {{ row.assigned_end or "—" }}
+          {% endif %}
+        {% elif row.role == "admin" %}
+        <!-- Admin accounts never have an assigned window -- see
+             routes/auth.py's login() (only tool_keeper's window is
+             actually enforced there) -- so a blank pair here isn't a
              missing setup step the way it would be for a tool_keeper,
              it's just "this role doesn't expire". -->
         <span class="text-base-content/50">Permanent</span>
+        {% elif row.role == "in_charge" %}
+        <!-- in_charge CAN have a real window set (the Add/Edit forms
+             don't restrict these fields by role) -- it's just not
+             enforced at login() the way tool_keeper's is, so a blank
+             pair here is worth flagging as "not set yet" same as
+             tool_keeper, but without claiming it blocks sign-in (it
+             doesn't, today). -->
+        <span class="text-warning" data-tooltip="No assignment period set for this In Charge account yet">Not set</span>
         {% else %}
         <span class="text-warning" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
+        {% endif %}
+      </td>
+
+      <td class="py-2">
+        {% if row.usage_status == "permanent" %}
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60 whitespace-nowrap">Indefinite</span>
+        {% elif row.usage_status == "expired" %}
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-error/10 text-error whitespace-nowrap"
+              title="Assignment window ended {{ row.assigned_end }} -- this account can no longer log in on it">
+          Expired {{ -row.usage_days_left }}d ago
+        </span>
+        {% elif row.usage_status == "expiring_soon" %}
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning whitespace-nowrap"
+              title="Assignment window ends {{ row.assigned_end }}">
+          {% if row.usage_days_left == 0 %}Last day{% elif row.usage_days_left == 1 %}1 day left{% else %}{{ row.usage_days_left }} days left{% endif %}
+        </span>
+        {% elif row.usage_status == "active" %}
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-success/10 text-success whitespace-nowrap"
+              title="Assignment window ends {{ row.assigned_end }}">
+          {{ row.usage_days_left }} days left
+        </span>
+        {% else %}
+        <span class="text-base-content/40">—</span>
         {% endif %}
       </td>
 
@@ -152,6 +196,14 @@
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit Details</a>
             </li>
+            {% if row.role != "admin" %}
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/reassign-form" hx-target="#modal-container" hx-swap="innerHTML" data-tooltip="Quickly extend or change the assignment window without opening the full edit form">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+                Reassign Usage
+              </a>
+            </li>
+            {% endif %}
             {% if row.is_active %}
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/staff/{{ row.id }}/reset-password-form" hx-target="#modal-container" hx-swap="innerHTML">
@@ -209,7 +261,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="9" class="py-12 text-center text-sm text-base-content/50">
+      <td colspan="10" class="py-12 text-center text-sm text-base-content/50">
         No staff accounts match these filters.
       </td>
     </tr>

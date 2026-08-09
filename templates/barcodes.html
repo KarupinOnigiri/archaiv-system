@@ -89,7 +89,7 @@
               onclick="BarcodeLabels.rowClick(event, this)">
             <td class="py-2.5">
               <input type="checkbox" class="barcode-checkbox checkbox checkbox-sm" onchange="BarcodeLabels.onCheck()"
-                     data-code="{{ a.asset_id }}" data-barcode="{{ a.barcode_id }}" data-label="{{ a.name }}"
+                     data-type="asset" data-code="{{ a.asset_id }}" data-barcode="{{ a.barcode_id }}" data-label="{{ a.name }}"
                      aria-label="Select {{ a.name }}">
             </td>
             <td class="py-2.5 text-sm text-base-content/60 truncate">{{ a.asset_id }}</td>
@@ -131,7 +131,7 @@
               onclick="BarcodeLabels.rowClick(event, this)">
             <td class="py-2.5">
               <input type="checkbox" class="barcode-checkbox checkbox checkbox-sm" onchange="BarcodeLabels.onCheck()"
-                     data-code="{{ m.member_code }}" data-barcode="{{ m.barcode_id }}" data-label="{{ mname }}"
+                     data-type="member" data-code="{{ m.member_code }}" data-barcode="{{ m.barcode_id }}" data-label="{{ mname }}"
                      aria-label="Select {{ mname }}">
             </td>
             <td class="py-2.5 text-sm text-base-content/60 truncate">{{ m.member_code }}</td>
@@ -154,21 +154,82 @@
      modal past the viewport. Print and PDF export both read from this
      same rendered grid. -->
 <dialog id="barcode-preview-modal" class="modal">
-  <div class="modal-box max-w-6xl w-11/12">
-    <div class="flex items-center justify-between mb-1">
+  <!-- Fixed height (not just a max-width) so switching Label Size below
+       never resizes this modal -- the on-screen grid's own card size no
+       longer changes with that pick (see buildLabelSheet's comment), so
+       there's nothing left that would grow/shrink the box anyway, but
+       the fixed height also protects against the sheet's own item count
+       doing the same thing. -->
+  <div class="modal-box max-w-6xl w-11/12 h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between mb-1 shrink-0">
       <h3 class="font-bold text-lg">Label preview</h3>
       <button type="button" onclick="document.getElementById('barcode-preview-modal').close()"
               class="btn btn-ghost btn-sm btn-circle" aria-label="Close">✕</button>
     </div>
-    <p class="text-xs text-base-content/50 mb-4">
-      <span id="barcode-preview-count"></span> -- scroll to see all. Label size in the downloaded PDF isn't tied to a specific sheet template; check your label stock before printing it.
+    <!-- Barcode format/type -- shown once here (not per label; every
+         label on this page uses the same symbology) and again as a
+         small header line on the downloaded PDF, so both surfaces state
+         it rather than leaving it to be inferred from the bars. -->
+    <p class="text-xs text-base-content/60 mb-0.5 shrink-0">
+      Format: <span id="barcode-preview-format" class="font-medium"></span>
+    </p>
+    <p class="text-xs text-base-content/50 mb-4 shrink-0">
+      <span id="barcode-preview-count"></span> -
+      Label size set to: <span id="barcode-preview-size-label" class="font-medium text-base-content/70"></span>
+      
     </p>
 
-    <div id="barcode-label-sheet" class="grid grid-cols-4 gap-3 max-h-[65vh] overflow-y-auto pr-1 pb-1"></div>
+    <div id="barcode-label-sheet" class="grid grid-cols-4 gap-3 flex-1 min-h-0 content-start overflow-y-auto pr-1 pb-1"></div>
 
-    <div class="modal-action">
+    <div class="modal-action items-center shrink-0">
+      <!-- Label size -- Small fits 5 labels per row in the PDF, Regular
+           4, Large 3 (see LABEL_SIZE_PRESETS below). Only affects the
+           downloaded PDF (fixed physical mm dimensions there) -- the
+           preview grid above stays the same fixed on-screen size no
+           matter which is picked, so this button group is the only
+           thing that shows which one is actually selected right now.
+           Same button-group-as-toggle pattern as Reports' "By Asset/By
+           Category" groups (templates/reports.html). -->
+      <div class="flex items-center gap-2 mr-auto">
+        <span class="text-xs font-semibold text-base-content/50 tracking-wide">LABEL SIZE</span>
+        <!-- btn-primary (not btn-active) marks the selected size -- a
+             solid color fill actually reads as "selected" at a glance;
+             btn-active alone falls back to a barely-there gray tint
+             here (no --btn-color set on a plain .btn), which is why the
+             previous version of this looked unhighlighted. btn-outline
+             is the deliberate "not selected" resting state so there's a
+             clear on/off contrast between the two, not just a subtle
+             shade difference. -->
+        <div class="join">
+          <button type="button" id="barcode-size-small" class="join-item btn btn-xs btn-outline" onclick="BarcodeLabels.setLabelSize('small')">Small</button>
+          <button type="button" id="barcode-size-regular" class="join-item btn btn-xs btn-primary" onclick="BarcodeLabels.setLabelSize('regular')">Regular</button>
+          <button type="button" id="barcode-size-large" class="join-item btn btn-xs btn-outline" onclick="BarcodeLabels.setLabelSize('large')">Large</button>
+        </div>
+      </div>
       <button type="button" onclick="document.getElementById('barcode-preview-modal').close()" class="btn btn-sm">Close</button>
-      <button type="button" onclick="BarcodeLabels.downloadPdf()" class="btn btn-primary btn-sm">Download PDF</button>
+      <button type="button" onclick="BarcodeLabels.previewPdf()" class="btn btn-primary btn-sm">Preview PDF</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- PDF preview -- shows the exact document downloadPdf() would produce
+     (same buildPdfDoc(), rendered into an <iframe> via a blob URL) before
+     committing to anything, so a size that turns out too cramped or too
+     sparse is obvious here rather than after opening a downloaded file.
+     "Back" returns to the label-size picker without downloading;
+     "Download PDF" saves this exact already-built document (no
+     re-render), so what was previewed is exactly what gets saved. -->
+<dialog id="barcode-pdf-preview-modal" class="modal">
+  <div class="modal-box max-w-4xl w-11/12 h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between mb-2 shrink-0">
+      <h3 class="font-bold text-lg">PDF preview -- <span id="barcode-pdf-preview-size-label" class="font-normal text-base-content/60"></span></h3>
+      <button type="button" onclick="BarcodeLabels.closePdfPreview()" class="btn btn-ghost btn-sm btn-circle" aria-label="Close">✕</button>
+    </div>
+    <iframe id="barcode-pdf-preview-frame" class="flex-1 min-h-0 w-full rounded-lg border border-base-300 bg-base-200" title="Barcode labels PDF preview"></iframe>
+    <div class="modal-action shrink-0">
+      <button type="button" class="btn btn-sm" onclick="BarcodeLabels.closePdfPreview()">Back</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="BarcodeLabels.confirmDownload()">Download PDF</button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -215,6 +276,65 @@
 const BarcodeLabels = (function () {
   let activeTab = 'assets';
 
+  // Single source of truth for the symbology -- read by both the preview
+  // grid's JsBarcode call and the PDF's, and displayed as-is above each
+  // (the preview modal's #barcode-preview-format span; deliberately NOT
+  // printed anywhere on the PDF itself anymore -- it used to get a small
+  // header line on every page, but that's exactly the kind of chrome
+  // that doesn't belong on an actual label sheet you're about to cut up
+  // and hand out) so neither surface can silently drift from what the
+  // other is actually generating.
+  const BARCODE_FORMAT = 'CODE128';
+  const BARCODE_FORMAT_LABEL = 'CODE128 (Code 128)';
+
+  // Small/Regular/Large, sized so each hits an exact column count per
+  // A4 row once laid out with the fixed gapX/marginX below: Small 5,
+  // Regular 4, Large 3. Same 2:1 width:height ratio throughout so the
+  // barcode's own proportions don't change shape, just scale. These
+  // also now drive the on-screen preview grid's own card size (see
+  // buildLabelSheet) -- not just the PDF -- so picking one shows
+  // roughly what you're about to get before ever opening the PDF.
+  const LABEL_SIZE_PRESETS = {
+    small: { cardW: 34, cardH: 17 },
+    regular: { cardW: 44, cardH: 22 },
+    large: { cardW: 60, cardH: 30 },
+  };
+  const LABEL_SIZE_TEXT = { small: 'Small', regular: 'Regular', large: 'Large' };
+  let selectedLabelSize = 'regular';
+
+  // Set once by previewPdf() and read by confirmDownload() -- downloading
+  // saves the *exact* document that was just shown in the preview iframe
+  // rather than rebuilding a fresh one, so what you reviewed is
+  // guaranteed to be what you get, not a second render that could drift
+  // if any generation state changed in between.
+  let pdfPreviewDoc = null;
+  let pdfPreviewUrl = null;
+
+  // Only updates which button is highlighted and the "Label size set
+  // to: ..." text -- the preview grid itself (buildLabelSheet) is
+  // deliberately NOT re-rendered here. It used to scale the cards/
+  // barcodes to roughly match each size, but that broke down badly for
+  // Small (barcodes butting up against each other with no gap) and made
+  // the whole modal resize itself every time someone picked a
+  // different size. The preview is now just a fixed-size on-screen
+  // reference regardless of which size is selected -- "Preview PDF" is
+  // the accurate way to see what a given size actually looks like.
+  function setLabelSize(size) {
+    if (!LABEL_SIZE_PRESETS[size]) return;
+    selectedLabelSize = size;
+    // btn-primary (solid fill) marks the selected size, btn-outline
+    // marks the other two -- see the buttons' own markup comment for
+    // why this replaced a plain btn-active toggle (not enough contrast
+    // to actually read as "selected").
+    Object.keys(LABEL_SIZE_PRESETS).forEach(function (s) {
+      const btn = document.getElementById(`barcode-size-${s}`);
+      btn.classList.toggle('btn-primary', s === size);
+      btn.classList.toggle('btn-outline', s !== size);
+    });
+    const sizeLabelEl = document.getElementById('barcode-preview-size-label');
+    if (sizeLabelEl) sizeLabelEl.textContent = LABEL_SIZE_TEXT[size];
+  }
+
   function setTab(tab) {
     activeTab = tab;
     document.getElementById('barcode-tab-assets').classList.toggle('btn-ghost', tab !== 'assets');
@@ -223,6 +343,14 @@ const BarcodeLabels = (function () {
     document.getElementById('barcode-list-members').classList.toggle('hidden', tab !== 'members');
     document.getElementById('barcode-search').value = '';
     filterRows();
+    // The toolbar's "Select all visible" checkbox is shared chrome across
+    // both tabs (there's only one #barcode-select-all), but each tab has
+    // its own independent selection -- without this, checking "select
+    // all" on Inventory then switching to Members left the checkbox
+    // showing checked even though none of the Members rows actually
+    // were. Recomputed from whichever tab is now active, same as after
+    // any other selection change (see onCheck/toggleSelectAll below).
+    syncSelectAllState();
   }
 
   function filterRows() {
@@ -232,6 +360,20 @@ const BarcodeLabels = (function () {
       const matches = !q || row.dataset.search.includes(q);
       row.classList.toggle('hidden', !matches);
     });
+    syncSelectAllState();
+  }
+
+  // Recomputes "Select all visible" (the shared toolbar checkbox, plus
+  // this tab's own header checkbox) from the *current* tab's actual
+  // checkbox state, rather than trusting whatever it was last set to --
+  // that's what lets it stay correct across tab switches and search
+  // filtering instead of just reflecting a stale click.
+  function syncSelectAllState() {
+    const container = document.getElementById(activeTab === 'assets' ? 'barcode-list-assets' : 'barcode-list-members');
+    const visibleBoxes = Array.from(container.querySelectorAll('.barcode-row:not(.hidden) .barcode-checkbox'));
+    const allChecked = visibleBoxes.length > 0 && visibleBoxes.every(function (cb) { return cb.checked; });
+    document.getElementById('barcode-select-all').checked = allChecked;
+    document.getElementById(`barcode-select-all-${activeTab}-header`).checked = allChecked;
   }
 
   // Clicking anywhere on a row toggles its checkbox, same convenience
@@ -250,8 +392,7 @@ const BarcodeLabels = (function () {
     container.querySelectorAll('.barcode-row:not(.hidden) .barcode-checkbox').forEach(function (cb) {
       cb.checked = checked;
     });
-    document.getElementById('barcode-select-all').checked = checked;
-    document.getElementById(`barcode-select-all-${activeTab}-header`).checked = checked;
+    syncSelectAllState();
     onCheck();
   }
 
@@ -259,12 +400,59 @@ const BarcodeLabels = (function () {
     return Array.from(document.querySelectorAll('.barcode-checkbox:checked'));
   }
 
+  // Flattens the current selection (which can span both tabs at once --
+  // .barcode-checkbox:checked isn't scoped to activeTab) into the
+  // {type, code, label} shape routes/staff.py's log-generate/log-download
+  // endpoints expect, so the Activity Log can say exactly which assets
+  // and which members a label sheet was for, not just "someone used
+  // Barcode Labels".
+  function collectSelectedItems() {
+    return selectedCheckboxes().map(function (cb) {
+      return { type: cb.dataset.type, code: cb.dataset.code, label: cb.dataset.label };
+    });
+  }
+
+  // Fire-and-forget audit log write -- a failed log call shouldn't block
+  // or error out the actual generate/download the user is doing, so
+  // this only ever warns to the console, same "don't let logging break
+  // the real action" reasoning as every other best-effort audit call in
+  // this app.
+  function logBarcodeAction(endpoint, extra) {
+    const items = collectSelectedItems();
+    if (items.length === 0) return;
+    fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify(Object.assign({ items: items }, extra)),
+    }).catch(function (err) {
+      console.warn('Barcode activity log call failed:', err);
+    });
+  }
+
   function onCheck() {
     const count = selectedCheckboxes().length;
     document.getElementById('barcode-selected-count').textContent = `${count} selected`;
     document.getElementById('barcode-generate-btn').disabled = count === 0;
+    syncSelectAllState();
   }
 
+  // Builds the on-screen preview grid at the currently-selected label
+  // size -- both the card's own footprint (via inline width, since the
+  // sheet is a plain flex-wrap now instead of a fixed grid-cols-4) and
+  // the barcode/label content inside it scale together, relative to
+  // Regular's own baseline dimensions. PREVIEW_PX_PER_MM is purely an
+  // on-screen legibility factor, not tied to the PDF's actual print
+  // resolution the way its canvas render is.
+  // Fixed-size preview grid -- deliberately does NOT scale with
+  // selectedLabelSize (see setLabelSize's comment above for why: the
+  // scaled version broke down for Small, with barcodes butting up
+  // against each other with no visible gap, and made the modal itself
+  // resize on every size change). Same fixed JsBarcode params
+  // regardless of which size is selected -- this is a fixed on-screen
+  // reference, not a to-scale rendering of any particular size.
   function buildLabelSheet() {
     const selected = selectedCheckboxes();
     const sheet = document.getElementById('barcode-label-sheet');
@@ -289,7 +477,7 @@ const BarcodeLabels = (function () {
       // digits, no dashes since the no-dash format change) with no
       // special-character escaping needed.
       JsBarcode(svg, cb.dataset.barcode, {
-        format: 'CODE128',
+        format: BARCODE_FORMAT,
         displayValue: true,
         text: cb.dataset.code,
         fontSize: 12,
@@ -297,41 +485,58 @@ const BarcodeLabels = (function () {
         margin: 4,
       });
     });
-
-    return selected;
   }
 
   function generate() {
-    const selected = buildLabelSheet();
+    const selected = selectedCheckboxes();
     if (selected.length === 0) return;
     document.getElementById('barcode-preview-count').textContent =
       `${selected.length} label${selected.length === 1 ? '' : 's'}`;
+    document.getElementById('barcode-preview-format').textContent = BARCODE_FORMAT_LABEL;
+    setLabelSize('regular');
+    buildLabelSheet();
+    logBarcodeAction('/api/v1/barcodes/log-generate');
     document.getElementById('barcode-preview-modal').showModal();
   }
 
   // Renders each barcode a second time onto an offscreen <canvas> (jsPDF
   // needs a raster image, not the SVG already in the preview grid) and
-  // lays them out in a fixed grid across as many A4 pages as needed,
-  // then triggers a real .pdf download -- same underlying JsBarcode
-  // call, different target/size for print-resolution output.
-  function downloadPdf() {
+  // lays them out in a fixed grid across as many A4 pages as needed.
+  // Returns the built jsPDF document rather than saving it directly --
+  // previewPdf() shows it in an iframe first; confirmDownload() is what
+  // actually triggers the save, on that exact same document.
+  function buildPdfDoc() {
     const selected = selectedCheckboxes();
-    if (selected.length === 0) return;
+    if (selected.length === 0) return null;
 
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' }); // 210x297mm
 
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const marginX = 10, marginY = 12;
-    // gapX/gapY widened (were 4/6mm) so the cut-guide box below has real
-    // breathing room from both the barcode content and the neighboring
-    // label's own guide, instead of sitting right on top of either.
-    const cardW = 44, cardH = 26, gapX = 7, gapY = 10;
+
+    const { cardW, cardH } = LABEL_SIZE_PRESETS[selectedLabelSize] || LABEL_SIZE_PRESETS.regular;
+
+    // cutGuidePad* are fixed regardless of label size (they're about how
+    // much clearance scissors need, not about the label's own content).
+    // gapX is deliberately exactly 2x cutGuidePadSide, and gapY exactly
+    // cutGuidePadTop + cutGuidePadBottom -- both make one card's guide
+    // line land on the *exact same position* as its neighbor's (left/
+    // right for gapX, top/bottom for gapY), so all four sides overlap
+    // into a single cut instead of two close, separate dashed lines.
+    // Margins trimmed down from the old 10/12mm so each size hits its
+    // target column count per row on an A4 sheet (Small 5, Regular 4,
+    // Large 3), while still leaving a safe ~6-8mm border most printers
+    // can actually print into.
+    const cutGuidePadTop = 3.5;
+    const cutGuidePadBottom = 3.25;
+    const cutGuidePadSide = 3.0;
+    const marginX = 6, marginY = 8;
+    const gapX = cutGuidePadSide * 2;
+    const gapY = cutGuidePadTop + cutGuidePadBottom;
     const cols = Math.max(1, Math.floor((pageW - 2 * marginX + gapX) / (cardW + gapX)));
 
     let col = 0, x = marginX, y = marginY;
-    doc.setFontSize(8);
 
     selected.forEach(function (cb) {
       if (y + cardH > pageH - marginY) {
@@ -344,36 +549,70 @@ const BarcodeLabels = (function () {
       // way around -- printing a full sheet of labels by hand is hard to
       // cut straight without some line to follow, so every card gets one
       // regardless of position (simpler and more robust at page edges
-      // than only drawing shared lines between neighbors). Outset by
-      // cutGuidePad (not drawn flush against the card edge) so the line
-      // sits clear of both the barcode/caption content and the
-      // neighboring card's own guide -- stays under half of gapX/gapY so
-      // two adjacent guides never touch.
-      const cutGuidePad = 2.5;
+      // than only drawing shared lines between neighbors).
       doc.setDrawColor(180, 180, 180);
       doc.setLineWidth(0.15);
       doc.setLineDashPattern([1, 1], 0);
-      doc.rect(x - cutGuidePad, y - cutGuidePad, cardW + cutGuidePad * 2, cardH + cutGuidePad * 2);
+      doc.rect(
+        x - cutGuidePadSide,
+        y - cutGuidePadTop,
+        cardW + cutGuidePadSide * 2,
+        cardH + cutGuidePadTop + cutGuidePadBottom
+      );
       doc.setLineDashPattern([], 0);
 
+      // Solid card border at the label's actual bounds -- matches the
+      // preview's bordered card look instead of bare bars on blank paper.
+      doc.setDrawColor(210, 210, 210);
+      doc.setLineWidth(0.2);
+      doc.rect(x, y, cardW, cardH);
+
+      // High-resolution source render (JsBarcode's own width/height
+      // options, not the mm placement size below) so the bars stay crisp
+      // once jsPDF scales this raster down to print size, instead of the
+      // blurry upscale a low-res canvas would produce.
       const canvas = document.createElement('canvas');
       JsBarcode(canvas, cb.dataset.barcode, {
-        format: 'CODE128',
+        format: BARCODE_FORMAT,
         displayValue: true,
         text: cb.dataset.code,
-        fontSize: 22,
-        height: 60,
-        margin: 6,
+        width: 2.4,
+        fontSize: 26,
+        height: 70,
+        margin: 8,
       });
       const imgData = canvas.toDataURL('image/png');
       const imgProps = doc.getImageProperties(imgData);
-      const imgH = Math.min((cardW * imgProps.height) / imgProps.width, cardH - 6);
-      const imgY = y + (cardH - 6 - imgH) / 2;
-      doc.addImage(imgData, 'PNG', x, imgY, cardW, imgH);
 
-      doc.text(cb.dataset.label, x + cardW / 2, y + cardH - 2, {
+      // Compact, fixed layout: top inset -> barcode (fixed target height,
+      // width auto-scaled to it) -> a small fixed gap -> the name label,
+      // instead of the barcode floating at a set height and the label
+      // pinned near the card's bottom edge regardless of how tall the
+      // barcode actually ended up -- that mismatch is what left a big
+      // dead gap between the two before. Everything here scales off
+      // cardW/cardH, so Small/Regular/Large all keep the same proportions.
+      const insetX = cardW * 0.045; // mirrors .barcode-label-card's own padding
+      const topInset = cardH * 0.09;
+      const labelGap = cardH * 0.07;
+      const maxImgW = cardW - insetX * 2;
+      let imgH = cardH * 0.62;
+      let imgW = (imgH * imgProps.width) / imgProps.height;
+      if (imgW > maxImgW) {
+        imgW = maxImgW;
+        imgH = (imgW * imgProps.height) / imgProps.width;
+      }
+      const imgX = x + (cardW - imgW) / 2;
+      const imgY = y + topInset;
+      doc.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);
+
+      // Name/label line -- positioned right after the barcode image
+      // (imgY + imgH), not at a fixed distance from the card's bottom
+      // edge, so there's no leftover blank band between the two.
+      doc.setFontSize(Math.max(6, cardH * 0.32));
+      doc.setTextColor(0, 0, 0);
+      doc.text(cb.dataset.label, x + cardW / 2, imgY + imgH + labelGap, {
         align: 'center',
-        maxWidth: cardW,
+        maxWidth: maxImgW,
       });
 
       col += 1;
@@ -386,10 +625,44 @@ const BarcodeLabels = (function () {
       }
     });
 
-    doc.save('barcode-labels.pdf');
+    return doc;
   }
 
-  return { setTab, filterRows, rowClick, toggleSelectAll, onCheck, generate, downloadPdf };
+  // Builds the PDF and shows it in an <iframe> (via a blob URL) instead
+  // of downloading straight away, so a size that turns out too cramped
+  // or too sparse on the actual print layout is obvious right here,
+  // before committing to a saved file.
+  function previewPdf() {
+    const doc = buildPdfDoc();
+    if (!doc) return;
+    pdfPreviewDoc = doc;
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    pdfPreviewUrl = doc.output('bloburl');
+    document.getElementById('barcode-pdf-preview-frame').src = pdfPreviewUrl;
+    document.getElementById('barcode-pdf-preview-size-label').textContent =
+      `${LABEL_SIZE_TEXT[selectedLabelSize]} size`;
+    document.getElementById('barcode-pdf-preview-modal').showModal();
+  }
+
+  function closePdfPreview() {
+    document.getElementById('barcode-pdf-preview-modal').close();
+  }
+
+  // Saves the exact document previewPdf() already built and showed --
+  // not a fresh render -- so what was reviewed in the iframe is
+  // guaranteed to be exactly what lands on disk. Filename carries the
+  // chosen size so re-generating at a different size for the same batch
+  // doesn't silently overwrite the first download.
+  function confirmDownload() {
+    if (!pdfPreviewDoc) return;
+    pdfPreviewDoc.save(`barcode-labels-${selectedLabelSize}.pdf`);
+    logBarcodeAction('/api/v1/barcodes/log-download', { size: selectedLabelSize });
+  }
+
+  return {
+    setTab, filterRows, rowClick, toggleSelectAll, onCheck, generate, setLabelSize,
+    previewPdf, closePdfPreview, confirmDownload,
+  };
 })();
 
 // Supports a ?tab=members deep link (unused by the one entry point this
