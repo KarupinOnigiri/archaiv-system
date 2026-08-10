@@ -1,12 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- h-full + overflow-hidden: pins this page to exactly <main>'s
-     available height so it can never grow a page-level scrollbar, the
-     same fixed-viewport approach templates/home.html uses. If a future
-     card pushes the grid taller than that (e.g. a much longer
-     description), it'll get clipped rather than silently reintroducing
-     scroll -- acceptable here since every card's copy is short and
-     admin-authored, not user content that could grow unpredictably. -->
+<!-- h-full + overflow-hidden pins this to <main>'s height, same fixed-viewport
+     approach as home.html -- a future card pushing past that gets clipped rather
+     than reintroducing scroll, acceptable since every card's copy is short. -->
 <div class="h-full overflow-hidden pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
 
   <!-- Page header -->
@@ -17,24 +13,15 @@
     </div>
   </div>
 
-  <!-- 4 columns once there's room, 5 once there's more (xl) -- with 9
-       cards now on this page (admin's view), 4-per-row makes 3 rows
-       (4/4/1), tall enough to push the page past one screen on a
-       typical laptop; 5-per-row on wider/xl screens is exactly 2 rows
-       (5/4), which fits in <main>'s available height without a
-       page-level scroll. See h-full/overflow-hidden on the wrapper,
-       the same "no page scroll" approach home.html uses -- worth
-       revisiting this breakpoint again if a future card pushes the
-       count past what 5-wide/2-row can hold. -->
+  <!-- 4 columns, 5 on xl -- with 9 cards (admin's view), 5-per-row hits 2 rows
+       exactly and fits <main>'s height without a page scroll; revisit this
+       breakpoint if a future card pushes the count past what 5-wide/2-row can hold. -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
 
     {% if staff.role == "admin" %}
-    <!-- Session Settings -- admin-only: this and Account Security are
-         security/access-control policy (session lifetime, lockout
-         thresholds), not day-to-day operational settings, so they don't
-         extend to in_charge the way the cards below this block do.
-         routes/staff.py's session-settings/* endpoints enforce this
-         independently of the card being hidden here. -->
+    <!-- Session Settings -- admin-only: security/access-control policy, not
+         operational, so unlike the cards below it doesn't extend to in_charge.
+         routes/staff.py's endpoints enforce this independently too. -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
       <div>
         <div class="flex items-center gap-3 mb-2">
@@ -45,7 +32,7 @@
         </div>
         <p class="text-sm text-base-content/60">How long a staff member can stay idle, and the absolute ceiling on a session's lifetime, before they're automatically signed out.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-1-btn" data-tooltip="Manage (1)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/session-settings/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -64,7 +51,7 @@
         </div>
         <p class="text-sm text-base-content/60">How many failed login attempts trigger a lockout, and how long that lockout lasts.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-2-btn" data-tooltip="Manage (2)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/account-security/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -84,7 +71,7 @@
         </div>
         <p class="text-sm text-base-content/60">Maximum tools a trainee or trainer can have borrowed at once.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-3-btn" data-tooltip="Manage (3)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/loan-limits/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -103,7 +90,7 @@
         </div>
         <p class="text-sm text-base-content/60">How many hours before a loan's due date a "due soon" alert fires.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-4-btn" data-tooltip="Manage (4)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/notification-settings/manage-form"
               hx-target="#global-modal-container"
               hx-swap="innerHTML">
@@ -122,7 +109,7 @@
         </div>
         <p class="text-sm text-base-content/60">Default due date a checkout gets when staff don't pick one themselves.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-5-btn" data-tooltip="Manage (5)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/loan-duration/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -141,7 +128,7 @@
         </div>
         <p class="text-sm text-base-content/60">How many damaged item returns before a member's account is auto-restricted.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-6-btn" data-tooltip="Manage (6)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/damage-restriction/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -150,16 +137,11 @@
     </div>
 
     {% if staff.role == "admin" %}
-    <!-- Feature Access -- admin-only, same security/access-control
-         category as Session Settings/Account Security above (this one's
-         a master per-tab kill switch), not an operational setting.
-         Lets an admin turn a whole tab/workflow off
-         (nav link hidden, its routes blocked, related dashboard widgets
-         hidden -- see services/auth_service.py's feature_required and the
-         per-blueprint before_request hooks) without touching code.
-         Notifications/Feedback/Staff/Activity Log/System stay off this
-         list on purpose -- they're core admin infrastructure, not
-         optional workflows. -->
+    <!-- Feature Access -- admin-only, same access-control category as Session
+         Settings/Account Security above. A master per-tab kill switch (nav link,
+         routes, dashboard widgets all hidden -- see auth_service.py's feature_required).
+         Notifications/Feedback/Staff/Activity Log/System are deliberately not on
+         this list -- they're core admin infrastructure, not optional workflows. -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
       <div>
         <div class="flex items-center gap-3 mb-2">
@@ -170,7 +152,7 @@
         </div>
         <p class="text-sm text-base-content/60">Turn Inventory, Members, Borrow &amp; Return, Approvals, or Reports off for everyone. Requires your password to confirm.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-7-btn" data-tooltip="Manage (7)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/feature-flags/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
@@ -178,15 +160,9 @@
       </button>
     </div>
 
-    <!-- Database Backups -- admin-only, same category as Session
-         Settings/Account Security/Feature Access above: this controls
-         infrastructure (whether/how the app protects its own data), not
-         day-to-day operational policy, so it doesn't extend to
-         in_charge the way Loan Limits/Notification Settings/etc. do.
-         services/backup_service.py runs the actual scheduled job; this
-         card is just its on/off + interval control plus a manual
-         trigger and download list (routes/staff.py's backup-settings
-         endpoints). -->
+    <!-- Database Backups -- admin-only, same category as the cards above:
+         infrastructure, not operational policy. services/backup_service.py runs
+         the actual job; this is just its controls (routes/staff.py's backup-settings). -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
       <div>
         <div class="flex items-center gap-3 mb-2">
@@ -197,8 +173,30 @@
         </div>
         <p class="text-sm text-base-content/60">Automatic scheduled snapshots of the database, plus an on-demand backup and download.</p>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-4 self-start"
+      <button type="button" id="system-manage-8-btn" data-tooltip="Manage (8)" class="btn btn-outline btn-sm mt-4 self-start"
               hx-get="/api/v1/backup-settings/manage-form"
+              hx-target="#modal-container"
+              hx-swap="innerHTML">
+        Manage
+      </button>
+    </div>
+
+    <!-- Auto-Delete Archived Items -- admin-only, same infrastructure category as
+         Database Backups. Controls the retention window before
+         archive_purge_service.py's job permanently deletes archived items
+         (defaults to "None"/never, see migrations/0041), plus a manual Purge Now. -->
+    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center gap-3 mb-2">
+          <span class="bg-error/10 text-error rounded-full w-10 h-10 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </span>
+          <h3 class="font-semibold">Auto-Delete Archived Items</h3>
+        </div>
+        <p class="text-sm text-base-content/60">Permanently deletes archived assets and deactivated members/staff accounts after a retention window you set -- 1 week, 1 month, 6 months, 1 year, a custom number of days, or never.</p>
+      </div>
+      <button type="button" id="system-manage-9-btn" data-tooltip="Manage (9)" class="btn btn-outline btn-sm mt-4 self-start"
+              hx-get="/api/v1/archive-purge-settings/manage-form"
               hx-target="#modal-container"
               hx-swap="innerHTML">
         Manage
@@ -206,13 +204,8 @@
     </div>
     {% endif %}
 
-    <!-- Barcode Labels -- a batch utility (pick from currently-present
-         assets/members, print scannable CODE128 labels), not a
-         daily-visit destination, so it doesn't get its own sidebar tab.
-         This card is the only entry point on purpose (see barcodes_page
-         in routes/pages.py) -- no toolbar shortcut on Inventory/
-         Members, to keep this to one door in rather than scattering
-         entry points across pages. -->
+    <!-- Barcode Labels -- a batch utility, not a daily-visit destination, so no
+         sidebar tab. This card is the deliberate one entry point (see barcodes_page). -->
     <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
       <div>
         <div class="flex items-center gap-3 mb-2">
@@ -223,7 +216,7 @@
         </div>
         <p class="text-sm text-base-content/60">Pick from currently-present assets and borrowers, then print scannable barcode labels for them.</p>
       </div>
-      <a href="/barcodes" class="btn btn-outline btn-sm mt-4 self-start">
+      <a href="/barcodes" data-tooltip="Open Barcode Labels (0)" class="btn btn-outline btn-sm mt-4 self-start">
         Open Barcode Labels
       </a>
     </div>
@@ -232,4 +225,35 @@
 </div>
 
 <div id="modal-container"></div>
+<script>
+// --- Keyboard shortcuts (System) ---
+// Plain digit keys, safe here since this page has no text input. Each card's
+// number is fixed regardless of role, so it stays learnable even as the visible set varies.
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  const globalContainer = document.getElementById('global-modal-container');
+  return !!(
+    (container && container.querySelector(':scope > .modal, :scope > dialog[open]')) ||
+    (globalContainer && globalContainer.querySelector(':scope > .modal, :scope > dialog[open]'))
+  );
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.altKey || e.ctrlKey || e.metaKey || isModalOpen()) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+
+  if (e.key >= '1' && e.key <= '9') {
+    const btn = document.getElementById(`system-manage-${e.key}-btn`);
+    if (!btn) return;
+    e.preventDefault();
+    btn.click();
+    return;
+  }
+  if (e.key === '0') {
+    e.preventDefault();
+    window.location.href = '/barcodes';
+  }
+});
+</script>
 {% endblock %}

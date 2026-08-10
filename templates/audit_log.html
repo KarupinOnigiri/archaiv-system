@@ -16,6 +16,10 @@
     <div class="relative mb-5">
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
+        <button type="button" id="refresh-audit-log-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh activity log" onclick="refreshAuditLogTable()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
         <div id="audit-date-presets" class="join rounded-lg">
           <button type="button" id="audit-preset-today" class="join-item btn btn-xs btn-outline"
                   onclick="setAuditDatePreset('today')">Today</button>
@@ -23,16 +27,16 @@
                   onclick="setAuditDatePreset('yesterday')">Yesterday</button>
         </div>
 
-        <div id="audit-date-filters" class="join rounded-lg transition-shadow" title="Date range">
+        <div id="audit-date-filters" class="join rounded-lg transition-shadow" data-tooltip="Date range">
           <button type="button" id="audit-date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                  onclick="clearAuditDateFilter()" aria-label="Clear date range filter" title="Clear date range filter" disabled>
+                  onclick="clearAuditDateFilter()" aria-label="Clear date range filter" data-tooltip="Clear date range filter" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
           </button>
           <input type="date" id="audit-since-filter" name="since"
                  aria-label="From date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('since', '') }}"
-                 title="From"
+                 data-tooltip="From"
                  hx-get="/api/v1/audit-log/table"
                  hx-trigger="change"
                  hx-target="#audit-log-table-container"
@@ -45,7 +49,7 @@
                  aria-label="To date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('until', '') }}"
-                 title="To"
+                 data-tooltip="To"
                  hx-get="/api/v1/audit-log/table"
                  hx-trigger="change"
                  hx-target="#audit-log-table-container"
@@ -56,14 +60,14 @@
         </div>
 
         {% if staff.role == "admin" %}
-        <div id="audit-staff-filter-wrap" class="join rounded-lg transition-shadow" title="Staff">
+        <div id="audit-staff-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Staff">
           <button type="button" id="audit-staff-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                  onclick="clearAuditStaffFilter()" aria-label="Clear staff filter" title="Clear staff filter" disabled>
+                  onclick="clearAuditStaffFilter()" aria-label="Clear staff filter" data-tooltip="Clear staff filter" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
           </button>
           <select id="audit-staff-filter" name="staff_id"
                   aria-label="Filter by staff"
-                  class="select select-bordered select-sm join-item w-44"
+                  class="select select-bordered select-sm join-item w-[275px]"
                   hx-get="/api/v1/audit-log/table"
                   hx-trigger="change"
                   hx-target="#audit-log-table-container"
@@ -100,16 +104,16 @@
   </div>
 </div>
 
-<!-- Audit log entry detail modal -- opened by clicking any row
-     (audit_log/_table.html's onclick="openAuditLogDetail(this)"), reading
-     the clicked row's own data-* attributes rather than a second request:
-     the table's response already carries every field this shows, the row
-     just doesn't have room to display DETAILS in full. Lives here (once,
-     on the parent page) rather than inside the htmx-swapped partial so
-     it isn't torn down and recreated on every filter/page change. -->
+<!-- Audit log entry detail modal -- reads the clicked row's own data-*
+     attributes instead of a second request. Lives on the parent page
+     (not the htmx-swapped partial) so it isn't recreated on every filter change. -->
 <dialog id="audit-log-detail-modal" class="modal">
   <div class="modal-box max-w-lg">
-    <h3 class="font-bold text-lg mb-4">Activity detail</h3>
+    <div class="flex justify-between items-start mb-4">
+      <h3 class="font-bold text-lg">Activity detail</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="document.getElementById('audit-log-detail-modal').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <dl class="space-y-3 text-sm">
       <div>
         <dt class="text-xs font-semibold text-base-content/50 tracking-wide">WHEN</dt>
@@ -164,7 +168,7 @@ function formatDateLocal(d) {
 }
 
 // Prefer htmx's own trigger API over a raw dispatchEvent -- more reliable
-// across htmx versions/config than relying on native event bubbling.
+// across htmx versions than relying on native event bubbling.
 function fireHtmxChange(el) {
   if (window.htmx) {
     htmx.trigger(el, 'change');
@@ -193,10 +197,8 @@ function clearAuditDateFilter() {
   fireHtmxChange(since);
 }
 
-// No-op (rather than missing) when the staff filter isn't in the DOM at
-// all -- non-admins never get the dropdown (see audit_log_page()), so
-// updateAuditFilterUI()/clearAllAuditFilters() can call this unconditionally
-// without an admin-only guard of their own.
+// No-op when the staff filter isn't in the DOM (non-admins never get the
+// dropdown), so callers can invoke this unconditionally.
 function clearAuditStaffFilter() {
   const staffFilter = document.getElementById('audit-staff-filter');
   if (!staffFilter || staffFilter.value === '') return;
@@ -204,9 +206,26 @@ function clearAuditStaffFilter() {
   fireHtmxChange(staffFilter);
 }
 
-// Clears date range and staff together in one request, rather than
-// clearAuditDateFilter()'s single fireHtmxChange triggering one request and
-// clearAuditStaffFilter() triggering a second right after.
+// Re-fetches the table with whatever filters/page are currently in effect --
+// unlike changing a filter, a manual refresh shouldn't jump back to page 1.
+function refreshAuditLogTable() {
+  const table = document.querySelector('#audit-log-table-container table');
+  const since = document.getElementById('audit-since-filter').value;
+  const until = document.getElementById('audit-until-filter').value;
+  const staffFilter = document.getElementById('audit-staff-filter');
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  if (staffFilter && staffFilter.value) params.set('staff_id', staffFilter.value);
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '{{ offset }}');
+  htmx.ajax('GET', '/api/v1/audit-log/table', {
+    target: '#audit-log-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+
 function clearAllAuditFilters() {
   const since = document.getElementById('audit-since-filter');
   const until = document.getElementById('audit-until-filter');
@@ -278,10 +297,8 @@ document.addEventListener('htmx:afterSwap', function (evt) {
 });
 
 // --- Keyboard shortcuts (Activity Log page) ---
-// Same isTypingTarget/isModalOpen guard pattern as every other tab
-// (assets/members/staff/transactions): shortcuts back off while typing in
-// a form control or while a modal is open, so they never hijack normal
-// typing or fire "through" a modal into the page behind it.
+// Same isTypingTarget/isModalOpen guard as every other tab -- shortcuts
+// back off while typing or while a modal is open.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -297,8 +314,7 @@ function isModalOpen() {
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
-  // pagination button is currently in the table footer.
+  // ArrowLeft / ArrowRight — previous / next page.
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const container = document.getElementById('audit-log-table-container');
@@ -312,10 +328,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter (date range, staff)
-  // back to blank and blur whatever was focused, same as clicking "Clear
-  // filters" by hand. When a modal *is* open, the shared Escape handler
-  // in base.html closes it instead -- this stays out of the way then.
+  // Escape — with no modal open, reset every filter, same as clicking
+  // "Clear filters". A modal open lets base.html's handler close it instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {

@@ -24,11 +24,14 @@
     <div class="relative mb-5">
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-        <!-- No horizontal padding on this label -- its checkbox needs to
-             land at exactly the same x-position as each row's own
-             .notif-row-checkbox below (a direct, unpadded flex child of
-             its row), or "select all" visually points at nothing. -->
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none" title="Select all on this page">
+        <button type="button" id="refresh-notifications-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh notifications list" onclick="refreshNotificationsTable()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
+        <!-- No horizontal padding -- keeps this checkbox aligned with each
+             row's own .notif-row-checkbox, or "select all" visually points
+             at nothing. -->
+        <label class="flex items-center gap-2 text-sm cursor-pointer select-none" data-tooltip="Select all on this page">
           <input type="checkbox" id="select-all-notifs-checkbox" class="checkbox checkbox-sm shrink-0" aria-label="Select all notifications on this page">
           <span class="text-base-content/60">Select all</span>
         </label>
@@ -55,16 +58,16 @@
                   onclick="setNotifDatePreset('yesterday')">Yesterday</button>
         </div>
 
-        <div id="notif-date-filters" class="join rounded-lg transition-shadow" title="Date range">
+        <div id="notif-date-filters" class="join rounded-lg transition-shadow" data-tooltip="Date range">
           <button type="button" id="notif-date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                  onclick="clearNotifDateFilter()" aria-label="Clear date range filter" title="Clear date range filter" disabled>
+                  onclick="clearNotifDateFilter()" aria-label="Clear date range filter" data-tooltip="Clear date range filter" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
           </button>
           <input type="date" id="notif-since-filter" name="since"
                  aria-label="From date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('since', '') }}"
-                 title="From"
+                 data-tooltip="From"
                  hx-get="/api/v1/notifications/table"
                  hx-trigger="change"
                  hx-target="#notifications-table-container"
@@ -77,7 +80,7 @@
                  aria-label="To date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('until', '') }}"
-                 title="To"
+                 data-tooltip="To"
                  hx-get="/api/v1/notifications/table"
                  hx-trigger="change"
                  hx-target="#notifications-table-container"
@@ -159,9 +162,8 @@ function updateClearSelectedBar() {
   document.getElementById('clear-selected-notifs-count').textContent = ids.length;
   btn.classList.toggle('hidden', ids.length === 0);
 
-  // Reflect the page-level selection in the "Select all" checkbox,
-  // including an indeterminate state when only some rows are checked --
-  // same tri-state pattern as the bulk-select tables (Staff/Members/etc).
+  // Tri-state "Select all" (indeterminate when only some rows are checked),
+  // same pattern as the bulk-select tables (Staff/Members/etc).
   const all = document.querySelectorAll('.notif-row-checkbox');
   const selectAll = document.getElementById('select-all-notifs-checkbox');
   if (selectAll) {
@@ -202,10 +204,9 @@ async function clearSelectedNotifications() {
   }
 }
 
-// Delegated (not attached per-row) since #notifications-table-container's
-// contents get swapped out wholesale on every filter/page change -- a
-// direct listener on each checkbox would need re-wiring after every htmx
-// swap, this doesn't.
+// Delegated, not attached per-row -- the container's contents get swapped
+// wholesale on every filter/page change, so a direct listener would need
+// re-wiring after each swap.
 document.getElementById('notifications-table-container').addEventListener('change', function (e) {
   if (e.target.classList.contains('notif-row-checkbox')) {
     updateClearSelectedBar();
@@ -231,13 +232,33 @@ function formatDateLocal(d) {
 }
 
 // Prefer htmx's own trigger API over a raw dispatchEvent -- more reliable
-// across htmx versions/config than relying on native event bubbling.
+// across htmx versions than relying on native event bubbling.
 function fireHtmxChange(el) {
   if (window.htmx) {
     htmx.trigger(el, 'change');
   } else {
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
+}
+
+// Re-fetches the list with whatever filters/page are currently in effect --
+// unlike changing a filter, a manual refresh shouldn't jump back to page 1.
+function refreshNotificationsTable() {
+  const list = document.querySelector('#notifications-table-container [data-total-count]');
+  const since = document.getElementById('notif-since-filter').value;
+  const until = document.getElementById('notif-until-filter').value;
+  const unreadOnly = document.getElementById('show-unread-only-toggle').checked;
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  params.set('show_unread_only', unreadOnly ? '1' : '0');
+  params.set('limit', (list && list.dataset.limit) || '{{ limit }}');
+  params.set('offset', (list && list.dataset.offset) || '{{ offset }}');
+  htmx.ajax('GET', '/api/v1/notifications/table', {
+    target: '#notifications-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
 }
 
 function setNotifDatePreset(which) {
@@ -330,7 +351,7 @@ document.addEventListener('htmx:afterSwap', function (evt) {
 });
 
 // --- Keyboard shortcuts (Notifications page) ---
-// Same isTypingTarget/isModalOpen guard pattern as every other tab.
+// Same isTypingTarget/isModalOpen guard as every other tab.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -359,8 +380,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+A — "Mark all as read", the one primary action on this page,
-  // same Alt+letter convention as Add/New/Import/Export on other tabs.
+  // Alt+A — "Mark all as read", same Alt+letter convention as other tabs.
   if (e.altKey && (e.key === 'a' || e.key === 'A')) {
     if (isModalOpen()) return;
     e.preventDefault();
@@ -368,9 +388,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter (unread-only, date
-  // range) back to blank and blur whatever was focused, same as clicking
-  // "Clear filters" by hand.
+  // Escape — with no modal open, reset every filter, same as clicking
+  // "Clear filters".
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {

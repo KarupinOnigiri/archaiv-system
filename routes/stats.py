@@ -25,11 +25,8 @@ def _block_if_reports_disabled():
         return jsonify({"error": f"{get_feature_label('reports')} is currently disabled"}), 403
 
 VALID_GROUP_BY = ("asset", "category")
-# Export sheets pull well past the 10 rows each card shows on-screen (a
-# downloadable report should be closer to "everything for this range" than
-# a UI page's top-10 preview), but still capped -- an unbounded query
-# against a busy install's whole transaction history has no reason to be
-# what a "give me a spreadsheet" click waits on.
+# Exports go well past the on-screen top-10 preview, but still capped so a huge
+# install's full history doesn't become what a spreadsheet download waits on.
 EXPORT_ROW_LIMIT = 500
 
 
@@ -62,10 +59,9 @@ def _parse_date_range(args, column="transactions.time_out"):
 
 
 def _condition_rank_case(column):
-    """Same severity ranking condition_changes() uses (functional < for_repair
-    < inoperable < disposed), applied to whichever column name is passed in --
-    factored out so stats_summary() below can reuse the exact same "did this
-    come back worse" definition instead of drifting from it."""
+    """Severity ranking (functional < for_repair < inoperable < disposed) for
+    whichever column is passed in, shared with stats_summary() so both use
+    the same "worse" definition."""
     return f"""
         CASE {column}
             WHEN 'functional' THEN 1
@@ -138,14 +134,9 @@ def most_borrowed_assets():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def least_borrowed_assets():
-    """Inverse of most-borrowed — surfaces idle stock, including assets
-    with zero transactions ever. Uses a LEFT JOIN so those still show up;
-    the date filter has to live in the JOIN condition rather than WHERE,
-    or it would silently drop every zero-transaction asset.
-
-    total_count here is just every non-deleted asset — the LEFT JOIN
-    guarantees exactly one grouped row per asset regardless of the date
-    filter, so no subquery is needed to get the same number."""
+    """Inverse of most-borrowed, including assets with zero transactions.
+    LEFT JOIN keeps those visible; the date filter has to sit in the JOIN
+    condition, not WHERE, or it'd drop every zero-transaction asset."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -391,16 +382,11 @@ def top_borrowers():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def overdue_frequency():
-    """Counts how many times each member has gone overdue — a transaction
-    counts if it was returned late, or is still open and past due right
-    now. A pattern signal (repeat lateness), distinct from
-    members.is_restricted, which only reflects overdue status *right now*.
-
-    Returns both overdue_count (all matching transactions, the original
-    definition) and still_open_count (how many of those are ongoing,
-    unresolved loans) so it's clear how much of the number reflects
-    in-progress lateness vs. actual past late-returns — rather than
-    quietly picking one definition."""
+    """Counts how many times each member went overdue (returned late, or
+    still open and past due). This is repeat-lateness history, not the
+    same thing as members.is_restricted (current status only). Returns
+    both overdue_count and still_open_count so you can tell how much is
+    in-progress vs. actually resolved late."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -468,13 +454,9 @@ def overdue_frequency():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def condition_changes():
-    """How often assets/categories come back *worse* than they went out —
-    a damage-rate signal. Condition states are ranked by severity
-    (functional < for_repair < inoperable < disposed) since SQLite has no
-    built-in notion of order among them; a transaction only counts as
-    'worsened' if condition_in ranks higher (worse) than condition_out.
-    Only counts transactions recorded after condition_in existed (older
-    'returned' rows have condition_in IS NULL and are excluded)."""
+    """Damage-rate signal: how often assets/categories come back worse than
+    they went out, using the severity ranking since SQLite has no native
+    ordering for condition strings. Skips old rows without condition_in."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -565,13 +547,9 @@ def condition_changes():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def stats_summary():
-    """A handful of at-a-glance numbers for the Reports page's top KPI
-    row, all scoped to the same since/until range as every other report
-    below it: total checkouts, how many distinct assets and members that
-    involved, and two rates (overdue, damage) computed the exact same way
-    their own dedicated reports define them (overdue_frequency,
-    condition_changes) so the summary number and the detailed report
-    underneath it can never quietly disagree."""
+    """KPI row for the Reports page: total checkouts, distinct assets/members,
+    plus overdue and damage rates. Rates use the exact same definitions as
+    overdue_frequency() and condition_changes() so the numbers can't drift."""
     date_filter, date_params, error = _parse_date_range(request.args)
     if error:
         return error
@@ -591,10 +569,8 @@ def stats_summary():
         date_params,
     ).fetchone()
 
-    # Same "overdue" definition as overdue_frequency(): due_date set, and
-    # either already returned late or still open and past due right now.
-    # Rate is out of transactions that had a due date at all -- one
-    # without one was never at risk of being "overdue" in the first place.
+    # Same "overdue" definition as overdue_frequency(); rate is out of
+    # transactions that had a due date (no due date = never at risk).
     overdue_where = ["due_date IS NOT NULL"]
     if date_filter:
         overdue_where.append(date_filter)
@@ -650,30 +626,18 @@ def stats_summary():
 
 
 # # # STAFF ACTIVITY -------------------------------------------------------
-# Admin-only (stricter than every other report on this page, which are all
-# admin + in_charge) -- this is workload visibility into *staff*, and
-# staff oversight is exclusively admin territory everywhere else in the
-# app (Staff tab, assigned periods, deactivation, lockouts). in_charge
-# manages inventory and borrowers, not staff, so this has no reason to be
-# visible to them the way the other 7 reports are.
-#
-# Deliberately framed as workload/coverage, not a performance leaderboard:
-# every active staff member is listed (including zero-activity ones --
-# that's useful signal too, e.g. a tool_keeper account nobody's actually
-# using during their assigned period) and sorted alphabetically rather
-# than ranked by any count, so this doesn't read as "who's #1".
+# Admin-only, unlike the other reports here -- staff oversight is admin-only everywhere else.
+# Framed as workload/coverage, not a leaderboard: lists every active staff member
+# including zero-activity ones, sorted alphabetically rather than by count.
 
 
 @stats_bp.route("/stats/staff/activity")
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def staff_activity():
-    """One row per active staff member: checkouts processed, returns
-    processed, total logged actions (audit_log), and average checkout
-    session duration -- each independently date-filterable (since/until),
-    each computed from data that already exists elsewhere in the app
-    (transactions.borrowed_by_staff_id/returned_by_staff_id, audit_log,
-    checkout_sessions), nothing new tracked for this."""
+    """One row per active staff member: checkouts, returns, logged actions,
+    and avg session duration, each date-filterable. All pulled from existing
+    tables, nothing new tracked."""
     since = request.args.get("since")
     until = request.args.get("until")
     if since:
@@ -765,13 +729,8 @@ def staff_activity():
 
 
 # # # TOOL KEEPER "MY ACTIVITY" -------------------------------------------
-# Reports was previously admin/in_charge only -- Tool Keeper now gets in,
-# but deliberately scoped to their own activity only (no cross-staff
-# comparisons, no other borrowers' aggregate stats): every query below
-# filters to g.staff["id"] unconditionally, regardless of role, so even if
-# an admin/in_charge account requests one of these (they can, the widgets
-# just aren't in their default registry entry) it still only ever shows
-# *their own* processed checkouts/returns, never anyone else's.
+# Scoped to the caller's own activity only -- every query below filters to g.staff["id"]
+# unconditionally, so nobody sees anyone else's checkouts/returns through these endpoints.
 
 
 @stats_bp.route("/stats/my/checkouts")
@@ -894,10 +853,8 @@ def my_returns():
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("20 per minute")
 def my_overdue_handled():
-    """Transactions this staff member checked out that ended up overdue --
-    same 'overdue' definition as overdue_frequency() (late return, or still
-    open and past due right now), just scoped to loans this staff member
-    personally handed out rather than every member's."""
+    """Transactions this staff member checked out that ended up overdue,
+    same definition as overdue_frequency(), scoped to their own loans."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -995,9 +952,8 @@ def post_layout_reset():
 
 
 def _autofit(ws, headers, rows_as_lists):
-    """Same column-autofit approach as routes/staff.py's export_staff --
-    widest of the header or any cell in that column, capped so one long
-    outlier (a details string, say) can't blow the sheet out sideways."""
+    """Same autofit as routes/staff.py's export_staff: width = widest cell
+    in the column, capped so one long outlier can't blow out the sheet."""
     for i, header in enumerate(headers):
         longest = len(str(header))
         for row in rows_as_lists:
@@ -1018,11 +974,8 @@ def _write_sheet(wb, title, headers, rows_as_lists):
 
 
 # -- Per-widget (headers, rows_as_lists) builders --------------------------
-# Each one is the exact query/shape a report card on screen is built from,
-# just returning plain (title, headers, rows) instead of talking to a
-# specific output format -- export_stats() below picks CSV/XLSX per section
-# from this same set, so "export this one" and "export everything" are
-# never two different code paths that could quietly drift apart.
+# Same query/shape as the matching on-screen report card, just returning
+# plain (title, headers, rows) so export_stats() can format it as CSV/XLSX.
 
 
 def _section_summary(conn, ctx):
@@ -1288,9 +1241,8 @@ def _section_staff_activity(conn, ctx):
 
 
 def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
-    """Factory for the three near-identical Tool Keeper "my activity"
-    sections -- same shape as my_checkouts/my_returns/my_overdue_handled
-    above, just as an export sheet instead of a paginated JSON list."""
+    """Factory for the three near-identical "my activity" export sections,
+    mirroring my_checkouts/my_returns/my_overdue_handled above."""
 
     def builder(conn, ctx):
         rows = conn.execute(
@@ -1346,21 +1298,12 @@ def _rows_to_csv_bytes(headers, rows_as_lists):
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("10 per minute")
 def export_stats():
-    """Exports a chosen set of report sections (`sections=` -- a
-    comma-separated list of widget ids, defaulting to every widget the
-    caller's role can see), in a chosen format (`format=xlsx|csv`,
-    default xlsx). All scoped to the same since/until range as the Reports
-    page itself (and the group_by choices its own toggles were on when
-    Export was clicked, passed through as loan_duration_group_by /
-    condition_changes_group_by) -- a static snapshot of exactly what was
-    on screen, not a separate live query someone could later find
-    disagreeing with it.
-
-    `sections` is validated against services/report_widgets.py's registry
-    for the caller's actual role, not trusted from the request -- a
-    tool_keeper (or a tampered in_charge request) asking for
-    "staff_activity" gets it silently dropped, not a 403 that would leak
-    whether the id exists at all."""
+    """Exports chosen report sections (`sections=`, comma-separated widget
+    ids, defaults to everything the role can see) as xlsx or csv, using the
+    same since/until range and group_by toggles as the Reports page.
+    `sections` is filtered against the caller's actual role in
+    report_widgets.py rather than trusted as-is, so a tampered request for
+    e.g. "staff_activity" just gets silently dropped, not a 403."""
     role = g.staff["role"]
     allowed_ids = {w["id"] for w in widgets_for_role(role)}
 
@@ -1423,10 +1366,8 @@ def export_stats():
         response.headers["Content-Disposition"] = f"attachment; filename={basename}.xlsx"
         return response
 
-    # CSV -- a single section downloads as one .csv; more than one is
-    # zipped (one .csv per section) rather than concatenated, since
-    # sections have different column shapes and a single CSV can't
-    # represent that.
+    # CSV: one section downloads as a single .csv; multiple get zipped
+    # (one .csv each) since they have different column shapes.
     if len(sections) == 1:
         _wid, title, headers, rows = sections[0]
         response = make_response(_rows_to_csv_bytes(headers, rows))

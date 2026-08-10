@@ -2,13 +2,8 @@ from database import get_db_connection
 from services.settings_service import get_due_soon_hours
 from utils.formatters import full_name
 
-# Bounds for the Top Borrowed panel's range filter (templates/home.html,
-# routes/dashboard.py) -- a SQL fragment (using SQLite's datetime/date
-# modifiers) for the lower bound on transactions.time_out, keyed by the
-# value the <select> sends. "today"/"yesterday" anchor to the start of a
-# calendar day (localtime, matching how the rest of the app reasons about
-# "today" -- e.g. the Audit Log's Today/Yesterday presets), not a rolling
-# 24-hour window.
+# Lower-bound SQL fragment for the Top Borrowed panel's range filter, keyed by the <select>
+# value. "today"/"yesterday" anchor to the start of a calendar day (localtime), not a rolling 24h window.
 TOP_BORROWED_RANGES = {
     "today": "datetime('now', 'localtime', 'start of day')",
     "yesterday": "datetime('now', 'localtime', 'start of day', '-1 day')",
@@ -115,15 +110,9 @@ def get_dashboard_context(conn=None):
         """
     ).fetchone()
 
-    # Due Soon list -- replaces what used to be a redundant "Notifications"
-    # panel on the dashboard (it just repeated the bell dropdown, which is
-    # already one click away on every page including this one). This is
-    # the more useful, dashboard-specific view of the same underlying
-    # signal: not "here's a notification," but "here's exactly what's
-    # about to go overdue and who has it," ordered soonest-first so it
-    # reads as a to-do list. Same due_soon_hours window/condition as
-    # services/notification_service.py's sync job, so this can't disagree
-    # with what actually triggers a due-soon alert.
+    # Due Soon list -- replaces a redundant "Notifications" panel that just repeated the
+    # bell dropdown. Reads as a to-do list (soonest-first) instead. Same due_soon_hours
+    # window as notification_service.py's sync job, so this can't disagree with the real alert.
     due_soon_hours = get_due_soon_hours(conn)
     due_soon_rows = conn.execute(
         """
@@ -164,11 +153,8 @@ def get_dashboard_context(conn=None):
     ).fetchone()["cnt"]
 
     # # # Recent activity --------------------------------------------------
-    # A single feed of both "borrowed" and "returned" events, rather than
-    # two separate lists -- a UNION ALL over the same transactions table
-    # tagged by which timestamp column supplied the event, ordered by
-    # whichever actually happened most recently. Caps at 8; this is a
-    # glance-at-it feed, not a substitute for the full Transactions tab.
+    # One feed of both "borrowed" and "returned" events -- UNION ALL over transactions,
+    # tagged by which timestamp supplied the event. Caps at 8; a glance feed, not a Transactions-tab substitute.
     recent_activity = conn.execute(
         """
         SELECT * FROM (

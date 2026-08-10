@@ -37,8 +37,7 @@
   </div>
 
   <!-- Stat cards -->
-  <!-- Clicking a card jumps the table to the matching status filter, mirroring
-       Members' and Inventory's stat-card click behavior. -->
+  <!-- Clicking a card jumps the table to that status filter, same as Members/Inventory. -->
   <div id="staff-stat-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
     {% include "staff/_stat_cards.html" %}
   </div>
@@ -50,7 +49,11 @@
 
     <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+      <button type="button" id="refresh-staff-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh staff list" onclick="refreshStaffTable()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+
+      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
         <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </div>
@@ -66,14 +69,14 @@
                hx-include="#role-filter, #department-filter, #show-inactive-toggle"
                hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
         <button type="button" id="staff-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
-                aria-label="Clear search" title="Clear search" onclick="clearStaffSearch()">
+                aria-label="Clear search" data-tooltip="Clear search" onclick="clearStaffSearch()">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <div id="role-filter-wrap" class="join rounded-lg transition-shadow" title="Role">
+      <div id="role-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Role">
         <button type="button" id="role-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearStaffRoleFilter()" aria-label="Clear role filter" title="Clear role filter" disabled>
+                onclick="clearStaffRoleFilter()" aria-label="Clear role filter" data-tooltip="Clear role filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
         </button>
         <select id="role-filter" name="role"
@@ -93,9 +96,9 @@
         </select>
       </div>
 
-      <div id="department-filter-wrap" class="join rounded-lg transition-shadow" title="Department">
+      <div id="department-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Department">
         <button type="button" id="department-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearStaffDepartmentFilter()" aria-label="Clear department filter" title="Clear department filter" disabled>
+                onclick="clearStaffDepartmentFilter()" aria-label="Clear department filter" data-tooltip="Clear department filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
         </button>
         <select id="department-filter" name="department_id"
@@ -137,12 +140,9 @@
 
     </div>
 
-    <!-- can_bulk_act here is intentionally role-only (not show_inactive-aware
-         like _table.html's copy of this check) -- same reasoning as Members'
-         equivalent bar: this bar and its JS wiring render once on initial page
-         load, but "Show inactive" toggles client-side afterwards without a page
-         reload, so this check has to cover both states up front. _table.html
-         re-renders per request and can safely mirror it with a flat check too. -->
+    <!-- Role-only check on purpose (not show_inactive-aware like _table.html's
+         copy) -- this bar renders once on page load but "Show inactive" toggles
+         client-side after, so it has to cover both states upfront. -->
     {% set can_bulk_act = staff.role == "admin" %}
     {% if can_bulk_act %}
     <div id="bulk-actions-bar" class="pointer-events-none flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
@@ -175,11 +175,7 @@
 {% set can_bulk_act = staff.role == "admin" %}
 {% if can_bulk_act %}
 <script>
-// Mirrors the bulk-selection/bulk-action block on the Members page, adapted
-// for staff rows/endpoints (staff-row-checkbox instead of
-// member-row-checkbox, /api/v1/staff/bulk-* instead of /api/v1/members/bulk-*).
-// See that copy's comments for the reasoning behind each piece -- kept
-// identical here rather than re-explained line by line.
+// Mirrors Members' bulk-selection/bulk-action block, just pointed at staff rows/endpoints.
 (function() {
   const container = document.getElementById('staff-table-container');
   const bar = document.getElementById('bulk-actions-bar');
@@ -332,9 +328,7 @@
       }
       showToast(message, skippedCount > 0 ? 'info' : 'success');
 
-      // Full reload rather than an htmx table refresh -- the stat cards at the
-      // top of this page also need to reflect the change, same reasoning as
-      // Members'/Inventory's bulk actions.
+      // Full reload, not an htmx refresh -- the stat cards up top need to update too.
       window.location.reload();
     } catch (err) {
       showToast(`Couldn't ${pastTense} the selected staff accounts`, 'error');
@@ -347,13 +341,10 @@
     return div.innerHTML;
   }
 
-  // Deactivating removes system access, so this gets the same are-you-sure
-  // dialog as Members'/Inventory's bulk deactivate/delete rather than firing
-  // immediately on click. Admin rows never reach here (they're excluded from
-  // getSelectedIds()'s targets by never getting a checkbox... actually they
+  // Deactivating removes system access, so this confirms first instead of firing
+  // immediately (same pattern as Members'/Inventory's bulk deactivate). Admin rows
   // do get a checkbox like anyone else, but bulk_deactivate_staff skips them
-  // server-side and reports them back in `skipped`, same as any other
-  // not-eligible row -- see that route's docstring in routes/staff.py).
+  // server-side and reports them back in `skipped` -- see routes/staff.py.
   function confirmBulkDeactivate(ids, names, onConfirm) {
     const backdrop = document.createElement('div');
     backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
@@ -370,8 +361,11 @@
           <div class="w-9 h-9 rounded-full bg-error/10 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
           </div>
-          <div class="min-w-0">
-            <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} staff account${ids.length === 1 ? '' : 's'}?</h3>
+          <div class="min-w-0 flex-1">
+            <div class="flex justify-between items-start gap-2">
+              <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} staff account${ids.length === 1 ? '' : 's'}?</h3>
+              <button type="button" id="bulk-deactivate-close-btn" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+            </div>
             <p class="text-sm text-base-content/60 mt-1">This can be reversed later from the inactive view. Admin accounts are skipped here -- deactivate those via a deactivation request instead.</p>
             <ul class="text-sm mt-3 space-y-0.5">${shown}${more}</ul>
           </div>
@@ -394,6 +388,7 @@
     backdrop.addEventListener('click', function (e) {
       if (e.target === backdrop) close();
     });
+    backdrop.querySelector('#bulk-deactivate-close-btn').addEventListener('click', close);
     backdrop.querySelector('#bulk-deactivate-cancel-btn').addEventListener('click', close);
     backdrop.querySelector('#bulk-deactivate-confirm-btn').addEventListener('click', function () {
       close();
@@ -421,9 +416,8 @@
 {% endif %}
 
 <script>
-// Mirrors updateMemberFilterUI() on the Members page: keeps each filter
-// control's "active" ring, its individual clear button, and the combined
-// clear-all button + count in sync with what's actually filled in.
+// Mirrors Members' updateMemberFilterUI() -- keeps each filter's active ring,
+// its clear button, and the combined clear-all count in sync.
 function updateStaffFilterUI() {
   const search = document.getElementById('staff-search');
   const role = document.getElementById('role-filter');
@@ -457,10 +451,8 @@ function updateStaffFilterUI() {
   updateStaffStatCardUI();
 }
 
-// Single source of truth for "what does the filter row currently say" (minus
-// the status/show-inactive concept, which the stat cards own) -- same
-// pattern as Members' getBaseMemberFilterParams(). Keeps a stat-card click
-// from silently dropping whatever search/role/department filter was active.
+// Single source of truth for the filter row's current state (minus status/
+// show-inactive, which the stat cards own) -- mirrors Members' getBaseMemberFilterParams().
 function getBaseStaffFilterParams() {
   const q = document.getElementById('staff-search').value.trim();
   const role = document.getElementById('role-filter').value;
@@ -469,13 +461,29 @@ function getBaseStaffFilterParams() {
   if (q) params.set('q', q);
   if (role) params.set('role', role);
   if (department) params.set('department_id', department);
-  // Read the live sort state off the currently-rendered table (set server-side
-  // via _table.html's data-sort-by/data-sort-dir) rather than tracking a
-  // separate JS variable that a sort-header click could drift out of sync with.
+  // Read sort state off the rendered table's data-sort-by/dir rather than a
+  // separate JS variable, so it can't drift out of sync with a header click.
   const table = document.querySelector('#staff-table-container table');
   params.set('sort_by', (table && table.dataset.sortBy) || 'name');
   params.set('sort_dir', (table && table.dataset.sortDir) || 'asc');
   return params;
+}
+
+// Re-fetches with whatever filters/sort/page are live right now, so a manual
+// refresh doesn't reset the view the way add/edit/delete intentionally do.
+function refreshStaffTable() {
+  const table = document.querySelector('#staff-table-container table');
+  const params = getBaseStaffFilterParams();
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '0');
+  const inactiveToggle = document.getElementById('show-inactive-toggle');
+  params.set('show_inactive', inactiveToggle.checked ? '1' : '0');
+  if (currentStaffStatusFilter) params.set('status', currentStaffStatusFilter);
+  htmx.ajax('GET', '/api/v1/staff', {
+    target: '#staff-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
 }
 
 function clearStaffSearch() {
@@ -509,9 +517,7 @@ function clearAllStaffFilters() {
   document.getElementById('show-inactive-toggle').checked = false;
   updateShowInactivePillUI(false);
   updateStaffFilterUI();
-  // getBaseStaffFilterParams() already returns nothing but sort_by/sort_dir
-  // now that every filter control above was just blanked -- keeps the
-  // current sort intact instead of resetting it alongside the filters.
+  // Filters are blanked above, so this just returns sort_by/sort_dir -- keeps sort intact.
   const params = getBaseStaffFilterParams();
   params.set('limit', '{{ limit }}');
   params.set('offset', 0);
@@ -532,18 +538,9 @@ document.addEventListener('DOMContentLoaded', updateStaffFilterUI);
 </script>
 
 <script>
-// Same active-stat-card highlighting pattern as Members'
-// STANDING_CARD_ACCENTS/updateMemberStatCardUI, and Inventory's equivalent.
-// currentStaffStatusFilter is tracked explicitly (rather than re-derived
-// from show_inactive on every call) so highlighting reflects which card was
-// actually clicked, and clears the moment someone edits a filter control
-// directly instead of via a card.
-//
-// Initialized from the actual persisted request state (this page's own
-// cold-load replay script below reads request.args the same way) rather
-// than hardcoded to '', so a hard refresh with ?show_inactive=1 in the
-// address bar highlights the "Inactive" card instead of silently falling
-// back to "All Staff" while the table itself shows the filtered results.
+// Same active-stat-card highlighting pattern as Members'/Inventory's, tracked
+// explicitly (not re-derived from show_inactive) so it reflects the actual click.
+// Initialized from request.args so a hard refresh with ?show_inactive=1 highlights right.
 {% set qs_show_inactive = request.args.get('show_inactive') %}
 {% set qs_status = request.args.get('status') %}
 {% if qs_show_inactive == '1' %}
@@ -577,9 +574,8 @@ function updateStaffStatCardUI() {
   });
 }
 
-// Keeps the "Show inactive" pill's color/text in sync, independent of
-// whether it was flipped by hand or by a stat-card click -- mirrors
-// Members' show-inactive-toggle change handler.
+// Keeps the "Show inactive" pill's color/text in sync whether it was flipped
+// by hand or by a stat-card click -- mirrors Members' equivalent handler.
 function updateShowInactivePillUI(isInactive) {
   const toggle = document.getElementById('show-inactive-toggle');
   const toggleLabel = document.getElementById('inactive-toggle-label');
@@ -598,18 +594,8 @@ document.getElementById('show-inactive-toggle').addEventListener('change', funct
   updateStaffFilterUI();
 });
 
-// Same shortcut-filter behavior as Members' filterByStanding() / Inventory's
-// filterByStatus(): clicking a card sends a fresh request for exactly that
-// status, independent of whatever's currently in the search/role/department
-// controls (those keep whatever value they're showing, but aren't included
-// in this request beyond what getBaseStaffFilterParams() already captures).
-//
-// "Active" and "Locked" both send a `status` param that /api/v1/staff now
-// honors directly (see get_staff_table_context in staff.py): "active" means
-// is_active=1 with no unexpired lockout, "locked" means is_active=1 with an
-// unexpired lockout. `show_inactive` is also set to 0 alongside `status` so
-// a hard refresh / non-JS fallback still lands on a sane default, but the
-// actual row filtering comes from `status`, not from show_inactive.
+// Same shortcut-filter behavior as Members'/Inventory's stat cards -- clicking
+// sends a fresh request for that status via the `status` param.
 function filterByStaffStatus(status) {
   currentStaffStatusFilter = status;
 
@@ -635,10 +621,8 @@ function filterByStaffStatus(status) {
     params.set('show_inactive', '0');
   }
 
-  // Setting .checked directly (rather than dispatching a real "change"
-  // event) skips the show-inactive-toggle listener above, so update its
-  // pill styling here instead -- avoids that listener resetting
-  // currentStaffStatusFilter right after this function just set it.
+  // Setting .checked directly skips the change listener above (which would
+  // otherwise stomp on the currentStaffStatusFilter we just set), so update the pill styling here instead.
   updateShowInactivePillUI(inactiveToggle.checked);
 
   updateStaffFilterUI();
@@ -650,99 +634,14 @@ function filterByStaffStatus(status) {
 }
 </script>
 
-<script>
-// Mirrors memberAction() on the Members page: several staff actions
-// (unlock, deactivate, reactivate) hit routes that return plain JSON,
-// not HTML, so they can't be wired as htmx hx-post targeting the table
-// container the way a list refresh can.
-async function staffAction(url, confirmMessage, successMessage) {
-  if (confirmMessage && !confirm(confirmMessage)) return;
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-      },
-    });
-    const result = await res.json();
-
-    if (!res.ok) {
-      showToast(result.error || "That action couldn't be completed", 'error');
-      return;
-    }
-
-    sessionStorage.setItem('pending-toast', JSON.stringify({ message: successMessage, type: 'success' }));
-    window.location.reload();
-  } catch (err) {
-    showToast("That action couldn't be completed", 'error');
-  }
-}
-
-// Admin accounts can't be deactivated directly (see /staff/<id>/delete) --
-// it takes a reason and routes through the peer-approval flow instead.
-async function requestStaffDeactivation(id) {
-  const reason = prompt("Why should this admin account be deactivated? This request will need peer approval.");
-  if (!reason) return;
-
-  try {
-    const res = await fetch(`/api/v1/staff/${id}/request-deactivation`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-      },
-      body: JSON.stringify({ reason }),
-    });
-    const result = await res.json();
-
-    if (!res.ok) {
-      showToast(result.error || "That request couldn't be submitted", 'error');
-      return;
-    }
-
-    showToast("Deactivation request submitted", 'success');
-  } catch (err) {
-    showToast("That request couldn't be submitted", 'error');
-  }
-}
-
-// "Hand over" the admin role to a non-admin staff member -- also routes
-// through peer approval (see request_admin_promotion in routes/staff.py)
-// rather than a direct role change, same reasoning as deactivation: one
-// admin shouldn't be able to unilaterally hand the role to an ally.
-async function requestStaffPromotion(id) {
-  const reason = prompt("Why should this staff member be promoted to admin? This request will need peer approval.");
-  if (!reason) return;
-
-  try {
-    const res = await fetch(`/api/v1/staff/${id}/request-promotion`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-      },
-      body: JSON.stringify({ reason }),
-    });
-    const result = await res.json();
-
-    if (!res.ok) {
-      showToast(result.error || "That request couldn't be submitted", 'error');
-      return;
-    }
-
-    showToast("Promotion request submitted", 'success');
-  } catch (err) {
-    showToast("That request couldn't be submitted", 'error');
-  }
-}
-</script>
+<!-- Unlock/deactivate/reactivate/request-deactivation each render their own
+     styled confirmation modal now (staff/_unlock_modal.html etc.), same
+     hx-get + fetch+CSRF+reload shape as Members' equivalents -- no more
+     shared staffAction() helper. -->
 
 <script>
-// Mirrors the same cold-load spacing workaround used on Inventory/Members:
-// replay the initial swap through htmx's own request path once, so the
-// filter row settles into the same spacing it has after any later swap.
+// Same cold-load spacing workaround as Inventory/Members: replay the initial
+// swap through htmx once so the filter row settles into its post-swap spacing.
 document.addEventListener('DOMContentLoaded', function () {
   var params = new URLSearchParams({
     limit: '{{ limit }}',
@@ -766,14 +665,10 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 
-// Keeps the address bar in sync with search/filters/sort/paging as they
-// change -- same htmx:configRequest pattern as assets.html/members.html/
-// transactions.html, brought here so a bookmark or hard refresh on a
-// filtered Staff view actually reproduces it (the cold-load replay above
-// already reads these back out of the URL; this is the other half, that
-// was missing before). Only reacts to requests bound for the staff
-// table so opening the Add/Edit/Reassign/Feature-Flags modals (which
-// target #modal-container) never leaks their own params into the URL.
+// Keeps the address bar in sync with search/filters/sort/paging -- same
+// htmx:configRequest pattern as assets.html/members.html/transactions.html,
+// so a bookmark or hard refresh reproduces the filtered view. Only reacts to
+// requests targeting the staff table, so modals (#modal-container) don't leak params in.
 document.body.addEventListener('htmx:configRequest', function (evt) {
   const tableContainer = document.getElementById('staff-table-container');
   if (evt.detail.target !== tableContainer) return;
@@ -798,9 +693,7 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
 
 <script>
 // --- Keyboard shortcuts (Staff page) ---
-// Mirrors the Members page's equivalent block, adapted for Staff's controls
-// (role/department instead of department/standing, and Active/Locked/
-// Inactive instead of Active/Restricted/Inactive).
+// Mirrors the Members page's equivalent block, adapted for Staff's controls.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -812,11 +705,9 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal'));
 }
 
-// Barcode-scan shortcut -- see templates/assets.html's identical block
-// for the full reasoning (Enter-key on the same box the live substring
-// filter uses, exact match, jumps straight to the profile modal). Looks
-// up via the linked member's barcode -- staff has no barcode of its
-// own, see routes/staff.py:staff_by_barcode.
+// Barcode-scan shortcut -- see assets.html's identical block for the full
+// reasoning. Looks up via the linked member's barcode since staff has none
+// of their own (routes/staff.py:staff_by_barcode).
 document.getElementById('staff-search').addEventListener('keydown', function (e) {
   if (e.key !== 'Enter') return;
   const code = e.target.value.trim();
@@ -860,9 +751,7 @@ document.addEventListener('keydown', function (e) {
   }
 
   // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
-  // pagination button is currently in the table footer. Reads the button
-  // rather than hand-building the offset math so it automatically respects
-  // the same disabled-at-the-edges state the button already shows.
+  // pagination button is in the table footer (respects its disabled state for free).
   if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
@@ -885,10 +774,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter back to blank and blur
-  // whatever was focused, same as clicking "Clear filters" by hand. When a
-  // modal *is* open, the shared Escape handler in base.html closes it
-  // instead -- this stays out of the way in that case.
+  // Escape — with no modal open, clears every filter and blurs focus, same
+  // as clicking "Clear filters". A modal being open is base.html's job instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {

@@ -4,9 +4,11 @@
      "shared partial, two entry points" pattern as
      dashboard/_top_borrowed_list.html. viewer_role decides both the
      empty-state wording and whether a role badge is worth showing at
-     all (in_charge's list is tool_keeper-only by construction -- see
-     routes/staff.py's view_online_staff -- so repeating "Tool Keeper" on
-     every row would be redundant for them). -->
+     all -- admin's list can mix admin/in_charge/tool_keeper, and
+     in_charge's list can now mix in_charge/tool_keeper too (see
+     routes/staff.py's view_online_staff), so both need the badge to tell
+     rows apart; this route is @roles_required("admin", "in_charge") only,
+     so viewer_role is never anything else here. -->
 {% for row in online_staff %}
 <div class="flex items-center gap-3 py-1.5 px-1">
   <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden relative">
@@ -23,11 +25,9 @@
     <p class="text-sm font-medium truncate">
       {{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}
       {% if row.id == viewer_id %}<span class="text-xs font-normal text-primary">(You)</span>{% endif %}
-      {% if viewer_role == "admin" %}
       <span class="text-xs font-normal text-base-content/40">
         &middot; {% if row.role == "in_charge" %}In Charge{% elif row.role == "tool_keeper" %}Tool Keeper{% else %}Admin{% endif %}
       </span>
-      {% endif %}
     </p>
     <p class="text-xs text-base-content/40 truncate">
       {{ row.department }} &middot; active <span class="dash-relative-time" data-timestamp="{{ row.last_active_at }}">{{ row.last_active_at }}</span>
@@ -36,10 +36,6 @@
 </div>
 {% else %}
 <div class="h-full flex items-center justify-center text-sm text-base-content/50 py-6">
-  {% if viewer_role == "admin" %}
   No one else is online right now.
-  {% else %}
-  No tool keepers online right now.
-  {% endif %}
 </div>
 {% endfor %}

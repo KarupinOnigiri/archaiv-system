@@ -25,7 +25,7 @@
 </th>
 {% endmacro %}
 
-<table class="table w-full table-fixed" data-total-count="{{ total_count }}">
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
     <col style="width: 2.5rem">
     <col style="width: 20%">
@@ -96,7 +96,7 @@
       </td>
       <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" aria-label="Row actions for {{ txn.asset_name }}">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" data-tooltip="More actions" aria-label="Row actions for {{ txn.asset_name }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-44 p-2 z-50">

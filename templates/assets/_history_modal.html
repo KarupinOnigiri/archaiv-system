@@ -1,4 +1,6 @@
-<div class="modal modal-open">
+<!-- id'd so pagination can swap just this element (outerHTML), not #modal-container's whole innerHTML --
+     this stacks on top of assets/_details_modal.html, which needs to stay put underneath. -->
+<div id="asset-history-modal" class="modal modal-open">
   <div class="modal-box max-w-2xl flex flex-col max-h-[85vh]">
 
     <div class="flex justify-between items-start mb-5 shrink-0">
@@ -6,6 +8,11 @@
         <h3 class="font-bold text-xl">Borrow History</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ asset.name }} &middot; {{ asset.asset_id }}</p>
       </div>
+      <!-- ESC pill not an X icon -- see assets/_details_modal.html's close button for why. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
+        ESC
+      </button>
     </div>
 
     {% if history %}
@@ -34,18 +41,70 @@
       {% endfor %}
     </div>
 
-    <div class="flex justify-between items-center mt-4 pt-3 border-t border-base-200 shrink-0">
-      <p class="text-sm text-base-content/50">SHOWING {{ offset + 1 }}-{{ offset + history|length }} OF {{ total_count }}</p>
-      <div class="join">
-        <button class="join-item btn btn-sm {% if offset == 0 %}btn-disabled{% endif %}"
-                hx-get="/api/v1/assets/{{ asset.id }}/history-modal?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}"
-                hx-target="#modal-container" hx-swap="innerHTML">
-          Previous
+    <!-- Same numbered-with-ellipsis pagination as elsewhere, but each control re-fetches the whole modal (outerHTML) since there's no separate shell+partial to swap. -->
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300 shrink-0">
+
+      <div class="flex items-center gap-2 text-sm text-base-content/60">
+        <select class="select select-bordered select-xs"
+                aria-label="Items per page"
+                hx-get="/api/v1/assets/{{ asset.id }}/history-modal"
+                hx-trigger="change"
+                hx-target="#asset-history-modal"
+                hx-swap="outerHTML"
+                name="limit"
+                hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+          <option value="5" {% if limit == 5 %}selected{% endif %}>5</option>
+          <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+          <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+          <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+        </select>
+        <span class="whitespace-nowrap">Items per page</span>
+        <span class="text-base-content/40">&middot;</span>
+        <span class="whitespace-nowrap">
+          {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+          of {{ total_count }}
+        </span>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+                data-tooltip="Previous page" aria-label="Previous page"
+                hx-get="/api/v1/assets/{{ asset.id }}/history-modal?limit={{ limit }}&offset={{ [offset - limit, 0] | max }}"
+                hx-target="#asset-history-modal" hx-swap="outerHTML">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <button class="join-item btn btn-sm {% if offset + limit >= total_count %}btn-disabled{% endif %}"
+
+        <nav aria-label="Pagination" class="flex items-center gap-1">
+          {% set current_page = (offset // limit) + 1 %}
+          {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+          {% set page_set = [] %}
+          {% for p in range(1, total_pages + 1) %}
+            {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+              {% set _ = page_set.append(p) %}
+            {% endif %}
+          {% endfor %}
+          {% set ns = namespace(prev=0) %}
+          {% for p in page_set %}
+            {% if ns.prev != 0 and p - ns.prev > 1 %}
+            <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+            {% endif %}
+            <button type="button"
+                    class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                    {% if p == current_page %}aria-current="page"{% endif %}
+                    aria-label="Page {{ p }}"
+                    hx-get="/api/v1/assets/{{ asset.id }}/history-modal?limit={{ limit }}&offset={{ (p - 1) * limit }}"
+                    hx-target="#asset-history-modal" hx-swap="outerHTML">
+              {{ p }}
+            </button>
+            {% set ns.prev = p %}
+          {% endfor %}
+        </nav>
+
+        <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+                data-tooltip="Next page" aria-label="Next page"
                 hx-get="/api/v1/assets/{{ asset.id }}/history-modal?limit={{ limit }}&offset={{ offset + limit }}"
-                hx-target="#modal-container" hx-swap="innerHTML">
-          Next
+                hx-target="#asset-history-modal" hx-swap="outerHTML">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
     </div>
@@ -53,11 +112,9 @@
     <p class="text-base-content/50 py-8 text-center text-sm shrink-0">No borrow history yet for this asset.</p>
     {% endif %}
 
+    <!-- Just removes itself -- stacked on top of assets/_details_modal.html (hx-swap="beforeend"), which stays underneath. -->
     <div class="modal-action mt-6 shrink-0">
-      <button type="button" class="btn btn-primary"
-              hx-get="/api/v1/assets/{{ asset.id }}/details-modal"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
+      <button type="button" class="btn btn-primary" onclick="this.closest('.modal').remove()">
         Close
       </button>
     </div>

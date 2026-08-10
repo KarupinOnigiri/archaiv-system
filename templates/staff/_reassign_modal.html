@@ -9,6 +9,8 @@
           &middot; {{ staff_member.staff_code or "—" }}
         </p>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
     <div id="reassign-usage-error" class="alert alert-error text-sm mb-4 py-2 hidden"></div>
@@ -29,25 +31,25 @@
           </div>
         </div>
 
-        <!-- Quick-extend shortcuts -- the whole point of this modal over
-             the full Edit Staff form: no date picker fumbling for the
-             common case of "just push the end date out". Each button
-             extends from whichever is later, today or the current
-             assigned_end, so re-clicking one after it's already expired
-             doesn't backdate the new window. -->
+        <!-- Quick-extend shortcuts: each button counts N days from ASSIGNED START
+             (not today/existing end), so re-clicking always lands exactly N days
+             after start instead of stacking on the previous click. -->
         <div>
-          <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-1.5">QUICK EXTEND</p>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-1.5">QUICK EXTEND <span class="font-normal normal-case text-base-content/40">(from assigned start)</span></p>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(30)">+30 days</button>
+            <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(60)">+60 days</button>
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(90)">+90 days</button>
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(180)">+6 months</button>
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(365)">+1 year</button>
-            <!-- Sets assigned_end to the PERMANENT_ASSIGNED_END sentinel
-                 (see app.py's jinja global / services/settings_service.py)
-                 instead of extending by a day count -- the account still
-                 needs *some* assigned_end to pass login()'s tool_keeper
-                 check, this is just one far enough out to never matter. -->
+            <!-- Sets assigned_end to the PERMANENT_ASSIGNED_END sentinel instead of a day
+                 count -- login()'s tool_keeper check needs *some* assigned_end, this is
+                 just one far enough out to never matter. -->
             <button type="button" class="btn btn-xs btn-outline" onclick="setReassignPermanent()">Permanent</button>
+            <!-- Separated visually from the quick-extend group -- wipes both fields
+                 blank instead of computing a date, for undoing an accidental click
+                 or leaving the account dateless again. -->
+            <button type="button" class="btn btn-xs btn-outline btn-error ml-auto" onclick="clearReassignDates()">Clear</button>
           </div>
         </div>
 
@@ -64,26 +66,46 @@
 <script>
 const REASSIGN_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
 
+// toISOString() converts to UTC first, so for anyone east of UTC (e.g. UTC+8) a local
+// midnight Date rolls back to the previous calendar day -- that's why +30 days was
+// landing on +28. Local date parts, not UTC, avoid that entirely.
+function toLocalDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function setReassignPermanent() {
   const startInput = document.getElementById('reassign-start');
-  if (!startInput.value) startInput.value = new Date().toISOString().slice(0, 10);
+  if (!startInput.value) startInput.value = toLocalDateStr(new Date());
   document.getElementById('reassign-end').value = REASSIGN_PERMANENT_ASSIGNED_END;
 }
 
 function extendReassignEnd(days) {
+  const startInput = document.getElementById('reassign-start');
   const endInput = document.getElementById('reassign-end');
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const current = endInput.value ? new Date(endInput.value + 'T00:00:00') : today;
-  const base = current > today ? current : today;
+
+  // Fills ASSIGNED START with today if blank -- common right after a deactivate/
+  // reactivate, which nulls both dates out (see routes/staff.py).
+  if (!startInput.value) {
+    startInput.value = toLocalDateStr(new Date());
+  }
+
+  // Always counts from ASSIGNED START (not today or the existing end) so re-clicking
+  // recomputes fresh instead of stacking. Uses a freshly-parsed Date rather than
+  // mutating startInput's own value, avoiding the old aliasing bug (see git history).
+  const base = new Date(startInput.value + 'T00:00:00');
   base.setDate(base.getDate() + days);
-  endInput.value = base.toISOString().slice(0, 10);
+  endInput.value = toLocalDateStr(base);
 }
 
-// Mirrors submitEditStaffForm's fetch-based JSON submit (staff/_edit_modal.html)
-// but only ever sends assigned_start/assigned_end -- /staff/<id>/edit already
-// leaves role/RFID untouched when they're absent from the body, so this
-// never risks clobbering anything this modal doesn't show.
+// Wipes both date fields blank -- undo an accidental quick-extend click, or
+// leave the account dateless again, without clearing each picker by hand.
+function clearReassignDates() {
+  document.getElementById('reassign-start').value = '';
+  document.getElementById('reassign-end').value = '';
+}
+
+// Mirrors submitEditStaffForm's fetch-based JSON submit but only sends
+// assigned_start/assigned_end -- /staff/<id>/edit leaves other fields untouched.
 async function submitReassignUsageForm(event, id) {
   event.preventDefault();
   const form = document.getElementById('reassign-usage-form');

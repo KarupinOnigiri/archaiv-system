@@ -1,10 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- DASHBOARD -- deliberately built to fit one screen with no page-level
-     scroll: the wrapper takes exactly the height <main> (base.html) gives
-     it (h-full + min-h-0 down the whole flex/grid chain), and only the
-     individual list widgets (Recent Activity, Top Borrowed, Notifications)
-     scroll internally if they overflow -- the page itself never does. -->
+<!-- Built to fit one screen with no page-level scroll -- only the individual
+     list widgets scroll internally if they overflow. -->
 <div class="h-full min-h-0 flex flex-col gap-4 pt-6 pr-[1.875rem] pb-6 pl-6">
 
   <!-- Greeting strip -->
@@ -75,12 +72,8 @@
     </a>
 
     {% if staff.role in ["admin", "in_charge"] %}
-    <!-- Admin/in_charge: this is their actual job queue (review/decide),
-         so the 6th card is what needs THEIR action, not just a count they
-         can only look at. pending_approvals_count is already scoped
-         correctly for this role by get_pending_approvals_count (services/
-         approvals_service.py) -- everyone's pending requests, not just
-         their own. -->
+    <!-- Admin/in_charge: their actual job queue (review/decide), not just a count
+         to look at. pending_approvals_count covers everyone's requests, not just theirs. -->
     <a href="/requests" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-warning/30 stat-card-glow" style="--stat-glow: var(--color-warning)">
       <div class="min-w-0">
         <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">PENDING APPROVALS</p>
@@ -91,11 +84,8 @@
       </div>
     </a>
     {% else %}
-    <!-- tool_keeper: can't approve/deny anything (they can only file an
-         unrestriction request, then wait), so their own pending_approvals_
-         count would just be "requests I filed" -- less useful here than
-         plain visibility into who's currently restricted, which is what
-         they actually need before attempting a checkout. -->
+    <!-- tool_keeper: can't approve/deny anything, so their own pending_approvals_count
+         would just mean "requests I filed" -- restricted-member visibility is more useful. -->
     <a href="/members?is_restricted=1" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-warning/30 stat-card-glow" style="--stat-glow: var(--color-warning)">
       <div class="min-w-0">
         <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">RESTRICTED</p>
@@ -115,13 +105,8 @@
     <!-- Recent Activity + Currently Online -->
     <div class="col-span-5 min-h-0 flex flex-col gap-4">
 
-      <!-- flex-[2] (vs. Currently Online's flex-1 below) -- Recent
-           Activity is the primary widget of the two and should keep
-           most of the column's height; Currently Online is the smaller,
-           supplementary one. Moved here (was in the Quick Actions/Due
-           Soon column, col-span-3) because that column had no room left
-           for a third card -- this column already had the most spare
-           vertical space of the three. -->
+      <!-- flex-[2] (vs. Currently Online's flex-1) -- Recent Activity is the
+           primary widget and keeps most of the column's height. -->
       <div class="flex-[2] min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-3">
           <h3 class="font-semibold text-sm">Recent Activity</h3>
@@ -164,17 +149,9 @@
       </div>
 
       {% if staff.role in ("admin", "in_charge") %}
-      <!-- Currently Online -- admin sees every staff member with a live
-           session; in_charge's view (routes/staff.py's
-           view_online_staff) is scoped server-side to tool_keeper only,
-           since that's the specific signal they asked for ("is a tool
-           keeper on right now") rather than tracking their admin/
-           in_charge peers. Polled every 30s via htmx (hx-trigger="load,
-           every 30s") -- the one place on this dashboard that's live
-           rather than snapshot-at-page-load, since "who's on right now"
-           goes stale the moment someone logs in or their session times
-           out. tool_keeper doesn't get this card at all -- they have no
-           one below them to monitor. -->
+      <!-- Currently Online -- admin sees every staff member; in_charge's view is
+           scoped server-side to tool_keeper only. Polled every 30s via htmx, the
+           one live (not snapshot) widget on this dashboard. tool_keeper doesn't get this card. -->
       <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-2">
           <h3 class="font-semibold text-sm">Currently Online</h3>
@@ -226,9 +203,7 @@
         <div class="flex items-center justify-between shrink-0 mb-2 gap-2">
           <h3 class="font-semibold text-sm">Top Borrowed</h3>
           {% if feature_flags.transactions %}
-          <!-- w-40: daisyUI's .select defaults to a fixed 20rem width
-               regardless of content (clamp(3rem, 20rem, 100%)) -- way
-               more than a 4-option filter needs. Half that. -->
+          <!-- w-40: daisyUI's .select defaults to a fixed 20rem width, way more than this 4-option filter needs. -->
           <select id="dash-top-borrowed-range" class="select select-bordered select-xs w-40"
                   hx-get="/api/v1/dashboard/top-borrowed"
                   hx-target="#dash-top-borrowed-list"
@@ -262,7 +237,7 @@
         <h3 class="font-semibold text-sm mb-3">Quick Actions</h3>
         <div class="grid grid-cols-2 gap-2">
           {% if feature_flags.transactions %}
-          <button type="button" id="dash-new-checkout-btn" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
+          <button type="button" id="dash-new-checkout-btn" data-tooltip="New checkout (Alt+N)" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
                   hx-get="/api/v1/checkout-sessions/start-form"
                   hx-vals="js:{client_id: crypto.randomUUID()}"
                   hx-target="#checkout-modal-container"
@@ -271,7 +246,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             <span class="text-xs font-medium">Checkout</span>
           </button>
-          <button type="button" id="dash-return-items-btn" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
+          <button type="button" id="dash-return-items-btn" data-tooltip="Return items (Alt+R)" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
                   hx-get="/api/v1/transactions/return-scan-form"
                   hx-target="#modal-container"
                   hx-swap="innerHTML">
@@ -281,7 +256,7 @@
           {% endif %}
           {% if staff.role in ["admin", "in_charge"] %}
           {% if feature_flags.members %}
-          <button type="button" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
+          <button type="button" id="dash-add-member-btn" data-tooltip="Add member (Alt+M)" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
                   hx-get="/api/v1/members/add-form"
                   hx-target="#modal-container"
                   hx-swap="innerHTML">
@@ -290,7 +265,7 @@
           </button>
           {% endif %}
           {% if feature_flags.assets %}
-          <button type="button" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
+          <button type="button" id="dash-add-asset-btn" data-tooltip="Add asset (Alt+A)" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
                   hx-get="/api/v1/assets/add-form"
                   hx-target="#modal-container"
                   hx-swap="innerHTML">
@@ -312,36 +287,11 @@
           </a>
           {% endif %}
           {% endif %}
-          {% if staff.role == "admin" %}
-          <!-- Admin-only: staff administration is a whole separate
-               responsibility from day-to-day inventory ops, and stays
-               exclusive to admin -- same gate the sidebar itself uses
-               for Staff. -->
-          <a href="/staff" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
-            <span class="text-xs font-medium">Manage Staff</span>
-          </a>
-          {% endif %}
-          {% if staff.role in ("admin", "in_charge") %}
-          <!-- System now also reachable by in_charge (system.html hides
-               the admin-only cards from them) -- same gate the sidebar
-               nav link uses. -->
-          <a href="/system" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-            <span class="text-xs font-medium">System</span>
-          </a>
-          {% endif %}
         </div>
       </div>
 
-      <!-- Due Soon -- not the notification bell repeated (that's already
-           one click away on every page, including this one; showing the
-           same list twice on one screen wasted space without adding
-           anything). This is the dashboard-specific angle on the same
-           underlying signal: not "here's an alert," but "here's exactly
-           what's about to go overdue and who has it," soonest first, so
-           it reads as an actionable to-do list instead of a duplicate
-           feed. -->
+      <!-- Due Soon -- not just the notification bell repeated: this frames the
+           same signal as an actionable to-do list (what's about to go overdue, and who has it). -->
       <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-2">
           <h3 class="font-semibold text-sm">Due Soon</h3>
@@ -398,10 +348,8 @@ dashUpdateClock();
 setInterval(dashUpdateClock, 30000);
 
 // # # # Relative timestamps for the Recent Activity feed -----------------
-// Server sends the raw "YYYY-MM-DD HH:MM:SS" (localtime) value in
-// data-timestamp; rendered as "5m ago"/"3h ago"/etc. here rather than a
-// fixed format server-side, so it stays accurate without a page reload
-// for however long the dashboard is left open.
+// Formatted client-side ("5m ago" etc.) rather than fixed server-side, so it
+// stays accurate without a page reload.
 function dashRelativeTime(sqliteTimestamp) {
   const iso = sqliteTimestamp.replace(' ', 'T');
   const then = new Date(iso);
@@ -425,10 +373,8 @@ dashRefreshRelativeTimes();
 setInterval(dashRefreshRelativeTimes, 60000);
 
 // # # # "Due in ..." countdowns for the Due Soon panel --------------------
-// Mirrors dashRelativeTime above but counts forward instead of back --
-// every row here is, by construction (dashboard_service.py's query),
-// still in the future, so this never needs to handle an already-past
-// timestamp gracefully the way a generic formatter would.
+// Mirrors dashRelativeTime but counts forward -- every row is guaranteed still
+// in the future by dashboard_service.py's query, so no need to handle past timestamps.
 function dashDueIn(sqliteTimestamp) {
   const iso = sqliteTimestamp.replace(' ', 'T');
   const due = new Date(iso);
@@ -496,5 +442,37 @@ new MutationObserver(function (mutations) {
     if (m.attributeName === 'data-theme') dashRenderStatusChart();
   }
 }).observe(document.documentElement, { attributes: true });
+
+// --- Keyboard shortcuts (Dashboard) ---
+// Alt+N/Alt+R mirror Transactions' checkout/return shortcuts; Alt+M/Alt+A mirror
+// Members'/Inventory's Add shortcuts. Each is a no-op if its button isn't on the page.
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  return !!(container && container.querySelector(':scope > .modal, :scope > dialog[open]'));
+}
+
+document.addEventListener('keydown', function (e) {
+  if (!e.altKey || isTypingTarget(e.target) || isModalOpen()) return;
+
+  const key = e.key.toLowerCase();
+  const idByKey = {
+    n: 'dash-new-checkout-btn',
+    r: 'dash-return-items-btn',
+    m: 'dash-add-member-btn',
+    a: 'dash-add-asset-btn',
+  };
+  const btnId = idByKey[key];
+  if (!btnId) return;
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  e.preventDefault();
+  btn.click();
+});
 </script>
 {% endblock %}

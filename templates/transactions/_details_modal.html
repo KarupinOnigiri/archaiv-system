@@ -12,6 +12,8 @@
       {% else %}
       <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/15 text-success shrink-0">Returned</span>
       {% endif %}
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
     <dl class="space-y-3 text-sm">

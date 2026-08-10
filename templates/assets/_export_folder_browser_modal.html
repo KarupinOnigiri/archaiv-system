@@ -1,17 +1,6 @@
-<!--
-  Folder picker modal — a standalone popup independent of the export modal.
-  It lives outside #modal-container so opening/closing it never touches
-  (or gets wiped by) whatever else is currently rendered there — the two
-  can be open at the same time and stack correctly (this one on top).
-
-  Included once from base.html/index.html, so its script registers global
-  handlers a single time rather than being re-injected on every export
-  modal open/close cycle via htmx.
-
-  Any text input can request it: call openFolderBrowser('some-input-id')
-  and the chosen path is written back into that input on selection.
-  Defaults to '#export-save-path' if no id is given.
--->
+<!-- Standalone folder picker, lives outside #modal-container so it can stack without either wiping the other.
+     Included once from base.html so its script registers handlers only once, not per modal open/close.
+     Any input can use it: openFolderBrowser('some-input-id') writes the picked path back into that input. -->
 <div id="export-folder-browser" class="hidden fixed inset-0 z-[9999] flex items-center justify-center p-4">
   <div id="export-folder-backdrop" class="absolute inset-0 bg-black/50"></div>
 
@@ -19,6 +8,8 @@
        role="dialog" aria-modal="true" aria-label="Select folder">
     <div class="flex items-center justify-between px-4 py-3 border-b border-base-300 shrink-0">
       <span class="text-sm font-semibold">Select Folder</span>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="closeFolderBrowser()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
     <div class="px-4 pt-3">
@@ -46,12 +37,8 @@
 </div>
 
 <script>
-// --- Server-side folder picker (standalone modal) ---
-// Lists real subfolders under the app root via /api/v1/assets/export/browse
-// so staff can click through the server's directory structure instead of
-// typing a path by hand. Rows are built with createElement/textContent
-// (not innerHTML string interpolation) since folder names come from the
-// server's actual filesystem and shouldn't be trusted as safe HTML.
+// Server-side folder picker: lists subfolders via /api/v1/assets/export/browse for click-through browsing.
+// Rows use createElement/textContent, not innerHTML -- folder names come from the filesystem, don't trust them as HTML.
 
 let currentBrowsePath = '';
 let folderBrowserTargetInput = null;

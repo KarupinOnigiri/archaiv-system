@@ -4,9 +4,12 @@ from services.auth_service import roles_required, login_required
 from utils.uploads import validate_image_upload, save_staff_photo, delete_staff_photo
 from services.admin_deactivation_service import (
     determine_approval_tier,
-    finalize_if_ready,
-    finalize_promotion_if_ready,
+    finalize_admin_deactivation,
+    is_eligible_reviewer,
+    get_review_counts,
 )
+from services.notification_service import create_admin_deactivation_requested_notifications
+from utils.formatters import full_name
 from utils.logger import log_action
 from utils.validators import (
     validate_date_string,
@@ -31,8 +34,14 @@ from services.settings_service import (
     get_damage_restriction_threshold,
     get_auto_backup_enabled,
     get_auto_backup_interval_hours,
+    get_archive_purge_days,
 )
 from services.backup_service import get_last_backup_at, run_backup_now
+from services.archive_purge_service import (
+    purge_expired_archived_assets,
+    purge_expired_inactive_staff,
+    purge_expired_inactive_members,
+)
 import backup_db
 import re
 import sqlite3
@@ -51,18 +60,13 @@ logger = logging.getLogger(__name__)
 
 staff_bp = Blueprint("staff", __name__)
 VALID_ROLES = ("admin", "in_charge", "tool_keeper")
-# Sanity cap on a manual lock's custom duration -- 1 year. Long enough that
-# nobody legitimately needs more (an indefinite lock covers that case
-# directly), short enough to catch a fat-fingered value like "500000"
-# minutes before it silently becomes a de facto indefinite lock that
-# doesn't say so.
+# Cap on a manual lock's duration -- 1 year, so a fat-fingered value like "500000" minutes doesn't quietly become an indefinite lock.
 MAX_MANUAL_LOCK_MINUTES = 525600
 
 
 # # # LIST / VIEW ------------------------------------------------------------
 
-# "name" maps to two columns since there's no single stored full-name field
-# -- same convention as members.SORTABLE_COLUMNS.
+# "name" maps to two columns since there's no single stored full-name field, same as members.SORTABLE_COLUMNS.
 SORTABLE_STAFF_COLUMNS = {
     "name": "members.last_name, members.first_name",
     "username": "staff.username",
@@ -71,22 +75,11 @@ SORTABLE_STAFF_COLUMNS = {
     "department": "departments.name",
 }
 
-# How many days out from expiry an assignment window starts showing as
-# "Expiring Soon" instead of "Active" in the staff table's USAGE column --
-# mirrors the fixed-threshold style of get_due_soon_hours, but this one
-# isn't an admin-configurable app_setting (assignment windows are usually
-# measured in months, not hours, so a week's notice is plenty and doesn't
-# need its own settings-page control).
+# Days before expiry the USAGE column flips to "Expiring Soon". Fixed (unlike get_due_soon_hours) since assignment windows run in months.
 USAGE_EXPIRING_SOON_DAYS = 7
 
 
-# assigned_end is a DATE column and every write path (edit_staff_submit,
-# the Add Staff form) stores plain "YYYY-MM-DD" -- but this parses either
-# that or a full "YYYY-MM-DD HH:MM:SS" too, the same two formats
-# utils/validators.py's date checks accept, in case any older/manually-
-# edited row ever picked up a time component. Returns None (not a raise)
-# on anything else so a single malformed row degrades to "usage unknown"
-# instead of 500ing the whole staff table.
+# Accepts "YYYY-MM-DD" with or without a time component; returns None on bad values instead of raising.
 _ASSIGNED_END_FORMATS = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S")
 
 
@@ -100,30 +93,19 @@ def _parse_assigned_end(value):
 
 
 def compute_usage_status(role, assigned_end):
-    """Derives the staff table's USAGE badge (and the matching remaining-
-    days count) from a staff account's assignment window.
+    """Derives the staff table's USAGE badge and remaining-days count from a staff
+    account's assignment window.
 
-    Only "admin" always comes back as "permanent" (their access never
-    expires -- login() (routes/auth.py) never checks an admin's
-    assigned_start/end at all). in_charge is treated exactly like
-    tool_keeper here -- both can have a real assignment window set via
-    the Add/Edit/Reassign forms (those forms don't restrict the fields
-    by role), so in_charge's USAGE reflects whatever date is actually on
-    the row instead of being forced to "Indefinite" regardless of it.
-    (Note: login() itself currently only *enforces* the window for
-    tool_keeper -- an in_charge account past its assigned_end can still
-    log in. This function only affects what's displayed; it doesn't
-    change that enforcement gap.)
+    "admin" is always "permanent" (login() never checks admin assigned_start/end).
+    in_charge is treated like tool_keeper -- both can have a real assignment window,
+    so in_charge shows whatever's on the row instead of a forced "Indefinite". Note
+    login() itself only *enforces* the window for tool_keeper, so an expired in_charge
+    can still log in -- this function only affects the display, not that gap.
 
-    A tool_keeper/in_charge with no assigned_end set yet returns
-    (None, None) -- already flagged as "Not set" in the ASSIGNED column;
-    a second warning here would be redundant. Otherwise returns
-    (status, days_left) where status is one of "permanent" / "active" /
-    "expiring_soon" / "expired". days_left is None for "permanent"
-    (nothing counting down), 0-or-positive for "active"/"expiring_soon",
-    and negative for "expired" (how many days ago it lapsed) -- the
-    template turns that single number into "X days left" / "Expired Xd
-    ago" without needing its own date math."""
+    Returns (None, None) if no assigned_end is set (already shown as "Not set"
+    elsewhere). Otherwise (status, days_left): status is "permanent"/"active"/
+    "expiring_soon"/"expired"; days_left is None for permanent, else the day count
+    (negative if expired) that the template turns into "X days left" / "Expired Xd ago"."""
     if role == "admin":
         return "permanent", None
     if not assigned_end:
@@ -142,11 +124,8 @@ def compute_usage_status(role, assigned_end):
 
 
 def get_staff_table_context(args):
-    """Shared query logic for the staff table -- used by both the htmx
-    partial route below and the full-page /staff route (routes/pages.py),
-    the same way get_members_table_context is shared on the members side.
-    Keeping this in one place means the full-page load and the htmx
-    refetch can never drift out of sync on what filters exist.
+    """Shared query logic for the staff table, used by both the htmx partial route and
+    the full-page /staff route, so the two can't drift out of sync on filters.
     Returns (context_dict, error_response)."""
     limit, offset, error = parse_pagination_params(args)
     if error:
@@ -156,13 +135,7 @@ def get_staff_table_context(args):
     role = args.get("role")
     department_id = args.get("department_id")
     show_inactive = args.get("show_inactive") == "1"
-    # `status` is the fine-grained filter the stat cards drive (active vs.
-    # locked vs. inactive) -- distinct from `show_inactive`, which only
-    # toggles whether inactive accounts are included alongside everyone
-    # else. Without this, "Active" and "Locked" had no way to isolate
-    # themselves from each other (both are is_active=1 rows) or from the
-    # unfiltered list, so clicking those cards sent a `status` param the
-    # backend silently ignored and the table never visibly changed.
+    # `status` is the fine-grained stat-card filter (active/locked/inactive), separate from the show_inactive toggle.
     status = args.get("status")
     valid_statuses = ("active", "locked", "inactive")
 
@@ -178,10 +151,7 @@ def get_staff_table_context(args):
             400,
         )
 
-    # `status`, when given, fully determines the active/locked/inactive
-    # slice and takes precedence over the plainer show_inactive-only check
-    # below -- e.g. status=locked should still isolate locked accounts even
-    # if show_inactive happens to be left off in the request.
+    # `status`, when given, takes precedence over the plain show_inactive check below.
     if status == "inactive":
         where = ["staff.is_active = 0"]
     elif status == "active":
@@ -196,7 +166,9 @@ def get_staff_table_context(args):
             "staff.locked_until > datetime('now', 'localtime')",
         ]
     else:
-        where = [] if show_inactive else ["staff.is_active = 1"]
+        # show_inactive filters to *only* inactive rows -- don't turn this into "show all",
+        # that used to hide reactivations and made the filter look broken.
+        where = ["staff.is_active = 0"] if show_inactive else ["staff.is_active = 1"]
     params = []
     if q:
         where.append(
@@ -239,9 +211,7 @@ def get_staff_table_context(args):
         """,
         params,
     ).fetchone()["cnt"]
-    # Named staff_list (not "staff") so it doesn't collide with the
-    # logged-in-user variable that staff.html and staff/_table.html both
-    # refer to as `staff` (e.g. `{% if staff.role == "admin" %}`).
+    # Named staff_list, not "staff", to avoid colliding with the logged-in-user `staff` template var.
     staff_list = conn.execute(
         f"""
         SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
@@ -261,12 +231,7 @@ def get_staff_table_context(args):
     ).fetchall()
     conn.close()
 
-    # Converted to plain dicts (from sqlite3.Row) so usage_status can be
-    # bolted on here -- it's derived, not a real column, so there's no
-    # SQL expression for it to ride along on the SELECT above. Jinja
-    # reads dict keys via the same `row.attr` syntax as Row objects, so
-    # staff/_table.html doesn't need to change how it accesses anything
-    # else on these rows.
+    # Convert to plain dicts so we can bolt on usage_status (it's derived, not a real column).
     staff_list = [dict(row) for row in staff_list]
     for row in staff_list:
         row["usage_status"], row["usage_days_left"] = compute_usage_status(
@@ -293,11 +258,7 @@ def view_staff():
         return error
 
     if request.headers.get("HX-Request") == "true":
-        # staff=g.staff is required here (not just for the full-page load)
-        # -- staff/_table.html's `can_manage` check and its per-row Actions
-        # dropdown both read the bare `staff` variable, which would
-        # otherwise be undefined on every htmx filter/search/pagination
-        # swap and silently hide admin controls after the first load.
+        # staff=g.staff needed here too -- _table.html's can_manage check reads it on every htmx swap.
         return render_template("staff/_table.html", staff=g.staff, **context)
 
     return jsonify(
@@ -339,11 +300,10 @@ def get_staff_by_id(id):
 @staff_bp.route("/staff/by-barcode/<string:barcode>")
 @login_required
 def staff_by_barcode(barcode):
-    """Exact-match barcode lookup for the Staff search box's Enter-key
-    shortcut (staff.html) -- see assets.py:asset_by_barcode for the full
-    reasoning, identical here. Looks up via the linked member's barcode
-    (staff has no barcode of its own -- see routes/members.py), matching
-    regardless of active/locked state, same as the other two."""
+    """Exact-match barcode lookup for the Staff search box's Enter key (see
+    assets.py:asset_by_barcode for the same pattern). Looks up via the linked
+    member's barcode since staff has none of its own; matches regardless of
+    active/locked state."""
     conn = get_db_connection()
     staff_row = conn.execute(
         """
@@ -365,15 +325,10 @@ def staff_by_barcode(barcode):
 @staff_bp.route("/staff/<int:id>/profile")
 @login_required
 def staff_profile(id):
-    """Renders the read-only profile modal opened by clicking a staff
-    table row -- mirrors members_bp.member_profile: staff details plus a
-    shell that the modal's own JS fills in by calling the existing
-    /api/v1/audit-log?staff_id=<id> endpoint for an Activity tab. That
-    endpoint only actually filters by staff_id for admin callers (see
-    get_audit_log_context above) -- non-admins get their own entries back
-    regardless of staff_id, which would look like the wrong person's
-    activity, so the Activity tab is admin-only here and the template
-    just omits it for everyone else."""
+    """Read-only profile modal for a staff table row (mirrors member_profile).
+    The Activity tab is admin-only: /api/v1/audit-log only filters by staff_id for
+    admin callers, so a non-admin would see their own entries mislabeled as the
+    profiled staffer's activity -- the template just omits the tab for everyone else."""
     conn = get_db_connection()
     staff_member = conn.execute(
         """
@@ -390,11 +345,7 @@ def staff_profile(id):
         (id,),
     ).fetchone()
 
-    # Same idea as members_bp.member_profile's pending_unrestriction_request:
-    # surfaces an already-pending deactivation request against this admin
-    # right on their profile, rather than only being discoverable via
-    # Approvals -- the create endpoint already 409s on a duplicate, this
-    # just makes what it already knows visible.
+    # Same idea as member_profile's pending_unrestriction_request -- surfaces a pending deactivation request on the profile itself.
     pending_deactivation_request = None
     if staff_member is not None and staff_member["role"] == "admin" and staff_member["is_active"]:
         pending_deactivation_request = conn.execute(
@@ -402,10 +353,15 @@ def staff_profile(id):
             SELECT admin_deactivation_requests.id, admin_deactivation_requests.reason,
                    admin_deactivation_requests.created_at, admin_deactivation_requests.required_tier,
                    admin_deactivation_requests.required_approvals,
+                   admin_deactivation_requests.required_in_charge,
                    staff.username AS requested_by_username,
                    (SELECT COUNT(*) FROM admin_deactivation_approvals
-                    WHERE admin_deactivation_approvals.request_id = admin_deactivation_requests.id
-                   ) AS approvals_received
+                    WHERE admin_deactivation_approvals.request_id = admin_deactivation_requests.id AND decision = 'approve'
+                   ) AS approvals_received,
+                   (SELECT COUNT(*) FROM admin_deactivation_approvals aa
+                    JOIN staff s ON s.id = aa.approver_staff_id
+                    WHERE aa.request_id = admin_deactivation_requests.id AND aa.decision = 'approve' AND s.role = 'in_charge'
+                   ) AS in_charge_approvals_received
             FROM admin_deactivation_requests
             JOIN staff ON admin_deactivation_requests.requested_by_staff_id = staff.id
             WHERE admin_deactivation_requests.target_staff_id = ? AND admin_deactivation_requests.status = 'pending'
@@ -430,17 +386,34 @@ def staff_profile(id):
     )
 
 
+@staff_bp.route("/staff/<int:id>/full-activity-modal")
+@roles_required("admin")
+def staff_full_activity_modal(id):
+    """Paginated "Full Activity" popup for the profile modal's Activity tab, stacking
+    on top of the modal instead of navigating away to /audit-log. admin-only, same
+    reason as the Activity tab (get_audit_log_context only scopes by staff_id for admins)."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    return render_template("staff/_full_activity_modal.html", staff_member=staff_member)
+
+
 def get_audit_log_context(args, staff):
-    """Shared query logic for the audit trail -- used by both the JSON
-    API route below and the full /audit-log page (routes/pages.py), the
-    same get_*_table_context pattern used by assets/members/staff/
-    transactions/notifications. admin can view everyone's entries and
-    filter by any staff_id. in_charge and tool_keeper can only view their
-    own -- any staff_id they pass in is ignored and forced to their own
-    id. Other filters are all optional and combine with AND. Pagination
-    uses the shared limit/offset helper (default 25, capped at 100 --
-    same as every other paginated route), not a route-specific limit.
-    Returns (context_dict, None) on success, or (None, error_response)."""
+    """Shared query logic for the audit trail (JSON API + full page).
+    admin can view everyone's entries and filter by staff_id; in_charge/tool_keeper
+    are forced to their own id regardless of what they pass. Other filters are
+    optional and AND together. Returns (context_dict, None) or (None, error_response)."""
     filters = []
     params = []
 
@@ -476,11 +449,7 @@ def get_audit_log_context(args, staff):
         error = validate_date_string(until, "until")
         if error:
             return None, error
-        # created_at is a full timestamp, but `until` is a bare date, so a
-        # plain <= comparison as strings excludes the entire day named by
-        # `until` (e.g. "2026-08-06 14:32:00" <= "2026-08-06" is false).
-        # Compare against the start of the *next* day instead so the named
-        # day is fully included.
+        # `until` is a bare date but created_at is a full timestamp, so compare against the next day's start or a plain <= would exclude that whole day.
         until_exclusive = (
             datetime.strptime(until, "%Y-%m-%d") + timedelta(days=1)
         ).strftime("%Y-%m-%d")
@@ -540,9 +509,8 @@ def view_audit_log():
 @staff_bp.route("/audit-log/table")
 @login_required
 def view_audit_log_table():
-    """htmx partial -- returns just the table + pagination footer, so
-    filtering/paging never re-renders the whole page (matching the
-    assets/members/staff/transactions/notifications pattern)."""
+    """htmx partial -- just the table + pagination footer, so filtering/paging
+    doesn't re-render the whole page."""
     context, error = get_audit_log_context(request.args, g.staff)
     if error:
         return error
@@ -555,40 +523,28 @@ def view_audit_log_table():
 @staff_bp.route("/staff/add-form")
 @roles_required("admin")
 def add_staff_form():
-    """Renders the "Add New Staff" modal. A staff account is access
-    granted to an existing member record (staff.member_id is UNIQUE NOT
-    NULL) -- there's no separate name/department to collect here, since
-    those already live on `members`.
-
-    The member picker is a type-ahead search (see
-    eligible_members_search below) rather than a preloaded <select> --
-    with enough members, dumping every eligible one into a dropdown on
-    every modal open doesn't scale and makes picking the right one
-    tedious. This route no longer needs to query members at all."""
+    """Renders the "Add New Staff" modal. A staff account grants access to an
+    existing member record (staff.member_id is UNIQUE NOT NULL), so there's no
+    name/department to collect here. Member picker is a type-ahead search
+    (see eligible_members_search) instead of a preloaded dropdown, which
+    doesn't scale once there are a lot of members."""
     return render_template("staff/_add_modal.html")
 
 
 @staff_bp.route("/staff/eligible-members-search")
 @roles_required("admin")
 def eligible_members_search():
-    """Backs the Add Staff modal's member picker. Matches name, member
-    code, or barcode ID (so scanning a barcode into the same box works
-    just as well as typing a name), restricted to the same
-    active-and-not-already-staff set add_staff_form's eligibility rule
-    requires. Capped at a handful of results since this is a live-as-
-    you-type search, not a full listing -- an empty query intentionally
-    returns nothing rather than the whole table.
+    """Backs the Add Staff modal's member picker. Matches name, member code, or
+    barcode ID, restricted to active members not already staff. Capped at a
+    handful of results (live-as-you-type search) -- an empty query returns
+    nothing rather than the whole table.
 
-    The "Browse all" button in the modal hits this same route with
-    browse=1 instead of typing a query -- same eligibility filter, no
-    text match, alphabetical ordering since it's meant to be skimmed
-    rather than typed against, BROWSE_PAGE_SIZE per page with a
-    "Load more" row appending the next page (append=1&offset=N) rather
-    than dumping the whole eligible pool into the DOM at once.
+    "Browse all" hits this same route with browse=1: same eligibility filter,
+    no text match, alphabetical, paginated via append=1&offset=N ("Load more")
+    instead of dumping the whole pool into the DOM.
 
-    has_more is detected by fetching one extra row past the page size
-    rather than a separate COUNT(*) query -- if that extra row comes
-    back, there's more to load."""
+    has_more is detected by fetching one extra row past BROWSE_PAGE_SIZE instead
+    of a separate COUNT(*) query."""
     BROWSE_PAGE_SIZE = 50
 
     q = request.args.get("q", "").strip()
@@ -772,9 +728,8 @@ def add_staff_submit():
 @roles_required("admin")
 def edit_staff_form(id):
     """Renders the "Edit Staff" modal. Only role and assigned_start/end are
-    actually editable here -- matches edit_staff_submit below, which never
-    touches username or anything on the linked member record. Name/
-    department/staff_code are shown read-only for context."""
+    editable (matches edit_staff_submit); name/department/staff_code shown
+    read-only for context."""
     conn = get_db_connection()
     staff_member = conn.execute(
         """
@@ -800,20 +755,14 @@ def edit_staff_form(id):
 @staff_bp.route("/staff/<int:id>/reassign-form")
 @roles_required("admin")
 def reassign_usage_form(id):
-    """Renders the quick "Reassign Usage" modal -- a stripped-down
-    alternative to the full Edit Staff modal for the one thing that gets
-    touched far more often than role/RFID: extending or shortening an
-    assignment window. Posts to the exact same /staff/<id>/edit endpoint
-    as the full edit form (it already treats any field not present in
-    the JSON body as "leave unchanged"), so there's no new write path to
-    keep in sync -- just a faster door to the existing one.
+    """Quick "Reassign Usage" modal, a shortcut to just extend/shorten an
+    assignment window instead of opening the full Edit Staff modal. Posts
+    to the same /staff/<id>/edit endpoint (untouched fields stay unchanged),
+    so there's no separate write path to maintain.
 
-    Available for in_charge as well as tool_keeper -- only admin is
-    blocked below. in_charge accounts can have a real assigned_start/end
-    set (the Add/Edit forms don't restrict those fields by role) and
-    compute_usage_status treats in_charge the same as tool_keeper for
-    display, so the reassign shortcut needs to match that, not treat
-    in_charge as permanently exempt the way admin actually is."""
+    Available for in_charge too, not just tool_keeper -- only admin is blocked
+    below, since compute_usage_status treats in_charge like tool_keeper for
+    display and in_charge can have a real assigned window set."""
     conn = get_db_connection()
     staff_member = conn.execute(
         """
@@ -857,11 +806,7 @@ def edit_staff_submit(id):
     if error:
         return error
 
-    # A blank/omitted rfid_pin leaves whatever's already set untouched --
-    # unlike rfid_id (a plain identifier, safe to blank out to unassign),
-    # this is a login credential, so an accidental empty submit shouldn't
-    # silently wipe a working PIN. Validated up front, before the row is
-    # even fetched, same as the role check above.
+    # Blank/omitted rfid_pin leaves the existing one untouched -- it's a credential, so an empty submit shouldn't wipe it.
     if data.get("rfid_pin"):
         error = validate_rfid_pin(data["rfid_pin"])
         if error:
@@ -905,11 +850,7 @@ def edit_staff_submit(id):
                 new_role,
                 data.get("assigned_start", staff["assigned_start"]),
                 data.get("assigned_end", staff["assigned_end"]),
-                # An empty string means "clear the card" (unassign), not
-                # "set it to the literal empty string" -- normalized to
-                # NULL so the UNIQUE index (idx_staff_rfid_id) still
-                # treats every unassigned staff account as distinct
-                # instead of colliding on "".
+                # Empty string means "unassign the card" -- normalize to NULL so the UNIQUE index doesn't collide multiple unassigned rows on "".
                 data.get("rfid_id", staff["rfid_id"]) or None,
                 new_rfid_pin_hash,
                 staff["id"],
@@ -981,8 +922,7 @@ def change_password_submit():
             "UPDATE staff SET password_hash = ? WHERE id = ?",
             (new_hash, g.staff["id"]),
         )
-        # kill every other active session for this account, but keep the
-        # one making this request so the staff member isn't logged out
+        # kill every other active session for this account, but keep this one so they're not logged out
         conn.execute(
             "DELETE FROM sessions WHERE staff_id = ? AND token != ?",
             (g.staff["id"], current_token),
@@ -1010,23 +950,13 @@ def change_password_submit():
 @roles_required("admin")
 @limiter.limit("10 per minute; 30 per hour")
 def change_rfid_pin_submit():
-    """Self-service RFID PIN change -- mirrors change_password_submit
-    above exactly (current password required as confirmation, not the
-    current PIN itself -- a password is the stronger, unrelated secret,
-    so this doesn't degrade into "prove you know the PIN to change the
-    PIN"). Admin-only, matching RFID login itself (routes/auth.py:
-    login_rfid) being admin-only -- there's no point letting a
-    non-admin set a PIN that can never actually log anyone in.
+    """Self-service RFID PIN change, mirrors change_password_submit. Confirms with
+    the current password (not the current PIN) since a password is the stronger
+    secret. Admin-only, matching RFID login itself being admin-only.
 
-    This is also the intended answer to "should a newly-issued RFID PIN
-    be a fixed default like 000000, or random?" -- neither. Whoever
-    assigns the card (an admin, via staff/_edit_modal.html) types a real
-    starting PIN themselves, exactly like a new staff account already
-    gets a real starting password typed by whoever creates it (see
-    add_staff_submit's TEMPORARY PASSWORD field) rather than a
-    predictable system default -- and this endpoint is what lets the
-    new admin change it to something only they know once they've logged
-    in, the same way changing an initial password already works."""
+    New PINs start as a real value typed by whoever assigns the card (no
+    predictable default like 000000) -- this endpoint is how the admin later
+    changes it to something only they know."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1056,11 +986,7 @@ def change_rfid_pin_submit():
             "UPDATE staff SET rfid_pin_hash = ? WHERE id = ?",
             (new_hash, g.staff["id"]),
         )
-        # Same reasoning as change_password_submit -- a PIN change should
-        # invalidate every other active session on this account (someone
-        # else could be mid-session on a shared kiosk with the old PIN
-        # still valid there otherwise), but not the one making this
-        # request.
+        # Same as change_password_submit: kill other sessions (a shared kiosk could still have the old PIN valid), but not this one.
         conn.execute(
             "DELETE FROM sessions WHERE staff_id = ? AND token != ?",
             (g.staff["id"], current_token),
@@ -1085,11 +1011,7 @@ def change_rfid_pin_submit():
 
 
 # # # NOTIFICATION PREFERENCES --------------------------------------------
-# Personal display prefs, not the admin-wide due_soon_hours threshold
-# above (that controls WHEN an alert is generated at all; this controls
-# whether *this* staff member sees it once generated) -- see
-# 0022_staff_notification_prefs.sql and services/notification_service.py's
-# PREF_FILTER_SQL.
+# Personal display prefs -- distinct from the admin-wide due_soon_hours (that's WHEN an alert fires; this is whether *this* staffer sees it).
 
 _NOTIFY_PREF_COLUMNS = ("notify_due_soon", "notify_overdue", "notify_requests")
 
@@ -1097,11 +1019,9 @@ _NOTIFY_PREF_COLUMNS = ("notify_due_soon", "notify_overdue", "notify_requests")
 @staff_bp.route("/staff/notification-prefs", methods=["POST"])
 @login_required
 def update_own_notification_prefs():
-    """Started as the three boolean notify_* toggles (_NOTIFY_PREF_COLUMNS
-    above); also handles toast_duration_seconds here now -- a personal
-    display preference (templates/base.html's toast auto-dismiss timer),
-    not a permission, so it belongs in this "my own account settings"
-    endpoint rather than an admin-only System page one."""
+    """Handles the three boolean notify_* toggles plus toast_duration_seconds
+    (the toast auto-dismiss timer) -- both personal prefs, so they live in this
+    self-service endpoint rather than an admin-only settings one."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1162,13 +1082,10 @@ def update_own_notification_prefs():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def upload_own_photo():
-    """Self-service profile photo upload/replace, for the camera button on
-    the My Account modal. Mirrors the asset image replace flow in
-    routes/assets.py (edit_asset): validate before touching anything,
-    save the new file, update the DB, and only delete the old file once
-    that update has actually committed -- so a failure partway through
-    never leaves the staff record pointing at a file that's already
-    gone."""
+    """Self-service profile photo upload/replace (My Account modal camera button).
+    Mirrors the asset image replace flow: validate, save new file, update DB, only
+    delete the old file after commit -- so a failure partway through never leaves
+    the record pointing at a deleted file."""
     photo_file = request.files.get("photo") if request.files else None
     img_error = validate_image_upload(photo_file)
     if img_error:
@@ -1189,8 +1106,7 @@ def upload_own_photo():
         conn.commit()
     except Exception:
         conn.rollback()
-        # The DB update never landed, so the just-saved file would
-        # otherwise be an orphan nothing ever points to or cleans up.
+        # DB update failed, so clean up the file we just saved before it becomes an orphan.
         delete_staff_photo(saved_path)
         raise
     finally:
@@ -1258,12 +1174,8 @@ def remove_own_photo():
 @staff_bp.route("/staff/<int:id>/reset-password-form")
 @roles_required("admin")
 def reset_password_form(id):
-    """Renders the confirm-before-reset modal. Mirrors lock_staff_form's
-    shape -- fetch the row, 404 if missing, hand off to the partial. The
-    actual reset (and the generated password it hands back) happens in
-    reset_password_submit below; this route only exists to get a
-    confirmation in front of it, same as every other destructive-ish
-    staff action in this file."""
+    """Confirm-before-reset modal. Mirrors lock_staff_form's shape; the actual
+    reset happens in reset_password_submit below."""
     conn = get_db_connection()
     staff_member = conn.execute(
         """
@@ -1287,22 +1199,14 @@ def reset_password_form(id):
 @roles_required("admin")
 @limiter.limit("10 per minute; 30 per hour")
 def reset_password_submit(id):
-    """Admin-initiated reset for a staff member who forgot their password
-    -- no current password needed, since that's the whole point of this
-    being the recovery path. Takes no input: rather than trust an admin
-    to type a strong password on someone else's behalf (or reuse a weak
-    one out of habit), this generates a random one the same way
-    services/seed_service.py already does for the emergency temp-admin
-    account, and hands it back in the response -- once. It isn't stored
-    anywhere in plaintext and this endpoint can't be asked to reveal it
-    again; if it's lost before reaching the staff member, reset again.
+    """Admin-initiated password reset -- no current password needed since that's
+    the point. Takes no input: generates a random password (like the emergency
+    temp-admin flow in seed_service.py) and returns it once, never stored in
+    plaintext or retrievable again; if it's lost, just reset again.
 
-    Also clears any lockout alongside the password, since a staff member
-    who forgot their password very plausibly also got themselves locked
-    out trying to guess it -- a fresh temporary password would otherwise
-    be handed to someone who still can't log in with it. Every existing
-    session for the account is killed either way, since a reset usually
-    means the account may have been locked out or compromised."""
+    Also clears any lockout, since forgetting a password often means getting
+    locked out trying to guess it. All existing sessions get killed too, since
+    a reset usually means the account was locked out or compromised."""
     conn = get_db_connection()
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
 
@@ -1354,9 +1258,8 @@ def reset_password_submit(id):
 @staff_bp.route("/staff/<int:id>/lock-form")
 @roles_required("admin")
 def lock_staff_form(id):
-    """Renders the manual-lock modal -- duration presets plus a custom
-    minutes field and an indefinite option. Mirrors delete_staff_form's
-    shape (fetch the row, 404 if missing, then hand off to the partial)."""
+    """Manual-lock modal -- duration presets, custom minutes field, and an
+    indefinite option. Mirrors delete_staff_form's shape."""
     conn = get_db_connection()
     staff_member = conn.execute(
         """
@@ -1386,17 +1289,10 @@ def lock_staff_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def lock_staff(id):
-    """Manually locks an account -- direct admin action, independent of
-    the failed-attempts auto-lockout in routes/auth.py. Writes the same
-    staff.locked_until column that auto-lockout does (an indefinite lock
-    uses the INDEFINITE_LOCK_UNTIL sentinel -- see that constant's
-    docstring in services/settings_service.py), so the existing Unlock
-    action and the login-time lockout check both already handle it with
-    no changes needed there beyond the one message tweak in auth.py.
-
-    Deliberately doesn't touch failed_login_attempts -- that counter
-    tracks a different thing (consecutive bad passwords) that a manual
-    lock has nothing to do with, so it's left exactly as it was."""
+    """Manually locks an account, independent of the auto-lockout in auth.py.
+    Writes the same staff.locked_until column (indefinite uses INDEFINITE_LOCK_UNTIL,
+    see settings_service.py), so Unlock and the login check handle it without changes.
+    Deliberately leaves failed_login_attempts alone -- that counter is unrelated."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1445,9 +1341,7 @@ def lock_staff(id):
         "UPDATE staff SET locked_until = ? WHERE id = ?",
         (locked_until, id),
     )
-    # A lock is meant to actively cut the account off, not just block new
-    # logins later -- so any session already signed in gets dropped too,
-    # same reasoning as the password-reset/password-change flows above.
+    # A lock should cut the account off now, not just block future logins -- so any live session gets dropped too, same as the reset/change-password flows above.
     conn.execute("DELETE FROM sessions WHERE staff_id = ?", (id,))
     conn.commit()
     conn.close()
@@ -1592,7 +1486,7 @@ def delete_staff(id):
 
     try:
         conn.execute(
-            "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+            "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
             (id,),
         )
         conn.commit()
@@ -1622,6 +1516,36 @@ def delete_staff(id):
     return jsonify({"message": "Staff deactivated successfully"})
 
 
+@staff_bp.route("/staff/<int:id>/reactivate-confirm")
+@roles_required("admin")
+def reactivate_staff_form(id):
+    """Renders the reactivate-confirmation modal -- used to skip straight
+    to a native confirm() via staffAction() (templates/staff.html), which
+    didn't match the styled modal-per-action shape every other staff
+    action here uses (lock, unlock, delete-confirm, and now
+    request-deactivation all render their own modal first)."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.is_active,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    if staff_member is None:
+        return jsonify({"error": "Staff not found"}), 404
+
+    if staff_member["is_active"]:
+        return jsonify({"error": "Staff account is already active"}), 400
+
+    return render_template("staff/_reactivate_modal.html", staff_member=staff_member)
+
+
 @staff_bp.route("/staff/<int:id>/reactivate", methods=["POST"])
 @roles_required("admin")
 @limiter.limit("20 per minute")
@@ -1638,7 +1562,7 @@ def reactivate_staff(id):
         return jsonify({"error": "Staff account is already active"}), 400
 
     try:
-        conn.execute("UPDATE staff SET is_active = 1 WHERE id = ?", (id,))
+        conn.execute("UPDATE staff SET is_active = 1, deactivated_at = NULL WHERE id = ?", (id,))
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
@@ -1720,7 +1644,7 @@ def bulk_deactivate_staff():
 
         try:
             conn.execute(
-                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
                 (staff_id,),
             )
             conn.commit()
@@ -1794,7 +1718,7 @@ def bulk_reactivate_staff():
             continue
 
         try:
-            conn.execute("UPDATE staff SET is_active = 1 WHERE id = ?", (staff_id,))
+            conn.execute("UPDATE staff SET is_active = 1, deactivated_at = NULL WHERE id = ?", (staff_id,))
             conn.commit()
             reactivated.append({"id": staff_id, "name": row["username"]})
         except sqlite3.IntegrityError as e:
@@ -1858,14 +1782,66 @@ def get_staff_by_barcode(barcode):
 # # # ADMIN DEACTIVATION (approval-gated) ----------------------------------
 
 
+@staff_bp.route("/staff/<int:id>/request-deactivation-form")
+@roles_required("admin")
+def request_deactivation_form(id):
+    """Renders the peer-approval deactivation-request modal -- used to be
+    a plain browser prompt() asking for the reason inline, which didn't
+    match the styled modal-plus-reason-textarea shape every other
+    reason-requiring action in this app uses (members/_restrict_modal.html,
+    the deny-request flows in requests.html). Same not-an-admin /
+    already-pending guards request_admin_deactivation itself enforces are
+    repeated here so a direct hit to this URL can't show a form for a
+    request that would just get rejected on submit."""
+    conn = get_db_connection()
+    staff_member = conn.execute(
+        """
+        SELECT staff.id, staff.role, staff.is_active,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
+
+    if staff_member is None:
+        conn.close()
+        return jsonify({"error": "Staff not found"}), 404
+
+    if staff_member["role"] != "admin":
+        conn.close()
+        return jsonify({"error": "This form is only for deactivating admin accounts"}), 400
+
+    if not staff_member["is_active"]:
+        conn.close()
+        return jsonify({"error": "This account is already deactivated"}), 400
+
+    if id == g.staff["id"]:
+        conn.close()
+        return jsonify({"error": "Cannot request your own deactivation"}), 400
+
+    existing_pending = conn.execute(
+        "SELECT id FROM admin_deactivation_requests WHERE target_staff_id = ? AND status = 'pending'",
+        (id,),
+    ).fetchone()
+    conn.close()
+
+    return render_template(
+        "staff/_request_deactivation_modal.html",
+        staff_member=staff_member,
+        already_pending=existing_pending is not None,
+    )
+
+
 @staff_bp.route("/staff/<int:id>/request-deactivation", methods=["POST"])
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def request_admin_deactivation(id):
     """Requests deactivation of a fellow admin account instead of doing it
-    unilaterally — /staff/<id>/delete refuses this for any admin. Takes
-    effect automatically once enough approvals come in; see
-    determine_approval_tier for how many and from whom."""
+    unilaterally — /staff/<id>/delete refuses this for any admin. Doesn't
+    take effect on its own; see determine_approval_tier for how many
+    approvals it needs, and /finalize for how it actually gets carried out."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1878,7 +1854,14 @@ def request_admin_deactivation(id):
         return jsonify({"error": "Cannot request your own deactivation"}), 400
 
     conn = get_db_connection()
-    target = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
+    target = conn.execute(
+        """
+        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff JOIN members ON members.id = staff.member_id
+        WHERE staff.id = ?
+        """,
+        (id,),
+    ).fetchone()
 
     if target is None:
         conn.close()
@@ -1916,31 +1899,49 @@ def request_admin_deactivation(id):
             409,
         )
 
-    tier, required_approvals = determine_approval_tier(conn, g.staff["id"], id)
+    tier, required_approvals, required_in_charge = determine_approval_tier(conn, g.staff["id"], id)
 
     if tier is None:
         conn.close()
         return (
             jsonify(
                 {
-                    "error": "No eligible approvers currently exist to process this request",
-                    "reason": "Deactivating this admin requires approval from another admin, or at least 2 in_charge accounts, or at least 1 tool_keeper — none are currently available.",
+                    "error": "No eligible reviewers currently exist to process this request",
+                    "reason": "Deactivating this admin requires at least 1 active in_charge account plus at least 1 more in_charge or tool_keeper account -- none are currently available.",
                 }
             ),
             409,
         )
 
+    target_full_name = full_name(
+        target["first_name"], target["last_name"], target["middle_name"], target["suffix"]
+    )
+    requester_member = conn.execute(
+        "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
+        (g.staff["member_id"],),
+    ).fetchone()
+    requester_full_name = full_name(
+        requester_member["first_name"],
+        requester_member["last_name"],
+        requester_member["middle_name"],
+        requester_member["suffix"],
+    )
+
     try:
         cursor = conn.execute(
             """
             INSERT INTO admin_deactivation_requests
-                (target_staff_id, requested_by_staff_id, reason, required_tier, required_approvals)
-            VALUES (?, ?, ?, ?, ?)
+                (target_staff_id, requested_by_staff_id, reason, required_tier, required_approvals, required_in_charge)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (id, g.staff["id"], reason, tier, required_approvals),
+            (id, g.staff["id"], reason, tier, required_approvals, required_in_charge),
+        )
+        request_id = cursor.lastrowid
+        # Notifies every in_charge/tool_keeper account, same transaction as the insert so a request never exists without its notifications.
+        create_admin_deactivation_requested_notifications(
+            conn, request_id, target_full_name, requester_full_name
         )
         conn.commit()
-        request_id = cursor.lastrowid
     except sqlite3.IntegrityError as e:
         conn.rollback()
         logger.error(f"IntegrityError: {e}")
@@ -1956,7 +1957,7 @@ def request_admin_deactivation(id):
         target_name=target["username"],
         details=(
             f"Requested deactivation of admin {target['username']}: {reason} "
-            f"(requires {required_approvals} {tier} approval(s))"
+            f"(requires {required_approvals} approval(s), {required_in_charge}+ in_charge)"
         ),
     )
 
@@ -1967,6 +1968,7 @@ def request_admin_deactivation(id):
                 "id": request_id,
                 "required_tier": tier,
                 "required_approvals": required_approvals,
+                "required_in_charge": required_in_charge,
             }
         ),
         201,
@@ -1977,6 +1979,11 @@ def request_admin_deactivation(id):
 @login_required
 @limiter.limit("20 per minute")
 def approve_admin_deactivation(id):
+    data, error = get_json_or_error()
+    reason = data.get("reason") if not error else None
+    if not reason:
+        return jsonify({"error": "A reason is required to approve this request"}), 400
+
     conn = get_db_connection()
     req = conn.execute(
         "SELECT * FROM admin_deactivation_requests WHERE id = ?", (id,)
@@ -1990,13 +1997,11 @@ def approve_admin_deactivation(id):
         conn.close()
         return jsonify({"error": f"This request has already been {req['status']}"}), 409
 
-    if g.staff["role"] != req["required_tier"]:
+    if not is_eligible_reviewer(g.staff["role"]):
         conn.close()
         return (
             jsonify(
-                {
-                    "error": f"This request requires approval from {req['required_tier']} accounts"
-                }
+                {"error": "Only in_charge and tool_keeper accounts can review this request"}
             ),
             403,
         )
@@ -2012,17 +2017,16 @@ def approve_admin_deactivation(id):
 
     try:
         conn.execute(
-            "INSERT INTO admin_deactivation_approvals (request_id, approver_staff_id) VALUES (?, ?)",
-            (id, g.staff["id"]),
+            "INSERT INTO admin_deactivation_approvals (request_id, approver_staff_id, decision, reason) VALUES (?, ?, 'approve', ?)",
+            (id, g.staff["id"], reason),
         )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.rollback()
         conn.close()
-        return jsonify({"error": "You have already approved this request"}), 400
+        return jsonify({"error": "You have already reviewed this request"}), 400
 
-    # req is a plain SELECT * from admin_deactivation_requests, no join --
-    # target_username isn't a column on it, has to be looked up separately.
+    # req has no join, so target_username isn't on it -- look it up separately.
     target_staff_row = conn.execute(
         "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
     ).fetchone()
@@ -2032,29 +2036,21 @@ def approve_admin_deactivation(id):
         target_table="admin_deactivation_requests",
         target_id=id,
         target_name=target_staff_row["username"] if target_staff_row else None,
-        details=f"Approved deactivation request #{id} for staff {req['target_staff_id']}",
+        details=f"Approved deactivation request #{id} for staff {req['target_staff_id']}: {reason}",
     )
 
-    approval_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM admin_deactivation_approvals WHERE request_id = ?",
-        (id,),
-    ).fetchone()["cnt"]
-
-    finalized = finalize_if_ready(req, conn)
+    # Just records the vote -- reaching the threshold doesn't deactivate anything by itself,
+    # the requester finalizes explicitly after reviewing every vote (see /finalize).
+    approve_count, in_charge_count, _ = get_review_counts(conn, id)
     conn.close()
-
-    if finalized:
-        return jsonify(
-            {
-                "message": "Approval recorded — required approvals reached, admin account deactivated"
-            }
-        )
 
     return jsonify(
         {
             "message": "Approval recorded",
-            "approvals_received": approval_count,
+            "approvals_received": approve_count,
             "approvals_required": req["required_approvals"],
+            "in_charge_received": in_charge_count,
+            "in_charge_required": req["required_in_charge"],
         }
     )
 
@@ -2063,9 +2059,12 @@ def approve_admin_deactivation(id):
 @login_required
 @limiter.limit("20 per minute")
 def deny_admin_deactivation(id):
-    """A single denial from anyone eligible to approve this request's tier
-    cancels it outright — denial doesn't need consensus the way approval
-    does. The requester can also cancel their own pending request."""
+    """Reviewer denials are just a recorded vote now, same as approvals --
+    they don't cancel the request by themselves, the requester decides
+    what to do once they've seen everyone's votes and reasons (see
+    /finalize). The requester can still cancel their own pending request
+    outright at any time, regardless of vote counts -- that's the one path
+    here that actually resolves the request."""
     data, error = get_json_or_error()
     denial_reason = data.get("denial_reason") if not error else None
 
@@ -2083,9 +2082,10 @@ def deny_admin_deactivation(id):
         return jsonify({"error": f"This request has already been {req['status']}"}), 409
 
     is_requester = g.staff["id"] == req["requested_by_staff_id"]
-    is_eligible_denier = g.staff["role"] == req["required_tier"] and g.staff[
-        "id"
-    ] not in (req["target_staff_id"], req["requested_by_staff_id"])
+    is_eligible_denier = is_eligible_reviewer(g.staff["role"]) and g.staff["id"] not in (
+        req["target_staff_id"],
+        req["requested_by_staff_id"],
+    )
 
     if not (is_requester or is_eligible_denier):
         conn.close()
@@ -2093,56 +2093,172 @@ def deny_admin_deactivation(id):
             jsonify(
                 {
                     "error": "You are not authorized to deny this request",
-                    "reason": f"Only the requester (to cancel it) or a {req['required_tier']} account (other than the requester or target) can deny this request",
+                    "reason": "Only the requester (to cancel it) or an in_charge/tool_keeper account (other than the requester or target) can deny this request",
                 }
             ),
             403,
         )
 
-    new_status = "cancelled" if is_requester else "denied"
+    # A deny vote needs a reason so the requester sees why before finalizing -- a self-cancel doesn't, they already know.
+    if not is_requester and not denial_reason:
+        conn.close()
+        return jsonify({"error": "A reason is required to deny this request"}), 400
 
-    # Looked up before conn.close() below -- req itself (a plain SELECT *
-    # from admin_deactivation_requests) has no target_username column.
+    # Looked up before conn.close() below -- req has no target_username column of its own.
     target_staff_row = conn.execute(
         "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
     ).fetchone()
 
-    conn.execute(
-        """
-        UPDATE admin_deactivation_requests
-        SET status = ?, denied_by_staff_id = ?, denial_reason = ?, resolved_at = datetime('now', 'localtime')
-        WHERE id = ?
-        """,
-        (new_status, g.staff["id"], denial_reason, id),
-    )
-    conn.commit()
-    conn.close()
+    if is_requester:
+        conn.execute(
+            """
+            UPDATE admin_deactivation_requests
+            SET status = 'cancelled', denied_by_staff_id = ?, denial_reason = ?, resolved_at = datetime('now', 'localtime')
+            WHERE id = ?
+            """,
+            (g.staff["id"], denial_reason, id),
+        )
+        conn.commit()
+        conn.close()
+        log_action(
+            staff_id=g.staff["id"],
+            action="cancelled_admin_deactivation",
+            target_name=target_staff_row["username"] if target_staff_row else None,
+            target_table="admin_deactivation_requests",
+            target_id=id,
+            details=f"Request #{id} cancelled" + (f": {denial_reason}" if denial_reason else ""),
+        )
+        return jsonify({"message": "Request cancelled"})
+
+    try:
+        conn.execute(
+            "INSERT INTO admin_deactivation_approvals (request_id, approver_staff_id, decision, reason) VALUES (?, ?, 'deny', ?)",
+            (id, g.staff["id"], denial_reason),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": "You have already reviewed this request"}), 400
 
     log_action(
         staff_id=g.staff["id"],
-        action=(
-            "cancelled_admin_deactivation"
-            if is_requester
-            else "denied_admin_deactivation"
-        ),
+        action="denied_admin_deactivation",
         target_name=target_staff_row["username"] if target_staff_row else None,
         target_table="admin_deactivation_requests",
         target_id=id,
-        details=f"Request #{id} {new_status}"
-        + (f": {denial_reason}" if denial_reason else ""),
+        details=f"Denied deactivation request #{id}" + (f": {denial_reason}" if denial_reason else ""),
     )
 
-    return jsonify({"message": f"Request {new_status}"})
+    approve_count, in_charge_count, deny_count = get_review_counts(conn, id)
+    conn.close()
+    return jsonify({"message": "Deny recorded", "denies_received": deny_count})
+
+
+@staff_bp.route("/admin-deactivation-requests/<int:id>/finalize", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def finalize_admin_deactivation_route(id):
+    """The requester's own final say -- deactivates the target once the
+    required approvals are in, but only when the requester themselves
+    pulls the trigger. Reaching the threshold alone never does this
+    automatically (see approve_admin_deactivation)."""
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_deactivation_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    if req["status"] != "pending":
+        conn.close()
+        return jsonify({"error": f"This request has already been {req['status']}"}), 409
+
+    if g.staff["id"] != req["requested_by_staff_id"]:
+        conn.close()
+        return (
+            jsonify({"error": "Only the staff member who filed this request can finalize it"}),
+            403,
+        )
+
+    ok, error_message = finalize_admin_deactivation(req, g.staff["id"], conn)
+    conn.close()
+
+    if not ok:
+        return jsonify({"error": error_message}), 409
+
+    return jsonify({"message": "Admin account deactivated"})
+
+
+@staff_bp.route("/admin-deactivation-requests/<int:id>/reviews")
+@roles_required("admin")
+def list_admin_deactivation_reviews(id):
+    """Every individual approve/deny vote on a request, with whoever cast
+    it and their reason -- what the requester actually reviews before
+    deciding whether to finalize. Admin-only -- in_charge/tool_keeper can
+    still vote and see the aggregate counts on the main list, but not who
+    voted which way or why."""
+    conn = get_db_connection()
+    req = conn.execute(
+        "SELECT * FROM admin_deactivation_requests WHERE id = ?", (id,)
+    ).fetchone()
+
+    if req is None:
+        conn.close()
+        return jsonify({"error": "Request not found"}), 404
+
+    reviews = conn.execute(
+        """
+        SELECT admin_deactivation_approvals.*, staff.username, staff.role,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM admin_deactivation_approvals
+        JOIN staff ON staff.id = admin_deactivation_approvals.approver_staff_id
+        JOIN members ON members.id = staff.member_id
+        WHERE admin_deactivation_approvals.request_id = ?
+        ORDER BY admin_deactivation_approvals.created_at ASC
+        """,
+        (id,),
+    ).fetchall()
+
+    target_staff_row = conn.execute(
+        "SELECT username, member_id FROM staff WHERE id = ?", (req["target_staff_id"],)
+    ).fetchone()
+    target_member = (
+        conn.execute("SELECT * FROM members WHERE id = ?", (target_staff_row["member_id"],)).fetchone()
+        if target_staff_row
+        else None
+    )
+    approve_count, in_charge_count, deny_count = get_review_counts(conn, id)
+    conn.close()
+
+    if request.headers.get("HX-Request") == "true":
+        return render_template(
+            "staff/_deactivation_reviews_modal.html",
+            staff=g.staff,
+            req=req,
+            reviews=reviews,
+            target_member=target_member,
+            approve_count=approve_count,
+            in_charge_count=in_charge_count,
+            deny_count=deny_count,
+            requirements_met=(
+                approve_count >= req["required_approvals"] and in_charge_count >= req["required_in_charge"]
+            ),
+        )
+
+    return jsonify({"results": [dict(r) for r in reviews]})
 
 
 @staff_bp.route("/admin-deactivation-requests")
 @login_required
 def list_admin_deactivation_requests():
-    """admin/in_charge see every request — this is supervisory info.
-    tool_keeper can never be a requester or target here (only admins can
-    be either), so the only requests relevant to them are ones where
-    their tier is the one that gets to approve/deny — everything else is
-    unrelated admin-on-admin business they don't need visibility into."""
+    """Every role sees every request now -- admin/in_charge for supervisory
+    visibility, in_charge/tool_keeper because they can vote on any of them
+    regardless of tier, so there's no longer a "not relevant to you" subset
+    to hide the way there used to be when a request's tier gated who could
+    even see it."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -2158,13 +2274,8 @@ def list_admin_deactivation_requests():
     where_clauses = []
     params = []
 
-    if g.staff["role"] not in ("admin", "in_charge"):
-        where_clauses.append("admin_deactivation_requests.required_tier = ?")
-        params.append(g.staff["role"])
-    elif request.args.get("mine") == "1":
-        # Same opt-in narrowing as list_unrestriction_requests's `mine`
-        # param -- admin/in_charge see everyone's by default, this lets
-        # them filter down to requests they personally filed.
+    if request.args.get("mine") == "1":
+        # Same opt-in narrowing as list_unrestriction_requests's `mine` param.
         where_clauses.append("admin_deactivation_requests.requested_by_staff_id = ?")
         params.append(g.staff["id"])
 
@@ -2178,24 +2289,51 @@ def list_admin_deactivation_requests():
         f"SELECT COUNT(*) AS cnt FROM admin_deactivation_requests {where_sql}", params
     ).fetchone()["cnt"]
 
+    # my_decision's g.staff.id param has to go first in the list -- it's bound in the SELECT
+    # clause, which comes before WHERE in the query text.
     rows = conn.execute(
         f"""
         SELECT admin_deactivation_requests.*,
                target.username AS target_username,
+               target_member.first_name AS target_first_name,
+               target_member.last_name AS target_last_name,
+               target_member.middle_name AS target_middle_name,
+               target_member.suffix AS target_suffix,
                requester.username AS requested_by_username,
+               requester_member.first_name AS requested_by_first_name,
+               requester_member.last_name AS requested_by_last_name,
+               requester_member.middle_name AS requested_by_middle_name,
+               requester_member.suffix AS requested_by_suffix,
                denier.username AS denied_by_username,
-               (SELECT COUNT(*) FROM admin_deactivation_approvals
-                WHERE admin_deactivation_approvals.request_id = admin_deactivation_requests.id
-               ) AS approvals_received
+               denier_member.first_name AS denied_by_first_name,
+               denier_member.last_name AS denied_by_last_name,
+               denier_member.middle_name AS denied_by_middle_name,
+               denier_member.suffix AS denied_by_suffix,
+               (SELECT COUNT(*) FROM admin_deactivation_approvals aa
+                WHERE aa.request_id = admin_deactivation_requests.id AND aa.decision = 'approve'
+               ) AS approvals_received,
+               (SELECT COUNT(*) FROM admin_deactivation_approvals aa
+                JOIN staff s ON s.id = aa.approver_staff_id
+                WHERE aa.request_id = admin_deactivation_requests.id AND aa.decision = 'approve' AND s.role = 'in_charge'
+               ) AS in_charge_approvals_received,
+               (SELECT COUNT(*) FROM admin_deactivation_approvals aa
+                WHERE aa.request_id = admin_deactivation_requests.id AND aa.decision = 'deny'
+               ) AS denies_received,
+               (SELECT decision FROM admin_deactivation_approvals aa
+                WHERE aa.request_id = admin_deactivation_requests.id AND aa.approver_staff_id = ?
+               ) AS my_decision
         FROM admin_deactivation_requests
         JOIN staff AS target ON admin_deactivation_requests.target_staff_id = target.id
+        JOIN members AS target_member ON target.member_id = target_member.id
         JOIN staff AS requester ON admin_deactivation_requests.requested_by_staff_id = requester.id
+        JOIN members AS requester_member ON requester.member_id = requester_member.id
         LEFT JOIN staff AS denier ON admin_deactivation_requests.denied_by_staff_id = denier.id
+        LEFT JOIN members AS denier_member ON denier.member_id = denier_member.id
         {where_sql}
         ORDER BY admin_deactivation_requests.created_at DESC
         LIMIT ? OFFSET ?
         """,
-        params + [limit, offset],
+        [g.staff["id"]] + params + [limit, offset],
     ).fetchall()
     conn.close()
 
@@ -2210,359 +2348,6 @@ def list_admin_deactivation_requests():
     if request.headers.get("HX-Request") == "true":
         return render_template(
             "requests/_deactivation_table.html", staff=g.staff, **context
-        )
-
-    return jsonify(
-        {
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset,
-            "results": [dict(row) for row in rows],
-        }
-    )
-
-
-# # # ADMIN PROMOTION (peer-approved hand-over) requests ---------------------
-# Structurally mirrors the admin-deactivation routes just above --
-# request/approve/deny/list, same tier/eligibility rules -- but for the
-# opposite direction: nominating a non-admin staff member to become an
-# admin, instead of removing one. See services/admin_deactivation_service.py's
-# finalize_promotion_if_ready and migrations/0036_admin_promotion_requests.sql.
-
-
-@staff_bp.route("/staff/<int:id>/request-promotion", methods=["POST"])
-@roles_required("admin")
-@limiter.limit("10 per minute")
-def request_admin_promotion(id):
-    """Nominates a non-admin staff member for promotion to admin -- takes
-    effect automatically once enough peer approvals come in, the same
-    quorum shape as request_admin_deactivation, so one admin can't
-    unilaterally hand the role to an ally."""
-    data, error = get_json_or_error()
-    if error:
-        return error
-
-    reason = data.get("reason")
-    if not reason:
-        return jsonify({"error": "Missing required field: reason"}), 400
-
-    conn = get_db_connection()
-    target = conn.execute("SELECT * FROM staff WHERE id = ?", (id,)).fetchone()
-
-    if target is None:
-        conn.close()
-        return jsonify({"error": "Staff not found"}), 404
-
-    if target["role"] == "admin":
-        conn.close()
-        return jsonify({"error": "This staff member is already an admin"}), 400
-
-    if not target["is_active"]:
-        conn.close()
-        return jsonify({"error": "Cannot promote a deactivated staff account"}), 400
-
-    existing_pending = conn.execute(
-        "SELECT id FROM admin_promotion_requests WHERE target_staff_id = ? AND status = 'pending'",
-        (id,),
-    ).fetchone()
-
-    if existing_pending is not None:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "A pending promotion request already exists for this staff member",
-                    "request_id": existing_pending["id"],
-                }
-            ),
-            409,
-        )
-
-    tier, required_approvals = determine_approval_tier(conn, g.staff["id"], id)
-
-    if tier is None:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "No eligible approvers currently exist to process this request",
-                    "reason": "Promoting this staff member requires approval from another admin, or at least 2 in_charge accounts, or at least 1 tool_keeper — none are currently available.",
-                }
-            ),
-            409,
-        )
-
-    try:
-        cursor = conn.execute(
-            """
-            INSERT INTO admin_promotion_requests
-                (target_staff_id, requested_by_staff_id, reason, required_tier, required_approvals)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (id, g.staff["id"], reason, tier, required_approvals),
-        )
-        conn.commit()
-        request_id = cursor.lastrowid
-    except sqlite3.IntegrityError as e:
-        conn.rollback()
-        logger.error(f"IntegrityError: {e}")
-        return jsonify({"error": "A database constraint was violated."}), 400
-    finally:
-        conn.close()
-
-    log_action(
-        staff_id=g.staff["id"],
-        action="requested_admin_promotion",
-        target_table="admin_promotion_requests",
-        target_id=request_id,
-        target_name=target["username"],
-        details=(
-            f"Requested promotion of {target['username']} to admin: {reason} "
-            f"(requires {required_approvals} {tier} approval(s))"
-        ),
-    )
-
-    return (
-        jsonify(
-            {
-                "message": "Promotion request submitted",
-                "id": request_id,
-                "required_tier": tier,
-                "required_approvals": required_approvals,
-            }
-        ),
-        201,
-    )
-
-
-@staff_bp.route("/admin-promotion-requests/<int:id>/approve", methods=["POST"])
-@login_required
-@limiter.limit("20 per minute")
-def approve_admin_promotion(id):
-    conn = get_db_connection()
-    req = conn.execute(
-        "SELECT * FROM admin_promotion_requests WHERE id = ?", (id,)
-    ).fetchone()
-
-    if req is None:
-        conn.close()
-        return jsonify({"error": "Request not found"}), 404
-
-    if req["status"] != "pending":
-        conn.close()
-        return jsonify({"error": f"This request has already been {req['status']}"}), 409
-
-    if g.staff["role"] != req["required_tier"]:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": f"This request requires approval from {req['required_tier']} accounts"
-                }
-            ),
-            403,
-        )
-
-    if g.staff["id"] in (req["target_staff_id"], req["requested_by_staff_id"]):
-        conn.close()
-        return (
-            jsonify(
-                {"error": "You cannot approve a request you filed or are the target of"}
-            ),
-            403,
-        )
-
-    try:
-        conn.execute(
-            "INSERT INTO admin_promotion_approvals (request_id, approver_staff_id) VALUES (?, ?)",
-            (id, g.staff["id"]),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        conn.close()
-        return jsonify({"error": "You have already approved this request"}), 400
-
-    target_staff_row = conn.execute(
-        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
-    ).fetchone()
-    log_action(
-        staff_id=g.staff["id"],
-        action="approved_admin_promotion",
-        target_table="admin_promotion_requests",
-        target_id=id,
-        target_name=target_staff_row["username"] if target_staff_row else None,
-        details=f"Approved promotion request #{id} for staff {req['target_staff_id']}",
-    )
-
-    approval_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM admin_promotion_approvals WHERE request_id = ?",
-        (id,),
-    ).fetchone()["cnt"]
-
-    finalized = finalize_promotion_if_ready(req, conn)
-    conn.close()
-
-    if finalized:
-        return jsonify(
-            {
-                "message": "Approval recorded — required approvals reached, staff member promoted to admin"
-            }
-        )
-
-    return jsonify(
-        {
-            "message": "Approval recorded",
-            "approvals_received": approval_count,
-            "approvals_required": req["required_approvals"],
-        }
-    )
-
-
-@staff_bp.route("/admin-promotion-requests/<int:id>/deny", methods=["POST"])
-@login_required
-@limiter.limit("20 per minute")
-def deny_admin_promotion(id):
-    """A single denial from anyone eligible to approve this request's tier
-    cancels it outright -- same as admin-deactivation's deny. The
-    requester can also cancel their own pending request."""
-    data, error = get_json_or_error()
-    denial_reason = data.get("denial_reason") if not error else None
-
-    conn = get_db_connection()
-    req = conn.execute(
-        "SELECT * FROM admin_promotion_requests WHERE id = ?", (id,)
-    ).fetchone()
-
-    if req is None:
-        conn.close()
-        return jsonify({"error": "Request not found"}), 404
-
-    if req["status"] != "pending":
-        conn.close()
-        return jsonify({"error": f"This request has already been {req['status']}"}), 409
-
-    is_requester = g.staff["id"] == req["requested_by_staff_id"]
-    is_eligible_denier = g.staff["role"] == req["required_tier"] and g.staff[
-        "id"
-    ] not in (req["target_staff_id"], req["requested_by_staff_id"])
-
-    if not (is_requester or is_eligible_denier):
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "You are not authorized to deny this request",
-                    "reason": f"Only the requester (to cancel it) or a {req['required_tier']} account (other than the requester or target) can deny this request",
-                }
-            ),
-            403,
-        )
-
-    new_status = "cancelled" if is_requester else "denied"
-
-    target_staff_row = conn.execute(
-        "SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)
-    ).fetchone()
-
-    conn.execute(
-        """
-        UPDATE admin_promotion_requests
-        SET status = ?, denied_by_staff_id = ?, denial_reason = ?, resolved_at = datetime('now', 'localtime')
-        WHERE id = ?
-        """,
-        (new_status, g.staff["id"], denial_reason, id),
-    )
-    conn.commit()
-    conn.close()
-
-    log_action(
-        staff_id=g.staff["id"],
-        action=(
-            "cancelled_admin_promotion"
-            if is_requester
-            else "denied_admin_promotion"
-        ),
-        target_name=target_staff_row["username"] if target_staff_row else None,
-        target_table="admin_promotion_requests",
-        target_id=id,
-        details=f"Request #{id} {new_status}"
-        + (f": {denial_reason}" if denial_reason else ""),
-    )
-
-    return jsonify({"message": f"Request {new_status}"})
-
-
-@staff_bp.route("/admin-promotion-requests")
-@login_required
-def list_admin_promotion_requests():
-    """Same visibility rules as list_admin_deactivation_requests: admin/
-    in_charge see every request (supervisory view), everyone else only
-    sees requests whose required_tier matches their own role."""
-    limit, offset, error = parse_pagination_params(request.args)
-    if error:
-        return error
-
-    valid_statuses = ("pending", "approved", "denied", "cancelled")
-    status_filter = request.args.get("status")
-    if status_filter and status_filter not in valid_statuses:
-        return (
-            jsonify({"error": f"status must be one of: {', '.join(valid_statuses)}"}),
-            400,
-        )
-
-    where_clauses = []
-    params = []
-
-    if g.staff["role"] not in ("admin", "in_charge"):
-        where_clauses.append("admin_promotion_requests.required_tier = ?")
-        params.append(g.staff["role"])
-    elif request.args.get("mine") == "1":
-        where_clauses.append("admin_promotion_requests.requested_by_staff_id = ?")
-        params.append(g.staff["id"])
-
-    if status_filter:
-        where_clauses.append("admin_promotion_requests.status = ?")
-        params.append(status_filter)
-    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-
-    conn = get_db_connection()
-    total_count = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM admin_promotion_requests {where_sql}", params
-    ).fetchone()["cnt"]
-
-    rows = conn.execute(
-        f"""
-        SELECT admin_promotion_requests.*,
-               target.username AS target_username,
-               requester.username AS requested_by_username,
-               denier.username AS denied_by_username,
-               (SELECT COUNT(*) FROM admin_promotion_approvals
-                WHERE admin_promotion_approvals.request_id = admin_promotion_requests.id
-               ) AS approvals_received
-        FROM admin_promotion_requests
-        JOIN staff AS target ON admin_promotion_requests.target_staff_id = target.id
-        JOIN staff AS requester ON admin_promotion_requests.requested_by_staff_id = requester.id
-        LEFT JOIN staff AS denier ON admin_promotion_requests.denied_by_staff_id = denier.id
-        {where_sql}
-        ORDER BY admin_promotion_requests.created_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        params + [limit, offset],
-    ).fetchall()
-    conn.close()
-
-    context = {
-        "total_count": total_count,
-        "limit": limit,
-        "offset": offset,
-        "status_filter": status_filter or "",
-        "requests_list": rows,
-    }
-
-    if request.headers.get("HX-Request") == "true":
-        return render_template(
-            "requests/_promotion_table.html", staff=g.staff, **context
         )
 
     return jsonify(
@@ -2840,10 +2625,7 @@ def import_staff_csv():
 
 # # # EXPORT --------------------------------------------------------------
 
-# Deliberately excludes password_hash, locked_until, and
-# failed_login_attempts -- credential/security-internal fields that have
-# no business ever landing in a spreadsheet, unlike everything else here
-# which is already visible in the Staff table itself.
+# Deliberately excludes password_hash, locked_until, and failed_login_attempts -- security-internal fields that have no business in a spreadsheet.
 STAFF_EXPORT_COLUMNS = (
     "staff_code",
     "username",
@@ -3252,16 +3034,9 @@ def update_notification_settings():
                 "due_soon_hours": due_soon_hours,
             }
         )
-    # No HX-Redirect here, unlike the other System-page settings modals
-    # (session-settings/account-security/loan-limits) -- those are only
-    # ever opened from the System page itself, so redirecting there on
-    # save is a no-op-feeling refresh. This modal is also opened from the
-    # notification bell dropdown's gear icon on every page (see
-    # templates/base.html), where forcing a navigation to /system would
-    # yank an admin off whatever page they were actually on just to save a
-    # threshold. An empty body swapped into #global-modal-container simply
-    # clears/closes the modal in place instead -- see the htmx:afterRequest
-    # listener in base.html for the confirmation toast.
+    # No HX-Redirect here, unlike the other System-page settings modals -- this one is also
+    # opened from the notification bell dropdown on every page, so redirecting to /system would
+    # yank the admin off whatever page they were on. Just clears the modal in place instead.
     return make_response("", 200)
 
 
@@ -3463,11 +3238,7 @@ def update_feature_flags():
     if not check_password_hash(g.staff["password_hash"], current_password):
         return _rerender_with_error("Current password is incorrect", status=401)
 
-    # Checkbox fields are only present in form data when checked -- an
-    # unchecked toggle simply doesn't show up in `data` at all, unlike a
-    # JSON body where the caller can explicitly send `false`. Handle both:
-    # a JSON caller sends {"flags": {"assets": true, ...}}; the htmx form
-    # sends flag_<name> only for the checked ones.
+    # Handle both: JSON sends {"flags": {...}} with real booleans; the htmx form only sends flag_<name> when checked.
     if request.is_json:
         submitted = data.get("flags") or {}
         new_values = {name: bool(submitted.get(name, current)) for name, current in get_feature_flags().items()}
@@ -3508,14 +3279,9 @@ def update_feature_flags():
 
 
 # # # BARCODE LABEL ACTIVITY LOGGING ---------------------------------------
-# Barcode Labels (templates/barcodes.html) generates and downloads labels
-# entirely client-side (JsBarcode + jsPDF, no server round-trip for the
-# actual rendering) -- these two endpoints exist purely so those two
-# actions still leave an audit trail, the same way every other
-# meaningful action in this app does. Both take the exact selection the
-# browser already built (asset/member code + display label + which kind)
-# rather than re-deriving it server-side, since the server never sees
-# which checkboxes were ticked otherwise.
+# Barcode Labels renders/downloads entirely client-side (JsBarcode + jsPDF), so these two
+# endpoints exist purely to log an audit trail. They take the browser's already-built
+# selection since the server never sees which checkboxes were ticked.
 
 
 def _describe_barcode_selection(asset_items, member_items):
@@ -3646,13 +3412,11 @@ def view_online_staff():
     """Backs the Dashboard's "Currently Online" widget
     (templates/dashboard/_online_staff.html), polled every 30s via htmx
     so it stays live without a full page refresh. admin sees everyone
-    with a live session; in_charge only sees tool_keeper -- they already
-    know whether they themselves (or another in_charge/admin) are
-    logged in, the actually useful signal for them is specifically
-    "is a tool_keeper on right now", which is exactly what asked for
-    this feature."""
+    with a live session; in_charge sees both in_charge and tool_keeper --
+    their own peers (other in_charge staff) are just as relevant to them
+    as tool_keepers are, so it's not narrowed to tool_keeper alone."""
     conn = get_db_connection()
-    roles = None if g.staff["role"] == "admin" else ("tool_keeper",)
+    roles = None if g.staff["role"] == "admin" else ("in_charge", "tool_keeper")
     online_staff = get_online_staff(conn, roles=roles)
     conn.close()
     return render_template(
@@ -3664,17 +3428,12 @@ def view_online_staff():
 
 
 # # # DATABASE BACKUPS -------------------------------------------------------
-# Admin-only System page card -- lets an admin see/change whether
-# services/backup_service.py's scheduled job (app.py) is running, how
-# often, and trigger an out-of-band backup right now, plus download any
-# existing backup file. backup_db.py's own DEFAULT_BACKUP_DIR/
-# KEEP_LAST_N stay the single source of truth for where backups live and
-# how many are kept -- nothing here duplicates that.
+# Admin-only System page card for the scheduled backup job -- toggle it, change the interval,
+# run one now, and download existing files. backup_db.py stays the source of truth for
+# where backups live and how many are kept.
 
-# Matches exactly what backup_db.py's own backup_database() writes
-# (toolroom_YYYYMMDD_HHMMSS.db) -- the allowlist the download route
-# checks a requested filename against, so it can only ever serve a real
-# backup file this app created, never an arbitrary path.
+# Matches backup_database()'s filename format -- the allowlist the download route checks
+# against so it can only ever serve a real backup file, never an arbitrary path.
 _BACKUP_FILENAME_RE = re.compile(r"^toolroom_\d{8}_\d{6}\.db$")
 
 
@@ -3792,10 +3551,167 @@ def download_backup(filename):
 
     path = os.path.realpath(os.path.join(backup_db.DEFAULT_BACKUP_DIR, filename))
     backup_dir_real = os.path.realpath(backup_db.DEFAULT_BACKUP_DIR)
-    # Belt-and-suspenders on top of the regex above: confirms the
-    # resolved path actually lands inside the backup directory before
-    # ever handing a path to send_file.
+    # Belt-and-suspenders on top of the regex: confirms the resolved path actually lands inside the backup dir before handing it to send_file.
     if not path.startswith(backup_dir_real + os.sep) or not os.path.isfile(path):
         return jsonify({"error": "Backup not found"}), 404
 
     return send_file(path, as_attachment=True, download_name=filename)
+
+
+@staff_bp.route("/backup-settings/delete/<filename>", methods=["DELETE"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def delete_backup(filename):
+    """Manually removes one backup file -- same filename allowlist +
+    realpath-containment check as download_backup above, so this can only
+    ever touch a real backup file this app itself created, never an
+    arbitrary path. Independent of the automatic KEEP_LAST_N pruning
+    backup_database() already does on every new backup (backup_db.py) --
+    this is just the manual "I don't want this one anymore" door,
+    triggered from the file list itself (staff/_backup_file_list.html)."""
+    if not _BACKUP_FILENAME_RE.match(filename):
+        return jsonify({"error": "Invalid backup filename"}), 400
+
+    path = os.path.realpath(os.path.join(backup_db.DEFAULT_BACKUP_DIR, filename))
+    backup_dir_real = os.path.realpath(backup_db.DEFAULT_BACKUP_DIR)
+    if not path.startswith(backup_dir_real + os.sep) or not os.path.isfile(path):
+        return jsonify({"error": "Backup not found"}), 404
+
+    os.remove(path)
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="deleted_backup",
+        target_table="app_settings",
+        details=f"Deleted database backup file: {filename}",
+    )
+
+    # Re-rendered list swaps straight back into #backup-file-list -- no full page reload
+    # needed just to drop one row, unlike Backup Now/Save Settings which also refresh
+    # the "Last backup" timestamp outside this partial.
+    return render_template("staff/_backup_file_list.html", backups=_list_backups())
+
+
+# # # ARCHIVE AUTO-PURGE --------------------------------------------------------
+# Admin-only System page card for how long an archived/deactivated asset, member, or staff
+# record sits before archive_purge_service's scheduled job permanently deletes it (or "None"
+# to turn it off). One shared retention window across all three; same shape as Database Backups above.
+
+# Preset retention windows in days shown on the System page -- 0 is "None" (off); an admin
+# can still type any other custom number of days, these are just quick-pick shortcuts.
+ARCHIVE_PURGE_PRESETS_DAYS = [0, 7, 30, 180, 365]
+
+
+def _archived_record_counts(conn):
+    """{assets, members, staff} counts of what's currently sitting
+    archived/deactivated -- shown on the manage-form modal so an admin
+    can see what a retention window would actually apply to before
+    setting one."""
+    assets = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NOT NULL"
+    ).fetchone()["cnt"]
+    members = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 0"
+    ).fetchone()["cnt"]
+    staff = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM staff WHERE is_active = 0"
+    ).fetchone()["cnt"]
+    return {"assets": assets, "members": members, "staff": staff}
+
+
+@staff_bp.route("/archive-purge-settings/manage-form")
+@roles_required("admin")
+def manage_archive_purge_settings_form():
+    conn = get_db_connection()
+    purge_days = get_archive_purge_days(conn)
+    counts = _archived_record_counts(conn)
+    conn.close()
+    return render_template(
+        "staff/_archive_purge_settings_modal.html",
+        purge_days=purge_days,
+        counts=counts,
+        presets=ARCHIVE_PURGE_PRESETS_DAYS,
+    )
+
+
+@staff_bp.route("/archive-purge-settings/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_archive_purge_settings():
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    try:
+        purge_days = int(data.get("purge_days"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "purge_days must be a whole number"}), 400
+    # 0 = "None" (disabled); 3650 (10 years) is a sanity ceiling on the custom-day input,
+    # same spirit as the backup-interval cap -- keeps a fat-fingered value from silently meaning "never".
+    if purge_days < 0 or purge_days > 3650:
+        return jsonify({"error": "purge_days must be between 0 (None) and 3650"}), 400
+
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'archive_purge_days'",
+        (str(purge_days),),
+    )
+    conn.commit()
+    conn.close()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="updated_archive_purge_settings",
+        target_table="app_settings",
+        details=(
+            f"Auto-purge of archived assets/deactivated members & staff set to {purge_days} day(s)"
+            if purge_days > 0
+            else "Auto-purge of archived assets/deactivated members & staff turned off (None)"
+        ),
+    )
+
+    return jsonify({"message": "Auto-purge settings updated", "purge_days": purge_days})
+
+
+@staff_bp.route("/archive-purge-settings/purge-now", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("10 per minute")
+def run_archive_purge_now():
+    """Manual, out-of-band purge -- runs the exact same three passes as
+    the scheduled job (services/archive_purge_service.py: assets, then
+    staff, then members), right now, but only if a retention window is
+    actually set. Unlike "Backup Now" (which always runs regardless of
+    the enabled toggle), this respects the current purge_days setting
+    rather than offering a way to permanently delete everything
+    archived/deactivated on a whim -- an admin who wants that should set
+    a window first."""
+    conn = get_db_connection()
+    purge_days = get_archive_purge_days(conn)
+    conn.close()
+    if purge_days <= 0:
+        return (
+            jsonify({"error": "Set a retention window before purging -- it's currently set to None."}),
+            400,
+        )
+
+    purged_assets = purge_expired_archived_assets()
+    purged_staff = purge_expired_inactive_staff()
+    purged_members = purge_expired_inactive_members()
+
+    log_action(
+        staff_id=g.staff["id"],
+        action="ran_manual_archive_purge",
+        target_table="assets",
+        details=(
+            "Triggered an on-demand archive purge from the System page -- "
+            f"{purged_assets} asset(s), {purged_members} member(s), {purged_staff} staff account(s) permanently deleted"
+        ),
+    )
+    return jsonify(
+        {
+            "message": f"Purged {purged_assets} asset(s), {purged_members} member(s), {purged_staff} staff account(s)",
+            "purged_assets": purged_assets,
+            "purged_members": purged_members,
+            "purged_staff": purged_staff,
+        }
+    )

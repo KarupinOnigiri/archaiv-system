@@ -1,6 +1,10 @@
 <dialog id="manage-departments-modal" class="modal" aria-labelledby="manage-departments-title" aria-describedby="manage-departments-desc">
   <div class="modal-box max-w-md max-h-[85vh] overflow-y-auto">
-    <h3 id="manage-departments-title" class="text-lg font-bold">Manage Departments</h3>
+    <div class="flex justify-between items-start">
+      <h3 id="manage-departments-title" class="text-lg font-bold">Manage Departments</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              data-close-departments-modal aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p id="manage-departments-desc" class="text-sm text-base-content/50 mt-1 mb-4">
       Add, rename, reorder, or remove departments. Drag <span class="inline-block align-middle">&#9776;</span> or use the arrows to reorder, then click Save Order.
     </p>
@@ -9,7 +13,7 @@
       <span class="text-xs font-semibold text-base-content/40 tracking-wide">DEPARTMENTS</span>
       <div class="flex items-center gap-2">
         <span id="dept-order-status" class="text-xs text-base-content/40 transition-opacity duration-300 opacity-0" aria-hidden="true">Saved</span>
-        <button type="button" id="sort-az-btn" class="btn btn-ghost btn-xs" title="Sort departments alphabetically">Sort A&rarr;Z</button>
+        <button type="button" id="sort-az-btn" class="btn btn-ghost btn-xs" data-tooltip="Sort departments alphabetically">Sort A&rarr;Z</button>
         <button type="button" id="save-order-btn" class="btn btn-primary btn-xs" disabled>Save Order</button>
       </div>
     </div>
@@ -107,12 +111,16 @@
   dialogEl.addEventListener('close', function () {
     dialogEl.remove();
   });
-  document.querySelector('[data-close-departments-modal]').addEventListener('click', function () {
-    if (!saveOrderBtn.disabled) {
-      confirmDiscardOrder(function () { dialogEl.close(); });
-    } else {
-      dialogEl.close();
-    }
+  // querySelectorAll (not querySelector) -- both the header's ESC pill and
+  // the footer's Close button carry this same attribute now.
+  document.querySelectorAll('[data-close-departments-modal]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!saveOrderBtn.disabled) {
+        confirmDiscardOrder(function () { dialogEl.close(); });
+      } else {
+        dialogEl.close();
+      }
+    });
   });
 
   // Notifies the rest of the page (currently just the department filter

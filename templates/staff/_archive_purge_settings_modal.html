@@ -1,0 +1,186 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg flex flex-col max-h-[85vh]">
+
+    <div class="flex justify-between items-start mb-5 shrink-0">
+      <div>
+        <h3 class="font-bold text-xl">Auto-Delete Archived Items</h3>
+        <p class="text-sm text-base-content/50 mt-1">
+          Permanently deletes an archived asset, deactivated member, or deactivated staff account a set amount of time after it was archived/deactivated. This cannot be undone.
+        </p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
+
+    <!-- Always in the DOM, invisible (not hidden) when empty -- reserves
+         its layout space so the picker below doesn't shift when
+         showArchivePurgeSettingsError() fills it in. -->
+    <div id="archive-purge-settings-error" class="alert alert-error text-sm mb-4 py-2 invisible"></div>
+
+    <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
+
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">DELETE ARCHIVED ITEMS AFTER</label>
+        <div id="archive-purge-preset-list" class="mt-2 space-y-0.5">
+          {% for days in presets %}
+          <button type="button" class="archive-purge-preset w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-base-100 text-left transition-colors"
+                  data-days="{{ days }}" onclick="selectArchivePurgePreset({{ days }})">
+            <span class="flex-1 text-sm text-base-content">
+              {%- if days == 0 -%}
+                None -- keep archived items forever
+              {%- elif days == 7 -%}
+                1 week
+              {%- elif days == 30 -%}
+                1 month
+              {%- elif days == 180 -%}
+                6 months
+              {%- elif days == 365 -%}
+                1 year
+              {%- else -%}
+                {{ days }} days
+              {%- endif -%}
+            </span>
+            <svg class="archive-purge-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </button>
+          {% endfor %}
+          <button type="button" id="archive-purge-preset-custom" class="archive-purge-preset w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-base-100 text-left transition-colors"
+                  data-days="custom" onclick="selectArchivePurgePreset('custom')">
+            <span class="flex-1 text-sm text-base-content">Custom</span>
+            <svg class="archive-purge-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </button>
+        </div>
+
+        <div id="archive-purge-custom-row" class="hidden flex items-center gap-2 mt-2 pl-2.5">
+          <input type="number" id="archive-purge-custom-days" min="1" max="3650" value="{{ purge_days if purge_days not in presets else '' }}"
+                 class="input input-bordered input-sm w-24" oninput="onArchivePurgeCustomInput()">
+          <span class="text-sm text-base-content/60">days</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3 border-t border-base-300">
+        <p class="text-xs text-base-content/50">
+          Currently archived:
+          <span class="font-medium text-base-content/70">{{ counts.assets }} asset{{ 's' if counts.assets != 1 else '' }}</span>,
+          <span class="font-medium text-base-content/70">{{ counts.members }} member{{ 's' if counts.members != 1 else '' }}</span>,
+          <span class="font-medium text-base-content/70">{{ counts.staff }} staff account{{ 's' if counts.staff != 1 else '' }}</span>
+        </p>
+        <button type="button" id="archive-purge-now-btn" class="btn btn-outline btn-sm" onclick="runArchivePurgeNow()">
+          Purge Now
+        </button>
+      </div>
+    </div>
+
+    </div>
+
+    <div class="modal-action flex justify-end items-center gap-2 mt-6 shrink-0">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Close</button>
+      <button type="button" id="archive-purge-settings-save-btn" class="btn btn-primary" onclick="saveArchivePurgeSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ARCHIVE_PURGE_PRESETS = {{ presets | tojson }};
+let ARCHIVE_PURGE_SELECTED_DAYS = {{ purge_days }};
+
+function syncArchivePurgeUI() {
+  const isPreset = ARCHIVE_PURGE_PRESETS.includes(ARCHIVE_PURGE_SELECTED_DAYS);
+  document.querySelectorAll('.archive-purge-preset').forEach(function (btn) {
+    const isCustomBtn = btn.dataset.days === 'custom';
+    const active = isCustomBtn ? !isPreset : Number(btn.dataset.days) === ARCHIVE_PURGE_SELECTED_DAYS;
+    btn.querySelector('.archive-purge-check').classList.toggle('hidden', !active);
+  });
+  document.getElementById('archive-purge-custom-row').classList.toggle('hidden', isPreset);
+}
+syncArchivePurgeUI();
+
+function selectArchivePurgePreset(days) {
+  if (days === 'custom') {
+    const customInput = document.getElementById('archive-purge-custom-days');
+    const customVal = parseInt(customInput.value, 10);
+    ARCHIVE_PURGE_SELECTED_DAYS = Number.isInteger(customVal) && customVal > 0 ? customVal : -1;
+    syncArchivePurgeUI();
+    customInput.focus();
+    return;
+  }
+  ARCHIVE_PURGE_SELECTED_DAYS = days;
+  syncArchivePurgeUI();
+}
+
+function onArchivePurgeCustomInput() {
+  const customVal = parseInt(document.getElementById('archive-purge-custom-days').value, 10);
+  ARCHIVE_PURGE_SELECTED_DAYS = Number.isInteger(customVal) && customVal > 0 ? customVal : -1;
+  syncArchivePurgeUI();
+}
+
+function showArchivePurgeSettingsError(msg) {
+  const el = document.getElementById('archive-purge-settings-error');
+  el.textContent = msg;
+  el.classList.remove('invisible');
+}
+
+async function saveArchivePurgeSettings() {
+  const errorBox = document.getElementById('archive-purge-settings-error');
+  errorBox.classList.add('invisible');
+
+  if (!Number.isInteger(ARCHIVE_PURGE_SELECTED_DAYS) || ARCHIVE_PURGE_SELECTED_DAYS < 0) {
+    showArchivePurgeSettingsError('Enter a whole number of days for the custom window.');
+    return;
+  }
+
+  const btn = document.getElementById('archive-purge-settings-save-btn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/archive-purge-settings/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ purge_days: ARCHIVE_PURGE_SELECTED_DAYS }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      showArchivePurgeSettingsError(result.error || "Settings couldn't be saved");
+      return;
+    }
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Auto-delete settings updated', type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showArchivePurgeSettingsError("Settings couldn't be saved");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runArchivePurgeNow() {
+  const errorBox = document.getElementById('archive-purge-settings-error');
+  errorBox.classList.add('invisible');
+  const btn = document.getElementById('archive-purge-now-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Purging...';
+
+  try {
+    const res = await fetch('/api/v1/archive-purge-settings/purge-now', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      showArchivePurgeSettingsError(result.error || "Purge failed");
+      return;
+    }
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: result.message, type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    showArchivePurgeSettingsError("Purge failed");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+</script>

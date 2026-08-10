@@ -1,0 +1,94 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm max-h-[85vh] overflow-y-auto">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Reactivate Staff Account</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      Reactivate <strong>{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</strong>'s account?
+      They'll be able to log in again.
+    </p>
+
+    <div id="reactivate-staff-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
+
+    <div class="modal-action">
+      <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" class="btn btn-success" onclick="submitReactivateStaffForm({{ staff_member.id }})">Reactivate</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Same fetch+CSRF+reload shape as staff/_delete_modal.html's
+// submitDeleteStaffForm.
+async function submitReactivateStaffForm(id) {
+  const errorBox = document.getElementById('reactivate-staff-error');
+  errorBox.classList.add('hidden');
+
+  // Reactivating removes this row from the Inactive filter it was almost
+  // certainly opened from (that's the only view a deactivated account's
+  // Reactivate action is reachable from), which can otherwise look like
+  // the click did nothing or reset the filter -- read here, before the
+  // reload below, since the toggle is a sibling of this modal in the
+  // page, not part of it. Checked defensively (?.) since the table row
+  // action (staff/_table.html) can also reach this modal from a context
+  // where that toggle might not be on screen.
+  const wasViewingInactive = document.getElementById('show-inactive-toggle')?.checked;
+  // currentStaffStatusFilter (declared in staff.html) is the single
+  // source of truth for "which stat-card/toggle state is active" --
+  // unlike the address bar, it's updated synchronously and doesn't
+  // depend on an htmx:configRequest listener having already run before
+  // this modal's Reactivate button is clicked. Reading it here (rather
+  // than trusting window.location.reload() to replay whatever the URL
+  // already happens to contain) is what actually keeps the reload landed
+  // on the Inactive filter instead of silently falling back to the
+  // unfiltered/Active view.
+  const staffStatusFilter = typeof currentStaffStatusFilter !== 'undefined' ? currentStaffStatusFilter : null;
+
+  try {
+    const res = await fetch(`/api/v1/staff/${id}/reactivate`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      errorBox.textContent = result.error || "That account couldn't be reactivated";
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    const message = wasViewingInactive
+      ? 'Staff account reactivated -- still viewing the Inactive filter'
+      : 'Staff account reactivated';
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: message, type: 'success' }));
+
+    // Rebuild the URL from staffStatusFilter rather than trusting the
+    // address bar to already be in sync -- see the comment above. This is
+    // still a full navigation (not an htmx table refresh) because the
+    // stat cards at the top of the page also need to reflect the change,
+    // same reasoning as the bulk reactivate/deactivate actions below.
+    const url = new URL(window.location.href);
+    if (staffStatusFilter === 'inactive') {
+      url.searchParams.set('show_inactive', '1');
+      url.searchParams.set('status', 'inactive');
+    } else if (staffStatusFilter) {
+      url.searchParams.set('show_inactive', '0');
+      url.searchParams.set('status', staffStatusFilter);
+    } else if (staffStatusFilter === '') {
+      url.searchParams.set('show_inactive', '0');
+      url.searchParams.delete('status');
+    }
+    // staffStatusFilter === null (currentStaffStatusFilter undefined --
+    // this modal reached from somewhere other than the Staff page) falls
+    // through untouched, same as the old blind reload().
+    window.location.href = url.pathname + '?' + url.searchParams.toString();
+  } catch (err) {
+    errorBox.textContent = "That account couldn't be reactivated";
+    errorBox.classList.remove('hidden');
+  }
+}
+</script>

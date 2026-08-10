@@ -9,8 +9,7 @@ INSTANCE_DIR = os.path.join(os.path.dirname(__file__), "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "toolroom.db")
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 
-# The very first migration file. Installs that already have a database from
-# before migrations existed already have this schema applied — see init_db().
+# First migration file -- pre-migrations installs already have this schema, see init_db().
 BASELINE_MIGRATION = "0001_initial.sql"
 
 
@@ -37,11 +36,9 @@ def _applied_migrations(conn):
 
 
 def _bootstrap_pre_migration_db(conn, applied):
-    """Installs that predate the migrations folder already have the full
-    schema applied the old way (a single schema.sql run by the old
-    init_db()). Detect that case and record the baseline migration as
-    already applied, instead of re-running CREATE TABLE statements that
-    would fail against existing tables."""
+    """Old installs already have the full schema (applied pre-migrations).
+    Detect that and mark the baseline migration as applied instead of
+    re-running CREATE TABLE statements that'd fail on existing tables."""
     if BASELINE_MIGRATION in applied:
         return applied
 
@@ -64,22 +61,10 @@ def _bootstrap_pre_migration_db(conn, applied):
 
 
 def _write_schema_snapshot(conn):
-    """Regenerates instance/schema.sql from the live database's actual
-    schema -- CREATE TABLE/INDEX/TRIGGER/VIEW statements only, never row
-    data (unlike sqlite3.Connection.iterdump(), which would also dump
-    every table's actual contents -- exactly what a version-controlled
-    reference file must NOT contain). No ORDER BY on purpose: sqlite_master
-    returns rows in original creation order, which is what made the old
-    hand-dumped schema.sql (`sqlite3 toolroom.db .schema > schema.sql`)
-    read the way it does -- matching that means this replacement doesn't
-    reshuffle the file's whole layout on the next migration.
-
-    This file was never read by the app itself (see BASELINE_MIGRATION's
-    docstring -- migrations/*.sql, replayed incrementally, is the actual
-    source of truth); it's a checked-in, at-a-glance reference for anyone
-    reading the codebase without spinning up the database. Called from
-    init_db() only when at least one migration just ran, so an ordinary
-    startup with nothing pending doesn't rewrite this file for no reason."""
+    """Regenerates instance/schema.sql from the live schema (CREATE TABLE/INDEX/etc,
+    never row data). No ORDER BY on purpose -- sqlite_master's natural creation order
+    matches the old hand-dumped file so this doesn't reshuffle it on every migration.
+    Just a checked-in reference for humans; migrations/*.sql is the real source of truth."""
     rows = conn.execute(
         "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"
     ).fetchall()

@@ -2,12 +2,9 @@
 
 {% set can_manage = g.staff.role in ["admin", "in_charge"] %}
 {% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
-{# Bulk actions (deactivate/reactivate) use the same permission as the single-row
-   equivalents below, and -- like Inventory's bulk delete/restore -- aren't
-   show_inactive-aware: an admin/in_charge can bulk-act in both the active and
-   inactive views, so this can stay a flat role check instead of branching on
-   the current view the way Inventory's can_bulk_act (which mixes two
-   differently-gated actions) has to. #}
+{# Bulk deactivate/reactivate uses the same permission as the single-row
+   actions and isn't show_inactive-aware (unlike Inventory's can_bulk_act,
+   which mixes two differently-gated actions) -- a flat role check is enough here. #}
 {% set can_bulk_act = can_manage %}
 
 {% macro sort_header(label, col) %}
@@ -35,12 +32,10 @@
 </th>
 {% endmacro %}
 
-<table class="table w-full table-fixed" data-total-count="{{ total_count }}">
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
-    <!-- Checkbox column, unconditional for the same reason as Inventory's: keeping
-         the column reserved in both states (can_bulk_act true/false) means the
-         table's column count -- and everything to its right, including the
-         pagination footer -- never shifts sideways depending on who's viewing it. -->
+    <!-- Checkbox column stays reserved in both can_bulk_act states, same
+         reason as Inventory's: nothing to its right shifts sideways. -->
     <col style="width: 2.5rem">
     <col style="width: 21%">
     <col style="width: 13%">
@@ -56,7 +51,7 @@
       <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
         {% if can_bulk_act %}
         <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
-               aria-label="Select all rows on this page" title="Select all rows on this page">
+               aria-label="Select all rows on this page" data-tooltip="Select all rows on this page">
         {% endif %}
       </th>
       {{ sort_header("MEMBER", "name") }}
@@ -110,7 +105,7 @@
         {% if not m.is_active %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
         {% elif m.is_restricted %}
-        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning" title="{{ m.restriction_reason }}">Restricted</span>
+        <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning" data-tooltip="{{ m.restriction_reason }}">Restricted</span>
         {% else %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-success/10 text-success">Active</span>
         {% endif %}
@@ -118,7 +113,8 @@
 
       <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" data-tooltip="More actions"
+                 aria-label="Row actions for {{ full_name(m.first_name, m.last_name, m.middle_name, m.suffix) }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-48 p-2 z-50">

@@ -1,14 +1,10 @@
 {% from "_icons.html" import icon_eye, icon_edit, icon_trash, icon_restore %}
 
 {% set can_bulk_act = (not show_archived and g.staff.role in ["admin", "in_charge"]) or (show_archived and g.staff.role == "admin") %}
-{# Matches the actual backend permission on the single-row Edit/Delete/
-   Restore actions below (routes/assets.py: edit-form/edit, delete-confirm/
-   delete, and undo-delete are all @roles_required("admin", "in_charge")) --
-   distinct from can_bulk_act above, which is stricter (admin-only) for
-   bulk-restore specifically. A tool_keeper could open these menu items
-   before and get a 403 from the backend; now they're just not shown,
-   same as members/_table.html's can_manage gate. #}
+{# Mirrors the @roles_required on edit/delete in routes/assets.py so we don't show menu items that'd 403. #}
 {% set can_manage = g.staff.role in ["admin", "in_charge"] %}
+{# Restore is admin-ONLY (unlike Edit/Delete above), routes/assets.py. #}
+{% set can_restore = g.staff.role == "admin" %}
 
 {% macro sort_header(label, col) %}
 {% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
@@ -35,17 +31,9 @@
 </th>
 {% endmacro %}
 
-<table class="table w-full table-fixed" data-total-count="{{ total_count }}">
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
-    <!-- Checkbox column is now unconditional: whether it holds a real checkbox or
-         stays visually empty depends on can_bulk_act below, but the column itself
-         is always present. Making this conditional on can_bulk_act used to change
-         the table's column count for the "in_charge" role specifically -- that
-         role can bulk-act in the active view but not the archived view, so
-         toggling "Show archived" removed a whole column and shifted every other
-         column (and the pagination footer under the table) sideways. Reserving
-         the column width in both states keeps the layout identical regardless of
-         which view is showing, matching every other role. -->
+    <!-- Checkbox column always renders (even empty) so toggling "Show archived" doesn't shift columns. -->
     <col style="width: 2.5rem">
     <col style="width: 3.5rem">
     <col style="width: 14%">
@@ -61,7 +49,7 @@
       <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
         {% if can_bulk_act %}
         <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
-               aria-label="Select all rows on this page" title="Select all rows on this page">
+               aria-label="Select all rows on this page" data-tooltip="Select all rows on this page">
         {% endif %}
       </th>
       <th class="py-2 w-12 sticky top-0 z-10 bg-base-100 border-b border-base-300"></th>
@@ -133,7 +121,7 @@
       <td class="py-2.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
       <td class="py-2.5 text-right">
         <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" aria-label="Row actions for {{ asset.name }}">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" data-tooltip="More actions" aria-label="Row actions for {{ asset.name }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-40 p-2 z-50">
@@ -145,9 +133,11 @@
               <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit</a>
             </li>
             {% if show_archived %}
+            {% if can_restore %}
             <li>
               <a class="flex items-center gap-2 text-primary" hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_restore() }} Restore</a>
             </li>
+            {% endif %}
             {% else %}
             <li>
               <a class="flex items-center gap-2 text-error" hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Delete</a>
@@ -206,10 +196,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
 
-    <!-- Numbered pages, capped to a handful of buttons via ellipsis rather than
-         rendering one per page -- always shows page 1, the last page, and a
-         small window around the current page, so this stays readable whether
-         there are 3 pages or 300. -->
+    <!-- Numbered pages with ellipsis: shows page 1, last page, and a window around current, so it stays readable at any page count. -->
     <nav aria-label="Pagination" class="flex items-center gap-1">
       {% set current_page = (offset // limit) + 1 %}
       {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}

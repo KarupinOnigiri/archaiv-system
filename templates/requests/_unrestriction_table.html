@@ -2,7 +2,7 @@
 
 {% set can_review = staff.role in ["admin", "in_charge"] %}
 
-<table class="table table-sm w-full" data-total-count="{{ total_count }}">
+<table class="table table-sm w-full" data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <thead>
     <tr class="text-xs text-base-content/50">
       <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">MEMBER</th>
@@ -55,10 +55,10 @@
       <td class="py-2 text-right">
         {% if req.status == "pending" %}
           {% if can_review and staff.member_id != req.member_id %}
-          <button type="button" class="btn btn-ghost btn-xs text-success" title="Approve" onclick="approveUnrestrictionRequest({{ req.id }}, this)">
+          <button type="button" class="btn btn-ghost btn-xs text-success" data-tooltip="Approve" onclick="approveUnrestrictionRequest({{ req.id }}, this)">
             {{ icon_shield_check() }}
           </button>
-          <button type="button" class="btn btn-ghost btn-xs text-error" title="Deny" onclick="denyUnrestrictionRequest({{ req.id }}, this)">
+          <button type="button" class="btn btn-ghost btn-xs text-error" data-tooltip="Deny" onclick="denyUnrestrictionRequest({{ req.id }}, this)">
             {{ icon_shield_alert() }}
           </button>
           {% endif %}

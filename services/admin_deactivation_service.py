@@ -1,78 +1,111 @@
 from utils.logger import log_action
 from services.seed_service import seed_initial_admin
+from utils.formatters import full_name
+
+# Any active in_charge/tool_keeper account can vote on any pending request now --
+# no more role == required_tier gating. Only these two roles vote; other admins don't.
+ELIGIBLE_REVIEWER_ROLES = ("in_charge", "tool_keeper")
+
+
+def is_eligible_reviewer(role):
+    """Whether this role can cast an approve/deny vote on an admin-deactivation request."""
+    return role in ELIGIBLE_REVIEWER_ROLES
 
 
 def determine_approval_tier(conn, requester_id, target_id):
-    """Decides which staff tier must approve a pending admin-deactivation
-    OR admin-promotion request (same generic staff-count logic serves
-    both -- see finalize_promotion_if_ready below and routes/staff.py's
-    request_admin_promotion), based on staff counts at request-creation
-    time. Snapshotted once and stored on the request row — never
-    recalculated later.
+    """Decides how big a consensus a new admin-deactivation request needs,
+    based on how many active in_charge/tool_keeper accounts actually exist
+    right now. Snapshotted once at request creation, never recalculated.
 
-    Tiers, in order (first available wins):
-      - admin:       a third active admin exists (not requester, not
-                      target) -> 1 approval needed
-      - in_charge:   fewer than 3 admins total, but >= 2 active
-                      in_charge accounts exist -> 2 approvals needed
-      - tool_keeper: fewer than 2 active in_charge accounts exist, but
-                      >= 1 active tool_keeper exists -> 1 approval needed
+    Tiers (first one actually reachable wins):
+      full:    >=2 active in_charge and >=4 in_charge+tool_keeper combined -> 4 approvals, 2 of them in_charge
+      reduced: >=1 active in_charge and >=3 combined -> 3 approvals, 1 in_charge
+      minimal: >=1 active in_charge and >=2 combined -> 2 approvals, 1 in_charge
 
-    Returns (tier, required_approvals), or (None, None) if no tier
-    currently has enough eligible people to ever satisfy it.
-    """
-    other_active_admins = conn.execute(
-        """
-        SELECT COUNT(*) AS cnt FROM staff
-        WHERE role = 'admin' AND is_active = 1 AND id NOT IN (?, ?)
-        """,
-        (requester_id, target_id),
-    ).fetchone()["cnt"]
+    requester_id/target_id are kept for call-site compatibility -- both are
+    always admins, so they'd never show up in the in_charge/tool_keeper
+    counts anyway, unlike the old admin-tier check this replaces.
 
-    if other_active_admins >= 1:
-        return "admin", 1
-
+    Returns (tier, required_approvals, required_in_charge), or (None, None, None)
+    if there simply aren't enough in_charge/tool_keeper accounts to ever satisfy it."""
     active_in_charge = conn.execute(
         "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'in_charge' AND is_active = 1"
     ).fetchone()["cnt"]
-
-    if active_in_charge >= 2:
-        return "in_charge", 2
-
     active_tool_keepers = conn.execute(
         "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'tool_keeper' AND is_active = 1"
     ).fetchone()["cnt"]
+    combined = active_in_charge + active_tool_keepers
 
-    if active_tool_keepers >= 1:
-        return "tool_keeper", 1
+    if active_in_charge >= 2 and combined >= 4:
+        return "full", 4, 2
+    if active_in_charge >= 1 and combined >= 3:
+        return "reduced", 3, 1
+    if active_in_charge >= 1 and combined >= 2:
+        return "minimal", 2, 1
+    return None, None, None
 
-    return None, None
+
+def get_review_counts(conn, request_id):
+    """(approve_count, in_charge_approve_count, deny_count) for a request --
+    the numbers finalize eligibility is checked against."""
+    row = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN a.decision = 'approve' THEN 1 ELSE 0 END) AS approve_count,
+            SUM(CASE WHEN a.decision = 'approve' AND s.role = 'in_charge' THEN 1 ELSE 0 END) AS in_charge_approve_count,
+            SUM(CASE WHEN a.decision = 'deny' THEN 1 ELSE 0 END) AS deny_count
+        FROM admin_deactivation_approvals a
+        JOIN staff s ON s.id = a.approver_staff_id
+        WHERE a.request_id = ?
+        """,
+        (request_id,),
+    ).fetchone()
+    return (row["approve_count"] or 0, row["in_charge_approve_count"] or 0, row["deny_count"] or 0)
 
 
-def finalize_if_ready(request_row, conn):
-    """Checks whether a pending admin-deactivation request has reached its
-    required approval count, and if so, deactivates the target admin
-    account and marks the request resolved. Returns True if finalized,
-    False if still waiting on more approvals.
+def requirements_met(request_row, conn):
+    """Whether a request has enough approve votes (and enough of them from
+    in_charge) to be eligible for the requester to finalize -- doesn't mean
+    it WILL be finalized, that's still the requester's own call."""
+    approve_count, in_charge_count, _ = get_review_counts(conn, request_row["id"])
+    return (
+        approve_count >= request_row["required_approvals"]
+        and in_charge_count >= request_row["required_in_charge"]
+    )
 
-    Refuses to finalize if the target is the last active admin — approval
-    consensus governs *who* can deactivate an admin, not *whether the
-    system can be left with zero admins*, so that floor is enforced here
-    regardless of how many approvals came in."""
-    # Fetched up front purely for a readable Activity Log target below.
+
+def finalize_admin_deactivation(request_row, actor_staff_id, conn):
+    """Actually deactivates the target admin account. Only ever called from
+    the requester-triggered /finalize route -- reaching the required
+    approval count no longer deactivates anything by itself; the requester
+    reviews every vote and its reason first, then pulls the trigger
+    themselves (or not). Returns (ok, error_message).
+
+    Still refuses if the target is the last active admin -- that floor is
+    a hard system invariant, not something peer approval or the requester's
+    own judgment gets to override."""
+    if not requirements_met(request_row, conn):
+        return False, "The required approvals haven't been reached yet"
+
     target_staff_row = conn.execute(
-        "SELECT username FROM staff WHERE id = ?", (request_row["target_staff_id"],)
+        """
+        SELECT staff.username, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff JOIN members ON members.id = staff.member_id
+        WHERE staff.id = ?
+        """,
+        (request_row["target_staff_id"],),
     ).fetchone()
     target_username = target_staff_row["username"] if target_staff_row else None
-    target_label = target_username or f"staff #{request_row['target_staff_id']}"
-
-    approval_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM admin_deactivation_approvals WHERE request_id = ?",
-        (request_row["id"],),
-    ).fetchone()["cnt"]
-
-    if approval_count < request_row["required_approvals"]:
-        return False
+    target_label = (
+        full_name(
+            target_staff_row["first_name"],
+            target_staff_row["last_name"],
+            target_staff_row["middle_name"],
+            target_staff_row["suffix"],
+        )
+        if target_staff_row
+        else f"staff #{request_row['target_staff_id']}"
+    )
 
     remaining_admins = conn.execute(
         "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'admin' AND is_active = 1 AND is_system_seeded = 0 AND id != ?",
@@ -80,43 +113,12 @@ def finalize_if_ready(request_row, conn):
     ).fetchone()["cnt"]
 
     if remaining_admins == 0:
-        conn.execute(
-            """
-            UPDATE admin_deactivation_requests
-            SET status = 'denied', denial_reason = ?, resolved_at = datetime('now', 'localtime')
-            WHERE id = ?
-            """,
-            (
-                "Automatically denied: target is the last active admin account",
-                request_row["id"],
-            ),
-        )
-        conn.commit()
-
-        log_action(
-            staff_id=None,
-            action="admin_deactivation_auto_denied",
-            target_table="admin_deactivation_requests",
-            target_id=request_row["id"],
-            target_name=target_username,
-            details=(
-                f"Request #{request_row['id']} auto-denied on finalization: "
-                f"target {target_label} is the last active admin"
-            ),
-        )
-        return False
+        return False, f"Can't deactivate {target_label} -- they're the last active admin account"
 
     conn.execute(
-        "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+        "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
         (request_row["target_staff_id"],),
     )
-    # Without this, the request row stayed status='pending' forever even
-    # after the target was actually deactivated -- nothing here ever
-    # marked it resolved, so a finalized request never left the Pending
-    # queue/filter and kept accepting further redundant approvals from
-    # anyone still eligible (harmless since the target was already
-    # inactive, but confusing: the queue looked like it still needed
-    # attention when the outcome had already happened).
     conn.execute(
         """
         UPDATE admin_deactivation_requests
@@ -125,112 +127,28 @@ def finalize_if_ready(request_row, conn):
         """,
         (request_row["id"],),
     )
+    # inline import to dodge a circular import with notification_service
+    from services.notification_service import create_admin_deactivation_resolved_notification
+
+    create_admin_deactivation_resolved_notification(
+        conn, request_row["id"], request_row["requested_by_staff_id"], target_label, approved=True
+    )
     conn.commit()
 
     log_action(
-        staff_id=None,
+        staff_id=actor_staff_id,
         action="deactivated_admin_via_approval",
         target_table="staff",
         target_id=request_row["target_staff_id"],
         target_name=target_username,
         details=(
-            f"Admin account {target_label} deactivated after reaching "
-            f"{request_row['required_approvals']} {request_row['required_tier']} "
-            f"approval(s) (request #{request_row['id']})"
+            f"Admin account {target_label} deactivated by the requester after reaching "
+            f"{request_row['required_approvals']} approval(s), {request_row['required_in_charge']}+ "
+            f"in_charge (request #{request_row['id']})"
         ),
     )
 
-    # If that deactivation just left the system with zero active real
-    # admins, seed the temporary setup admin immediately rather than
-    # waiting for the next app restart.
+    # re-seed the temporary setup admin now if that just left zero active admins
     seed_initial_admin()
 
-    return True
-
-
-# # # PROMOTION (hand-over) request lifecycle --------------------------------
-# Structurally mirrors the deactivation lifecycle above (determine_approval_
-# tier is shared as-is) but kept as its own table/function pair rather than
-# folded into the same one -- see migrations/0036_admin_promotion_requests.sql
-# for why. No "last admin" floor check here the way finalize_if_ready has
-# one: promoting someone can only ever increase the admin count, never zero
-# it out, so there's nothing analogous to guard against.
-
-
-def finalize_promotion_if_ready(request_row, conn):
-    """Checks whether a pending admin-promotion request has reached its
-    required approval count, and if so, promotes the target to admin and
-    marks the request resolved. Returns True if finalized, False if still
-    waiting on more approvals.
-
-    Auto-denies instead of finalizing if the target is no longer eligible
-    by the time quorum is reached (deactivated, or already promoted to
-    admin some other way in the meantime) -- the approvals collected are
-    still real, but there's nothing left to apply them to."""
-    target = conn.execute(
-        "SELECT username, role, is_active FROM staff WHERE id = ?",
-        (request_row["target_staff_id"],),
-    ).fetchone()
-    target_username = target["username"] if target else None
-    target_label = target_username or f"staff #{request_row['target_staff_id']}"
-
-    approval_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM admin_promotion_approvals WHERE request_id = ?",
-        (request_row["id"],),
-    ).fetchone()["cnt"]
-
-    if approval_count < request_row["required_approvals"]:
-        return False
-
-    if target is None or not target["is_active"] or target["role"] == "admin":
-        conn.execute(
-            """
-            UPDATE admin_promotion_requests
-            SET status = 'denied', denial_reason = ?, resolved_at = datetime('now', 'localtime')
-            WHERE id = ?
-            """,
-            (
-                "Automatically denied: target is no longer an active non-admin account",
-                request_row["id"],
-            ),
-        )
-        conn.commit()
-
-        log_action(
-            staff_id=None,
-            action="admin_promotion_auto_denied",
-            target_table="admin_promotion_requests",
-            target_id=request_row["id"],
-            target_name=target_username,
-            details=(
-                f"Request #{request_row['id']} auto-denied on finalization: "
-                f"target {target_label} is no longer an active non-admin account"
-            ),
-        )
-        return False
-
-    conn.execute("UPDATE staff SET role = 'admin' WHERE id = ?", (request_row["target_staff_id"],))
-    conn.execute(
-        """
-        UPDATE admin_promotion_requests
-        SET status = 'approved', resolved_at = datetime('now', 'localtime')
-        WHERE id = ?
-        """,
-        (request_row["id"],),
-    )
-    conn.commit()
-
-    log_action(
-        staff_id=None,
-        action="promoted_to_admin_via_approval",
-        target_table="staff",
-        target_id=request_row["target_staff_id"],
-        target_name=target_username,
-        details=(
-            f"{target_label} promoted to admin after reaching "
-            f"{request_row['required_approvals']} {request_row['required_tier']} "
-            f"approval(s) (request #{request_row['id']})"
-        ),
-    )
-
-    return True
+    return True, None

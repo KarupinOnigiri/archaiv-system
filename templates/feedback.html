@@ -16,36 +16,59 @@
     <div class="relative mb-5">
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-        <select id="feedback-status-filter" name="status"
-                aria-label="Filter by status"
-                class="select select-bordered select-sm w-36"
-                hx-get="/api/v1/feedback/table"
-                hx-trigger="change"
-                hx-target="#feedback-table-container"
-                hx-swap="innerHTML"
-                hx-indicator="#table-spinner"
-                hx-include="#feedback-category-filter"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="open" {% if status == "open" %}selected{% endif %}>Open</option>
-          <option value="resolved" {% if status == "resolved" %}selected{% endif %}>Resolved</option>
-          <option value="all" {% if status == "all" %}selected{% endif %}>All</option>
-        </select>
+        <button type="button" id="refresh-feedback-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh feedback list" onclick="refreshFeedbackTable()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
 
-        <select id="feedback-category-filter" name="category"
-                aria-label="Filter by category"
-                class="select select-bordered select-sm w-36"
-                hx-get="/api/v1/feedback/table"
-                hx-trigger="change"
-                hx-target="#feedback-table-container"
-                hx-swap="innerHTML"
-                hx-indicator="#table-spinner"
-                hx-include="#feedback-status-filter"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="" {% if not category %}selected{% endif %}>All categories</option>
-          <option value="bug" {% if category == "bug" %}selected{% endif %}>Bug</option>
-          <option value="idea" {% if category == "idea" %}selected{% endif %}>Idea</option>
-          <option value="other" {% if category == "other" %}selected{% endif %}>Other</option>
-        </select>
+        <!-- Wrapped join + clear button, same convention as other filter dropdowns.
+             "Open" is the default (see feedback_page()), so clear targets that, not blank. -->
+        <div id="feedback-status-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Status">
+          <button type="button" id="feedback-status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearFeedbackStatusFilter()" aria-label="Clear status filter" data-tooltip="Clear status filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </button>
+          <select id="feedback-status-filter" name="status"
+                  aria-label="Filter by status"
+                  class="select select-bordered select-sm join-item w-36"
+                  hx-get="/api/v1/feedback/table"
+                  hx-trigger="change"
+                  hx-target="#feedback-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#table-spinner"
+                  hx-include="#feedback-category-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="open" {% if status == "open" %}selected{% endif %}>Open</option>
+            <option value="resolved" {% if status == "resolved" %}selected{% endif %}>Resolved</option>
+            <option value="all" {% if status == "all" %}selected{% endif %}>All</option>
+          </select>
+        </div>
+
+        <div id="feedback-category-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Category">
+          <button type="button" id="feedback-category-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearFeedbackCategoryFilter()" aria-label="Clear category filter" data-tooltip="Clear category filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <select id="feedback-category-filter" name="category"
+                  aria-label="Filter by category"
+                  class="select select-bordered select-sm join-item w-36"
+                  hx-get="/api/v1/feedback/table"
+                  hx-trigger="change"
+                  hx-target="#feedback-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#table-spinner"
+                  hx-include="#feedback-status-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="" {% if not category %}selected{% endif %}>All categories</option>
+            <option value="bug" {% if category == "bug" %}selected{% endif %}>Bug</option>
+            <option value="idea" {% if category == "idea" %}selected{% endif %}>Idea</option>
+            <option value="other" {% if category == "other" %}selected{% endif %}>Other</option>
+          </select>
+        </div>
+
+        <button type="button" id="clear-feedback-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllFeedbackFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="clear-feedback-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
 
         <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
       </div>
@@ -62,13 +85,17 @@
   </div>
 </div>
 
-<!-- Screenshot lightbox -- one shared element, opened by whichever
-     thumbnail was clicked (openFeedbackImageLightbox below), same
-     reasoning as the shared #app-tooltip in base.html: simpler than a
-     per-thumbnail lightbox that'd need its own z-index/backdrop wiring. -->
+<!-- Screenshot lightbox -- one shared element (see openFeedbackImageLightbox below),
+     simpler than a per-thumbnail lightbox needing its own z-index/backdrop. -->
 <dialog id="feedback-image-lightbox" class="modal">
-  <div class="modal-box max-w-3xl p-0 overflow-hidden bg-transparent shadow-none">
+  <div class="modal-box max-w-3xl p-0 overflow-hidden bg-transparent shadow-none relative">
     <img id="feedback-image-lightbox-img" src="" alt="Feedback screenshot" class="w-full h-auto rounded-2xl">
+    <!-- Own dark backdrop, same reasoning as base.html's photo-lightbox-modal
+         (transparent modal-box, image content, needs its own contrast). -->
+    <form method="dialog" class="absolute top-3 right-3">
+      <button class="btn btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider rounded-md bg-black/50 text-white border border-white/30 hover:bg-black/70 active:scale-95 transition-all"
+              aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </form>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
@@ -79,7 +106,11 @@
      closing a ticket. -->
 <dialog id="feedback-resolve-dialog" class="modal">
   <div class="modal-box max-w-md">
-    <h3 class="font-bold text-lg mb-1">Reply &amp; mark resolved</h3>
+    <div class="flex justify-between items-start">
+      <h3 class="font-bold text-lg mb-1">Reply &amp; mark resolved</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="document.getElementById('feedback-resolve-dialog').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p class="text-sm text-base-content/50 mb-3">Let the reporter know what happened -- e.g. "Fixed", "Testing this now", "Not applicable".</p>
     <textarea id="feedback-resolve-reply" class="textarea textarea-bordered w-full" rows="3" placeholder="Your reply..."></textarea>
     <div class="modal-action">
@@ -161,11 +192,90 @@ async function submitFeedbackResolve() {
   }
 }
 
-// Keyboard shortcuts -- this page had none before; brought up to the
-// same baseline as assets/members/staff/transactions/requests/etc.
-// (see templates/transactions.html for the pattern this copies).
-// "?" for the shortcuts help and Escape-to-close are already handled
-// globally in base.html, so only the page-specific ones live here.
+// Same active-filter ring/clear-button/count-badge pattern as Members'/
+// Assets' filter rows -- "Open" counts as the default (not blank) for the
+// status filter's own active-state, since that's what feedback_page()
+// falls back to; category's default is genuinely blank.
+function updateFeedbackFilterUI() {
+  const status = document.getElementById('feedback-status-filter');
+  const category = document.getElementById('feedback-category-filter');
+
+  const statusActive = status.value !== 'open';
+  const categoryActive = category.value !== '';
+
+  document.getElementById('feedback-status-filter-wrap').classList.toggle('ring-2', statusActive);
+  document.getElementById('feedback-status-filter-wrap').classList.toggle('ring-primary/40', statusActive);
+  document.getElementById('feedback-status-filter-clear-btn').disabled = !statusActive;
+
+  document.getElementById('feedback-category-filter-wrap').classList.toggle('ring-2', categoryActive);
+  document.getElementById('feedback-category-filter-wrap').classList.toggle('ring-primary/40', categoryActive);
+  document.getElementById('feedback-category-filter-clear-btn').disabled = !categoryActive;
+
+  const anyActive = statusActive || categoryActive;
+  const activeCount = [statusActive, categoryActive].filter(Boolean).length;
+  const clearBtn = document.getElementById('clear-feedback-filters-btn');
+  clearBtn.classList.toggle('hidden', !anyActive);
+  document.getElementById('clear-feedback-filters-count').textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+}
+
+function clearFeedbackStatusFilter() {
+  const el = document.getElementById('feedback-status-filter');
+  if (el.value === 'open') return;
+  el.value = 'open';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearFeedbackCategoryFilter() {
+  const el = document.getElementById('feedback-category-filter');
+  if (el.value === '') return;
+  el.value = '';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearAllFeedbackFilters() {
+  const status = document.getElementById('feedback-status-filter');
+  const category = document.getElementById('feedback-category-filter');
+  if (status.value === 'open' && category.value === '') return;
+  status.value = 'open';
+  category.value = '';
+  updateFeedbackFilterUI();
+  htmx.ajax('GET', '/api/v1/feedback/table', {
+    target: '#feedback-table-container',
+    swap: 'innerHTML',
+    values: { limit: '{{ limit }}', offset: 0, status: 'open', category: '' }
+  });
+}
+
+// Re-fetches the list with whatever filters/page are currently in effect,
+// read straight off the live controls plus the currently-rendered list's
+// own data-limit/data-offset -- a manual refresh shouldn't jump back to
+// page 1 the way changing a filter does.
+function refreshFeedbackTable() {
+  const list = document.querySelector('#feedback-table-container [data-total-count]');
+  const status = document.getElementById('feedback-status-filter').value;
+  const category = document.getElementById('feedback-category-filter').value;
+  const params = new URLSearchParams();
+  params.set('status', status);
+  if (category) params.set('category', category);
+  params.set('limit', (list && list.dataset.limit) || '{{ limit }}');
+  params.set('offset', (list && list.dataset.offset) || '{{ offset }}');
+  htmx.ajax('GET', '/api/v1/feedback/table', {
+    target: '#feedback-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+
+['feedback-status-filter', 'feedback-category-filter'].forEach(function (id) {
+  document.getElementById(id).addEventListener('change', updateFeedbackFilterUI);
+});
+document.addEventListener('DOMContentLoaded', updateFeedbackFilterUI);
+
+// Keyboard shortcuts -- "?" and Escape-to-close are already global (base.html),
+// so only the page-specific ones live here.
 function isTypingTarget(el) {
   return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
 }
@@ -174,12 +284,8 @@ function isModalOpen() {
   return !!document.querySelector('dialog[open]');
 }
 
-// Keeps the address bar in sync with status/category/paging -- same
-// htmx:configRequest -> history.replaceState pattern as assets.html/
-// members.html/transactions.html/staff.html, so a bookmarked or
-// refreshed /feedback?status=resolved URL actually reproduces that view
-// (routes/pages.py's feedback_page now reads status/category back out
-// of the URL to pre-select these dropdowns on load).
+// Keeps the address bar in sync with status/category/paging, same pattern as
+// assets/members/transactions/staff, so a bookmarked/refreshed URL reproduces the view.
 document.body.addEventListener('htmx:configRequest', function (evt) {
   const tableContainer = document.getElementById('feedback-table-container');
   if (evt.detail.target !== tableContainer) return;
@@ -225,6 +331,17 @@ document.addEventListener('keydown', function (e) {
       e.preventDefault();
       pageBtn.click();
     }
+    return;
+  }
+
+  // Escape — reset both filters back to their default (status=Open,
+  // category blank) and blur whatever was focused, same "Esc = clear
+  // filters" convention as assets/members/staff/audit-log.
+  if (e.key === 'Escape') {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllFeedbackFilters();
   }
 });
 </script>

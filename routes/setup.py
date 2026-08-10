@@ -16,9 +16,7 @@ setup_bp = Blueprint("setup", __name__)
 @setup_bp.route("/setup/status")
 @limiter.limit("30 per minute")
 def setup_status():
-    """Public, no-auth: lets a kiosk frontend know whether to show a
-    'system setup required' screen. Reveals only a boolean — never the
-    temp admin's username/password or any other seed detail."""
+    """Public, no-auth check for whether the kiosk should show the setup screen. Only returns a boolean, never seed credentials."""
     conn = get_db_connection()
     active_admin = conn.execute(
         "SELECT id FROM staff WHERE role = 'admin' AND is_active = 1 AND is_system_seeded = 0 LIMIT 1"
@@ -31,13 +29,9 @@ def setup_status():
 @limiter.limit("10 per minute")
 @login_required
 def complete_setup():
-    """Only usable while logged in as the temporary system-seeded admin
-    (see seed_service.seed_initial_admin). Creates the real first admin
-    account from the given details, then deactivates the temporary
-    account and drops its sessions in the same transaction — the
-    temporary account can't be reused afterward unless every admin is
-    later removed, at which point seed_initial_admin() creates a new one
-    on the next startup."""
+    """Only callable while logged in as the temp seeded admin (see seed_service.seed_initial_admin).
+    Creates the real first admin, then deactivates the temp account and its sessions in the same
+    transaction so it can't be reused (a fresh temp admin gets reseeded if all admins are ever removed)."""
     if not g.staff["is_system_seeded"]:
         return (
             jsonify(
@@ -53,9 +47,8 @@ def complete_setup():
     if error:
         return error
 
-    # barcode_id is no longer taken from the form -- auto-generated below
-    # to match the new member record's generated member_code, same as
-    # every other member (see routes/members.py: add_member_submit).
+    # barcode_id isn't taken from the form -- it's auto-generated below to match the
+    # member_code, same as every other member (see members.py: add_member_submit).
     required_fields = (
         "first_name",
         "last_name",
@@ -124,16 +117,17 @@ def complete_setup():
             (f"STF{new_staff_id:05d}", new_staff_id),
         )
 
-        # Retire the temporary admin in the same transaction as creating
-        # the real one, so there's never a window where both are usable
-        # (or, on failure, neither is — the rollback below undoes both
-        # halves together). Both halves of it: the staff row (so it can't
-        # log in) AND its linked member row (so "Temporary Setup Admin"
-        # doesn't sit in the Borrowers list looking like a real person --
-        # deactivating only the staff side left that member row active
-        # forever, which is its own small bug fixed here alongside this).
-        conn.execute("UPDATE staff SET is_active = 0 WHERE id = ?", (temp_admin_id,))
-        conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (temp_admin_member_id,))
+        # Retire the temp admin in the same transaction as creating the real one, so there's
+        # never a window with both active. Deactivate both the staff row and its member row --
+        # staff-only used to leave "Temporary Setup Admin" visible in the Borrowers list.
+        conn.execute(
+            "UPDATE staff SET is_active = 0, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
+            (temp_admin_id,),
+        )
+        conn.execute(
+            "UPDATE members SET is_active = 0, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
+            (temp_admin_member_id,),
+        )
         conn.execute("DELETE FROM sessions WHERE staff_id = ?", (temp_admin_id,))
 
         conn.commit()

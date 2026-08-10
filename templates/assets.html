@@ -46,8 +46,7 @@
   </div>
 
   <!-- Stat cards -->
-  <!-- Clicking a card jumps the table to the matching status filter (and switches off
-       "Show archived" first, since status filtering only applies to the active view). -->
+  <!-- Clicking a card jumps the table to that status filter (and turns off "Show archived" first). -->
   <div id="stat-cards-container"
        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
        hx-get="/api/v1/assets/stat-cards"
@@ -64,7 +63,11 @@
 
     <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+      <button type="button" id="refresh-assets-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh inventory list" onclick="refreshAssetsTable()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+
+      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
         <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </div>
@@ -80,18 +83,18 @@
                hx-include="#category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
-                aria-label="Clear search" title="Clear search" onclick="clearSearch()">
+                aria-label="Clear search" data-tooltip="Clear search" onclick="clearSearch()">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <div id="category-filter-wrap" class="join rounded-lg transition-shadow" title="Category"
+      <div id="category-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Category"
            hx-get="/api/v1/categories/options"
            hx-trigger="categories-changed from:body"
            hx-target="#category-filter"
            hx-swap="innerHTML">
         <button type="button" id="category-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearCategoryFilter()" aria-label="Clear category filter" title="Clear category filter" disabled>
+                onclick="clearCategoryFilter()" aria-label="Clear category filter" data-tooltip="Clear category filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
         </button>
         <select id="category-filter" name="category_id"
@@ -111,9 +114,9 @@
         </select>
       </div>
 
-      <div id="condition-filter-wrap" class="join rounded-lg transition-shadow" title="Condition">
+      <div id="condition-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Condition">
         <button type="button" id="condition-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearConditionFilter()" aria-label="Clear condition filter" title="Clear condition filter" disabled>
+                onclick="clearConditionFilter()" aria-label="Clear condition filter" data-tooltip="Clear condition filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         </button>
         <select id="condition-filter" name="condition"
@@ -133,9 +136,9 @@
         </select>
       </div>
 
-      <div id="status-filter-wrap" class="join rounded-lg transition-shadow {% if show_archived %}hidden{% endif %}" title="Status">
+      <div id="status-filter-wrap" class="join rounded-lg transition-shadow {% if show_archived %}hidden{% endif %}" data-tooltip="Status">
         <button type="button" id="status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearStatusFilter()" aria-label="Clear status filter" title="Clear status filter" disabled>
+                onclick="clearStatusFilter()" aria-label="Clear status filter" data-tooltip="Clear status filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         </button>
         <select id="status-filter" name="status"
@@ -155,16 +158,16 @@
         </select>
       </div>
 
-      <div id="archived-date-filters" class="join rounded-lg transition-shadow {% if not show_archived %}hidden{% endif %}" title="Deleted date range">
+      <div id="archived-date-filters" class="join rounded-lg transition-shadow {% if not show_archived %}hidden{% endif %}" data-tooltip="Deleted date range">
         <button type="button" id="date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearDeletedDateFilter()" aria-label="Clear deleted date range filter" title="Clear deleted date range filter" disabled>
+                onclick="clearDeletedDateFilter()" aria-label="Clear deleted date range filter" data-tooltip="Clear deleted date range filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
         </button>
         <input type="date" id="deleted-from-filter" name="deleted_from"
                aria-label="Deleted from date"
                class="input input-bordered input-sm join-item w-32"
                value="{{ deleted_from or '' }}"
-               title="Deleted from"
+               data-tooltip="Deleted from"
                hx-get="/api/v1/assets"
                hx-trigger="change"
                hx-target="#asset-table-container"
@@ -177,7 +180,7 @@
                aria-label="Deleted to date"
                class="input input-bordered input-sm join-item w-32"
                value="{{ deleted_to or '' }}"
-               title="Deleted to"
+               data-tooltip="Deleted to"
                hx-get="/api/v1/assets"
                hx-trigger="change"
                hx-target="#asset-table-container"
@@ -209,12 +212,9 @@
 
     </div>
 
-    <!-- can_bulk_act here is intentionally role-only (not show_archived-aware like _table.html's
-         copy of this check). This bar and its JS wiring are rendered once on initial page load,
-         but "Show archived" is toggled client-side afterwards without a page reload -- so this
-         check has to cover both states up front, or the bar/JS would be missing entirely after
-         switching modes. _table.html re-renders per request and can safely be state-aware since
-         the server already knows the current show_archived value on every htmx swap. -->
+    <!-- can_bulk_act is role-only here (unlike _table.html's copy) because this bar renders once on
+         load and just toggles visibility client-side afterward -- it needs to cover both archived
+         states up front, or the bar/JS would be missing after switching modes. -->
     {% set can_bulk_delete = staff.role in ["admin", "in_charge"] %}
     {% set can_bulk_restore = staff.role == "admin" %}
     {% set can_bulk_act = can_bulk_delete or can_bulk_restore %}
@@ -257,27 +257,16 @@
 
 <div id="modal-container"></div>
 
-<!-- Standalone folder-picker popup, independent of #modal-container above, so it can
-     stack on top of whatever modal is currently open (e.g. the export modal) without
-     being wiped out or re-created when that modal opens/closes. -->
+<!-- Standalone folder-picker popup, kept outside #modal-container so it can stack on top of
+     whatever modal is open (e.g. export) without getting wiped out when that modal closes. -->
 {% include "assets/_export_folder_browser_modal.html" %}
 
 <script>
-// Single source of truth for "what does the filter row currently say", as a
-// URLSearchParams object -- reads straight from the live DOM controls, the
-// same values hx-include on those controls would send. Defined
-// unconditionally (outside the role-gated bulk-actions block below) since
-// filterByStatus()/clearAllFilters() further down need it regardless of role.
-//
-// This exists because filterByStatus() used to hand-build its own params
-// object containing only status/show_archived/sort/paging -- so pressing a
-// stat card (or the 1-4 shortcut) silently dropped whatever search text or
-// category/condition filter was active from the actual request. The
-// dropdowns kept *showing* the old selection (nothing resets their DOM
-// value), but the table results, and then the URL via the
-// htmx:configRequest listener below (which only re-adds whatever keys were
-// actually sent), both quietly lost them. Routing every hand-fired request
-// through this one function is what prevents that class of bug recurring.
+// Single source of truth for "what does the filter row currently say", read straight from the
+// live DOM controls. Defined outside the role-gated block below since filterByStatus() and
+// clearAllFilters() both need it regardless of role.
+// Used to be hand-built per-caller and silently dropped search/category/condition when only
+// status changed (e.g. clicking a stat card) -- route everything through here instead.
 function getBaseFilterParams() {
   const q = document.getElementById('asset-search').value.trim();
   const category = document.getElementById('category-filter').value;
@@ -297,6 +286,22 @@ function getBaseFilterParams() {
   params.set('show_archived', archived ? '1' : '0');
   return params;
 }
+
+// Re-fetches the table with the current filters/sort/page (unlike add/edit/delete, a manual
+// refresh shouldn't reset back to page 1).
+function refreshAssetsTable() {
+  const table = document.querySelector('#asset-table-container table');
+  const params = getBaseFilterParams();
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '0');
+  params.set('sort_by', (table && table.dataset.sortBy) || '{{ sort_by }}');
+  params.set('sort_dir', (table && table.dataset.sortDir) || '{{ sort_dir }}');
+  htmx.ajax('GET', '/api/v1/assets', {
+    target: '#asset-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
 </script>
 
 {% if can_bulk_act %}
@@ -311,11 +316,8 @@ function getBaseFilterParams() {
   const deleteBtn = document.getElementById('bulk-delete-btn');
   const restoreBtn = document.getElementById('bulk-restore-btn');
 
-  // When true, a bulk action should act on matchedAllIds (every item matching
-  // the current filters, gathered across every page) instead of just the
-  // checkboxes visible on screen. Set by selectAllMatching() below, and
-  // cleared the moment the person touches any checkbox again or the table
-  // reloads, since either invalidates the previously-fetched id list.
+  // When true, bulk actions act on matchedAllIds (every filtered item, not just this page).
+  // Set by selectAllMatching(); cleared as soon as a checkbox changes or the table reloads.
   let selectAllMatched = false;
   let matchedAllIds = [];
 
@@ -351,9 +353,7 @@ function getBaseFilterParams() {
       countEl.textContent = `${pageIds.length} selected`;
       showBar();
 
-      // Every row on this page is checked, and there are more matching rows
-      // on other pages -- offer to extend the selection to all of them
-      // rather than silently capping bulk actions at one page's worth.
+      // Whole page selected and more rows exist elsewhere -- offer to extend to all of them.
       const totalOnPage = container.querySelectorAll('.asset-row-checkbox').length;
       const totalCount = getTotalCount();
       if (matchLink && pageIds.length === totalOnPage && totalCount > totalOnPage) {
@@ -377,21 +377,14 @@ function getBaseFilterParams() {
     }
   }
 
-  // Delegates to the shared getBaseFilterParams() defined earlier in the
-  // page (outside this conditional block), so this and filterByStatus()/
-  // clearAllFilters() read the filter row through one shared function
-  // instead of three copies that can quietly drift apart.
+  // Just delegates to the shared getBaseFilterParams() above.
   function currentFilterParams() {
     return getBaseFilterParams();
   }
 
-  // Fetches every id matching the current filters (not just this page) by
-  // re-requesting the same table endpoint with limit set to the total count,
-  // then reading the checkbox values back out of the returned markup --
-  // reusing the existing /api/v1/assets contract rather than needing a new
-  // endpoint. If that ever stops working (e.g. the server caps `limit`),
-  // this fails safely back to the on-page selection instead of silently
-  // acting on the wrong set of items.
+  // Grabs every id matching the current filters by re-requesting the table with limit set to
+  // the total count and reading checkbox values out of the response. Falls back to the on-page
+  // selection if that ever comes back short (e.g. server caps `limit`).
   async function selectAllMatching() {
     const totalCount = getTotalCount();
     const params = currentFilterParams();
@@ -417,11 +410,8 @@ function getBaseFilterParams() {
     matchLink.addEventListener('click', selectAllMatching);
   }
 
-  // Delegated on the container (not the checkboxes themselves) because
-  // htmx replaces the table's innerHTML on every search/pagination/
-  // archive-toggle -- direct listeners would be destroyed along with the
-  // old checkboxes, but a listener on this stable parent keeps working
-  // against whatever checkboxes currently exist inside it.
+  // Delegated on the container, not the checkboxes -- htmx replaces the table innerHTML on
+  // every search/page/toggle, which would kill direct listeners.
   container.addEventListener('change', function(e) {
     if (e.target.id === 'select-all-checkbox') {
       selectAllMatched = false;
@@ -435,10 +425,7 @@ function getBaseFilterParams() {
     }
   });
 
-  // A fresh result set (new search, new page, archived toggled) can't
-  // meaningfully carry over an old selection, since the rows it referred
-  // to may no longer even be on screen -- so just reset instead of trying
-  // to reconcile ids against the new table.
+  // A fresh result set can't carry over an old selection -- just reset instead of reconciling.
   container.addEventListener('htmx:afterSwap', hideBar);
 
   function clearSelection() {
@@ -481,30 +468,22 @@ function getBaseFilterParams() {
       }
       showToast(message, skippedCount > 0 ? 'info' : 'success');
 
-      // Full reload rather than an htmx table refresh -- the stat cards
-      // at the top of this page also need to reflect the change, and
-      // this mirrors the pattern already used by the toast Undo action
-      // in base.html for the same reason.
+      // Full reload (not just an htmx refresh) so the stat cards up top update too.
       window.location.reload();
     } catch (err) {
       showToast(`Couldn't ${pastTense} the selected assets`, 'error');
     }
   }
 
-  // A quick escape hatch for text dropped into the confirm dialog below --
-  // asset names come from the server, so this keeps them from being
-  // interpreted as markup when set via innerHTML.
+  // Escapes asset names before dropping them into the confirm dialog via innerHTML.
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
   }
 
-  // Deleting is destructive and, unlike the single-row delete flow, bulk
-  // delete used to fire immediately on click with no confirmation at all --
-  // one misclick could wipe out an entire selection. This mirrors the
-  // single-row "delete-confirm" modal's intent using a small self-contained
-  // dialog (no server round-trip needed just to ask "are you sure").
+  // Bulk delete used to fire immediately on click with no confirmation -- one misclick could
+  // wipe out a whole selection. Small self-contained dialog, no server round-trip needed.
   function confirmBulkDelete(ids, names, onConfirm) {
     const backdrop = document.createElement('div');
     backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
@@ -572,20 +551,10 @@ function getBaseFilterParams() {
 {% endif %}
 
 <script>
-// Swap between the "deleted between" date filters (archived view) and the
-// Status filter (active view) -- using 'hidden' so whichever one is
-// switched off is fully removed from the flex row's layout, letting the
-// remaining filters collapse leftward toward the search box rather than
-// leaving a gap. The date inputs stay in the DOM regardless (so hx-include
-// on the other controls doesn't have to change), but the server already
-// ignores deleted_from/deleted_to whenever show_archived is off, so hiding
-// them here is purely cosmetic -- no risk of a stale date value silently
-// filtering the active-items table.
-//
-// Same live-swap treatment for the bulk-action button: an admin gets both
-// Delete and Restore rendered (one hidden at a time) so the button always
-// matches whichever mode is currently on screen, instead of the label
-// being fixed to whatever show_archived was at the initial page load.
+// Swaps between the "deleted between" date filters (archived view) and the Status filter
+// (active view), and between the Restore/Delete bulk buttons, based on the archived toggle.
+// Date inputs stay in the DOM either way -- the server ignores them when show_archived is off,
+// so hiding is purely cosmetic.
 document.getElementById('show-archived-toggle').addEventListener('change', function (e) {
   const isArchived = e.target.checked;
 
@@ -616,10 +585,8 @@ document.getElementById('show-archived-toggle').addEventListener('change', funct
 });</script>
 
 <script>
-// Active-filter highlighting + "Clear filters" + search clear (x) + stat-card
-// quick filters. All of this is purely client-side UI state; every control
-// still drives the table through its own existing hx-get, this just keeps
-// the surrounding chrome (rings, clear button, clear icon) in sync with it.
+// Keeps the filter-row chrome (rings, clear button/icon) in sync with client-side UI state.
+// Every control still drives the table through its own hx-get -- this is just cosmetic.
 function updateFilterUI() {
   const search = document.getElementById('asset-search');
   const category = document.getElementById('category-filter');
@@ -661,16 +628,15 @@ function updateFilterUI() {
   clearBtn.classList.toggle('hidden', !anyActive);
   document.getElementById('clear-filters-count').textContent = activeCount;
   const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
-  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('data-tooltip', clearLabel);
   clearBtn.setAttribute('aria-label', clearLabel);
 
   updateStatCardUI(archived, status.value);
 }
 
-// Keeps the stat cards' ring/border highlight in sync with whichever status
-// they represent. "All Inventory" (data-status="") is considered active
-// whenever no status filter is set -- but only in the active (non-archived)
-// view, since status filtering doesn't apply to archived items.
+// Keeps the stat cards' ring/border highlight in sync with the active status filter.
+// "All Inventory" (data-status="") counts as active when no status is set, but only
+// in the non-archived view.
 const STAT_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
   'available': 'ring-success/40 border-success/40',
@@ -687,8 +653,7 @@ function updateStatCardUI(archived, currentStatus) {
     card.classList.toggle('stat-card-active', isActive);
     accentClasses.forEach(function (cls) { card.classList.toggle(cls, isActive); });
 
-    // Status filters don't apply to the archived view, so the cards
-    // shouldn't be clickable (or focusable) while it's on.
+    // Status filters don't apply to the archived view, so cards aren't clickable while it's on.
     card.classList.toggle('opacity-50', archived);
     card.classList.toggle('pointer-events-none', archived);
     card.classList.toggle('cursor-pointer', !archived);
@@ -697,22 +662,12 @@ function updateStatCardUI(archived, currentStatus) {
   });
 }
 
-// Keeps the address bar in sync with whatever combination of search, filters,
-// sort, and paging is currently on screen. Every control that changes the
-// table -- typed search, the four filter dropdowns/dates, sort-header clicks,
-// pagination, the per-page select, and the archived toggle -- ultimately
-// issues an htmx GET targeting #asset-table-container, whether via an
-// hx-get attribute or via htmx.ajax() (filterByStatus, clearAllFilters). Both
-// paths fire htmx:configRequest, and htmx.ajax() calls without an explicit
-// "source" fire it on document.body rather than the container itself, so this
-// listens on body and checks evt.detail.target to only react to requests
-// actually bound for the table -- otherwise unrelated htmx requests (opening
-// the add/edit/delete modals, which target #modal-container) would leak their
-// own params into the URL. evt.detail.parameters is htmx's fully-resolved set
-// of request params for that specific call (hx-vals merged with hx-include),
-// which is exactly the state we want reflected -- reading the DOM controls
-// directly wouldn't work since sort_by/sort_dir/limit/offset live only in
-// each control's hx-vals, not in any persistent element.
+// Keeps the address bar in sync with search/filters/sort/paging. Every control that changes
+// the table fires an htmx GET at #asset-table-container (hx-get or htmx.ajax()), which triggers
+// htmx:configRequest -- listens on body (since htmx.ajax() without a source fires there) and
+// checks evt.detail.target so unrelated requests (modals targeting #modal-container) don't
+// leak params into the URL. evt.detail.parameters gives the fully-resolved request params,
+// which we need since sort_by/sort_dir/limit/offset only live in hx-vals, not in the DOM.
 document.body.addEventListener('htmx:configRequest', function (evt) {
   const tableContainer = document.getElementById('asset-table-container');
   if (evt.detail.target !== tableContainer) return;
@@ -770,11 +725,8 @@ function clearStatusFilter() {
 }
 
 function clearDeletedDateFilter() {
-  // One icon covers both ends of the range, so both inputs clear together.
-  // Only the second dispatched "change" needs to fire the table request --
-  // hx-include on that request already picks up both fields' current
-  // (now-empty) values, so firing on both would just mean two redundant
-  // fetches back to back.
+  // One icon clears both ends of the range; only need to dispatch "change" once since
+  // hx-include already reads both fields' current values.
   const from = document.getElementById('deleted-from-filter');
   const to = document.getElementById('deleted-to-filter');
   from.value = '';
@@ -791,22 +743,15 @@ function clearAllFilters() {
   document.getElementById('deleted-from-filter').value = '';
   document.getElementById('deleted-to-filter').value = '';
   updateFilterUI();
-  // Every control was just blanked above, so getBaseFilterParams() now
-  // naturally returns "nothing but show_archived" -- same shared helper
-  // filterByStatus() uses, rather than a third hand-built params object.
+  // Everything's blanked above, so getBaseFilterParams() now just returns show_archived.
   const params = getBaseFilterParams();
   params.set('limit', '{{ limit }}');
   params.set('offset', 0);
   params.set('sort_by', '{{ sort_by }}');
   params.set('sort_dir', '{{ sort_dir }}');
-  // Passed as `values` (not baked into the URL string) so htmx both builds
-  // the request's query string from them AND reports them back as
-  // evt.detail.parameters in htmx:configRequest -- that's what the URL-sync
-  // listener further down reads to update the address bar. A direct
-  // htmx.ajax() call has no triggering element to pull hx-vals/hx-include
-  // from, so without this `values` override, evt.detail.parameters comes
-  // back empty and that listener wipes every filter out of the address bar
-  // instead of writing the new ones in.
+  // Passed as `values` (not a raw URL string) so htmx reports these back via
+  // evt.detail.parameters -- the URL-sync listener needs that to update the address bar;
+  // without it, a bare htmx.ajax() call reports no params and wipes the URL's filters instead.
   htmx.ajax('GET', '/api/v1/assets', {
     target: '#asset-table-container',
     swap: 'innerHTML',
@@ -816,26 +761,16 @@ function clearAllFilters() {
 
 function filterByStatus(status) {
   const archivedToggle = document.getElementById('show-archived-toggle');
-  // Stat cards represent status filters, which don't apply to the archived
-  // view -- they're visually disabled there, and this is the same guard
-  // server-side triggers or keyboard activation would otherwise bypass.
+  // Status filters don't apply to the archived view (cards are visually disabled there too).
   if (archivedToggle.checked) return;
   document.getElementById('status-filter').value = status;
   updateFilterUI();
-  // getBaseFilterParams() reads the status-filter value just set above,
-  // plus whatever search text / category / condition are still active --
-  // this used to be a hand-built params object containing only status/
-  // show_archived/sort/paging, which silently dropped any active search or
-  // category/condition filter (see getBaseFilterParams()'s comment).
   const params = getBaseFilterParams();
   params.set('limit', '{{ limit }}');
   params.set('offset', 0);
   params.set('sort_by', '{{ sort_by }}');
   params.set('sort_dir', '{{ sort_dir }}');
-  // See the matching comment in clearAllFilters() above -- `values` (not a
-  // pre-built query string) is what makes evt.detail.parameters non-empty,
-  // which is what the URL-sync listener needs to actually write the new
-  // filter state into the address bar instead of blanking it.
+  // See clearAllFilters() above -- `values` keeps evt.detail.parameters populated for URL sync.
   htmx.ajax('GET', '/api/v1/assets', {
     target: '#asset-table-container',
     swap: 'innerHTML',
@@ -847,12 +782,8 @@ function filterByStatus(status) {
 <script>
 // --- Keyboard shortcuts (Inventory page only) ---
 //
-// All of these share the same "don't hijack typing" guard: if the key event
-// target is a form control (input/textarea/select) or contenteditable, the
-// shortcut is ignored so plain digit/backtick keys still work normally while
-// someone is typing in the search box, a filter, or any modal's form fields.
-// They also back off while a modal is open in #modal-container, so a
-// shortcut never fires "through" a modal into the page behind it.
+// All share the same guard: skip while typing in a form control/contenteditable, and skip
+// while a modal is open so shortcuts don't fire "through" it.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -866,16 +797,9 @@ function isModalOpen() {
   return !!(folderBrowser && !folderBrowser.classList.contains('hidden'));
 }
 
-// Barcode-scan shortcut: a scanner types the code then sends Enter, same
-// as a person would -- so this is just an Enter-key listener on the same
-// search box the live substring filter (hx-trigger="keyup changed
-// delay:300ms" on #asset-search, further down) already uses. Distinct
-// from that filter: this does an *exact* barcode match and, on a hit,
-// jumps straight to that item's own details modal instead of merely
-// narrowing the table -- see asset_by_barcode in routes/assets.py.
-// htmx.ajax() rather than a plain fetch so this goes through the same
-// request pipeline (CSRF header, HX-Request, etc.) every other
-// htmx-driven interaction on this page already does.
+// Barcode-scan shortcut: a scanner types the code then sends Enter. Does an *exact* barcode
+// match and jumps to that item's details modal, unlike the live substring search on this same
+// box. See asset_by_barcode in routes/assets.py.
 document.getElementById('asset-search').addEventListener('keydown', function (e) {
   if (e.key !== 'Enter') return;
   const code = e.target.value.trim();
@@ -891,8 +815,6 @@ document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   // / — focus the search box, like most toolbars with a search field.
-  // Typed normally once focused, since isTypingTarget() guards this the
-  // same as every other shortcut here.
   if (!e.altKey && e.key === '/') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -910,11 +832,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Available
-  // / Currently Borrowed / Needs Attention). Deliberately e.key-based (plain
-  // top-row digits), not e.code, so this doesn't collide with F1-F4 or any
-  // numpad handling. filterByStatus() itself already no-ops while the
-  // archived view is on, same as clicking a disabled stat card would.
+  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Available / Borrowed /
+  // Needs Attention). e.key-based, not e.code, so it doesn't collide with F1-F4 or numpad.
   if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const statusByKey = { '1': '', '2': 'available', '3': 'borrowed', '4': 'maintenance' };

@@ -20,6 +20,7 @@ from services.auth_service import cleanup_expired_sessions, require_session
 from utils.formatters import full_name, humanize_label
 from services.settings_service import INDEFINITE_LOCK_UNTIL, PERMANENT_ASSIGNED_END, get_feature_flags
 from services.approvals_service import get_pending_approvals_count
+from services.admin_deactivation_service import is_eligible_reviewer
 from apscheduler.schedulers.background import BackgroundScheduler
 from extensions import limiter
 from routes.stats import stats_bp
@@ -33,6 +34,7 @@ from services.notification_service import (
 )
 from services.dashboard_service import get_dashboard_context
 from services.backup_service import run_scheduled_backup
+from services.archive_purge_service import run_scheduled_archive_purge
 from routes.dashboard import dashboard_bp
 from datetime import datetime
 
@@ -53,12 +55,8 @@ logging.basicConfig(
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
-# Was 1 MB, which -- since it's a hard Flask-level cap applied before any
-# route runs -- already undercut MAX_IMAGE_SIZE_BYTES (5MB, utils/uploads.py)
-# for any single-image upload. Raised to cover the new feedback-screenshot
-# upload (routes/feedback.py), which allows up to MAX_FEEDBACK_IMAGES (5)
-# images in one multipart request; 26 MB is 5 images at the 5MB cap plus
-# headroom for multipart boundaries/form fields.
+# 26MB = 5 feedback screenshots at the 5MB cap (utils/uploads.py) plus
+# multipart overhead. Used to be 1MB, which broke single-image uploads.
 app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024
 
 if not app.secret_key:
@@ -72,9 +70,7 @@ def inject_csrf_token():
     conn = get_db_connection()
     token = request.cookies.get("session_token")
     if not token:
-        # base.html's nav guards (feature_flags.assets etc.) run for every
-        # page, including the logged-out /login screen -- has to be
-        # present here too, not just on the logged-in path below.
+        # base.html's nav guards run even on the logged-out /login page, so we need this here too.
         feature_flags = get_feature_flags(conn)
         conn.close()
         return {"csrf_token": "", "staff_first_name": "", "feature_flags": feature_flags}
@@ -99,10 +95,7 @@ def inject_csrf_token():
         (token,),
     ).fetchone()
 
-    # Only bother querying notifications for an actual logged-in session --
-    # an anonymous request (e.g. /login) has no session row and no bell to
-    # populate. Feeds the sidebar bell dropdown in base.html; the full
-    # /notifications page re-queries this itself with its own pagination.
+    # Skip the notifications query for anonymous requests -- feeds base.html's bell dropdown.
     notifications, unread_notifications_count = (
         get_notification_bell_context(
             conn, staff_member["staff_id"], staff_member["role"], staff_member
@@ -110,24 +103,19 @@ def inject_csrf_token():
         if session and staff_member
         else ([], 0)
     )
-    # Same idea for the sidebar's "Approvals" badge -- see
-    # get_pending_approvals_count's docstring for the scoping rules.
+    # Sidebar "Approvals" badge count -- see get_pending_approvals_count for scoping rules.
     pending_approvals_count = (
         get_pending_approvals_count(conn, staff_member["staff_id"], staff_member["role"])
         if staff_member
         else 0
     )
-    # Badges the System sidebar link (admin-only, see templates/base.html)
-    # -- only worth querying for the role that can ever see that link.
+    # Badge for the admin-only System sidebar link.
     open_feedback_count = (
         get_open_feedback_count(conn)
         if staff_member and staff_member["role"] == "admin"
         else 0
     )
-    # Feature flags (see migrations/0033_feature_flags.sql) -- available in
-    # every template for free, same as the badge counts above, so
-    # base.html can gate nav links and page templates can gate dashboard
-    # widgets without each route having to pass it in explicitly.
+    # Available in every template so base.html/pages can gate nav links and widgets on their own.
     feature_flags = get_feature_flags(conn)
     conn.close()
 
@@ -144,9 +132,7 @@ def inject_csrf_token():
         "unread_notifications_count": unread_notifications_count,
         "pending_approvals_count": pending_approvals_count,
         "open_feedback_count": open_feedback_count,
-        # Feeds the extra rows in the "My Account" modal (templates/base.html)
-        # -- a staff account is always tied to a member record (staff.member_id),
-        # so these come from there, not the staff table itself.
+        # For the "My Account" modal -- comes from the linked member record, not the staff table.
         "staff_member_type": staff_member["member_type"] if staff_member else "",
         "staff_batch": staff_member["batch"] if staff_member else None,
         "staff_department_name": staff_member["department_name"] if staff_member else "",
@@ -154,16 +140,12 @@ def inject_csrf_token():
 
 
 app.jinja_env.globals["full_name"] = full_name
+app.jinja_env.globals["is_eligible_reviewer"] = is_eligible_reviewer
 
-# Lets staff/_table.html and staff/_profile_modal.html tell an indefinite
-# manual lock (services.settings_service.INDEFINITE_LOCK_UNTIL) apart from
-# an ordinary timed one without duplicating that sentinel string in Jinja.
+# Exposes the indefinite-lock sentinel to templates so they can tell it apart from a timed lock.
 app.jinja_env.globals["INDEFINITE_LOCK_UNTIL"] = INDEFINITE_LOCK_UNTIL
 
-# Same idea, for telling a "Permanent" assignment window
-# (services.settings_service.PERMANENT_ASSIGNED_END) apart from an
-# ordinary dated one in staff/_table.html, staff/_profile_modal.html, and
-# the Add/Edit/Reassign staff modals' "Permanent" quick-option buttons.
+# Same idea for the "Permanent" assignment sentinel used in staff templates/modals.
 app.jinja_env.globals["PERMANENT_ASSIGNED_END"] = PERMANENT_ASSIGNED_END
 
 
@@ -188,12 +170,7 @@ app.register_blueprint(pages_bp)
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(e):
-    """Catches Flask/Werkzeug's built-in HTTP errors — 404 Not Found, 405
-    Method Not Allowed, 429 Too Many Requests (from Flask-Limiter), and
-    similar — and reformats them as JSON instead of Werkzeug's default HTML
-    error page. e.description already has a reasonable human-readable
-    message for all of these (e.g. Flask-Limiter fills it in with the
-    specific limit that was hit)."""
+    """Reformats Flask/Werkzeug's built-in HTTP errors (404, 405, 429, ...) as JSON."""
     response = jsonify({"error": e.description})
     response.status_code = e.code
     return response
@@ -201,10 +178,7 @@ def handle_http_exception(e):
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(e):
-    """Last-resort catch-all for anything that isn't an HTTPException — i.e.
-    an actual bug (unhandled Python exception) rather than an expected error
-    condition. Logs the full traceback server-side (so it's still
-    debuggable) but never leaks internal details to the client."""
+    """Catch-all for real bugs (unhandled exceptions). Logs full traceback, hides details from the client."""
     app.logger.exception("Unhandled exception")
     response = jsonify({"error": "An unexpected error occurred"})
     response.status_code = 500
@@ -220,13 +194,11 @@ scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 scheduler.add_job(sync_loan_notifications, "interval", minutes=15)
-# 30-minute poll, not "every auto_backup_interval_hours" -- see
-# services/backup_service.py's module docstring for why: it lets an
-# admin's System-page change to the interval/enabled toggle take effect
-# within 30 minutes instead of waiting out whatever the previous
-# interval had left. The function itself decides whether a given poll
-# actually backs anything up.
+# Polls every 30 min rather than every configured interval, so a System-page settings
+# change takes effect quickly; the function itself decides if it actually backs up.
 scheduler.add_job(run_scheduled_backup, "interval", minutes=30)
+# Hourly poll is fine here since retention windows are day-granularity, not minute.
+scheduler.add_job(run_scheduled_archive_purge, "interval", hours=1)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
 
@@ -239,22 +211,15 @@ if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
 
 @app.route("/")
 def home():
-    """The Dashboard -- templates/home.html is the file (kept at its
-    existing name/route rather than moved to a new dashboard.html), but
-    everything it renders is the one-page operational overview: live
-    inventory/member/loan counts, a recent-activity feed, top-borrowed
-    assets, and quick actions. See services/dashboard_service.py for the
-    query layer behind it."""
+    """The dashboard (templates/home.html) -- counts, recent activity, top-borrowed
+    assets, quick actions. Query layer lives in services/dashboard_service.py."""
     conn = get_db_connection()
     staff, error = require_session(conn)
     if error:
         conn.close()
         return redirect(url_for("pages.login_page"))
-    # The temporary setup admin (services.seed_service) has no real
-    # business seeing the normal dashboard before setup is even done --
-    # send it to the wizard instead. Covers direct navigation/bookmarks/
-    # back-button landing here; the primary path (routes/auth.py's login)
-    # already redirects straight to /setup on login for this account.
+    # Temporary setup admin shouldn't see the real dashboard before setup is done --
+    # bounce it to the wizard (covers direct nav/bookmarks, not just the login redirect).
     if staff["is_system_seeded"]:
         conn.close()
         return redirect(url_for("pages.setup_page"))
@@ -266,11 +231,7 @@ def home():
 @app.route("/health")
 @limiter.exempt
 def health():
-    """Confirms the app is up AND can actually reach the database — an
-    app that's technically running but can't talk to a locked/corrupted
-    DB file is still broken. No auth required, since this is meant for a
-    watchdog script or quick manual check, not a staff-facing route.
-    Exempt from rate limiting since a watchdog may poll it frequently."""
+    """Confirms the app is up and can reach the DB. No auth needed -- meant for a watchdog script."""
     try:
         conn = get_db_connection()
         conn.execute("SELECT 1")
@@ -307,9 +268,7 @@ app.jinja_env.filters["format_date"] = format_date
 # Optional: Register in globals if you access it directly as a function in templates
 app.jinja_env.globals["format_date"] = format_date
 
-# Turns a snake_case DB value into a display label, e.g. asset.condition's
-# 'for_repair' -> 'For Repair'. See utils/formatters.py:humanize_label for
-# why the plain `capitalize` filter wasn't enough.
+# Turns a snake_case DB value into a display label, e.g. 'for_repair' -> 'For Repair'.
 app.jinja_env.filters["humanize"] = humanize_label
 
 

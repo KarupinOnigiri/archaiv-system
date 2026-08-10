@@ -2,13 +2,9 @@ import os
 import re
 from flask import current_app
 
-# Shared by every export route (assets, members, staff) that lets a staff
-# member type a server-side save folder in: resolves it safely within the
-# app root, the same way routes/assets.py's export originally did this
-# privately. Pulled out here so members/staff exports don't have to
-# duplicate (or drift from) that same security-relevant path-clamping
-# logic. routes/assets.py keeps its own copy rather than being refactored
-# to import this -- it already works and isn't part of this change.
+# Shared by export routes that let staff type a server-side save folder in --
+# clamps it safely within the app root so members/staff exports don't duplicate
+# that security logic. routes/assets.py still has its own copy, untouched on purpose.
 
 _FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_\-]+")
 _FILENAME_EXT_RE = re.compile(r"\.(csv|xlsx?)$", re.IGNORECASE)

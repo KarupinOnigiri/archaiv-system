@@ -64,7 +64,11 @@
 
     <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+      <button type="button" id="refresh-members-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh members list" onclick="refreshMembersTable()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+
+      <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
         <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </div>
@@ -80,18 +84,18 @@
                hx-include="#department-filter, #restricted-filter, #show-inactive-toggle"
                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         <button type="button" id="member-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
-                aria-label="Clear search" title="Clear search" onclick="clearMemberSearch()">
+                aria-label="Clear search" data-tooltip="Clear search" onclick="clearMemberSearch()">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <div id="department-filter-wrap" class="join rounded-lg transition-shadow" title="Department"
+      <div id="department-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Department"
            hx-get="/api/v1/departments/options"
            hx-trigger="departments-changed from:body"
            hx-target="#department-filter"
            hx-swap="innerHTML">
         <button type="button" id="department-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearDepartmentFilter()" aria-label="Clear department filter" title="Clear department filter" disabled>
+                onclick="clearDepartmentFilter()" aria-label="Clear department filter" data-tooltip="Clear department filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
         </button>
         <select id="department-filter" name="department_id"
@@ -111,9 +115,9 @@
         </select>
       </div>
 
-      <div id="restricted-filter-wrap" class="join rounded-lg transition-shadow" title="Standing">
+      <div id="restricted-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Standing">
         <button type="button" id="restricted-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                onclick="clearRestrictedFilter()" aria-label="Clear standing filter" title="Clear standing filter" disabled>
+                onclick="clearRestrictedFilter()" aria-label="Clear standing filter" data-tooltip="Clear standing filter" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
         </button>
         <select id="restricted-filter" name="is_restricted"
@@ -154,14 +158,9 @@
 
     </div>
 
-    <!-- can_bulk_act here is intentionally role-only (not show_inactive-aware like
-         _table.html's copy of this check), for the same reason as Inventory's
-         equivalent bar: this bar and its JS wiring render once on initial page
-         load, but "Show inactive" toggles client-side afterwards without a page
-         reload -- so this check has to cover both states up front. _table.html
-         re-renders per request and can safely mirror it with a flat check too,
-         since deactivate/reactivate share one permission level here (unlike
-         Inventory's delete/restore, which are split across two roles). -->
+    <!-- role-only check, not show_inactive-aware -- this bar renders once on
+         page load but "Show inactive" toggles client-side after, so it has
+         to cover both states upfront (same reasoning as Inventory's bar). -->
     {% set can_bulk_act = staff.role in ["admin", "in_charge"] %}
     {% if can_bulk_act %}
     <div id="bulk-actions-bar" class="pointer-events-none flex items-center gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/20" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
@@ -396,8 +395,11 @@
           <div class="w-9 h-9 rounded-full bg-error/10 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
           </div>
-          <div class="min-w-0">
-            <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} member${ids.length === 1 ? '' : 's'}?</h3>
+          <div class="min-w-0 flex-1">
+            <div class="flex justify-between items-start gap-2">
+              <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} member${ids.length === 1 ? '' : 's'}?</h3>
+              <button type="button" id="bulk-deactivate-close-btn" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+            </div>
             <p class="text-sm text-base-content/60 mt-1">This can be reversed later from the inactive view.</p>
             <ul class="text-sm mt-3 space-y-0.5">${shown}${more}</ul>
           </div>
@@ -420,6 +422,7 @@
     backdrop.addEventListener('click', function (e) {
       if (e.target === backdrop) close();
     });
+    backdrop.querySelector('#bulk-deactivate-close-btn').addEventListener('click', close);
     backdrop.querySelector('#bulk-deactivate-cancel-btn').addEventListener('click', close);
     backdrop.querySelector('#bulk-deactivate-confirm-btn').addEventListener('click', function () {
       close();
@@ -508,22 +511,16 @@ function updateMemberFilterUI() {
   clearBtn.classList.toggle('hidden', !anyActive);
   document.getElementById('clear-member-filters-count').textContent = activeCount;
   const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
-  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('data-tooltip', clearLabel);
   clearBtn.setAttribute('aria-label', clearLabel);
 
   updateMemberStatCardUI();
 }
 
-// Single source of truth for "what does the filter row currently say", as a
-// URLSearchParams object -- reads straight from the live DOM controls, same
-// pattern as Inventory's getBaseFilterParams(). This exists because
-// filterByStanding()/clearAllMemberFilters() used to hand-build their own
-// params objects containing only standing/show_inactive/sort/paging, so
-// clicking a stat card silently dropped whatever search text or department
-// filter was active -- both from the actual request sent to the table AND
-// from the address bar afterwards (the htmx:configRequest listener below
-// only re-adds whatever keys were actually sent). Routing every hand-fired
-// request through this one function is what prevents that recurring.
+// Single source of truth for "what does the filter row currently say" --
+// reads straight off the live DOM controls. Exists because hand-built params
+// objects used to drop search/department when a stat card was clicked; every
+// hand-fired request routes through this one function to prevent that recurring.
 function getBaseMemberFilterParams() {
   const q = document.getElementById('member-search').value.trim();
   const department = document.getElementById('department-filter').value;
@@ -531,6 +528,26 @@ function getBaseMemberFilterParams() {
   if (q) params.set('q', q);
   if (department) params.set('department_id', department);
   return params;
+}
+
+// Re-fetches the table with whatever filters/sort/page are currently in
+// effect -- a manual refresh shouldn't reset the view to page 1 the way
+// add/edit/delete intentionally do (via the members-refreshed event).
+function refreshMembersTable() {
+  const table = document.querySelector('#member-table-container table');
+  const params = getBaseMemberFilterParams();
+  const restricted = document.getElementById('restricted-filter').value;
+  if (restricted) params.set('is_restricted', restricted);
+  params.set('show_inactive', document.getElementById('show-inactive-toggle').checked ? '1' : '0');
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '0');
+  params.set('sort_by', (table && table.dataset.sortBy) || '{{ sort_by }}');
+  params.set('sort_dir', (table && table.dataset.sortDir) || '{{ sort_dir }}');
+  htmx.ajax('GET', '/api/v1/members', {
+    target: '#member-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
 }
 
 function clearMemberSearch() {
@@ -571,14 +588,10 @@ function clearAllMemberFilters() {
   params.set('show_inactive', document.getElementById('show-inactive-toggle').checked ? '1' : '0');
   params.set('sort_by', '{{ sort_by }}');
   params.set('sort_dir', '{{ sort_dir }}');
-  // Passed as `values` (not baked into the URL string) so htmx both builds
-  // the request's query string from them AND reports them back as
-  // evt.detail.parameters in htmx:configRequest -- that's what the URL-sync
-  // listener further down reads to update the address bar. A direct
-  // htmx.ajax() call has no triggering element to pull hx-vals/hx-include
-  // from, so without this `values` override, evt.detail.parameters comes
-  // back empty and that listener wipes every filter out of the address bar
-  // instead of writing the new (now-cleared) ones in.
+  // `values` (not a baked-in URL string) so htmx reports these back as
+  // evt.detail.parameters, which the URL-sync listener below needs to
+  // update the address bar -- a direct htmx.ajax() call has no triggering
+  // element to pull hx-vals/hx-include from otherwise.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
     swap: 'innerHTML',
@@ -593,18 +606,10 @@ function clearAllMemberFilters() {
 });
 document.addEventListener('DOMContentLoaded', updateMemberFilterUI);
 
-// Keeps the stat cards' ring/border highlight in sync with whichever standing
-// they represent, mirroring Inventory's STAT_CARD_ACCENTS/updateStatCardUI.
-// currentStandingFilter is tracked explicitly (rather than re-derived from
-// is_restricted/show_inactive on every call) so highlighting reflects which
-// card was actually clicked, and clears the moment someone edits a filter
-// control directly instead of via a card.
-//
-// Initialized from the actual persisted request state (same query params the
-// cold-load replay script below reads) rather than hardcoded to '', so a
-// hard refresh with e.g. ?is_restricted=1 in the address bar highlights the
-// "Restricted" card instead of silently falling back to "All Members" while
-// the table itself shows the filtered results.
+// Keeps the stat cards' highlight in sync with whichever standing they
+// represent (mirrors Inventory's STAT_CARD_ACCENTS). currentStandingFilter is
+// tracked explicitly and initialized from the actual query params, so a hard
+// refresh with e.g. ?is_restricted=1 highlights the right card instead of falling back to "All".
 {% set qs_is_restricted = request.args.get('is_restricted') %}
 {% set qs_show_inactive = request.args.get('show_inactive') %}
 {% if qs_show_inactive == '1' %}
@@ -640,20 +645,10 @@ function updateMemberStatCardUI() {
   });
 }
 
-// Same shortcut-filter behavior as Inventory's filterByStatus: clicking a
-// card sends a fresh request for exactly that standing, independent of
-// whatever's currently in the search box or department dropdown (those
-// controls keep whatever value they're showing, but aren't included in this
-// request) -- same trade-off Inventory already makes for its status cards.
-// "All Members" clears the standing filter but leaves show_inactive off,
-// same as Inventory's "All Inventory" card leaving the archived toggle alone.
-//
-// "Inactive" is an approximation: the current /api/v1/members endpoint has
-// no way to return *only* inactive members, since show_inactive just adds
-// them alongside everyone else. This sends is_active=0 in addition to
-// show_inactive=1 so the backend can start honoring it precisely whenever
-// that filter is added -- until then, it behaves the same as "All" but with
-// show_inactive on.
+// Same shortcut-filter behavior as Inventory's filterByStatus: a card click
+// sends a fresh request for exactly that standing. "Inactive" is an
+// approximation -- the endpoint can't return *only* inactive members yet, so
+// this just adds is_active=0 alongside show_inactive=1 for the backend to honor precisely later.
 function filterByStanding(standing) {
   currentStandingFilter = standing;
 
@@ -709,13 +704,9 @@ function filterByStanding(standing) {
   if (deactivateBtn) deactivateBtn.classList.toggle('hidden', isInactiveView);
 
   updateMemberFilterUI();
-  // Passed as `values` (not baked into the URL string) so htmx both builds
-  // the request's query string from them AND reports them back as
-  // evt.detail.parameters in htmx:configRequest -- see the matching comment
-  // in clearAllMemberFilters() above for why that's what actually keeps the
-  // address bar in sync (and, since these now come from
-  // getBaseMemberFilterParams(), why search/department survive a stat-card
-  // click instead of silently dropping out of the request).
+  // `values` (not a baked-in URL string), same reasoning as
+  // clearAllMemberFilters() above -- keeps the address bar in sync and lets
+  // search/department survive a stat-card click.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
     swap: 'innerHTML',
@@ -770,13 +761,9 @@ document.addEventListener('DOMContentLoaded', function () {
   {% if request.args.get('is_restricted') is not none %}
   params.set('is_restricted', {{ request.args.get('is_restricted') | tojson }});
   {% endif %}
-  // `values` (not a pre-built query string) so this populates
-  // evt.detail.parameters correctly -- otherwise the URL-sync listener
-  // above sees an empty parameter set on this auto-fired request and wipes
-  // every filter straight out of the address bar moments after every page
-  // load, independent of anything the person does. That's the actual
-  // reason a filtered URL kept resetting to defaults on refresh, same root
-  // cause as Inventory's equivalent fix.
+  // `values` (not a pre-built query string), or the URL-sync listener above
+  // sees an empty parameter set on this auto-fired request and wipes every
+  // filter from the address bar right after page load -- that was the actual bug behind a filtered URL resetting on refresh.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
     swap: 'innerHTML',
@@ -846,10 +833,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
-  // pagination button is currently in the table footer. Reads the button
-  // rather than hand-building the offset math so it automatically respects
-  // the same disabled-at-the-edges state the button already shows.
+  // ArrowLeft / ArrowRight — clicks the prev/next pagination button in the
+  // table footer, so it respects that button's own disabled-at-edges state.
   if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
@@ -881,10 +866,8 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter back to blank and blur
-  // whatever was focused, same as clicking "Clear filters" by hand. When a
-  // modal *is* open, the shared Escape handler in base.html closes it
-  // instead -- this stays out of the way in that case.
+  // Escape — clears every filter and blurs focus, same as "Clear filters".
+  // Backs off when a modal is open; base.html's shared handler closes that instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {

@@ -1,25 +1,18 @@
 """
 Production entry point for the toolroom app.
 
-The dev server started by `python app.py` (Werkzeug's built-in server) is
-not meant to run unattended — it isn't hardened for production traffic and
-prints a startup warning to that effect. This file serves the same Flask
-app through Waitress instead, which is a pure-Python WSGI server that's
-lightweight enough for a Raspberry Pi and doesn't need any OS-level
-dependencies (unlike gunicorn, which relies on features not available on
-Windows and is less common in single-process Pi deployments).
+`python app.py`'s dev server isn't hardened for production traffic. This serves
+the same Flask app through Waitress instead -- pure-Python, lightweight enough
+for a Pi, no OS-level deps (unlike gunicorn, which doesn't play nice on Windows).
 
 Usage:
     python wsgi.py
 
-Typically you won't run this by hand — see toolroom.service, which runs
-this under systemd so it starts on boot and restarts automatically if it
-ever crashes.
+Normally run via toolroom.service (systemd) so it starts on boot and auto-restarts.
 
-Threads: kept modest (default 4) since this app is backed by a single
-SQLite file — more threads just means more contention for the same
-database, not more real throughput. Raise WAITRESS_THREADS in .env only
-if you've confirmed the DB isn't the bottleneck.
+Threads default to 4 since we're backed by a single SQLite file -- more threads
+just means more contention, not more throughput. Only raise WAITRESS_THREADS if
+you've confirmed the DB isn't the bottleneck.
 """
 
 import os

@@ -27,22 +27,13 @@ _CATEGORIES = ("bug", "idea", "other")
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def submit_feedback():
-    """The 'Give feedback' row in the account dropdown (templates/base.html)
-    -- an in-app bug/issue report, reviewed by admins from the Feedback
-    tab (view_feedback_page / view_feedback_table below). Open to every
-    role, not just admin/in_charge: a tool_keeper hitting a bug is exactly
-    who needs to be able to report it.
-
-    multipart/form-data rather than JSON -- the JSON get_json_or_error
-    helper used by the rest of this app can't carry file uploads, and this
-    endpoint accepts up to MAX_FEEDBACK_IMAGES screenshots alongside the
-    category/message fields."""
+    """Handles the 'Give feedback' dropdown option; open to every role since
+    anyone can hit a bug. Uses multipart/form-data instead of JSON because
+    this endpoint also takes screenshot uploads."""
     category = request.form.get("category")
     message = (request.form.get("message") or "").strip()
     page_path = (request.form.get("page_path") or "").strip()[:200]
-    # getlist, not just request.files.get -- the <input> is `multiple`, so
-    # a submission can carry more than one screenshot under the same field
-    # name.
+    # getlist because the <input> allows multiple files under one field name
     screenshots = [
         f for f in request.files.getlist("screenshots") if f and f.filename
     ]
@@ -71,10 +62,7 @@ def submit_feedback():
         for file_storage in screenshots:
             relative_path, error = save_feedback_screenshot(file_storage, report_id)
             if error:
-                # Roll back the DB insert and delete anything already
-                # saved to disk this request, rather than leaving a
-                # feedback report with only some of its screenshots
-                # attached because the third file happened to be corrupt.
+                # bail out fully rather than leave a report with only some screenshots attached
                 conn.rollback()
                 for p in saved_paths:
                     delete_feedback_screenshot(p)
@@ -85,12 +73,8 @@ def submit_feedback():
                 (report_id, relative_path),
             )
 
-        # Same connection/transaction as the insert above -- a submitted
-        # report should never exist without also notifying admins of it.
-        # g.staff only carries the staff table's own columns (no joined
-        # members row here), so username -- not a full name -- is what's
-        # on hand, same as create_unrestriction_requested_notifications
-        # uses for its "requester_username" arg.
+        # same transaction as the insert -- report and admin notification succeed or fail together.
+        # g.staff has no joined members row, so we only have username here, not full name.
         create_feedback_submitted_notifications(
             conn, report_id, g.staff["id"], g.staff["username"], category
         )
@@ -182,9 +166,7 @@ def get_feedback_table_context(args):
         (*params, limit, offset),
     ).fetchall()
 
-    # One extra query for every image belonging to a report on this page,
-    # rather than N+1 queries (one per report) -- grouped into a dict here
-    # so the template can just do images_by_report.get(r.id, []).
+    # one query for all images on this page instead of N+1, grouped by report id
     report_ids = [r["id"] for r in reports]
     images_by_report = {rid: [] for rid in report_ids}
     if report_ids:
@@ -228,12 +210,8 @@ def view_feedback_table():
 @feedback_bp.route("/feedback/<int:id>/resolve", methods=["POST"])
 @roles_required("admin")
 def resolve_feedback(id):
-    """Resolving requires an actual reply (e.g. 'Fixed', 'Testing this
-    now', 'Not applicable') -- not just a silent status flip, so the
-    submitter gets told what happened, not just that something did. Sent
-    to them as a notification (see create_feedback_resolved_notification)
-    the same way a real support inbox replies rather than closing a
-    ticket in silence."""
+    """Resolving requires a reply (e.g. 'Fixed', 'Not applicable') instead of a
+    silent status flip, so the submitter gets notified with an actual answer."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:

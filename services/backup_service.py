@@ -1,25 +1,12 @@
-"""Automatic database backups, run from the app's own APScheduler instance
-(app.py's `scheduler`) instead of requiring a separate OS-level cron job
-or systemd timer to be set up on every deployment. backup_db.py's
-standalone CLI entry point is untouched and still works exactly as
-before for anyone who prefers scheduling it that way (e.g. backing up to
-a mounted USB drive on a schedule the app itself has no reason to know
-about) -- this calls that exact same backup_database() function, so
-there's only one real backup implementation to keep correct, just two
-ways to trigger it.
+"""Automatic database backups via the app's own APScheduler instance, so no
+separate OS cron/systemd timer is needed per deployment. backup_db.py's
+CLI entry point still works standalone too -- both paths call the same
+backup_database(), so there's only one real implementation.
 
-Runs on a fixed poll (see app.py: `scheduler.add_job(run_scheduled_backup,
-"interval", minutes=30)`) rather than being scheduled at exactly
-auto_backup_interval_hours itself -- that way, an admin changing the
-interval or flipping the enabled toggle on the System page (routes/
-staff.py's backup-settings endpoints) takes effect within 30 minutes
-instead of only after whatever the *previous*, possibly much longer,
-interval had left to run. Whether a given poll actually backs anything
-up depends on whether auto_backup_interval_hours has actually elapsed
-since the last run -- tracked as an app_settings row
-(auto_backup_last_run_at), not an in-memory timestamp, so a restart
-doesn't lose track of when the last real backup happened and cause an
-immediate redundant one."""
+Polls every 30 min rather than scheduling exactly at the configured
+interval, so admins see interval/enabled changes take effect quickly. The
+last-run time is stored as an app_settings row (not in memory) so a
+restart doesn't lose track and trigger a redundant backup."""
 
 import logging
 from datetime import datetime, timedelta
@@ -35,10 +22,8 @@ _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def get_last_backup_at(conn=None):
-    """Public (not just internal to this module) -- the System page's
-    backup-settings modal (routes/staff.py) reads this to show "Last
-    backup: ..." rather than leaving an admin guessing whether the
-    scheduler is actually doing anything."""
+    """Public since the System page's backup-settings modal reads this to
+    show "Last backup: ..." so admins aren't guessing if it's working."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -69,24 +54,15 @@ def _set_last_backup_at(conn, when):
 
 
 def run_backup_now():
-    """Runs an actual backup immediately, unconditionally (no
-    enabled/interval check) -- used by both the scheduler's due-run path
-    below and the System page's "Backup Now" button (routes/staff.py),
-    which should always do it right now regardless of what the schedule
-    says. Records the run time either way (a manual backup counts toward
-    "when did we last back up" same as a scheduled one -- there's no
-    reason for the scheduler to redundantly re-run right after someone
-    just did it by hand). Returns True on success, False on failure
-    (already logged either way -- callers decide what to tell the user)."""
+    """Runs a backup immediately, no enabled/interval check -- used by both
+    the scheduler and the "Backup Now" button. Records the run time either
+    way, so a manual backup also resets the scheduler's countdown. Returns
+    True/False for success; failure is already logged either way."""
     try:
         backup_db.backup_database()
     except SystemExit:
-        # backup_database() calls sys.exit(1) on failure (missing DB file,
-        # an unwritable/unmounted backup directory, or the backup call
-        # itself raising -- see backup_db.py) -- caught here so a failed
-        # run can't kill the scheduler thread or bubble up as a 500 to
-        # whoever clicked "Backup Now"; it's already printed/logged what
-        # went wrong.
+        # backup_database() calls sys.exit(1) on failure; catch it here so it
+        # can't kill the scheduler thread or 500 the "Backup Now" request
         logger.warning("Database backup failed.")
         return False
 

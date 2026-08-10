@@ -1,6 +1,10 @@
 <div class="modal modal-open">
   <div class="modal-box max-w-sm max-h-[85vh] overflow-y-auto">
-    <h3 class="font-bold text-lg mb-2">Lift Restriction</h3>
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Lift Restriction</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p class="text-sm text-base-content/70 mb-4">
       Lift the borrowing restriction on <strong>{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</strong>?
       {% if member.restriction_reason %}
@@ -8,9 +12,9 @@
       {% endif %}
     </p>
 
-    {% if error %}
-    <p class="text-error text-sm mb-3">{{ error }}</p>
-    {% endif %}
+    <!-- Always rendered (not just when there is an error) so its reserved space
+         doesn't appear/disappear and shift the form below it. -->
+    <p class="text-error text-sm mb-3 min-h-5">{{ error or '' }}</p>
 
     <form hx-post="/api/v1/members/{{ member.id }}/unrestrict" hx-target="closest .modal" hx-swap="outerHTML"
       hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>

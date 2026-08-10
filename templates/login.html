@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 
 <!-- Load Archivo Font from Google Fonts -->
@@ -12,15 +12,20 @@
 
   <div class="relative min-h-full flex items-center justify-center p-4">
 
-  <div class="w-full max-w-sm bg-base-100 rounded-xl shadow-xl shadow-primary/10 p-8">
+  <!-- The three steps (username, password, RFID PIN) are normal-flow
+       siblings, not absolutely positioned -- the card sizes itself to
+       whichever step is showing instead of reserving height for the tallest. -->
+  <div class="w-full max-w-sm bg-base-100 rounded-xl shadow-xl shadow-primary/10 relative overflow-hidden">
+
+    <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate>
+
+    <!-- Step 1: username/barcode -->
+    <div id="username-step" class="p-8 flex flex-col">
 
     <!-- Logo + "Archaív" Label -->
     <div class="flex flex-col items-center mb-6 gap-1">
-      <!-- Same .logo-theme-light/.logo-theme-dark swap base.html's sidebar
-           logo uses -- the login card is always bg-base-100, which is
-           light for "tesda" (Mixed and Light modes look identical here,
-           this page has no sidebar to differ on) and dark for
-           "tesda-dark", so it needs the same theme-appropriate logo. -->
+      <!-- Same logo-theme-light/dark swap as base.html's sidebar logo, since the
+           login card is always bg-base-100 (light or dark depending on theme). -->
       <img src="{{ url_for('static', filename='images/logo-icon-light.png') }}" alt="Archaív" class="logo-theme-light h-26 w-auto">
       <img src="{{ url_for('static', filename='images/logo-icon-dark.png') }}" alt="Archaív" class="logo-theme-dark h-26 w-auto">
       <span class="text-4xl font-bold tracking-tight text-base-content" style="font-family: 'Archivo', sans-serif;">
@@ -31,23 +36,8 @@
     <h1 class="text-2xl font-semibold text-center mb-1.5 text-base-content">Welcome back!</h1>
     <p class="text-sm text-base-content/50 text-center mb-9">Sign in to your account</p>
 
-    <!-- The password form and the RFID form below are stacked in the same
-         grid cell (both row-start-1/col-start-1) rather than toggled with
-         `hidden`. `hidden` (display:none) removes an element from layout
-         entirely, so the card's height used to come from whichever form
-         happened to be visible -- switching modes made the card jump
-         whenever the two forms' natural heights didn't match exactly.
-         With both always present in the grid cell, the row is always
-         sized to the taller of the two, so the card's height is constant
-         no matter which mode is active; only `invisible` (keeps the box's
-         layout footprint, just doesn't paint or accept focus/clicks) is
-         toggled by toggleRfidLogin() below. -->
-    <div class="grid grid-cols-1">
-    <div id="password-login-block" class="col-start-1 row-start-1">
-    <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate class="space-y-4">
-
       <div class="form-control">
-        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60 {% if error %}outline outline-2 outline-error{% endif %}">
+        <label id="username-field-label" class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60 {% if error %}outline outline-2 outline-error{% endif %}">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21a8 8 0 10-16 0"/>
             <circle cx="12" cy="7" r="4"/>
@@ -62,6 +52,9 @@
             placeholder="Username or Barcode ID"
             class="grow bg-transparent border-none outline-none focus:outline-none"
           >
+          <!-- Only shown once an RFID lookup is actually in flight -- 150ms show-delay
+               (same convention as base.html's tooltip) so it doesn't flicker on for fast lookups. -->
+          <span id="username-lookup-spinner" class="loading loading-spinner loading-xs text-base-content/30 hidden shrink-0"></span>
         </label>
         <p id="username-empty-msg" class="hidden text-error text-xs mt-1.5 ml-4 items-center gap-1">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline shrink-0" viewBox="0 0 20 20" fill="currentColor">
@@ -71,136 +64,166 @@
         </p>
       </div>
 
-      <div class="form-control">
-        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60 {% if error %}outline outline-2 outline-error{% endif %}">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="10" width="16" height="10" rx="2"/>
-            <path d="M8 10V7a4 4 0 018 0v3"/>
-          </svg>
-          <input
-            type="password"
-            name="password"
-            id="password-field"
-            autocomplete="current-password"
-            placeholder="Password"
-            class="grow bg-transparent border-none outline-none focus:outline-none"
-          >
-          <button
-            type="button"
-            id="toggle-password-btn"
-            onclick="togglePassword()"
-            aria-label="Show password"
-            class="text-base-content/40 hover:text-base-content hidden shrink-0"
-          >
-            <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
-              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
-            <svg id="eye-closed" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3.98 8.223A10.477 10.477 0 001.934 12c1.292 4.338 5.31 7.5 10.066 7.5.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0112 4.5c4.756 0 8.774 3.162 10.065 7.498a10.522 10.522 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
-            </svg>
-          </button>
-        </label>
-        <p id="password-empty-msg" class="hidden text-error text-xs mt-1.5 ml-4 items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
-          </svg>
-          Please enter your password.
-        </p>
-        {% if error %}
-        <p class="flex items-start gap-1.5 text-error text-xs mt-1.5 ml-4">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
-          </svg>
-          <span>{{ error }}</span>
-        </p>
-        {% endif %}
-      </div>
-
-      <p class="text-right text-sm text-base-content/50 -mt-1">
+      <p class="text-right text-sm text-base-content/50 mt-2">
         Forgot your password? <span class="text-secondary font-medium">Contact your administrator</span>
       </p>
 
-      <button type="submit" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
-        Sign in
+      <!-- type="button", not submit -- no password yet, so this can't submit the form. -->
+      <button type="button" onclick="continueFromUsername()" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
+        Continue
       </button>
-    </form>
-
-    <!-- RFID + PIN login -- admin-only (routes/auth.py:login_rfid
-         enforces this server-side too), hidden behind a toggle rather
-         than shown alongside the password form by default: it's a
-         secondary path for staff who actually have a card issued, not
-         the primary way most staff sign in. A real button (btn-outline),
-         not a plain text link -- matches every other actionable control
-         on this card (Sign in, Change photo, etc. elsewhere in the app
-         all use the same convention: text links are for secondary
-         *information* like "Contact your administrator" below, buttons
-         are for things that actually do something). -->
-    <button type="button" id="show-rfid-login-btn" onclick="toggleRfidLogin(true)"
-            class="btn btn-outline w-full rounded-[18px] mt-3 gap-1.5">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
-      Admin? Sign in with RFID card
-    </button>
     </div>
 
-    <form id="rfid-login-form" novalidate class="space-y-4 col-start-1 row-start-1 invisible pointer-events-none">
-      <div class="form-control">
-        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
-          <input
-            type="text"
-            id="rfid-id-field"
-            autocomplete="off"
-            placeholder="Scan RFID card"
-            class="grow bg-transparent border-none outline-none focus:outline-none"
-          >
-        </label>
-      </div>
-
-      <div class="form-control">
-        <label class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="10" width="16" height="10" rx="2"/>
-            <path d="M8 10V7a4 4 0 018 0v3"/>
-          </svg>
-          <input
-            type="password"
-            id="rfid-pin-field"
-            inputmode="numeric"
-            pattern="[0-9]{6}"
-            minlength="6"
-            maxlength="6"
-            autocomplete="off"
-            placeholder="6-digit PIN"
-            class="grow bg-transparent border-none outline-none focus:outline-none"
-          >
-        </label>
-      </div>
-
-      <div id="rfid-login-error" class="hidden flex items-start gap-1.5 text-error text-xs -mt-1">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
-        </svg>
-        <span id="rfid-login-error-text"></span>
-      </div>
-
-      <p class="text-right text-sm text-base-content/50 -mt-1">
-        Forgot your PIN? <span class="text-secondary font-medium">Contact your administrator</span>
-      </p>
-
-      <button type="submit" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
-        Sign in with RFID
+    <!-- Step 2: password -- back button, identity readout (avatar + name from
+         a real /api/v1/username-lookup call), then the password field.
+         continueFromUsername() already confirmed the account is real before
+         this step ever shows. -->
+    <div id="password-step" class="hidden p-8 flex flex-col">
+      <button type="button" onclick="showUsernameStep()"
+              class="group self-start flex items-center gap-1 text-sm text-base-content/50 rounded-full pl-1.5 pr-3 py-1 -ml-1.5 mb-2 transition-colors hover:text-base-content hover:bg-base-200 active:scale-95">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Not you?
       </button>
-      <button type="button" onclick="toggleRfidLogin(false)" class="btn btn-outline w-full rounded-[18px] mt-3">
-        Use username/password instead
+
+      <div class="flex-1 flex flex-col items-center justify-center">
+        <!-- Real photo when on file, initials fallback otherwise -- same pattern as
+             the RFID PIN view and every profile modal (staff/members _profile_modal.html). -->
+        <div class="bg-primary text-primary-content rounded-full w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden mb-3">
+          <img id="password-step-avatar-img" src="" alt="" class="hidden w-full h-full object-cover">
+          <span id="password-step-avatar-fallback" class="text-3xl font-semibold"></span>
+        </div>
+        <p class="text-center text-sm text-base-content/60 mb-6 px-4 max-w-full">
+          Signing in as <span id="password-step-username" class="font-semibold text-base-content break-all">&nbsp;</span>
+        </p>
+
+        <div class="form-control w-full">
+          <label id="password-field-label" class="input rounded-[10px] w-full bg-base-200 border-none flex items-center gap-2 px-4 transition-shadow focus-within:ring-2 focus-within:ring-secondary/60 {% if error %}outline outline-2 outline-error{% endif %}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10" width="16" height="10" rx="2"/>
+              <path d="M8 10V7a4 4 0 018 0v3"/>
+            </svg>
+            <input
+              type="password"
+              name="password"
+              id="password-field"
+              autocomplete="current-password"
+              placeholder="Password"
+              class="grow bg-transparent border-none outline-none focus:outline-none"
+            >
+            <button
+              type="button"
+              id="toggle-password-btn"
+              onclick="togglePassword()"
+              aria-label="Show password"
+              data-tooltip="Show/hide"
+              class="text-base-content/40 hover:text-base-content hidden shrink-0"
+            >
+              <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              <svg id="eye-closed" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3.98 8.223A10.477 10.477 0 001.934 12c1.292 4.338 5.31 7.5 10.066 7.5.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0112 4.5c4.756 0 8.774 3.162 10.065 7.498a10.522 10.522 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+              </svg>
+            </button>
+          </label>
+          <p id="password-empty-msg" class="hidden text-error text-xs mt-1.5 ml-4 items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 inline shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
+            </svg>
+            Please enter your password.
+          </p>
+          <!-- Always in the DOM, reserving a fixed one-line slot (invisible, not
+               display:none) so the Sign In button never shifts position. -->
+          <p id="password-login-error" class="flex items-start gap-1.5 text-error text-xs mt-1.5 ml-4 min-h-4 {% if not error %}invisible{% endif %}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
+            </svg>
+            <span id="password-login-error-text">{{ error or '' }}</span>
+          </p>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full rounded-[18px] py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
+        Sign in
       </button>
+    </div>
+
     </form>
+
+    <!-- RFID PIN entry -- admin-only (routes/auth.py:login_rfid enforces this
+         server-side too). No button to get here: the username field is
+         autofocused, so tapping a card just types its ID there and fires Enter
+         like any other scanner shortcut in this app. The keydown handler below
+         checks that value against /api/v1/rfid-lookup and swaps to this view
+         only if it's a recognized admin card; anything else falls through to
+         a normal form submit. -->
+    <div id="rfid-pin-view" class="hidden p-8 flex flex-col">
+      <button type="button" onclick="cancelRfidLogin()"
+              class="group self-start flex items-center gap-1 text-sm text-base-content/50 rounded-full pl-1.5 pr-3 py-1 -ml-1.5 -mt-1 mb-2 transition-colors hover:text-base-content hover:bg-base-200 active:scale-95">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+        Not you?
+      </button>
+
+      <div class="flex-1 flex flex-col items-center justify-center gap-1">
+        <!-- Same avatar sizing as the password step above, for consistency. -->
+        <div id="rfid-pin-avatar" class="bg-primary text-primary-content rounded-full w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden mb-3">
+          <img id="rfid-pin-avatar-img" src="" alt="" class="hidden w-full h-full object-cover">
+          <span id="rfid-pin-avatar-fallback" class="text-3xl font-semibold"></span>
+        </div>
+
+        <!-- Role is hardcoded "Administrator" -- login_rfid only ever resolves admin cards. -->
+        <p class="text-center text-sm text-base-content/60 mb-5 px-4">
+          Signing in <span id="rfid-pin-name" class="font-semibold text-base-content">&nbsp;</span> as Administrator
+        </p>
+
+        <!-- Dot indicators + numeric keypad, mobile-wallet style -- meant to be
+             entered fast at a shared terminal, not typed like a password. -->
+        <div id="rfid-pin-dots" class="flex items-center gap-3 mb-2">
+          {% for i in range(6) %}
+          <span id="rfid-pin-dot-{{ i }}" class="w-3 h-3 rounded-full bg-base-300 transition-colors"></span>
+          {% endfor %}
+        </div>
+
+        <!-- invisible not hidden -- reserves the h-8 slot so the keypad below never shifts. -->
+        <div id="rfid-pin-error" class="invisible flex items-start gap-1.5 text-error text-xs h-8 items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
+          </svg>
+          <span id="rfid-pin-error-text"></span>
+        </div>
+      </div>
+
+      <div id="rfid-pin-pad" class="grid grid-cols-3 gap-3 place-items-center">
+        {% for d in [1, 2, 3, 4, 5, 6, 7, 8, 9] %}
+        <button type="button" onclick="pinDigit({{ d }})"
+                class="w-14 h-14 rounded-full bg-base-200 hover:bg-base-300 active:scale-95 text-xl font-medium text-base-content transition-all">{{ d }}</button>
+        {% endfor %}
+        <span></span>
+        <button type="button" onclick="pinDigit(0)"
+                class="w-14 h-14 rounded-full bg-base-200 hover:bg-base-300 active:scale-95 text-xl font-medium text-base-content transition-all">0</button>
+        <button type="button" onclick="pinBackspace()" aria-label="Backspace" data-tooltip="Backspace"
+                class="w-14 h-14 rounded-full hover:bg-base-200 active:scale-95 flex items-center justify-center text-base-content/60 transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+        </button>
+      </div>
     </div>
 
   </div>
 
   </div>
 </div>
+
+<style>
+/* Brief shake on a wrong PIN -- same purpose as the dots clearing, just
+   a more immediate "that didn't work" cue than the error text alone. */
+@keyframes rfid-pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.rfid-pin-shake { animation: rfid-pin-shake 0.35s ease-in-out; }
+</style>
 
 <script>
 if (window.location.search.includes('error=')) {
@@ -254,6 +277,9 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
     usernameMsg.classList.remove('hidden');
     usernameMsg.classList.add('flex');
     hasEmpty = true;
+    // Shouldn't normally happen (continueFromUsername already checks this),
+    // but if it does, send them back to step 1 so they can actually see the error.
+    showUsernameStep();
   } else {
     username.classList.remove('input-error');
     usernameMsg.classList.add('hidden');
@@ -274,85 +300,388 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
   }
 });
 
-// Toggles between the two login forms -- password (default) and RFID
-// card + PIN (admin-only, see routes/auth.py:login_rfid). Only one is
-// ever visible/interactive at a time; switching back to password mode
-// also clears whatever was typed into the RFID fields, same reasoning
-// as a password field never being resubmitted on reload.
-//
-// Uses `invisible`+`pointer-events-none` rather than `hidden` -- both
-// blocks live in the same grid cell (see the markup above) so the card's
-// height is always the max of the two; `hidden` (display:none) would pull
-// the inactive block out of layout entirely and defeat that. `invisible`
-// also makes the inactive block's inputs/buttons non-focusable, so tabbing
-// through the form can't land on the hidden one.
-function toggleRfidLogin(showRfid) {
-  const passwordBlock = document.getElementById('password-login-block');
-  const rfidForm = document.getElementById('rfid-login-form');
-  passwordBlock.classList.toggle('invisible', showRfid);
-  passwordBlock.classList.toggle('pointer-events-none', showRfid);
-  rfidForm.classList.toggle('invisible', !showRfid);
-  rfidForm.classList.toggle('pointer-events-none', !showRfid);
-  document.getElementById('rfid-login-error').classList.add('hidden');
-  if (showRfid) {
-    document.getElementById('rfid-id-field').value = '';
-    document.getElementById('rfid-pin-field').value = '';
-    document.getElementById('rfid-id-field').focus();
+// --- Step transitions (username <-> password) ---
+// Both steps live inside the one #login-form the whole time; only visibility
+// toggles here, so whichever step last held a value keeps it when you switch back.
+
+// Populates step 2's avatar + name readout -- shared by continueFromUsername and
+// the failed-login DOMContentLoaded handler below. photoPath may be null (falls
+// back to initials), same pattern the RFID PIN view uses.
+function setPasswordStepIdentity(name, photoPath) {
+  document.getElementById('password-step-username').textContent = name;
+  const img = document.getElementById('password-step-avatar-img');
+  const fallback = document.getElementById('password-step-avatar-fallback');
+  if (photoPath) {
+    img.src = '/static/' + photoPath;
+    img.classList.remove('hidden');
+    fallback.classList.add('hidden');
   } else {
-    document.getElementById('username-field').focus();
+    img.classList.add('hidden');
+    fallback.textContent = (name || '?').trim().charAt(0).toUpperCase();
+    fallback.classList.remove('hidden');
   }
 }
 
-// /api/v1/login-rfid is JSON-only (same as every other JSON API
-// route in this app) -- posts via fetch rather than a plain form
-// submission, same pattern as staff/_add_modal.html's
-// submitAddStaffForm. On success there's no HX-Redirect (this isn't an
-// htmx request) so the redirect happens here explicitly; RFID login is
-// admin-only, so unlike the password form there's no temp-admin
-// setup-wizard case to special-case -- straight to the dashboard.
-document.getElementById('rfid-login-form').addEventListener('submit', async function (e) {
+function showPasswordStep() {
+  document.getElementById('username-step').classList.add('hidden');
+  document.getElementById('rfid-pin-view').classList.add('hidden');
+  document.getElementById('password-step').classList.remove('hidden');
+  document.getElementById('password-field').focus();
+}
+
+function showUsernameStep() {
+  document.getElementById('password-step').classList.add('hidden');
+  document.getElementById('rfid-pin-view').classList.add('hidden');
+  document.getElementById('username-step').classList.remove('hidden');
+  const usernameField = document.getElementById('username-field');
+  usernameField.focus();
+  // Actually clear the password (not just hide it) -- shouldn't leave a
+  // half-typed password sitting around for whoever's next at a shared terminal.
+  const passwordField = document.getElementById('password-field');
+  passwordField.value = '';
+  passwordField.type = 'password';
+  passwordField.classList.remove('input-error');
+  document.getElementById('eye-open').classList.add('hidden');
+  document.getElementById('eye-closed').classList.remove('hidden');
+  document.getElementById('toggle-password-btn').classList.add('hidden');
+  document.getElementById('password-empty-msg').classList.add('hidden');
+
+  // Clear the server-rendered login error too -- otherwise going "Not you?" and
+  // back into step 2 for a different account would still show the stale error.
+  const loginError = document.getElementById('password-login-error');
+  document.getElementById('password-login-error-text').textContent = '';
+  loginError.classList.add('invisible');
+
+  // Also clear step 1's own error styling/message.
+  document.getElementById('username-field').classList.remove('input-error');
+  const usernameMsg = document.getElementById('username-empty-msg');
+  usernameMsg.classList.add('hidden');
+  usernameMsg.classList.remove('flex');
+
+  // The red ring is baked in server-side when there's an error, not controlled
+  // by .input-error, so it needs clearing separately here too.
+  document.getElementById('username-field-label').classList.remove('outline', 'outline-2', 'outline-error');
+  document.getElementById('password-field-label').classList.remove('outline', 'outline-2', 'outline-error');
+}
+
+// Existence check (routes/auth.py's username_lookup) -- {found, rateLimited, data}
+// shape lets the caller tell "no such account" apart from "lookup itself failed".
+async function tryUsernameLookup(identifier) {
+  const res = await fetch('/api/v1/username-lookup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: identifier }),
+  });
+  if (res.ok) return { found: true, data: await res.json() };
+  return { found: false, rateLimited: res.status === 429 };
+}
+
+async function continueFromUsername() {
+  const username = document.getElementById('username-field');
+  const usernameMsg = document.getElementById('username-empty-msg');
+  const value = username.value.trim();
+
+  if (!value) {
+    username.classList.add('input-error');
+    usernameMsg.textContent = 'Please enter your username or barcode ID.';
+    usernameMsg.classList.remove('hidden');
+    usernameMsg.classList.add('flex');
+    return;
+  }
+  username.classList.remove('input-error');
+  usernameMsg.classList.add('hidden');
+
+  showLookupSpinnerDelayed();
+  let lookup;
+  try {
+    lookup = await tryUsernameLookup(value);
+  } catch (err) {
+    // Network hiccup -- can't confirm the account exists, so stay on step 1.
+    hideLookupSpinner();
+    username.classList.add('input-error');
+    usernameMsg.textContent = "Couldn't check that right now -- check your connection and try again.";
+    usernameMsg.classList.remove('hidden');
+    usernameMsg.classList.add('flex');
+    return;
+  }
+  hideLookupSpinner();
+
+  if (!lookup.found) {
+    username.classList.add('input-error');
+    usernameMsg.textContent = lookup.rateLimited
+      ? 'Too many attempts -- wait a moment and try again.'
+      : "We couldn't find an account with that username or barcode ID.";
+    usernameMsg.classList.remove('hidden');
+    usernameMsg.classList.add('flex');
+    return;
+  }
+
+  setPasswordStepIdentity(lookup.data.name, lookup.data.photo_path);
+  showPasswordStep();
+}
+
+// A failed-login reload (routes/auth.py redirects here with ?error=...&username=...)
+// jumps straight to step 2 instead of making someone retype a username that
+// wasn't the problem -- re-looks-up the name/photo, falling back to raw text if that hiccups.
+document.addEventListener('DOMContentLoaded', async function () {
+  const hasError = {{ 'true' if error else 'false' }};
+  if (!hasError) return;
+
+  const value = document.getElementById('username-field').value.trim();
+  if (value) {
+    try {
+      const lookup = await tryUsernameLookup(value);
+      setPasswordStepIdentity(lookup.found ? lookup.data.name : value, lookup.found ? lookup.data.photo_path : null);
+    } catch (err) {
+      setPasswordStepIdentity(value, null);
+    }
+  }
+  showPasswordStep();
+});
+
+// RFID card detection -- see the rfid-pin-view comment above. Enter always
+// preventDefault()s first so this can check against /api/v1/rfid-lookup before
+// deciding: show the PIN pad, or fall through to a normal submit.
+async function tryRfidLookup(rfidId) {
+  const res = await fetch('/api/v1/rfid-lookup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rfid_id: rfidId }),
+  });
+  if (res.ok) return { found: true, data: await res.json() };
+  return { found: false, rateLimited: res.status === 429 };
+}
+
+// Delayed-show spinner -- 150ms delay so it doesn't flicker for fast lookups.
+const LOOKUP_SPINNER_DELAY_MS = 150;
+let lookupSpinnerTimer = null;
+function showLookupSpinnerDelayed() {
+  clearTimeout(lookupSpinnerTimer);
+  lookupSpinnerTimer = setTimeout(function () {
+    document.getElementById('username-lookup-spinner').classList.remove('hidden');
+  }, LOOKUP_SPINNER_DELAY_MS);
+}
+function hideLookupSpinner() {
+  clearTimeout(lookupSpinnerTimer);
+  document.getElementById('username-lookup-spinner').classList.add('hidden');
+}
+
+let rfidLookupDebounceTimer = null;
+// Tracks when the current run of typed characters started, so the debounced
+// fallback below can tell a card-reader burst apart from normal human typing.
+let rfidBurstStartedAt = null;
+let rfidBurstStartedLen = 0;
+
+document.getElementById('username-field').addEventListener('keydown', async function (e) {
+  if (e.key !== 'Enter') return;
   e.preventDefault();
-  const rfidId = document.getElementById('rfid-id-field').value.trim();
-  const pin = document.getElementById('rfid-pin-field').value.trim();
-  const errorBox = document.getElementById('rfid-login-error');
-  const errorText = document.getElementById('rfid-login-error-text');
-  errorBox.classList.add('hidden');
+  clearTimeout(rfidLookupDebounceTimer);
 
-  if (!rfidId || !pin) {
-    errorText.textContent = 'Scan your card and enter your PIN.';
-    errorBox.classList.remove('hidden');
+  const scanned = this.value.trim();
+  const usernameMsg = document.getElementById('username-empty-msg');
+  usernameMsg.classList.add('hidden');
+  if (!scanned) {
+    continueFromUsername();
     return;
   }
 
-  // The `pattern`/`maxlength` attributes on the PIN field are decorative
-  // for this fetch-based submit (no reportValidity() call happens before
-  // it), so the 6-digit-numeric rule is enforced explicitly here too.
-  if (!/^[0-9]{6}$/.test(pin)) {
-    errorText.textContent = 'PIN must be exactly 6 digits.';
-    errorBox.classList.remove('hidden');
-    document.getElementById('rfid-pin-field').value = '';
+  let lookup = { found: false, rateLimited: false };
+  showLookupSpinnerDelayed();
+  try {
+    lookup = await tryRfidLookup(scanned);
+  } catch (err) {
+    // Network hiccup -- treat like "not a card", fall through to a normal step-2 transition.
+  } finally {
+    hideLookupSpinner();
+  }
+  if (lookup.found) {
+    this.value = '';
+    showRfidPinView(scanned, lookup.data.name, lookup.data.photo_path);
     return;
   }
+  if (lookup.rateLimited) {
+    // Surfaced explicitly so it doesn't look like "wrong username" when it's really "try again later".
+    usernameMsg.textContent = 'Too many attempts -- wait a moment and try again.';
+    usernameMsg.classList.remove('hidden');
+    usernameMsg.classList.add('flex');
+    return;
+  }
+  // Not a recognized card -- the common case, a plain username/barcode typed by hand.
+  continueFromUsername();
+});
+
+// Fallback for RFID readers that don't send a trailing Enter -- most do (Enter
+// above is the primary path), this just covers the ones that don't.
+//
+// Gated on typing speed, not just debounce time: a card scan pastes chars in
+// well under 40ms each, way faster than any human typist. Without the speed
+// check, normal typing pauses (between words, thinking) would fire lookups
+// constantly and burn through the rate limit, breaking real scans too.
+document.getElementById('username-field').addEventListener('input', function () {
+  clearTimeout(rfidLookupDebounceTimer);
+  const field = this;
+  const value = field.value;
+
+  const now = Date.now();
+  if (rfidBurstStartedAt === null || value.length <= rfidBurstStartedLen) {
+    rfidBurstStartedAt = now;
+    rfidBurstStartedLen = value.length;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length < 4) return;
+
+  rfidLookupDebounceTimer = setTimeout(async function () {
+    if (!document.getElementById('rfid-pin-view').classList.contains('hidden')) return;
+
+    const charsTyped = value.length - rfidBurstStartedLen;
+    const elapsedMs = Date.now() - rfidBurstStartedAt;
+    const looksLikeAScan = charsTyped > 0 && (elapsedMs / charsTyped) < 40;
+    if (!looksLikeAScan) return;
+
+    let lookup;
+    try {
+      lookup = await tryRfidLookup(trimmed);
+    } catch (err) {
+      return;
+    }
+    // Only act if the field still holds the exact value that matched -- a
+    // stale/late response shouldn't yank focus into the PIN pad mid-typing.
+    if (lookup.found && field.value.trim() === trimmed) {
+      field.value = '';
+      showRfidPinView(trimmed, lookup.data.name, lookup.data.photo_path);
+    }
+  }, 250);
+});
+
+let rfidPendingId = null;
+let rfidPinBuffer = '';
+
+function showRfidPinView(cardId, name, photoPath) {
+  rfidPendingId = cardId;
+  rfidPinBuffer = '';
+  updatePinDots();
+  hideRfidPinError();
+
+  document.getElementById('rfid-pin-name').textContent = name;
+  const img = document.getElementById('rfid-pin-avatar-img');
+  const fallback = document.getElementById('rfid-pin-avatar-fallback');
+  if (photoPath) {
+    img.src = '/static/' + photoPath;
+    img.classList.remove('hidden');
+    fallback.classList.add('hidden');
+  } else {
+    img.classList.add('hidden');
+    fallback.textContent = (name || '?').trim().charAt(0).toUpperCase();
+    fallback.classList.remove('hidden');
+  }
+
+  // Either step can be showing when a card scan happens, not just step 1 --
+  // hide both. Plain `hidden` (not `invisible`) so the card still shrinks to fit.
+  document.getElementById('username-step').classList.add('hidden');
+  document.getElementById('password-step').classList.add('hidden');
+  document.getElementById('rfid-pin-view').classList.remove('hidden');
+}
+
+function cancelRfidLogin() {
+  clearTimeout(rfidLookupDebounceTimer);
+  rfidPendingId = null;
+  rfidPinBuffer = '';
+  updatePinDots();
+  hideRfidPinError();
+  document.getElementById('rfid-pin-view').classList.add('hidden');
+  // showUsernameStep() already handles un-hiding/re-hiding the other steps.
+  showUsernameStep();
+  const usernameField = document.getElementById('username-field');
+  usernameField.value = '';
+  usernameField.focus();
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 6; i++) {
+    const dot = document.getElementById('rfid-pin-dot-' + i);
+    const filled = i < rfidPinBuffer.length;
+    dot.classList.toggle('bg-primary', filled);
+    dot.classList.toggle('bg-base-300', !filled);
+  }
+}
+
+function showRfidPinError(msg) {
+  document.getElementById('rfid-pin-error-text').textContent = msg;
+  document.getElementById('rfid-pin-error').classList.remove('invisible');
+}
+
+function hideRfidPinError() {
+  document.getElementById('rfid-pin-error').classList.add('invisible');
+}
+
+function pinDigit(d) {
+  if (rfidPinBuffer.length >= 6) return;
+  rfidPinBuffer += String(d);
+  updatePinDots();
+  if (rfidPinBuffer.length === 6) submitRfidPin();
+}
+
+function pinBackspace() {
+  if (!rfidPinBuffer) return;
+  rfidPinBuffer = rfidPinBuffer.slice(0, -1);
+  updatePinDots();
+}
+
+// Auto-submits on the 6th digit, no separate button -- same as a wallet app's PIN pad.
+async function submitRfidPin() {
+  hideRfidPinError();
+  const pad = document.getElementById('rfid-pin-pad');
+  pad.classList.add('pointer-events-none', 'opacity-50');
 
   try {
     const res = await fetch('/api/v1/login-rfid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rfid_id: rfidId, pin: pin }),
+      body: JSON.stringify({ rfid_id: rfidPendingId, pin: rfidPinBuffer }),
     });
     const result = await res.json();
 
     if (!res.ok) {
-      errorText.textContent = result.error || 'Sign-in failed';
-      errorBox.classList.remove('hidden');
-      document.getElementById('rfid-pin-field').value = '';
+      showRfidPinError(result.error || 'Sign-in failed');
+      rfidPinBuffer = '';
+      updatePinDots();
+      const dots = document.getElementById('rfid-pin-dots');
+      dots.classList.remove('rfid-pin-shake');
+      void dots.offsetWidth;
+      dots.classList.add('rfid-pin-shake');
       return;
     }
 
     window.location.href = '/';
   } catch (err) {
-    errorText.textContent = 'Sign-in failed';
-    errorBox.classList.remove('hidden');
+    showRfidPinError('Sign-in failed');
+    rfidPinBuffer = '';
+    updatePinDots();
+  } finally {
+    pad.classList.remove('pointer-events-none', 'opacity-50');
+  }
+}
+
+// Lets a keyboard (or numpad-emulating reader) drive the PIN pad too, scoped
+// to only fire while the PIN view is showing.
+document.addEventListener('keydown', function (e) {
+  const view = document.getElementById('rfid-pin-view');
+  if (view.classList.contains('hidden')) return;
+  if (e.key >= '0' && e.key <= '9') {
+    pinDigit(e.key);
+  } else if (e.key === 'Backspace') {
+    pinBackspace();
+  } else if (e.key === 'Escape') {
+    cancelRfidLogin();
+  }
+});
+
+// Escape also backs out of the password step, same as the "Not you?" button.
+document.getElementById('password-field').addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    showUsernameStep();
   }
 });
 </script>

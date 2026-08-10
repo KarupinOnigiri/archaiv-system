@@ -8,6 +8,8 @@
           {% if show_inactive %}Exporting the inactive members currently shown.{% else %}Exporting the active members currently shown.{% endif %}
         </p>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
     <div id="export-error" class="hidden alert alert-error text-sm mb-4 py-2 shrink-0"></div>

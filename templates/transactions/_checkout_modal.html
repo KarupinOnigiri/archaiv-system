@@ -1,31 +1,16 @@
-{# Renders ONE checkout instance (a dialog + its minimized dock).
-
-   Staff can have several of these in flight at once -- e.g. one minimized
-   while a second trainee is being checked out -- so this partial is
-   designed to be rendered once per session and concatenated/appended into
-   the page, rather than replacing whatever's already there. Every instance
-   is identified by `client_id`, which the caller must always provide:
-
-     - Starting a brand-new checkout (no session yet): the "New Checkout"
-       button mints a throwaway crypto.randomUUID() client-side and sends
-       it as ?client_id=... to /start-form. There's no real session id yet,
-       so this is the only id available to scope the DOM to.
-     - Resuming or restoring an existing session (/resume-form, /dock):
-       client_id is just the session's own id. That's what lets the JS
-       recognize "this session is already open in this tab" (see
-       Checkout.resumeOrExpand in base.html) without a separate lookup.
-
-   `auto_minimize` is only ever true for the page-load /dock restore --
-   the dialog renders closed and stays in its dock. `resume_session` is
-   passed for both /resume-form and /dock; it's absent for a fresh
-   /start-form render. #}
+{# Renders ONE checkout instance (a dialog + its minimized dock). Staff can have
+   several in flight at once, so this gets appended per-session rather than
+   replacing what's there. `client_id` is a fresh UUID for a brand-new checkout
+   (no session id yet) or the real session id when resuming/restoring.
+   `auto_minimize` only applies to the page-load /dock restore; `resume_session`
+   is set for both /resume-form and /dock, absent for a fresh /start-form. #}
 <dialog class="modal checkout-modal" id="checkout-modal-{{ client_id }}"
         data-client-id="{{ client_id }}" data-close-guard="requestCheckoutModalClose">
   <div class="modal-box max-w-md relative">
 
     <button type="button" data-role="minimize-btn"
             class="btn btn-ghost btn-xs btn-circle absolute top-3 right-3 {% if not resume_session %}hidden{% endif %}"
-            onclick="Checkout.minimize(this)" aria-label="Minimize checkout" title="Minimize">
+            onclick="Checkout.minimize(this)" aria-label="Minimize checkout" data-tooltip="Minimize">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg>
     </button>
 
@@ -77,7 +62,7 @@
         {% for item in resume_session.cart_items %}
         <li class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm" data-item-id="{{ item.id }}">
           <span class="truncate">{{ item.asset_name }}</span>
-          <button type="button" class="text-error hover:text-error/70 shrink-0" aria-label="Remove {{ item.asset_name }}"
+          <button type="button" class="text-error hover:text-error/70 shrink-0" aria-label="Remove {{ item.asset_name }}" data-tooltip="Remove"
                   onclick="Checkout.removeItem(this, '{{ item.id }}', this.closest('li'))">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           </button>
@@ -113,26 +98,17 @@
     </div>
   </div>
 
-  <!-- Available-assets flyout, popped to the LEFT of the panel.
-       Deliberately a sibling of .modal-box, NOT nested inside it: this
-       checkout dialog renders as a right-docked side panel (see
-       `dialog.checkout-modal .modal-box` in base.html's <style>), and that
-       rule sets `overflow-y: auto` on .modal-box for its own internal
-       scrolling. Per the CSS overflow spec, setting only one axis makes
-       the other resolve to `auto` too (not the `visible` you'd expect) --
-       so anything positioned to escape sideways from *inside* .modal-box
-       gets silently clipped by that scroll container regardless of its
-       own z-index or an `overflow-visible` class tacked onto the box.
-       Living outside it entirely sidesteps that. It's `position: fixed`
-       rather than `absolute` for the same reason -- an absolute ancestor
-       search would just find .modal-box again. Checkout.toggleAvailableAssets
-       positions it via JS from .modal-box's live bounding rect, since it
-       has no CSS anchor to the panel it needs to sit flush against. -->
+  <!-- Available-assets flyout -- kept as a sibling of .modal-box, not nested
+       inside it: .modal-box has overflow-y:auto (for its own scrolling), and
+       per the CSS overflow spec that makes the x-axis resolve to auto too, so
+       anything positioned to pop out sideways from inside it gets clipped.
+       position:fixed (not absolute) for the same reason. JS positions it off
+       .modal-box's live bounding rect since it has no CSS anchor otherwise. -->
   <div data-role="available-assets-panel"
        class="hidden fixed w-72 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-xl z-[1100]">
     <div class="flex items-center justify-between px-3 py-2 border-b border-base-300 shrink-0">
       <span class="text-sm font-semibold">Available Assets</span>
-      <button type="button" class="btn btn-ghost btn-xs btn-circle" aria-label="Close available assets" onclick="Checkout.toggleAvailableAssets(this)">
+      <button type="button" class="btn btn-ghost btn-xs btn-circle" aria-label="Close available assets" data-tooltip="Close" onclick="Checkout.toggleAvailableAssets(this)">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
       </button>
     </div>
@@ -150,27 +126,15 @@
   </form>
 </dialog>
 
-<!-- Minimized dock for this instance. Same session, same DOM node
-     underneath -- toggling is purely a restyle, nothing about cart state
-     or the session id changes. Lives outside the <dialog> (a closed
-     <dialog> is display:none, which would hide a descendant dock too) and
-     is delivered as an out-of-band swap straight into the shared
-     #checkout-docks-tray in base.html, which lays out however many docks
-     are currently active in a stack -- see that file for why.
+<!-- Minimized dock for this instance -- same session/DOM node, toggling is
+     just a restyle. Lives outside the <dialog> (closed dialogs are
+     display:none) and gets OOB-swapped into base.html's #checkout-docks-tray.
 
-     IMPORTANT: hx-swap-oob="beforeend:#selector" does NOT move the
-     element it's declared on into the target -- htmx treats that element
-     as disposable "response content" and splices only ITS CHILDREN into
-     #selector, discarding the element itself along with every attribute
-     on it (id, data-client-id, the hidden/pointer-events classes, all of
-     it). If hx-swap-oob sat on the real #checkout-dock-{{ client_id }}
-     div below, that div would vanish on arrival and only its two bare
-     <button>s would land in the tray with no id and no data-client-id --
-     which breaks every Checkout.* call made from inside it, since
-     clientIdOf() walks up looking for [data-client-id] and finds
-     nothing. So the oob attribute goes on a disposable outer carrier
-     one level up instead; htmx unwraps *that* carrier and inserts ITS
-     child -- our real dock div, attributes intact -- into the tray. -->
+     The oob attribute sits on this disposable outer div, not the real dock
+     div directly: hx-swap-oob discards the element it's declared on and only
+     splices in its children, so putting it straight on #checkout-dock-{{ client_id }}
+     would strip its id/data-client-id on arrival and break every Checkout.*
+     call made from inside it. -->
 <div hx-swap-oob="beforeend:#checkout-docks-tray">
   <div id="checkout-dock-{{ client_id }}" class="checkout-dock {% if not auto_minimize %}hidden{% endif %} pointer-events-auto flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-base-100 border border-base-300 shadow-lg"
        data-client-id="{{ client_id }}">
@@ -178,7 +142,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
       <span data-role="dock-label">Checkout</span>
     </button>
-    <button type="button" class="btn btn-ghost btn-xs btn-circle" aria-label="Close checkout" title="Close" onclick="Checkout.requestClose(this)">
+    <button type="button" class="btn btn-ghost btn-xs btn-circle" aria-label="Close checkout" data-tooltip="Close" onclick="Checkout.requestClose(this)">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
     </button>
   </div>

@@ -1,0 +1,37 @@
+<!-- hx-swap="beforeend" into #modal-container stacks this on top of the profile
+     modal instead of replacing it -- each modal only removes itself. -->
+<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+     onclick="if (event.target === this) this.remove()">
+  <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-3xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between p-5 border-b border-base-300 shrink-0">
+      <h3 class="font-bold text-lg">
+        Full Activity &mdash; {{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}
+      </h3>
+      <!-- ESC pill instead of an X icon -- see assets/_details_modal.html for why. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
+              aria-label="Close (Esc)" data-tooltip="Close (Esc)" onclick="this.closest('.fixed').remove()">
+        ESC
+      </button>
+    </div>
+
+    <div class="p-5 overflow-y-auto min-h-0">
+      <!-- Reuses audit_log/_table.html's partial as-is (matching its hx-include ids)
+           instead of forking it; #audit-staff-filter scopes it to this staff member. -->
+      <input type="hidden" id="audit-since-filter" value="">
+      <input type="hidden" id="audit-until-filter" value="">
+      <input type="hidden" id="audit-staff-filter" value="{{ staff_member.id }}">
+
+      <div id="audit-log-table-container"
+           hx-get="/api/v1/audit-log/table"
+           hx-trigger="load"
+           hx-target="#audit-log-table-container"
+           hx-swap="innerHTML"
+           hx-include="#audit-since-filter, #audit-until-filter, #audit-staff-filter"
+           hx-vals='{"limit": 20, "offset": 0}'>
+        <div class="flex justify-center py-12">
+          <span class="loading loading-spinner loading-md text-primary"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

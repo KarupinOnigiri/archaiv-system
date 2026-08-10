@@ -6,21 +6,16 @@ from utils.validators import parse_pagination_params, validate_date_string
 
 notifications_bp = Blueprint("notifications", __name__)
 
-# Shared by every query in this file that reads the notifications table --
-# a row is visible to `staff` if it's the original broadcast kind (both
-# recipient columns NULL: loan due/overdue alerts, meant for everyone) or
-# targeted at this staff member specifically or their role. See
-# 0021_notification_recipients.sql.
+# A row is visible to `staff` if it's a broadcast (both recipient cols NULL)
+# or targeted at their id/role. See 0021_notification_recipients.sql.
 _VISIBILITY_SQL = (
     "(recipient_staff_id IS NULL AND recipient_role IS NULL)"
     " OR recipient_staff_id = ? OR recipient_role = ?"
 )
 
-# Read/cleared state is per-(notification, staff) -- see
-# 0027_notification_per_user_read_state.sql -- not a column on the
-# notifications row itself, which would be shared by everyone who can see
-# a broadcast row. A missing notification_reads row means the default,
-# untouched state: unread, not cleared.
+# Read/cleared state is per (notification, staff), not a column on notifications
+# itself (that'd be shared across everyone who sees a broadcast row). No
+# notification_reads row = default state: unread, not cleared. See 0027_notification_per_user_read_state.sql.
 _UPSERT_READ_SQL = """
     INSERT INTO notification_reads (notification_id, staff_id, is_read, read_at)
     VALUES (?, ?, 1, datetime('now', 'localtime'))
@@ -34,43 +29,32 @@ _UPSERT_CLEAR_SQL = """
 
 
 def get_notifications_table_context(args, staff):
-    """Shared query logic for the notifications list -- used by both the
-    full /notifications page (routes/pages.py) and the htmx partial
-    below, the same get_*_table_context pattern used by assets/members/
-    staff/transactions. Returns (context_dict, error).
+    """Shared query logic for the notifications list -- used by the full
+    /notifications page and the htmx partial below (same get_*_table_context
+    pattern as assets/members/staff/transactions). Returns (context_dict, error).
 
-    is_read/is_cleared come from a LEFT JOIN against notification_reads
-    scoped to this one staff member, same as get_notification_bell_context
-    in notification_service.py -- explicit column list (not
-    notifications.*) so those two computed aliases don't collide with the
-    old, no-longer-authoritative columns of the same name still sitting
-    on the notifications table."""
+    is_read/is_cleared come from a LEFT JOIN on notification_reads scoped to
+    this staff member; explicit column list keeps those aliases from colliding
+    with the old same-named columns still on the notifications table."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
 
-    # Parenthesized -- this is an OR-expression joining a list that's about
-    # to be glued together with " AND ", and SQL's AND binds tighter than
-    # OR, so an unparenthesized entry here would silently let every filter
-    # after it apply only to the last disjunct instead of the whole
-    # visibility check.
+    # Parenthesized: AND binds tighter than OR, so without the parens only
+    # the last disjunct would get ANDed with the other filters.
     where_clauses = [f"({_VISIBILITY_SQL})"]
     params = [staff["id"], staff["role"]]
-    # Drops any type this staff member has muted in Settings & privacy --
-    # see PREF_FILTER_SQL's docstring in notification_service.py.
+    # Drops any type this staff member muted in Settings & privacy.
     where_clauses.append(PREF_FILTER_SQL.removeprefix("AND "))
     params.extend(pref_filter_params(staff))
-    # A cleared notification is gone from this list for good (until
-    # cleared again isn't a thing -- there's no "show cleared" view here),
-    # same as the bell dropdown -- see 0025_notification_clearing.sql.
+    # Cleared notifications stay gone -- no "show cleared" view here.
     where_clauses.append("COALESCE(nr.is_cleared, 0) = 0")
 
     show_unread_only = args.get("show_unread_only") == "1"
     if show_unread_only:
         where_clauses.append("COALESCE(nr.is_read, 0) = 0")
 
-    # Mirrors routes/staff.py's get_audit_log_context: filters on the
-    # date portion of created_at, inclusive on both ends.
+    # Filters on the date portion of created_at, inclusive both ends.
     since = args.get("since")
     if since:
         error = validate_date_string(since, "since")
@@ -127,9 +111,8 @@ def get_notifications_table_context(args, staff):
 @notifications_bp.route("/notifications/table")
 @login_required
 def view_notifications_table():
-    """htmx partial -- returns just the list + pagination footer, so
-    filtering/paging/sorting never re-renders the whole page (matching
-    the assets/members/staff/transactions pattern)."""
+    """htmx partial -- just the list + pagination footer, so filtering/paging
+    doesn't re-render the whole page."""
     context, error = get_notifications_table_context(request.args, g.staff)
     if error:
         return error
@@ -139,13 +122,10 @@ def view_notifications_table():
 @notifications_bp.route("/notifications/mark-all-read", methods=["POST"])
 @login_required
 def mark_all_notifications_read():
-    """Scoped to what this staff member can actually see -- without the
-    visibility filter, a tool_keeper clicking this would also silently
-    mark every admin-only notification read for themselves. Writes one
-    notification_reads row per matching notification for THIS staff_id
-    only (INSERT...SELECT...ON CONFLICT) -- never touches any other
-    staff member's copy of a broadcast notification, which is the whole
-    point of 0027_notification_per_user_read_state.sql."""
+    """Marks read only what this staff member can see -- without the
+    visibility filter a tool_keeper could mark admin-only notifications
+    read. Writes one notification_reads row per staff_id, so it never
+    touches anyone else's copy of a broadcast notification."""
     conn = get_db_connection()
     conn.execute(
         f"""
@@ -186,21 +166,15 @@ def mark_notification_read(id):
 
 
 # # # CLEARING ---------------------------------------------------------------
-# Notifications no longer disappear on their own once the underlying loan
-# is resolved (see 0025_notification_clearing.sql and
-# services/notification_service.py's sync_loan_notifications) -- clearing
-# here is now the only way one leaves the bell dropdown or the full
-# /notifications list, and it's per staff member (0027_notification_
-# per_user_read_state.sql): one person clearing a broadcast notification
-# never removes it from anyone else's list.
+# Clearing is the only way a notification leaves the bell dropdown or full list now
+# (no longer auto-disappears when the loan resolves), and it's per staff member --
+# clearing a broadcast doesn't clear it for anyone else.
 
 
 @notifications_bp.route("/notifications/<int:id>/clear", methods=["POST"])
 @login_required
 def clear_notification(id):
-    """Single-notification dismiss -- the small '×' on each row in both
-    the bell dropdown and the full list, for clearing one at a time
-    without going through the multi-select flow below."""
+    """The '×' on each row -- clears one notification at a time."""
     conn = get_db_connection()
     notification = conn.execute(
         f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
@@ -219,15 +193,10 @@ def clear_notification(id):
 @notifications_bp.route("/notifications/clear", methods=["POST"])
 @login_required
 def clear_notifications():
-    """Multi-select bulk dismiss -- the "Clear selected" action on the
-    full /notifications page, driven by the row checkboxes there. Body:
-    {"ids": [1, 2, 3]}. Scoped by the same visibility check as every
-    other notification action here, so a staff member can't clear rows
-    that were never theirs to see -- ids outside that set are silently
-    skipped rather than erroring, same spirit as the bulk-deactivate
-    "skipped" pattern in routes/staff.py, since a stale checkbox (another
-    tab already cleared it) isn't something worth failing the whole
-    request over."""
+    """"Clear selected" bulk action. Body: {"ids": [1, 2, 3]}. Same visibility
+    scoping as everywhere else, so ids the staff member can't see are just
+    silently skipped rather than erroring (a stale checkbox from another
+    tab isn't worth failing the whole request over)."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -259,33 +228,13 @@ def clear_notifications():
 @notifications_bp.route("/notifications/<int:id>/open")
 @login_required
 def open_notification(id):
-    """The click target for a notification, from both the bell dropdown
-    and the full /notifications page: marks it read, then redirects
-    somewhere useful depending on what kind of notification this is.
-
-    Loan due/overdue alerts (transaction_id set) go to the Borrow & Return
-    tab filtered to that borrower's loans (?member_id=<id>, an exact-match
-    filter -- see _build_transactions_filters in routes/transactions.py)
-    with ?open_transaction=<id> on top, which auto-opens that one loan's
-    existing details modal. So the destination shows every loan this
-    borrower currently has out (useful context -- an overdue member often
-    has more than one item outstanding) with the specific one the
-    notification was about immediately front-and-center in its modal.
-    Works even if that loan was returned moments ago and the scheduled
-    sync hasn't cleared this notification yet, since both the filter and
-    the details modal look it up regardless of current status.
-
-    Unrestriction-request notifications (unrestriction_request_id set)
-    just go to Approvals -- there's no equivalent single-item deep link
-    there, the request is easy enough to find in a queue that's usually
-    short.
-
-    Deliberately a GET (so it can be a plain <a href>, working identically
-    in both places without duplicated JS) even though it has the side
-    effect of marking the row read (for this staff member only -- see
-    0027_notification_per_user_read_state.sql) -- a deviation from strict
-    REST, but the standard, low-stakes pattern for "click a notification,
-    it opens and clears" (email clients do the same)."""
+    """Click target for a notification: marks it read, then redirects
+    depending on notification type. Loan alerts (transaction_id set) go to
+    Borrow & Return filtered to that borrower with the specific loan's modal
+    auto-opened; unrestriction requests (unrestriction_request_id set) go to
+    Approvals. Deliberately a plain GET even though it has a side effect
+    (marks read) -- same "click it, it opens and clears" pattern email
+    clients use, simpler than duplicating the redirect logic in JS."""
     conn = get_db_connection()
     notification = conn.execute(
         f"""
@@ -308,9 +257,8 @@ def open_notification(id):
     if notification["unrestriction_request_id"] is not None:
         return redirect("/requests")
 
-    # Falls through to /notifications (rather than erroring) for any row
-    # that's neither kind -- shouldn't happen given the type CHECK
-    # constraint, but a dead-end redirect beats a 500 if it ever does.
+    # Falls through to /notifications for any row that's neither kind --
+    # shouldn't happen, but a dead-end redirect beats a 500.
     if notification["transaction_id"] is not None:
         return redirect(
             f"/transactions?member_id={notification['member_id']}"

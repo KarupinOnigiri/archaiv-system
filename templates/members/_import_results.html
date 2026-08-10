@@ -1,13 +1,14 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-lg">
+  <div class="modal-box max-w-lg flex flex-col max-h-[85vh]">
 
-    <div class="flex justify-between items-start mb-5">
+    <div class="flex justify-between items-start mb-5 shrink-0">
       <h3 class="font-bold text-xl">Import Results</h3>
       <button type="button" onclick="document.getElementById('modal-container').innerHTML=''"
-              class="text-base-content/40 hover:text-base-content">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
+              class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
+
+    <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
 
     <div class="grid grid-cols-2 gap-3 mb-5">
       <div class="bg-success/10 rounded-xl p-4">
@@ -47,7 +48,9 @@
     <p class="text-sm text-base-content/50">No rows were imported.</p>
     {% endif %}
 
-    <div class="modal-action flex justify-end gap-2 mt-6">
+    </div>
+
+    <div class="modal-action flex justify-end gap-2 mt-6 shrink-0">
       <button type="button" class="btn btn-outline"
               hx-get="/api/v1/members/import-form"
               hx-target="#modal-container"

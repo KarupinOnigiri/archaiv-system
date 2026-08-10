@@ -1,23 +1,29 @@
 ﻿<div class="modal modal-open">
-  <div class="modal-box max-w-4xl">
+  <!-- max-w-5xl keeps the field grid 4-across without over-widening the image column;
+       max-h-[90vh] gives it headroom once every slot has a photo, scrolling as fallback. -->
+  <div class="modal-box max-w-5xl flex flex-col max-h-[90vh]">
 
     <div class="flex justify-between items-start mb-5 shrink-0">
       <div>
         <h3 class="font-bold text-xl">Add New Inventory Item</h3>
         <p class="text-sm text-base-content/50 mt-1">Register a new physical asset to the inventory.</p>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
-    {% if error %}
-    <div class="alert alert-error text-sm mb-4 py-2 shrink-0">{{ error }}</div>
-    {% endif %}
+    <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
+
+    <!-- Always rendered, just invisible when empty -- reserves the alert box's space so content doesn't jump. -->
+    <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
     <form id="add-asset-form" hx-post="/api/v1/assets/add" hx-target="#modal-container" hx-swap="innerHTML"
           hx-encoding="multipart/form-data">
-      <div class="grid grid-cols-3 gap-6">
+      <!-- 4:1 split keeps the image column (and its square dropzone) about the same size, so extra modal width goes to the field grid. -->
+      <div class="grid grid-cols-4 gap-6">
 
         <!-- Left: form fields (2 cols wide) -->
-        <div class="col-span-2 bg-base-200/50 rounded-xl p-5 space-y-4">
+        <div class="col-span-3 bg-base-200/50 rounded-xl p-5 space-y-4">
 
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME <span class="text-error">*</span></label>
@@ -25,26 +31,20 @@
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
+          <!-- 4-across grid instead of three 2-col rows fits the six fields in two rows, keeping this scroll-free. -->
+          <div class="grid grid-cols-4 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
-              <!-- No longer a form field -- barcode_id is auto-generated
-                   server-side to match the asset's own generated ID
-                   (asset_id), so every asset's barcode is uniform and
-                   guaranteed in sync with its ID. See add_asset_submit in
-                   routes/assets.py. -->
+              <!-- Not a form field -- barcode_id is auto-generated server-side to match asset_id (add_asset_submit, routes/assets.py). -->
               <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
-                Auto-generated on save
+                Auto-generated
               </div>
             </div>
             <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID ID</label>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>
               <input type="text" name="rfid_id" placeholder="e.g. RF-001293"
                      class="input input-bordered w-full mt-1 bg-base-100">
             </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">CATEGORY</label>
               <select name="category_id" id="category-select" class="select select-bordered w-full mt-1 bg-base-100"
@@ -67,9 +67,6 @@
               <input type="text" name="serial_code" placeholder="e.g. SN-DR14-992"
                      class="input input-bordered w-full mt-1 bg-base-100">
             </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">ACQUIRED DATE</label>
               <input type="date" name="acquired_date" class="input input-bordered w-full mt-1 bg-base-100">
@@ -90,17 +87,18 @@
 
         <!-- Right: image upload -->
         <div class="col-span-1">
+          <!-- aspect-square on the dropzone itself reserves that height upfront, so uploading a photo doesn't grow the box/modal. -->
           <div id="asset-image-dropzone"
-               class="relative border-2 border-dashed border-base-300 rounded-xl overflow-hidden bg-base-200/30 cursor-pointer transition-colors hover:border-primary/50"
+               class="relative aspect-square border-2 border-dashed border-base-300 rounded-xl overflow-hidden bg-base-200/30 cursor-pointer transition-colors hover:border-primary/50"
                onclick="document.getElementById('asset-image-input').click()">
 
-            <div id="asset-image-placeholder" class="p-6 flex flex-col items-center text-center">
-              <div class="w-12 h-12 rounded-full bg-base-300/50 flex items-center justify-center mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <div id="asset-image-placeholder" class="h-full p-4 flex flex-col items-center justify-center text-center">
+              <div class="w-10 h-10 rounded-full bg-base-300/50 flex items-center justify-center mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
               </div>
               <p class="font-semibold text-sm">Upload Primary Image</p>
-              <p class="text-xs text-base-content/50 mt-1 mb-3">Drag and drop your asset photo here, or click to browse. (Max 5MB)</p>
-              <button type="button" class="btn btn-sm btn-outline pointer-events-none">Browse Files</button>
+              <p class="text-xs text-base-content/50 mt-1 mb-2">Drag and drop, or click to browse. (Max 5MB)</p>
+              <button type="button" class="btn btn-xs btn-outline pointer-events-none">Browse Files</button>
             </div>
 
             <div id="asset-image-preview-wrap" class="hidden relative w-full aspect-square group">
@@ -118,8 +116,8 @@
           </div>
           <p id="asset-image-error" class="hidden text-error text-xs mt-1.5"></p>
 
-          <div class="mt-4">
-            <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-2">ADDITIONAL IMAGES (OPTIONAL)</p>
+          <div class="mt-3">
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-1.5">ADDITIONAL IMAGES (OPTIONAL)</p>
             <div class="grid grid-cols-2 gap-2">
               {% for slot in [1, 2] %}
               <div id="additional-image-{{ slot }}-dropzone"
@@ -135,11 +133,13 @@
                   <img id="additional-image-{{ slot }}-preview" src="" alt="Additional image {{ slot }}" class="w-full h-full object-cover">
                   <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
                     <button type="button" onclick="event.stopPropagation(); document.getElementById('additional-image-{{ slot }}-input').click()"
-                            class="btn btn-xs btn-square btn-outline text-white border-white hover:bg-white/20">
+                            class="btn btn-xs btn-square btn-outline text-white border-white hover:bg-white/20"
+                            data-tooltip="Replace image" aria-label="Replace image">
                       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                     </button>
                     <button type="button" onclick="event.stopPropagation(); clearAdditionalImage({{ slot }})"
-                            class="btn btn-xs btn-square btn-error">
+                            class="btn btn-xs btn-square btn-error"
+                            data-tooltip="Remove image" aria-label="Remove image">
                       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                     </button>
                   </div>
@@ -153,15 +153,15 @@
             <p id="additional-image-error" class="hidden text-error text-xs mt-1.5"></p>
           </div>
 
-          <div class="mt-3 bg-info/10 rounded-lg p-3 flex gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-            <p class="text-xs text-info/80">For best results, use clear, well-lit photos on neutral backgrounds.</p>
+          <div class="mt-2 bg-info/10 rounded-lg p-2 flex gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <p class="text-xs text-info/80">Clear, well-lit photos on neutral backgrounds work best.</p>
           </div>
         </div>
 
       </div>
 
-      <div class="modal-action flex justify-between items-center mt-6">
+      <div class="modal-action flex justify-between items-center mt-6 sticky bottom-0 bg-base-100 pb-1">
         <button type="button" onclick="document.getElementById('add-asset-form').reset(); clearAssetImage(); clearAdditionalImage(1); clearAdditionalImage(2);" class="text-sm text-base-content/50 hover:text-base-content">
           Clear Form
         </button>
@@ -171,6 +171,7 @@
         </div>
       </div>
     </form>
+    </div>
   </div>
 </div>
 

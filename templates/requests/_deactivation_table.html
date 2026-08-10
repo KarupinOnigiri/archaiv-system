@@ -1,8 +1,6 @@
-{% from "_icons.html" import icon_shield_check, icon_shield_alert %}
+{% from "_icons.html" import icon_shield_check, icon_shield_alert, icon_eye %}
 
-{% set can_review = staff.role in ["admin", "in_charge"] %}
-
-<table class="table table-sm w-full" data-total-count="{{ total_count }}">
+<table class="table table-sm w-full" data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <thead>
     <tr class="text-xs text-base-content/50">
       <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">TARGET</th>
@@ -17,17 +15,23 @@
   </thead>
   <tbody>
     {% for req in requests_list %}
-    {% set is_eligible_reviewer = staff.role == req.required_tier and staff.id not in [req.target_staff_id, req.requested_by_staff_id] %}
+    {% set can_review_this = is_eligible_reviewer(staff.role) and staff.id not in [req.target_staff_id, req.requested_by_staff_id] %}
+    {% set is_requester = req.requested_by_staff_id == staff.id %}
+    {% set requirements_met = req.approvals_received >= req.required_approvals and req.in_charge_approvals_received >= req.required_in_charge %}
     <tr class="border-t border-base-200">
       <td class="py-2 text-sm">
-        <a class="link link-hover font-medium" hx-get="/api/v1/staff/{{ req.target_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend">@{{ req.target_username }}</a>
+        <a class="link link-hover font-medium" hx-get="/api/v1/staff/{{ req.target_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend"
+           data-tooltip="@{{ req.target_username }}">{{ full_name(req.target_first_name, req.target_last_name, req.target_middle_name, req.target_suffix) }}</a>
       </td>
       <td class="py-2 text-sm text-base-content/70">
-        <a class="link link-hover" hx-get="/api/v1/staff/{{ req.requested_by_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend">@{{ req.requested_by_username }}</a>
+        <a class="link link-hover" hx-get="/api/v1/staff/{{ req.requested_by_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend"
+           data-tooltip="@{{ req.requested_by_username }}">{{ full_name(req.requested_by_first_name, req.requested_by_last_name, req.requested_by_middle_name, req.requested_by_suffix) }}</a>
       </td>
       <td class="py-2 text-sm text-base-content/70 max-w-xs truncate" title="{{ req.reason }}">{{ req.reason }}</td>
       <td class="py-2 text-sm text-base-content/70 whitespace-nowrap">
-        {{ req.approvals_received }}/{{ req.required_approvals }} <span class="text-base-content/40">{{ req.required_tier.replace("_", " ") }}</span>
+        {{ req.approvals_received }}/{{ req.required_approvals }} approved
+        <span class="text-base-content/40">({{ req.in_charge_approvals_received }}/{{ req.required_in_charge }} in_charge)</span>
+        {% if req.denies_received %}<span class="text-error/70">&middot; {{ req.denies_received }} denied</span>{% endif %}
       </td>
       <td class="py-2">
         {% if req.status == "pending" %}
@@ -47,7 +51,7 @@
         {% if req.status == "approved" %}
         Finalized{% if req.resolved_at %} {{ req.resolved_at | format_date('%b %d, %Y') }}{% endif %}
         {% elif req.denied_by_username %}
-        @{{ req.denied_by_username }}{% if req.denial_reason %}: {{ req.denial_reason }}{% endif %}
+        {{ full_name(req.denied_by_first_name, req.denied_by_last_name, req.denied_by_middle_name, req.denied_by_suffix) }}{% if req.denial_reason %}: {{ req.denial_reason }}{% endif %}
         {% elif req.status == "cancelled" %}
         Cancelled by requester
         {% else %}
@@ -56,15 +60,29 @@
       </td>
       <td class="py-2 text-right">
         {% if req.status == "pending" %}
-          {% if is_eligible_reviewer %}
-          <button type="button" class="btn btn-ghost btn-xs text-success" title="Approve" onclick="approveDeactivationRequest({{ req.id }}, this)">
-            {{ icon_shield_check() }}
-          </button>
-          <button type="button" class="btn btn-ghost btn-xs text-error" title="Deny" onclick="denyDeactivationRequest({{ req.id }}, this)">
-            {{ icon_shield_alert() }}
+          {% if staff.role == "admin" %}
+          <button type="button" class="btn btn-ghost btn-xs" data-tooltip="View reviews" hx-get="/api/v1/admin-deactivation-requests/{{ req.id }}/reviews" hx-target="#modal-container" hx-swap="beforeend">
+            {{ icon_eye() }}
           </button>
           {% endif %}
-          {% if req.requested_by_staff_id == staff.id %}
+          {% if can_review_this %}
+            {% if req.my_decision == "approve" %}
+            <span class="text-success text-xs px-1.5" data-tooltip="You already voted on this request">You approved</span>
+            {% elif req.my_decision == "deny" %}
+            <span class="text-error text-xs px-1.5" data-tooltip="You already voted on this request">You denied</span>
+            {% else %}
+            <button type="button" class="btn btn-ghost btn-xs text-success" data-tooltip="Approve" onclick="approveDeactivationRequest({{ req.id }}, this)">
+              {{ icon_shield_check() }}
+            </button>
+            <button type="button" class="btn btn-ghost btn-xs text-error" data-tooltip="Deny" onclick="denyDeactivationRequest({{ req.id }}, this)">
+              {{ icon_shield_alert() }}
+            </button>
+            {% endif %}
+          {% endif %}
+          {% if is_requester %}
+          <button type="button" class="btn btn-xs {% if requirements_met %}btn-primary{% else %}btn-disabled{% endif %}"
+                  {% if not requirements_met %}disabled data-tooltip="Not enough approvals yet"{% else %}data-tooltip="Deactivate the account now"{% endif %}
+                  onclick="finalizeDeactivationRequest({{ req.id }}, this)">Finalize</button>
           <button type="button" class="btn btn-ghost btn-xs" onclick="cancelDeactivationRequest({{ req.id }}, this)">Cancel</button>
           {% endif %}
         {% else %}

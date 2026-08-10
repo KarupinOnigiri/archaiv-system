@@ -37,9 +37,7 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
             target_table="members",
             target_id=member_id,
             target_name=member_full_name,
-            # Name is spelled out in the message itself, not just the
-            # separate TARGET column, so it reads clearly on its own in the
-            # Activity Log's details/detail-modal view.
+            # name spelled out in the message too, so it reads clearly on its own in the log
             details=f"System auto-lifted restriction on {member_full_name} (member #{member_id}): no more overdue items",
         )
         return True
@@ -47,8 +45,7 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
 
 
 def check_and_restrict_overdue_member(member_id, conn):
-    # Fetched up front purely for a readable Activity Log target below --
-    # the overdue check itself doesn't need it.
+    # fetched just for a readable Activity Log target name; not needed for the check itself
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     overdue = conn.execute(
         """
@@ -72,9 +69,7 @@ def check_and_restrict_overdue_member(member_id, conn):
         )
         conn.commit()
 
-        # auto-restriction, no staff_id since no human triggered this --
-        # name is spelled out in the message itself (not just the TARGET
-        # column) so it's unambiguous who was restricted at a glance.
+        # staff_id=None since no human triggered this; name spelled out in the message too
         log_action(
             staff_id=None,
             action="auto_restricted_member",

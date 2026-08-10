@@ -1,6 +1,10 @@
 <div class="modal modal-open" id="request-unrestriction-modal">
   <div class="modal-box max-w-sm max-h-[85vh] overflow-y-auto">
-    <h3 class="font-bold text-lg mb-2">Request Unrestriction</h3>
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Request Unrestriction</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p class="text-sm text-base-content/70 mb-1">
       <strong>{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</strong> is currently restricted:
     </p>

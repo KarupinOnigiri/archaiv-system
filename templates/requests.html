@@ -22,10 +22,6 @@
           Admin Deactivations
           <span id="deactivation-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
         </a>
-        <a role="tab" id="requests-tab-promotion" class="tab {% if active_tab == 'promotion' %}tab-active{% endif %}" onclick="switchRequestsTab('promotion')">
-          Admin Promotions
-          <span id="promotion-tab-badge" class="badge badge-sm badge-primary ml-2 hidden"></span>
-        </a>
       </div>
       <span id="requests-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
     </div>
@@ -33,26 +29,42 @@
     <!-- Unrestriction Requests panel -->
     <div id="requests-panel-unrestriction" {% if active_tab != 'unrestriction' %}class="hidden"{% endif %}>
       <div class="flex flex-wrap items-center gap-3 mb-4">
-        <select id="unrestriction-status-filter" name="status"
-                aria-label="Filter unrestriction requests by status"
-                class="select select-bordered select-sm w-40"
-                hx-get="/api/v1/unrestriction-requests"
-                hx-trigger="change"
-                hx-target="#unrestriction-table-container"
-                hx-swap="innerHTML"
-                hx-indicator="#requests-spinner"
-                hx-include="#unrestriction-mine-filter"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" {% if u_status == "pending" %}selected{% endif %}>Pending</option>
-          <option value="approved" {% if u_status == "approved" %}selected{% endif %}>Approved</option>
-          <option value="denied" {% if u_status == "denied" %}selected{% endif %}>Denied</option>
-          <option value="cancelled" {% if u_status == "cancelled" %}selected{% endif %}>Cancelled</option>
-          <option value="" {% if u_status == "" %}selected{% endif %}>All statuses</option>
-        </select>
+
+        <button type="button" id="refresh-unrestriction-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh unrestriction requests" onclick="refreshRequestsTable('unrestriction')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
+        <!-- Ring-highlighted join + clear button, same convention as every other
+             filter dropdown (assets.html). "Pending" is this filter's default
+             (see requests_page's _panel_status), so clear targets that, not blank. -->
+        <div id="unrestriction-status-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Status">
+          <button type="button" id="unrestriction-status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearRequestsStatusFilter('unrestriction')" aria-label="Clear status filter" data-tooltip="Clear status filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </button>
+          <select id="unrestriction-status-filter" name="status"
+                  aria-label="Filter unrestriction requests by status"
+                  class="select select-bordered select-sm join-item w-40"
+                  hx-get="/api/v1/unrestriction-requests"
+                  hx-trigger="change"
+                  hx-target="#unrestriction-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#requests-spinner"
+                  hx-include="#unrestriction-mine-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="pending" {% if u_status == "pending" %}selected{% endif %}>Pending</option>
+            <option value="approved" {% if u_status == "approved" %}selected{% endif %}>Approved</option>
+            <option value="denied" {% if u_status == "denied" %}selected{% endif %}>Denied</option>
+            <option value="cancelled" {% if u_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+            <option value="" {% if u_status == "" %}selected{% endif %}>All statuses</option>
+          </select>
+        </div>
+
         {% if staff.role in ["admin", "in_charge"] %}
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <!-- Same pill-toggle style as Staff's/Assets' show-inactive/show-archived toggles. -->
+        <label id="unrestriction-mine-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if u_mine %}text-primary font-semibold bg-primary/10{% else %}text-base-content/70{% endif %}">
           <input type="checkbox" id="unrestriction-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm" {% if u_mine %}checked{% endif %}
+                 class="toggle toggle-sm {% if u_mine %}toggle-primary{% endif %}" {% if u_mine %}checked{% endif %}
                  hx-get="/api/v1/unrestriction-requests"
                  hx-trigger="change"
                  hx-target="#unrestriction-table-container"
@@ -63,6 +75,11 @@
           Only mine
         </label>
         {% endif %}
+
+        <button type="button" id="clear-unrestriction-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllRequestsFilters('unrestriction')" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="clear-unrestriction-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
       </div>
 
       <div id="unrestriction-table-container"
@@ -78,26 +95,38 @@
     <!-- Admin Deactivation Requests panel -->
     <div id="requests-panel-deactivation" {% if active_tab != 'deactivation' %}class="hidden"{% endif %}>
       <div class="flex flex-wrap items-center gap-3 mb-4">
-        <select id="deactivation-status-filter" name="status"
-                aria-label="Filter admin deactivation requests by status"
-                class="select select-bordered select-sm w-40"
-                hx-get="/api/v1/admin-deactivation-requests"
-                hx-trigger="change"
-                hx-target="#deactivation-table-container"
-                hx-swap="innerHTML"
-                hx-indicator="#requests-spinner"
-                hx-include="#deactivation-mine-filter"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" {% if d_status == "pending" %}selected{% endif %}>Pending</option>
-          <option value="approved" {% if d_status == "approved" %}selected{% endif %}>Approved</option>
-          <option value="denied" {% if d_status == "denied" %}selected{% endif %}>Denied</option>
-          <option value="cancelled" {% if d_status == "cancelled" %}selected{% endif %}>Cancelled</option>
-          <option value="" {% if d_status == "" %}selected{% endif %}>All statuses</option>
-        </select>
+
+        <button type="button" id="refresh-deactivation-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh admin deactivation requests" onclick="refreshRequestsTable('deactivation')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
+        <div id="deactivation-status-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Status">
+          <button type="button" id="deactivation-status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="clearRequestsStatusFilter('deactivation')" aria-label="Clear status filter" data-tooltip="Clear status filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </button>
+          <select id="deactivation-status-filter" name="status"
+                  aria-label="Filter admin deactivation requests by status"
+                  class="select select-bordered select-sm join-item w-40"
+                  hx-get="/api/v1/admin-deactivation-requests"
+                  hx-trigger="change"
+                  hx-target="#deactivation-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#requests-spinner"
+                  hx-include="#deactivation-mine-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+            <option value="pending" {% if d_status == "pending" %}selected{% endif %}>Pending</option>
+            <option value="approved" {% if d_status == "approved" %}selected{% endif %}>Approved</option>
+            <option value="denied" {% if d_status == "denied" %}selected{% endif %}>Denied</option>
+            <option value="cancelled" {% if d_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+            <option value="" {% if d_status == "" %}selected{% endif %}>All statuses</option>
+          </select>
+        </div>
+
         {% if staff.role in ["admin", "in_charge"] %}
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <label id="deactivation-mine-toggle-label" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if d_mine %}text-primary font-semibold bg-primary/10{% else %}text-base-content/70{% endif %}">
           <input type="checkbox" id="deactivation-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm" {% if d_mine %}checked{% endif %}
+                 class="toggle toggle-sm {% if d_mine %}toggle-primary{% endif %}" {% if d_mine %}checked{% endif %}
                  hx-get="/api/v1/admin-deactivation-requests"
                  hx-trigger="change"
                  hx-target="#deactivation-table-container"
@@ -108,6 +137,11 @@
           Only mine
         </label>
         {% endif %}
+
+        <button type="button" id="clear-deactivation-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllRequestsFilters('deactivation')" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="clear-deactivation-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
       </div>
 
       <div id="deactivation-table-container"
@@ -120,77 +154,31 @@
       </div>
     </div>
 
-    <!-- Admin Promotion Requests panel -->
-    <div id="requests-panel-promotion" {% if active_tab != 'promotion' %}class="hidden"{% endif %}>
-      <div class="flex flex-wrap items-center gap-3 mb-4">
-        <select id="promotion-status-filter" name="status"
-                aria-label="Filter admin promotion requests by status"
-                class="select select-bordered select-sm w-40"
-                hx-get="/api/v1/admin-promotion-requests"
-                hx-trigger="change"
-                hx-target="#promotion-table-container"
-                hx-swap="innerHTML"
-                hx-indicator="#requests-spinner"
-                hx-include="#promotion-mine-filter"
-                hx-vals='{"limit": {{ limit }}, "offset": 0}'>
-          <option value="pending" {% if p_status == "pending" %}selected{% endif %}>Pending</option>
-          <option value="approved" {% if p_status == "approved" %}selected{% endif %}>Approved</option>
-          <option value="denied" {% if p_status == "denied" %}selected{% endif %}>Denied</option>
-          <option value="cancelled" {% if p_status == "cancelled" %}selected{% endif %}>Cancelled</option>
-          <option value="" {% if p_status == "" %}selected{% endif %}>All statuses</option>
-        </select>
-        {% if staff.role in ["admin", "in_charge"] %}
-        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input type="checkbox" id="promotion-mine-filter" name="mine" value="1"
-                 class="toggle toggle-sm" {% if p_mine %}checked{% endif %}
-                 hx-get="/api/v1/admin-promotion-requests"
-                 hx-trigger="change"
-                 hx-target="#promotion-table-container"
-                 hx-swap="innerHTML"
-                 hx-indicator="#requests-spinner"
-                 hx-include="#promotion-status-filter"
-                 hx-vals='js:{"limit": {{ limit }}, "offset": 0, "mine": event.target.checked ? "1" : "0"}'>
-          Only mine
-        </label>
-        {% endif %}
-      </div>
-
-      <div id="promotion-table-container"
-           hx-get="/api/v1/admin-promotion-requests"
-           hx-trigger="load"
-           hx-target="#promotion-table-container"
-           hx-swap="innerHTML"
-           hx-indicator="#requests-spinner"
-           hx-vals='{"limit": {{ limit }}, "offset": {{ p_offset }}, "status": {{ p_status | tojson }}, "mine": {{ "1" if p_mine else "0" }} }'>
-      </div>
-    </div>
-
   </div>
 </div>
 
 <div id="modal-container"></div>
 
 <script>
-// Turns each row's data-created-at into a relative "waiting" label,
-// computed client-side so it stays accurate between refetches without a
-// server round-trip. Pending rows past 3 days get flagged in warning
-// color -- a queue with no aging signal makes a request that's been
-// sitting for two weeks look identical to one filed two minutes ago.
+// Turns each row's data-created-at into a relative "waiting" label, computed
+// client-side so it stays accurate between refetches. Pending rows past 3
+// days get flagged in warning color, so a stale request doesn't look as
+// fresh as one filed two minutes ago.
 const REQUEST_AGING_THRESHOLD_DAYS = 3;
 
 function formatWaiting(createdAt) {
-  // SQLite's datetime('now', 'localtime') format, "YYYY-MM-DD HH:MM:SS" --
-  // treated as local time by replacing the space with 'T' so the Date
-  // constructor doesn't parse it as UTC, matching how the rest of this
-  // app renders these timestamps (member/staff-record dates render as
-  // plain local strings, not iso-with-Z).
+  // SQLite's "YYYY-MM-DD HH:MM:SS" is local time -- swap the space for 'T' so
+  // Date doesn't misread it as UTC (matches how the rest of the app renders these).
   const then = new Date(createdAt.replace(' ', 'T'));
   if (isNaN(then.getTime())) return { text: createdAt, days: 0 };
   const diffMs = Date.now() - then.getTime();
-  const diffHours = diffMs / (1000 * 60 * 60);
+  // Clamped to 0 so a few seconds of clock skew doesn't read as a negative minute count.
+  const diffMinutes = Math.max(0, diffMs / (1000 * 60));
+  const diffHours = diffMinutes / 60;
   const diffDays = diffHours / 24;
   let text;
-  if (diffHours < 1) text = 'just now';
+  if (diffMinutes < 1) text = 'just now';
+  else if (diffMinutes < 60) text = `${Math.floor(diffMinutes)}m ago`;
   else if (diffHours < 24) text = `${Math.floor(diffHours)}h ago`;
   else text = `${Math.floor(diffDays)}d ago`;
   return { text, days: diffDays };
@@ -224,9 +212,6 @@ document.addEventListener('htmx:afterSwap', function (evt) {
   } else if (container.id === 'deactivation-table-container') {
     badgeId = 'deactivation-tab-badge';
     filterId = 'deactivation-status-filter';
-  } else if (container.id === 'promotion-table-container') {
-    badgeId = 'promotion-tab-badge';
-    filterId = 'promotion-status-filter';
   } else {
     return;
   }
@@ -242,13 +227,107 @@ document.addEventListener('htmx:afterSwap', function (evt) {
   }
 });
 
+// Endpoint + container lookups shared by every helper below, keyed by
+// panel kind ('unrestriction' / 'deactivation') -- same idea as
+// REQUESTS_URL_PREFIX_BY_CONTAINER above, just indexed the other way.
+const REQUESTS_PANEL_CONFIG = {
+  unrestriction: { url: '/api/v1/unrestriction-requests', container: 'unrestriction-table-container' },
+  deactivation: { url: '/api/v1/admin-deactivation-requests', container: 'deactivation-table-container' },
+};
+
+// Same active-filter ring/clear-button/count-badge pattern as Members'/
+// Assets' filter rows -- "Pending" counts as this filter's default (see
+// requests_page's _panel_status), not blank.
+function updateRequestsFilterUI(kind) {
+  const status = document.getElementById(`${kind}-status-filter`);
+  const mine = document.getElementById(`${kind}-mine-filter`);
+
+  const statusActive = status.value !== 'pending';
+  const mineActive = !!(mine && mine.checked);
+
+  document.getElementById(`${kind}-status-filter-wrap`).classList.toggle('ring-2', statusActive);
+  document.getElementById(`${kind}-status-filter-wrap`).classList.toggle('ring-primary/40', statusActive);
+  document.getElementById(`${kind}-status-filter-clear-btn`).disabled = !statusActive;
+
+  const mineLabel = document.getElementById(`${kind}-mine-toggle-label`);
+  if (mineLabel) {
+    mineLabel.classList.toggle('text-primary', mineActive);
+    mineLabel.classList.toggle('font-semibold', mineActive);
+    mineLabel.classList.toggle('bg-primary/10', mineActive);
+    mineLabel.classList.toggle('text-base-content/70', !mineActive);
+    mine.classList.toggle('toggle-primary', mineActive);
+  }
+
+  const anyActive = statusActive || mineActive;
+  const activeCount = [statusActive, mineActive].filter(Boolean).length;
+  const clearBtn = document.getElementById(`clear-${kind}-filters-btn`);
+  clearBtn.classList.toggle('hidden', !anyActive);
+  document.getElementById(`clear-${kind}-filters-count`).textContent = activeCount;
+  const clearLabel = activeCount > 0 ? `Clear ${activeCount} filter${activeCount > 1 ? 's' : ''}` : 'Clear filters';
+  clearBtn.setAttribute('title', clearLabel);
+  clearBtn.setAttribute('aria-label', clearLabel);
+}
+
+function clearRequestsStatusFilter(kind) {
+  const el = document.getElementById(`${kind}-status-filter`);
+  if (el.value === 'pending') return;
+  el.value = 'pending';
+  el.dispatchEvent(new Event('change'));
+}
+
+function clearAllRequestsFilters(kind) {
+  const status = document.getElementById(`${kind}-status-filter`);
+  const mine = document.getElementById(`${kind}-mine-filter`);
+  const alreadyDefault = status.value === 'pending' && (!mine || !mine.checked);
+  if (alreadyDefault) return;
+  status.value = 'pending';
+  if (mine) mine.checked = false;
+  updateRequestsFilterUI(kind);
+  const { url, container } = REQUESTS_PANEL_CONFIG[kind];
+  htmx.ajax('GET', url, {
+    target: `#${container}`,
+    swap: 'innerHTML',
+    values: { limit: '{{ limit }}', offset: 0, status: 'pending', mine: '0' }
+  });
+}
+
+// Re-fetches whichever panel's table with whatever filters/page are
+// currently in effect, read straight off that panel's own live controls
+// plus its currently-rendered table's own data-limit/data-offset -- a
+// manual refresh shouldn't jump back to page 1 the way changing a filter
+// does.
+function refreshRequestsTable(kind) {
+  const { url, container } = REQUESTS_PANEL_CONFIG[kind];
+  const table = document.querySelector(`#${container} table`);
+  const status = document.getElementById(`${kind}-status-filter`).value;
+  const mine = document.getElementById(`${kind}-mine-filter`);
+  const params = new URLSearchParams();
+  params.set('status', status);
+  params.set('mine', mine && mine.checked ? '1' : '0');
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '0');
+  htmx.ajax('GET', url, {
+    target: `#${container}`,
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+
+['unrestriction', 'deactivation'].forEach(function (kind) {
+  document.getElementById(`${kind}-status-filter`).addEventListener('change', function () { updateRequestsFilterUI(kind); });
+  const mine = document.getElementById(`${kind}-mine-filter`);
+  if (mine) mine.addEventListener('change', function () { updateRequestsFilterUI(kind); });
+});
+document.addEventListener('DOMContentLoaded', function () {
+  updateRequestsFilterUI('unrestriction');
+  updateRequestsFilterUI('deactivation');
+});
+
 function switchRequestsTab(tab) {
   document.getElementById('requests-tab-unrestriction').classList.toggle('tab-active', tab === 'unrestriction');
   document.getElementById('requests-tab-deactivation').classList.toggle('tab-active', tab === 'deactivation');
-  document.getElementById('requests-tab-promotion').classList.toggle('tab-active', tab === 'promotion');
   document.getElementById('requests-panel-unrestriction').classList.toggle('hidden', tab !== 'unrestriction');
   document.getElementById('requests-panel-deactivation').classList.toggle('hidden', tab !== 'deactivation');
-  document.getElementById('requests-panel-promotion').classList.toggle('hidden', tab !== 'promotion');
 
   // Persists which tab is showing into the URL -- routes/pages.py's
   // requests_page reads this ?tab= back on load so a bookmarked or
@@ -264,15 +343,13 @@ function switchRequestsTab(tab) {
 }
 
 // Keeps each panel's own status/mine/offset in the URL under its own
-// prefix (u_/d_/p_, matching routes/pages.py's requests_page) so all
-// three tabs' filter state round-trips independently through one query
+// prefix (u_/d_, matching routes/pages.py's requests_page) so both
+// tabs' filter state round-trips independently through one query
 // string -- same htmx:configRequest pattern as every other filtered
-// table in the app, just fanned out over three containers instead of
-// one.
+// table in the app, just fanned out over two containers instead of one.
 const REQUESTS_URL_PREFIX_BY_CONTAINER = {
   'unrestriction-table-container': 'u',
   'deactivation-table-container': 'd',
-  'promotion-table-container': 'p',
 };
 
 document.body.addEventListener('htmx:configRequest', function (evt) {
@@ -358,8 +435,11 @@ function showConfirmDialog({ iconPath, iconClass, title, message, confirmLabel, 
         <div class="w-9 h-9 rounded-full ${iconClass}/10 flex items-center justify-center shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 ${iconClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${iconPath}</svg>
         </div>
-        <div class="min-w-0">
-          <h3 id="request-confirm-title" class="font-semibold">${escapeHtml(title)}</h3>
+        <div class="min-w-0 flex-1">
+          <div class="flex justify-between items-start gap-2">
+            <h3 id="request-confirm-title" class="font-semibold">${escapeHtml(title)}</h3>
+            <button type="button" id="request-confirm-close-btn" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-sm text-base-content/60 mt-1">${escapeHtml(message)}</p>
         </div>
       </div>
@@ -379,6 +459,7 @@ function showConfirmDialog({ iconPath, iconClass, title, message, confirmLabel, 
   }
   document.addEventListener('keydown', onKeydown);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('#request-confirm-close-btn').addEventListener('click', close);
   backdrop.querySelector('#request-confirm-cancel-btn').addEventListener('click', close);
   backdrop.querySelector('#request-confirm-ok-btn').addEventListener('click', () => { close(); onConfirm(); });
   backdrop.querySelector('#request-confirm-ok-btn').focus();
@@ -398,7 +479,10 @@ function showReasonDialog({ iconPath, iconClass, title, message, placeholder, re
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 ${iconClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${iconPath}</svg>
         </div>
         <div class="min-w-0 flex-1">
-          <h3 id="request-reason-title" class="font-semibold">${escapeHtml(title)}</h3>
+          <div class="flex justify-between items-start gap-2">
+            <h3 id="request-reason-title" class="font-semibold">${escapeHtml(title)}</h3>
+            <button type="button" id="request-reason-close-btn" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-sm text-base-content/60 mt-1">${escapeHtml(message)}</p>
           <textarea id="request-reason-input" rows="3"
                     placeholder="${escapeHtml(placeholder)}"
@@ -428,6 +512,7 @@ function showReasonDialog({ iconPath, iconClass, title, message, placeholder, re
   }
   document.addEventListener('keydown', onKeydown);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('#request-reason-close-btn').addEventListener('click', close);
   backdrop.querySelector('#request-reason-cancel-btn').addEventListener('click', close);
   okBtn.addEventListener('click', () => {
     const reason = textarea.value.trim();
@@ -478,12 +563,13 @@ function cancelUnrestrictionRequest(id, btn) {
 
 function approveDeactivationRequest(id, btn) {
   const name = rowSubjectName(btn);
-  showConfirmDialog({
+  showReasonDialog({
     iconPath: ICON_CHECK, iconClass: 'text-success',
     title: 'Approve deactivation request?',
-    message: `Records your approval for deactivating ${name}. Their account is deactivated once enough approvals come in.`,
-    confirmLabel: 'Approve', confirmClass: 'btn-success',
-    onConfirm: () => requestAction(`/api/v1/admin-deactivation-requests/${id}/approve`, {}, 'Approval recorded'),
+    message: `Records your approval for deactivating ${name}. This is just your vote -- the requester decides when (or whether) to actually deactivate the account once enough votes are in.`,
+    placeholder: 'Reason for approving (required)',
+    reasonRequired: true, confirmLabel: 'Approve', confirmClass: 'btn-success',
+    onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/approve`, { reason }, 'Approval recorded'),
   });
 }
 
@@ -492,10 +578,10 @@ function denyDeactivationRequest(id, btn) {
   showReasonDialog({
     iconPath: ICON_X, iconClass: 'text-error',
     title: 'Deny deactivation request?',
-    message: `A single denial cancels this request outright for ${name} -- no consensus needed.`,
-    placeholder: 'Reason for denying (optional)',
-    reasonRequired: false, confirmLabel: 'Deny', confirmClass: 'btn-error',
-    onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/deny`, { denial_reason: reason || null }, 'Request denied'),
+    message: `Records your denial for deactivating ${name}. This is just your vote -- it doesn't cancel the request by itself, the requester sees it (with your reason) before deciding.`,
+    placeholder: 'Reason for denying (required)',
+    reasonRequired: true, confirmLabel: 'Deny', confirmClass: 'btn-error',
+    onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/deny`, { denial_reason: reason }, 'Denial recorded'),
   });
 }
 
@@ -510,46 +596,23 @@ function cancelDeactivationRequest(id, btn) {
   });
 }
 
-function approvePromotionRequest(id, btn) {
+function finalizeDeactivationRequest(id, btn) {
   const name = rowSubjectName(btn);
   showConfirmDialog({
-    iconPath: ICON_CHECK, iconClass: 'text-success',
-    title: 'Approve promotion request?',
-    message: `Records your approval for promoting ${name} to admin. Their role changes once enough approvals come in.`,
-    confirmLabel: 'Approve', confirmClass: 'btn-success',
-    onConfirm: () => requestAction(`/api/v1/admin-promotion-requests/${id}/approve`, {}, 'Approval recorded'),
-  });
-}
-
-function denyPromotionRequest(id, btn) {
-  const name = rowSubjectName(btn);
-  showReasonDialog({
-    iconPath: ICON_X, iconClass: 'text-error',
-    title: 'Deny promotion request?',
-    message: `A single denial cancels this request outright for ${name} -- no consensus needed.`,
-    placeholder: 'Reason for denying (optional)',
-    reasonRequired: false, confirmLabel: 'Deny', confirmClass: 'btn-error',
-    onConfirm: (reason) => requestAction(`/api/v1/admin-promotion-requests/${id}/deny`, { denial_reason: reason || null }, 'Request denied'),
-  });
-}
-
-function cancelPromotionRequest(id, btn) {
-  const name = rowSubjectName(btn);
-  showConfirmDialog({
-    iconPath: ICON_WARN, iconClass: 'text-warning',
-    title: 'Cancel this request?',
-    message: `Withdraws your promotion request for ${name}. You can file a new one later if needed.`,
-    confirmLabel: 'Cancel Request', confirmClass: 'btn-warning',
-    onConfirm: () => requestAction(`/api/v1/admin-promotion-requests/${id}/deny`, {}, 'Request cancelled'),
+    iconPath: ICON_WARN, iconClass: 'text-error',
+    title: 'Deactivate this admin account?',
+    message: `This actually deactivates ${name}'s admin account, right now. Only do this once you've reviewed everyone's votes and reasons.`,
+    confirmLabel: 'Deactivate', confirmClass: 'btn-error',
+    onConfirm: () => requestAction(`/api/v1/admin-deactivation-requests/${id}/finalize`, {}, 'Admin account deactivated'),
   });
 }
 
 // --- Keyboard shortcuts (Approvals page) ---
-// Same isTypingTarget/isModalOpen guard pattern as every other tab. This
-// page had none of these before -- ArrowLeft/Right and Escape are scoped
-// to whichever of the two tabs (Unrestriction / Deactivation) is
-// currently visible, read from the DOM rather than tracked separately so
-// it can never drift out of sync with what switchRequestsTab() last set.
+// Same isTypingTarget/isModalOpen guard pattern as every other tab.
+// ArrowLeft/Right and Escape are scoped to whichever of the two tabs
+// (Unrestriction / Deactivation) is currently visible, read from the DOM
+// rather than tracked separately so it can never drift out of sync with
+// what switchRequestsTab() last set.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -564,9 +627,7 @@ function isModalOpen() {
 function activeRequestsTab() {
   const unrestrictionPanel = document.getElementById('requests-panel-unrestriction');
   if (unrestrictionPanel && !unrestrictionPanel.classList.contains('hidden')) return 'unrestriction';
-  const deactivationPanel = document.getElementById('requests-panel-deactivation');
-  if (deactivationPanel && !deactivationPanel.classList.contains('hidden')) return 'deactivation';
-  return 'promotion';
+  return 'deactivation';
 }
 
 document.addEventListener('keydown', function (e) {
@@ -590,25 +651,17 @@ document.addEventListener('keydown', function (e) {
 
   // Escape — with no modal open, reset the current tab's filters back to
   // their default (status = Pending, "Only mine" off) and blur whatever
-  // was focused -- this page has no single combined "clear filters"
-  // button the way Assets/Members/Audit Log do, so Escape restores the
-  // default view instead of blanking it, but the intent (Escape = "get
-  // back to a clean slate") matches. When a modal *is* open, the shared
-  // Escape handler in base.html closes it instead.
+  // was focused, same as clicking that tab's own "Clear filters" button
+  // (clearAllRequestsFilters) -- this page has no single filter row
+  // shared across both tabs the way Assets/Members do, so Escape only
+  // ever touches whichever tab is currently visible. When a modal *is*
+  // open, the shared Escape handler in base.html closes it instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
       document.activeElement.blur();
     }
-    const tab = activeRequestsTab();
-    const statusFilter = document.getElementById(`${tab}-status-filter`);
-    const mineFilter = document.getElementById(`${tab}-mine-filter`);
-    if (!statusFilter) return;
-    const alreadyDefault = statusFilter.value === 'pending' && (!mineFilter || !mineFilter.checked);
-    if (alreadyDefault) return;
-    statusFilter.value = 'pending';
-    if (mineFilter) mineFilter.checked = false;
-    statusFilter.dispatchEvent(new Event('change'));
+    clearAllRequestsFilters(activeRequestsTab());
   }
 });
 </script>

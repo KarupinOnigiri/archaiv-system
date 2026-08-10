@@ -1,18 +1,26 @@
-<!-- Rendered inline by _backup_settings_modal.html on open. Newest-first
-     (routes/staff.py's _list_backups() already sorts by filename, which
-     sorts chronologically since the timestamp is baked into the name).
-     Not htmx-swapped after "Backup Now" -- that action does a full page
-     reload instead (see the modal's own script), so this partial only
-     ever needs to render once per modal open. -->
+<!-- Newest-first (filenames sort chronologically since the timestamp is baked
+     in, see routes/staff.py's _list_backups()). "Backup Now" reloads the whole
+     page rather than swapping this in, so it only renders once per modal open. -->
 {% for b in backups %}
 <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
   <div class="min-w-0">
     <p class="font-medium truncate">{{ b.name }}</p>
     <p class="text-xs text-base-content/40">{{ b.created_at }} &middot; {{ "%.1f"|format(b.size_bytes / 1048576) }} MB</p>
   </div>
-  <a href="/api/v1/backup-settings/download/{{ b.name }}" class="btn btn-ghost btn-xs shrink-0" download>
-    Download
-  </a>
+  <div class="flex items-center gap-1 shrink-0">
+    <a href="/api/v1/backup-settings/download/{{ b.name }}" class="btn btn-ghost btn-xs" download>
+      Download
+    </a>
+    <!-- Confirm text names the specific file, and this delete is permanent (no
+         undo/archive) unlike the app's other delete actions. -->
+    <button type="button" class="btn btn-ghost btn-xs text-error"
+            hx-delete="/api/v1/backup-settings/delete/{{ b.name }}"
+            hx-target="#backup-file-list"
+            hx-swap="innerHTML"
+            hx-confirm="Permanently delete {{ b.name }}? This can't be undone.">
+      Delete
+    </button>
+  </div>
 </div>
 {% else %}
 <p class="text-sm text-base-content/40 text-center py-4">No backups yet.</p>

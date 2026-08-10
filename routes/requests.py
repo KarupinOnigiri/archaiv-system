@@ -36,8 +36,7 @@ VALID_STATUSES = ("pending", "approved", "denied", "cancelled")
 @limiter.limit("20 per minute")
 @roles_required("tool_keeper")
 def create_unrestriction_request():
-    """tool_keeper cannot unrestrict directly — this is the request path
-    instead. admin/in_charge review it via approve/deny below."""
+    """tool_keeper can't unrestrict directly, they file a request that admin/in_charge reviews below."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -94,10 +93,7 @@ def create_unrestriction_request():
             (member_id, g.staff["id"], reason),
         )
         request_id = cursor.lastrowid
-        # Same transaction as the request insert -- an admin/in_charge
-        # should never be able to observe a request that exists but has no
-        # notification behind it (or vice versa) if something failed
-        # partway through.
+        # same transaction as the insert, so we never end up with a request and no notification (or vice versa)
         create_unrestriction_requested_notifications(
             conn, request_id, updated_name, g.staff["username"]
         )
@@ -128,9 +124,7 @@ def create_unrestriction_request():
 @limiter.limit("20 per minute")
 @login_required
 def cancel_unrestriction_request(id):
-    """Lets the original requester withdraw their own pending request.
-    Distinct from /deny (admin/in_charge only) since the permission check
-    here is different: it's about who filed it, not seniority."""
+    """Lets the requester withdraw their own pending request (unlike /deny, which is admin/in_charge only)."""
     data, error = get_json_or_error()
     review_notes = data.get("review_notes") if not error else None
 
@@ -160,18 +154,14 @@ def cancel_unrestriction_request(id):
             """,
             (g.staff["id"], review_notes, reviewed_at, id),
         )
-        # The requester already knows they cancelled it -- no notification
-        # back to them -- but admin/in_charge's "pending review" notices
-        # for it need to go, since there's nothing left to review.
+        # requester doesn't need a notification, but clear admin/in_charge's pending-review notice since there's nothing left to review
         clear_unrestriction_pending_notifications(conn, id)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
-        # req itself (a plain SELECT * from unrestriction_requests) has no
-        # member name, only member_id -- looked up here before conn.close()
-        # purely for a readable Activity Log target.
+        # req only has member_id, not a name -- look it up here for a readable Activity Log entry
         cancel_req_member = conn.execute(
             "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
             (req["member_id"],),
@@ -200,9 +190,7 @@ def cancel_unrestriction_request(id):
 @requests_bp.route("/unrestriction-requests")
 @login_required
 def list_unrestriction_requests():
-    """admin/in_charge see everyone's requests (the review queue).
-    tool_keeper only sees their own — self-service status tracking,
-    not a window into everyone else's activity."""
+    """admin/in_charge see the full review queue; tool_keeper only sees their own requests."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -223,12 +211,7 @@ def list_unrestriction_requests():
         where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
         params.append(g.staff["id"])
     elif request.args.get("mine") == "1":
-        # admin/in_charge see everyone's by default (the review queue) --
-        # this narrows that back down to "requests I personally filed",
-        # for the same admin/in_charge account that might also be the one
-        # who flagged a member for review in the first place. Distinct
-        # from the branch above: that one is a hard restriction based on
-        # role, this is an opt-in filter on top of the wider view.
+        # opt-in filter for admin/in_charge to narrow the full queue down to just their own filings
         where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
         params.append(g.staff["id"])
 
@@ -271,11 +254,7 @@ def list_unrestriction_requests():
     }
 
     if request.headers.get("HX-Request") == "true":
-        # staff=g.staff is required here (not just for the full-page load) --
-        # the partial's own can_review check reads the bare `staff` variable,
-        # which would otherwise be undefined on every htmx filter/pagination
-        # swap and silently hide admin/in_charge review actions after the
-        # first load. Same reasoning as staff_bp.view_staff.
+        # staff=g.staff needed even here -- the partial's can_review check reads it, and without it review actions silently vanish after htmx swaps
         return render_template(
             "requests/_unrestriction_table.html", staff=g.staff, **context
         )
@@ -354,8 +333,7 @@ def approve_unrestriction_request(id):
     )
 
     try:
-        # Same effect as the direct unrestrict_member route — approval
-        # is just that action gated behind a second set of eyes.
+        # same effect as the direct unrestrict_member route, just gated behind a second set of eyes
         conn.execute(
             "UPDATE members SET is_restricted = 0, restriction_reason = NULL, restriction_source = NULL WHERE id = ?",
             (req["member_id"],),

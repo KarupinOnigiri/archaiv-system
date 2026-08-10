@@ -1,36 +1,19 @@
 from database import get_db_connection
 
-# Stored in staff.locked_until (a plain "%Y-%m-%d %H:%M:%S" string, same
-# column the failed-attempts auto-lockout uses) to represent "locked with
-# no expiry" without a schema change or a separate boolean column. Chosen
-# as the max value strptime/strftime with this format can round-trip
-# rather than datetime.max (which has a microsecond component this format
-# string drops, so it wouldn't compare equal after a round-trip through
-# the database). Both the login lockout check (routes/auth.py) and the
-# admin manual-lock UI (routes/staff.py, staff/_table.html) special-case
-# this exact string rather than showing a nonsense "try again in ~4
-# million minutes" message.
+# Stored in staff.locked_until to mean "locked with no expiry" without a schema change.
+# Using this instead of datetime.max because datetime.max has microseconds that this format
+# string drops, so it wouldn't round-trip equal through the DB. Special-cased in the login
+# lockout check and admin manual-lock UI instead of showing a nonsense "~4 million minutes" message.
 INDEFINITE_LOCK_UNTIL = "9999-12-31 23:59:59"
 
-# Same sentinel idea as INDEFINITE_LOCK_UNTIL just above, but for
-# staff.assigned_end (a DATE column, not a full datetime) -- lets a
-# tool_keeper's assignment be "Permanent" without a schema change or a
-# separate boolean/nullable-means-forever column. login()'s tool_keeper
-# check (routes/auth.py) still requires assigned_start/assigned_end to be
-# set at all (NULL still means "no assignment period, can't log in"), so
-# this is what the "Permanent" quick-option in the Add/Edit/Reassign
-# staff modals writes instead of leaving assigned_end blank -- it reads
-# as far enough in the future to never actually expire, and
-# compute_usage_status (routes/staff.py) special-cases this exact string
-# the same way the login lockout check special-cases INDEFINITE_LOCK_UNTIL.
+# Same sentinel idea as INDEFINITE_LOCK_UNTIL, but for assigned_end (a DATE column) -- lets a
+# tool_keeper's assignment be "Permanent" without a schema change. NULL still means "no
+# assignment, can't log in", so the Permanent quick-option writes this instead of leaving it blank;
+# compute_usage_status special-cases this string the same way the lockout check does for locked_until.
 PERMANENT_ASSIGNED_END = "9999-12-31"
 
-# Fallback values only -- the real, admin-editable numbers live in the
-# app_settings table (see migrations/0018_app_settings.sql and
-# routes/staff.py's manage-session-settings endpoints). Used if a key is
-# somehow missing from that table (shouldn't happen after the migration
-# seeds it, but a missing row should never hard-crash a login or session
-# check).
+# Fallback values only -- the real, admin-editable numbers live in the app_settings table.
+# Used if a key is somehow missing there; a missing row should never hard-crash a login/session check.
 DEFAULT_SETTINGS = {
     "session_idle_minutes": 30,
     "session_absolute_hours": 12,
@@ -40,12 +23,13 @@ DEFAULT_SETTINGS = {
     "default_loan_days": 2,
     "damage_restriction_threshold": 2,
     "auto_backup_interval_hours": 24,
+    # '0' means "None" -- auto-purge disabled. See
+    # migrations/0041_add_archive_purge_settings.sql.
+    "archive_purge_days": 0,
 }
 
-# Feature-flag keys (see migrations/0033_feature_flags.sql) all default to
-# enabled -- a missing/unparseable row should never silently lock a feature
-# out, the same "fail open to the old behavior" rule DEFAULT_SETTINGS above
-# already follows for the numeric settings.
+# Feature flags all default to enabled -- a missing/unparseable row should never silently
+# lock a feature out, same "fail open" rule DEFAULT_SETTINGS follows for numeric settings.
 DEFAULT_FEATURE_FLAGS = {
     "feature_assets_enabled": True,
     "feature_members_enabled": True,
@@ -54,10 +38,8 @@ DEFAULT_FEATURE_FLAGS = {
     "feature_reports_enabled": True,
 }
 
-# Short name (used by feature_required(), templates' feature_flags.*, and
-# the System page form) -> (app_settings key, human label used in the
-# "<label> is currently disabled" messages and the ?feature_disabled=
-# redirect toast).
+# Short name -> (app_settings key, human label for the "<label> is currently disabled"
+# messages and the ?feature_disabled= redirect toast).
 FEATURE_FLAGS = {
     "assets": ("feature_assets_enabled", "Inventory"),
     "members": ("feature_members_enabled", "Members"),
@@ -121,6 +103,15 @@ def get_damage_restriction_threshold(conn=None):
 
 def get_auto_backup_interval_hours(conn=None):
     return get_setting_int("auto_backup_interval_hours", conn)
+
+
+def get_archive_purge_days(conn=None):
+    """0 means "None" -- auto-purge is disabled. Any positive value is a
+    whole number of days measured from an asset's deleted_at or a
+    member's/staff account's deactivated_at (see
+    services/archive_purge_service.py, which shares this one setting
+    across all three)."""
+    return get_setting_int("archive_purge_days", conn)
 
 
 def get_setting_bool(key, conn=None):

@@ -30,24 +30,16 @@ def _block_if_transactions_disabled():
         return jsonify({"error": f"{get_feature_label('transactions')} is currently disabled"}), 403
 
 
-# Fallback only -- the real, admin-editable default lives in app_settings
-# (see services/settings_service.py's get_default_loan_days and
-# routes/staff.py's loan-duration manage-form/update pair). What this
-# constant backs up is DEFAULT_SETTINGS, not the checkout flow directly.
+# Fallback only -- real default lives in app_settings (settings_service.get_default_loan_days)
 DEFAULT_LOAN_DAYS = 2
-# Fallback only -- the real, admin-editable caps live in the loan_limits
-# table (see routes/staff.py's manage-loan-limits endpoints and
-# get_max_concurrent_loans below). This constant is what a member_type
-# falls back to if its row is somehow missing from that table.
+# Fallback only -- real caps live in the loan_limits table (see get_max_concurrent_loans below)
 MAX_CONCURRENT_LOANS = 10
 MAX_AVAILABLE_ASSETS_LISTED = 300
 
 
 def get_max_concurrent_loans(member_type, conn):
-    """Looks up the admin-configured concurrent-loan cap for a member_type.
-    Falls back to MAX_CONCURRENT_LOANS if the loan_limits table is missing
-    a row for this type (shouldn't happen after migration 0017, but a
-    missing row should never hard-crash a checkout)."""
+    """Looks up the concurrent-loan cap for a member_type, falling back to
+    MAX_CONCURRENT_LOANS if loan_limits has no row for it."""
     row = conn.execute(
         "SELECT max_concurrent_loans FROM loan_limits WHERE member_type = ?",
         (member_type,),
@@ -57,18 +49,11 @@ def get_max_concurrent_loans(member_type, conn):
 
 def _get_active_checkout_session(session_id, member_id, conn):
     """Returns (session_row, error_response) for a checkout session that a
-    borrow can be attached to.
-
-    A checkout session represents one checkout episode where a member can
-    have several assets borrowed against the same session_id (badge scanned
-    once, staff scans multiple tools). It stays open until either:
-      - staff explicitly finishes it (POST .../finish), or
-      - it goes stale (no activity for SESSION_STALE_MINUTES), which this
-        function lazily closes the moment it's noticed.
-
-    error_response is None if the session exists, belongs to member_id,
-    and is still open.
-    """
+    borrow can be attached to. A session covers one checkout episode (badge
+    scanned once, multiple tools scanned against it) and stays open until
+    staff finish it or it goes stale, which this function lazily closes.
+    error_response is None if the session exists, belongs to member_id, and
+    is still open."""
     session = conn.execute(
         "SELECT * FROM checkout_sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -97,7 +82,7 @@ def _get_active_checkout_session(session_id, member_id, conn):
         session["last_activity_at"] or session["created_at"], "%Y-%m-%d %H:%M:%S"
     )
     if datetime.now() - last_activity_at > timedelta(minutes=SESSION_STALE_MINUTES):
-        # lazily close it so it stops showing up as "open" going forward
+        # lazily close it so it stops showing up as "open"
         conn.execute(
             "UPDATE checkout_sessions SET status = 'cancelled', completed_at = datetime('now', 'localtime') WHERE id = ? AND status = 'open'",
             (session_id,),
@@ -112,69 +97,66 @@ def _get_active_checkout_session(session_id, member_id, conn):
 
 
 def _require_session_owner(session):
-    """Returns an error response if this checkout session belongs to a
-    different staff member than the one currently logged in, else None.
-
-    Sessions created before staff_id existed (or with a NULL staff_id for
-    any other reason) have no owner on record, so there's nothing to
-    compare against -- they're treated as accessible rather than as
-    permanently locked out, since that's a data gap, not a real owner
-    mismatch."""
+    """Errors out if this session belongs to a different staff member than
+    the one logged in. Sessions with no staff_id on record (data gap, not a
+    real owner) are treated as accessible rather than locked out."""
     if session["staff_id"] is not None and session["staff_id"] != g.staff["id"]:
         return jsonify({"error": "This checkout session belongs to another staff member"}), 403
     return None
 
 
-def _load_open_session_for_staff(staff_id, conn):
-    """Returns the given staff member's open checkout session, including
-    its scanned items -- shaped exactly like `_checkout_modal.html`'s
-    resume_session and `_active_checkout_banner.html`'s active_session
-    expect. Lazily expires it first if it's gone stale. Returns None if
-    they don't have one open.
-
-    This is the single source of truth for "does this staff have an
-    in-progress checkout right now" -- used by the active-checkout
-    banner, the resume-form, and the global dock in base.html, so a
-    session found this way behaves identically no matter which of those
-    three asked for it."""
-    session = conn.execute(
+def _load_open_sessions_for_staff(staff_id, conn):
+    """Returns ALL of the staff member's open checkout sessions (newest
+    first) with their scanned items, shaped for `_checkout_modal.html` and
+    `_active_checkout_banner.html`. Lazily expires stale ones (excluded
+    from the result). Single source of truth for "what's this staff member
+    got in progress" -- used by the banner, resume-form, and base.html dock."""
+    sessions = conn.execute(
         """
         SELECT checkout_sessions.*, members.barcode_id AS member_barcode, members.first_name AS member_first_name
         FROM checkout_sessions
         JOIN members ON checkout_sessions.member_id = members.id
         WHERE checkout_sessions.staff_id = ? AND checkout_sessions.status = 'open'
         ORDER BY checkout_sessions.created_at DESC
-        LIMIT 1
         """,
         (staff_id,),
-    ).fetchone()
-
-    if session is None:
-        return None
-
-    last_activity_at = datetime.strptime(
-        session["last_activity_at"] or session["created_at"], "%Y-%m-%d %H:%M:%S"
-    )
-    if datetime.now() - last_activity_at > timedelta(minutes=SESSION_STALE_MINUTES):
-        conn.execute(
-            "UPDATE checkout_sessions SET status = 'cancelled', completed_at = datetime('now', 'localtime') WHERE id = ? AND status = 'open'",
-            (session["id"],),
-        )
-        conn.commit()
-        return None
-
-    items = conn.execute(
-        """
-        SELECT checkout_session_items.id AS id, assets.name AS asset_name
-        FROM checkout_session_items
-        JOIN assets ON checkout_session_items.asset_id = assets.id
-        WHERE checkout_session_items.checkout_session_id = ?
-        ORDER BY checkout_session_items.added_at
-        """,
-        (session["id"],),
     ).fetchall()
 
-    return {**dict(session), "cart_items": [dict(row) for row in items]}
+    results = []
+    for session in sessions:
+        last_activity_at = datetime.strptime(
+            session["last_activity_at"] or session["created_at"], "%Y-%m-%d %H:%M:%S"
+        )
+        if datetime.now() - last_activity_at > timedelta(minutes=SESSION_STALE_MINUTES):
+            conn.execute(
+                "UPDATE checkout_sessions SET status = 'cancelled', completed_at = datetime('now', 'localtime') WHERE id = ? AND status = 'open'",
+                (session["id"],),
+            )
+            conn.commit()
+            continue
+
+        items = conn.execute(
+            """
+            SELECT checkout_session_items.id AS id, assets.name AS asset_name
+            FROM checkout_session_items
+            JOIN assets ON checkout_session_items.asset_id = assets.id
+            WHERE checkout_session_items.checkout_session_id = ?
+            ORDER BY checkout_session_items.added_at
+            """,
+            (session["id"],),
+        ).fetchall()
+
+        results.append({**dict(session), "cart_items": [dict(row) for row in items]})
+
+    return results
+
+
+def _load_open_session_for_staff(staff_id, conn):
+    """Most recent open session, or None -- thin wrapper around
+    _load_open_sessions_for_staff for callers that only want one.
+    checkout_dock uses the plural version directly."""
+    sessions = _load_open_sessions_for_staff(staff_id, conn)
+    return sessions[0] if sessions else None
 
 
 # # # LIST / VIEW ------------------------------------------------------------
@@ -244,20 +226,15 @@ TRANSACTIONS_SORTABLE_COLUMNS = {
 
 
 def _build_transactions_filters(args):
-    """Builds the WHERE clause + params shared by the table listing and
-    the CSV export -- pulled out so the two can never quietly filter
-    differently. Returns (where_clauses, params, status_filter, None) on
-    success, or (None, None, None, error_response) on a bad query param."""
+    """Builds the WHERE clause + params shared by the table listing and the
+    CSV export so they can't drift apart. Returns (where_clauses, params,
+    status_filter, None) on success, or (None, None, None, error_response)
+    on a bad query param."""
     where_clauses = []
     params = []
 
-    # Exact-match escape hatch for deep-linking to one borrower's loans
-    # (e.g. from a notification's "overdue"/"due_soon" alert) -- guarantees
-    # every loan for that exact member surfaces regardless of name
-    # collisions the free-text `q` search below could otherwise match
-    # incorrectly. Not exposed as a user-facing filter control anywhere;
-    # only ever set by a generated link (see routes/notifications.py's
-    # open_notification).
+    # member_id is an exact-match filter for deep-links (e.g. notifications' overdue/due_soon
+    # alerts) -- avoids name-collision false matches from the free-text `q` search below.
     member_id = args.get("member_id")
     if member_id:
         try:
@@ -278,11 +255,8 @@ def _build_transactions_filters(args):
         like = f"%{q}%"
         params.extend([like, like, like, like])
 
-    # "overdue" is a virtual status -- not a value actually stored in
-    # transactions.status, but a derived condition (still borrowed, past
-    # due) staff care about as its own filterable bucket. Kept in sync
-    # with how /transactions/overdue and the is_overdue column below both
-    # define "overdue", so all three never disagree with each other.
+    # "overdue" is a virtual status (borrowed + past due), not a real value in transactions.status --
+    # keep this definition in sync with /transactions/overdue and the is_overdue column below.
     status_filter = args.get("status")
     if status_filter == "overdue":
         where_clauses.append(
@@ -419,12 +393,9 @@ TRANSACTIONS_EXPORT_COLUMNS = [
 @transactions_bp.route("/transactions/export")
 @login_required
 def export_transactions():
-    """CSV download of whatever the table currently shows -- respects the
-    same search/status/date filters as /transactions/table (built by the
-    same _build_transactions_filters(), so this can't silently diverge
-    from what's on screen), but ignores sort/pagination since an export is
-    the whole filtered set, not one page of it. Read-only, so any
-    logged-in staff can use it, same reasoning as assets' export route."""
+    """CSV download of whatever the table currently shows -- same filters
+    as /transactions/table, but ignores sort/pagination since export means
+    the whole filtered set. Read-only, so any logged-in staff can use it."""
     where_clauses, params, _status_filter, error = _build_transactions_filters(request.args)
     if error:
         return error
@@ -460,8 +431,7 @@ def export_transactions():
         writer.writerow(
             [record.get(col) if record.get(col) is not None else "" for col, _ in TRANSACTIONS_EXPORT_COLUMNS]
         )
-    # utf-8-sig (BOM) so Excel opens accented/special characters correctly
-    # when double-clicking the CSV directly -- matches assets' CSV export.
+    # BOM so Excel handles accented characters right on direct double-click open
     file_bytes = output.getvalue().encode("utf-8-sig")
 
     filename = f"transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -474,10 +444,8 @@ def export_transactions():
 @transactions_bp.route("/transactions/stat-cards")
 @login_required
 def transaction_stat_cards():
-    """Returns just the 4 stat-card numbers as HTML, same pattern as
-    /assets/stat-cards -- listened to via the 'transactions-refreshed'
-    HX-Trigger event so the cards stay in sync with the table after a
-    return, without a full page reload."""
+    """The 4 stat-card numbers as HTML; refreshed via the
+    'transactions-refreshed' HX-Trigger event, same pattern as /assets/stat-cards."""
     conn = get_db_connection()
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
     stat_borrowed = conn.execute(
@@ -535,17 +503,11 @@ def transaction_details_modal(id):
 @transactions_bp.route("/checkout-sessions/start-form")
 @login_required
 def checkout_start_form():
-    """Renders the New Checkout modal shell. The modal itself drives the
-    whole borrow flow client-side via fetch() against the JSON endpoints
-    below (create_checkout_session, add_item_to_session,
-    remove_item_from_session, checkout_session, cancel_checkout_session) --
-    this route has no DB work of its own.
-
-    client_id is minted client-side (crypto.randomUUID()) and sent as a
-    query param specifically so this fresh instance gets its own unique
-    DOM id/data-client-id -- without it, every "New Checkout" click would
-    render with the same blank client_id and collide with whatever
-    checkout is already open or minimized (see _checkout_modal.html)."""
+    """Renders the New Checkout modal shell; the modal drives the borrow
+    flow client-side via fetch() against the JSON endpoints below, no DB
+    work here. client_id is minted client-side (crypto.randomUUID()) so
+    each modal instance gets a unique DOM id and doesn't collide with an
+    already-open/minimized checkout."""
     client_id = request.args.get("client_id")
     if not client_id:
         return jsonify({"error": "client_id is required"}), 400
@@ -555,10 +517,9 @@ def checkout_start_form():
 @transactions_bp.route("/checkout-sessions/active-banner")
 @login_required
 def active_checkout_banner():
-    """Re-fetched on page load and whenever transactions-refreshed fires
-    (see transactions.html). Tells the current staff member whether they
-    have an in-progress checkout, independent of anything the frontend
-    remembers -- so it's correct even after a full page reload."""
+    """Tells the current staff member whether they have an in-progress
+    checkout, re-fetched from the server (not frontend state) so it's
+    correct even after a full page reload."""
     conn = get_db_connection()
     active_session = _load_open_session_for_staff(g.staff["id"], conn)
     conn.close()
@@ -570,44 +531,36 @@ def active_checkout_banner():
 @transactions_bp.route("/checkout-sessions/dock")
 @login_required
 def checkout_dock():
-    """Mounted once in base.html (not per-page), so it runs on every full
-    page load regardless of which tab the staff member navigates to.
-    Sidebar navigation here is real browser navigation, not an htmx swap
-    -- the whole page (and all its JS state) is torn down and rebuilt on
-    every click, so an in-progress checkout can only survive that by
-    being rediscovered from the server each time, not by keeping any DOM
-    node alive across the navigation.
-
-    Renders nothing if the staff member has no open session. Otherwise
-    renders the same checkout modal fragment used everywhere else,
-    pre-minimized (auto_minimize=True) so it reappears as just the dock
-    pill rather than popping the full modal open on every page."""
+    """Mounted once in base.html so it runs on every full page load --
+    sidebar nav is real browser navigation, so an in-progress checkout has
+    to be rediscovered from the server each time, not kept alive in the DOM.
+    Renders one dock per open session (not just the most recent) since a
+    staff member can have several in flight at once; using the singular
+    loader here used to lose the dock for any but the newest session after
+    navigating away. Each fragment starts pre-minimized (auto_minimize=True).
+    Renders nothing if there are no open sessions."""
     conn = get_db_connection()
-    resume_session = _load_open_session_for_staff(g.staff["id"], conn)
+    resume_sessions = _load_open_sessions_for_staff(g.staff["id"], conn)
     conn.close()
 
-    if resume_session is None:
-        return ""
-
-    return render_template(
-        "transactions/_checkout_modal.html",
-        client_id=resume_session["id"],
-        resume_session=resume_session,
-        auto_minimize=True,
+    return "".join(
+        render_template(
+            "transactions/_checkout_modal.html",
+            client_id=resume_session["id"],
+            resume_session=resume_session,
+            auto_minimize=True,
+        )
+        for resume_session in resume_sessions
     )
 
 
 @transactions_bp.route("/checkout-sessions/<int:id>/resume-form")
 @login_required
 def checkout_resume_form(id):
-    """Reopens the checkout modal, expanded, for an in-progress session --
-    used by the active-checkout banner's Resume button. Scoped to the
-    current staff member via _load_open_session_for_staff rather than a
-    direct lookup-by-id, so this can't be used to peek at or resume
-    another staff member's session (it'll just report the session as no
-    longer open, same as if it had actually completed/expired, rather
-    than distinguishing "not yours" from "not open" -- no need to reveal
-    which one it is)."""
+    """Reopens the checkout modal, expanded, for the resume banner's Resume
+    button. Scoped by staff member (not a direct lookup-by-id) so you can't
+    peek at another staff member's session -- it just reports "not open"
+    either way, no distinction leaked."""
     conn = get_db_connection()
     resume_session = _load_open_session_for_staff(g.staff["id"], conn)
     conn.close()
@@ -669,9 +622,7 @@ def create_checkout_session():
         conn.close()
         return jsonify({"error": "This member account is not active"}), 403
 
-    # Re-check overdue status now, not just at final commit — staff and
-    # the member shouldn't waste time scanning tools into a cart that
-    # can never be checked out.
+    # re-check overdue status now, not just at final commit, so staff don't scan a cart that can't check out
     check_and_restrict_overdue_member(member["id"], conn)
     member = conn.execute(
         "SELECT * FROM members WHERE id = ?", (member["id"],)
@@ -747,32 +698,23 @@ def create_checkout_session():
 @transactions_bp.route("/checkout-sessions/available-assets")
 @login_required
 def list_available_assets_for_checkout():
-    """Backs the "Show available assets" flyout in the checkout modal --
-    everything a staff member could scan into a cart right now, so they
-    can browse/click instead of only ever typing or scanning a barcode.
+    """Backs the "Show available assets" flyout in the checkout modal so
+    staff can browse/click instead of only scanning a barcode.
 
-    `code` is deliberately barcode_id, not assets.asset_id (the display
-    tag shown elsewhere as asset_code) -- add_item_to_session() below only
-    ever matches a scanned asset_code against barcode_id OR rfid_id, so
-    returning anything else here would let a picked row round-trip back
-    through items/add and silently fail to resolve, or worse, resolve to
-    a different asset if a rfid_id happens to collide with another row's
-    asset_id. "Available" mirrors add_item_to_session()'s own definition
-    exactly (status = 'available', not soft-deleted), since this listing
-    only means something if it's a promise that items/add will accept it.
+    `code` is barcode_id, not assets.asset_id -- add_item_to_session()
+    below matches a scanned code against barcode_id OR rfid_id, so
+    returning asset_id here could round-trip back and fail to resolve, or
+    resolve to the wrong asset. "Available" mirrors
+    add_item_to_session()'s own definition (status='available', not
+    soft-deleted) since this list is only useful as a promise items/add
+    will honor.
 
-    Capped and unpaginated -- this is a picker list for the checkout
-    flow, not the full inventory table (that's the paginated/sortable
-    GET /assets/table in routes/assets.py). MAX_AVAILABLE_ASSETS_LISTED
-    keeps a large inventory from dumping thousands of rows into the
-    flyout at once; raise it (or add real search/pagination here, mirroring
-    get_transactions_table_context's pattern above) if that cap ever
-    turns out too low in practice.
+    Capped via MAX_AVAILABLE_ASSETS_LISTED and unpaginated -- this is a
+    picker for the checkout flow, not the full inventory table (that's
+    GET /assets/table).
 
-    NOTE: no category column on assets -- dropped it from the SELECT
-    (was assumed, not verified against the real schema). Add it back once
-    it's clear whether that's a differently-named column here or lives on
-    a joined table instead.
+    NOTE: no category column on assets -- dropped from the SELECT, add
+    back once we know its real name/location in the schema.
     """
     conn = get_db_connection()
     assets = conn.execute(
@@ -793,10 +735,9 @@ def list_available_assets_for_checkout():
 @login_required
 @limiter.limit("60 per minute")
 def add_item_to_session(id):
-    """Scans one asset into an open checkout session (the "cart"). Mirrors
-    the reservation pattern used at final checkout: claim the asset
-    atomically by flipping status available -> reserved, and only insert
-    the cart row if that claim actually landed."""
+    """Scans one asset into an open checkout session (the "cart"). Claims
+    the asset atomically (available -> reserved) and only inserts the cart
+    row if that claim lands, same reservation pattern as final checkout."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1022,16 +963,11 @@ VALID_RETURN_CONDITIONS = ("functional", "inoperable", "for_repair", "disposed")
 
 
 def _finalize_return(transaction, asset, member, staff_id, condition_in, return_remarks, conn):
-    """Core return logic shared by the barcode-scan return flow
-    (/transactions/return, used by kiosk-style scanning) and the
-    row-action return flow (/transactions/<id>/return, used from the
-    Transactions tab table where staff already has the specific record
-    on screen). Mutates the DB and returns a result dict describing what
-    happened -- callers are responsible for their own
-    conn.commit()/rollback()/close() and for calling log_action()
-    themselves, since the two callers log slightly different context
-    (scanned vs. row-click) around the same underlying change.
-    """
+    """Core return logic shared by the scan-return flow
+    (/transactions/return) and the row-action return flow
+    (/transactions/<id>/return). Mutates the DB and returns a result dict;
+    callers own their own commit/rollback/close and log_action() since
+    they log different context around the same change."""
     final_condition = condition_in if condition_in else asset["condition"]
     is_disposed = final_condition == "disposed"
     new_status = "available" if final_condition == "functional" else "maintenance"
@@ -1047,9 +983,7 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
     )
 
     if is_disposed:
-        # Disposed is terminal — soft-delete now instead of parking it
-        # in 'maintenance', where it'd look identical to something
-        # that's coming back into service.
+        # disposed is terminal -- soft-delete now instead of parking it in 'maintenance'
         conn.execute(
             "UPDATE assets SET status = ?, condition = ?, deleted_at = datetime('now', 'localtime') WHERE id = ?",
             (new_status, final_condition, asset["id"]),
@@ -1074,13 +1008,10 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
 
 def _find_open_transaction_for_scan(asset_code, member_barcode, conn):
     """Looks up + validates an asset-barcode/member-barcode pair for a
-    scan-driven return -- shared by the single-scan kiosk route below and
-    the scan-return cart's per-scan lookup, so "does this asset+member
-    combination resolve to a returnable loan" can never quietly diverge
-    between the two. Does NOT close conn (caller owns that) and does not
-    mutate anything -- pure lookup. Returns (transaction, asset, member,
-    error_response); error_response is None on success, in which case all
-    three of the others are populated."""
+    scan-driven return -- shared by the single-scan route and the
+    scan-return cart's per-scan lookup. Pure lookup, doesn't close conn or
+    mutate anything. Returns (transaction, asset, member, error_response);
+    error_response is None on success."""
     asset = conn.execute(
         "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
         (asset_code, asset_code),
@@ -1192,13 +1123,10 @@ def return_asset():
 @login_required
 def member_open_loans():
     """Lists everything a member currently has borrowed -- powers the
-    scan-return modal's checklist step, which shows this the moment a
-    member's barcode is entered (before any asset is scanned) so staff
-    can see the full expected list, not just whatever they happen to
-    scan. Read-only. A member with zero open loans still returns 200
-    with an empty list -- that's a valid, unremarkable state (nothing to
-    return), not an error -- so the modal can show its own "nothing to
-    return" message rather than branching on a 4xx for it."""
+    scan-return modal's checklist as soon as the member's barcode is
+    entered, before any asset is scanned. Zero open loans is a normal 200
+    with an empty list, not an error, so the modal can show its own
+    "nothing to return" message."""
     member_barcode = request.args.get("member_barcode")
     if not member_barcode:
         return jsonify({"error": "member_barcode is required"}), 400
@@ -1237,10 +1165,8 @@ def member_open_loans():
 @transactions_bp.route("/transactions/return-scan-form")
 @login_required
 def return_scan_form():
-    """Renders the scan-return modal shell -- no DB work of its own (the
-    modal drives itself client-side against member-open-loans,
-    return-scan-lookup, and batch-return, same shape as
-    checkout_start_form() above)."""
+    """Renders the scan-return modal shell -- no DB work here, modal
+    drives itself client-side, same shape as checkout_start_form() above."""
     return render_template("transactions/_return_scan_modal.html")
 
 
@@ -1307,13 +1233,10 @@ def return_confirm(id):
 @login_required
 @limiter.limit("20 per minute")
 def return_transaction_by_id(id):
-    """Row-action return flow -- staff already has the specific borrow
-    record on screen (via the table row), so unlike /transactions/return
-    (the scan-first kiosk flow) this skips the barcode/RFID lookup and
-    member-barcode confirmation, and just confirms the transaction is
-    still open before finalizing. Shares _finalize_return with that
-    route so the two can never quietly diverge on what "returning an
-    asset" actually does to the DB."""
+    """Row-action return flow -- staff already has the record on screen,
+    so unlike /transactions/return this skips the barcode/RFID lookup and
+    just confirms the transaction is still open before finalizing via the
+    shared _finalize_return."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1397,14 +1320,10 @@ MAX_BATCH_RETURN_SIZE = 50
 @transactions_bp.route("/transactions/batch-return-confirm")
 @login_required
 def batch_return_confirm():
-    """Opens the batch-return modal for whatever row checkboxes are
-    currently ticked on the table -- read-only lookup, same split as
-    return_confirm()/return_transaction_by_id() above. Silently drops any
-    id that's missing or already returned rather than erroring, since the
-    selection was built from what the table showed a moment ago and may
-    have drifted (e.g. someone else just returned one) by the time this
-    modal opens; the confirm screen just shows however many are still
-    actually eligible."""
+    """Opens the batch-return modal for the checked table rows. Silently
+    drops ids that are missing/already returned instead of erroring, since
+    the selection may have drifted since the table was loaded -- the
+    confirm screen just shows whatever's still eligible."""
     ids = request.args.getlist("transaction_ids", type=int)
     if not ids:
         return jsonify({"error": "No transactions selected"}), 400
@@ -1435,24 +1354,15 @@ def batch_return_confirm():
 @login_required
 @limiter.limit("10 per minute")
 def batch_return_transactions():
-    """Applies condition/remarks to every selected transaction in one
-    submit, reusing _finalize_return per row so batch and single-row
-    return can never quietly diverge on what "returning an asset" does to
-    the DB. Best-effort: one row failing (already returned out from under
-    the selection, bad id, etc.) doesn't abort the rest -- the response
-    reports exactly which ids landed and which didn't, and the modal
-    surfaces that instead of an all-or-nothing error.
+    """Applies condition/remarks to every selected transaction, reusing
+    _finalize_return per row. Best-effort: one row failing doesn't abort
+    the rest -- response reports which ids landed vs. got skipped.
 
-    Each entry in transaction_ids is either a plain integer (uses the
-    top-level condition_in for that row -- the checkbox-based batch
-    return in the table sends it this way, one condition applied to
-    everything selected) or {"id": ..., "condition_in": ...} (overrides
-    the row's own condition -- the scan-return modal sends it this way,
-    since staff can inspect each item as it's scanned rather than
-    assuming they're all in the same shape). Mixing both forms in one
-    request is fine. return_remarks stays a single value applied to
-    every row either way -- per-item remarks wasn't worth the extra UI
-    for either caller."""
+    transaction_ids entries can be a plain int (uses the top-level
+    condition_in, for the table's checkbox batch return) or
+    {"id", "condition_in"} (per-item override, for the scan-return modal
+    where staff inspect each scanned item). Both forms can mix in one
+    request. return_remarks is always a single value for the whole batch."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1595,9 +1505,8 @@ def renew_form(id):
 @limiter.limit("20 per minute")
 def renew_transaction(id):
     """Pushes a loan's due date out (or corrects it) without touching
-    time_out/status -- the loan stays 'borrowed' throughout. Reuses
-    validate_due_date so "a valid, non-past date" means exactly the same
-    thing here as it does at checkout time."""
+    time_out/status. Reuses validate_due_date so the same rules apply
+    here as at checkout."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1622,15 +1531,10 @@ def renew_transaction(id):
     conn.execute("UPDATE transactions SET due_date = ? WHERE id = ?", (new_due_date, id))
     conn.commit()
 
-    # A renewal that pushes the due date back into the future is exactly
-    # the kind of thing that should un-overdue a member -- same check the
-    # return flow runs after _finalize_return, reused here so "no longer
-    # has anything overdue" means the same thing from either path.
+    # pushing the due date forward can un-overdue a member -- same check the return flow runs
     check_and_lift_restriction_if_resolved(transaction["member_id"], conn)
 
-    # transaction itself (a plain SELECT * from transactions) has no
-    # asset/member names, only their ids -- looked up before conn.close()
-    # below purely for a readable Activity Log target.
+    # look up asset/member names before closing conn, just for a readable Activity Log entry
     txn_asset = conn.execute(
         "SELECT asset_id FROM assets WHERE id = ?", (transaction["asset_id"],)
     ).fetchone()
@@ -1683,8 +1587,8 @@ def list_open_checkout_sessions():
 @transactions_bp.route("/checkout-sessions/<int:id>/checkout", methods=["POST"])
 @login_required
 def checkout_session(id):
-    """The actual commit point. Nothing lands in `transactions` until this
-    is called — everything scanned before this is just a reservation."""
+    """The actual commit point -- nothing lands in `transactions` until
+    this runs; everything scanned before it is just a reservation."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1725,8 +1629,7 @@ def checkout_session(id):
         "SELECT * FROM members WHERE id = ?", (session["member_id"],)
     ).fetchone()
 
-    # Re-check eligibility at the actual moment of commitment, not just at
-    # cart-creation time — status may have changed while scanning.
+    # re-check eligibility at commit time, not just cart-creation -- status may have changed while scanning
     if check_and_restrict_overdue_member(member["id"], conn):
         conn.close()
         return (

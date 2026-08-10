@@ -30,19 +30,24 @@
         <h3 class="font-bold text-lg leading-snug">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ member.member_code }} &middot; {{ member.barcode_id }}</p>
       </div>
-      <button type="button" class="btn btn-sm btn-circle btn-ghost" onclick="this.closest('.fixed').remove()" aria-label="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+           close button for the full reasoning. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
+              onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
+        ESC
       </button>
     </div>
 
     <!-- Two-column body -->
     <div class="flex-1 flex min-h-0 overflow-hidden">
 
-      <!-- Left: main details -->
-      <div class="flex-1 overflow-y-auto min-h-0 p-5">
+      <!-- Left: main details. overflow-hidden (not overflow-y-auto) here --
+           only the history panel below (flex-1 min-h-0) should scroll; the
+           banner/info box above it have fixed height and shouldn't. -->
+      <div class="flex-1 flex flex-col min-h-0 overflow-hidden p-5">
 
         {% if member.is_restricted %}
-        <div class="bg-warning/10 rounded-lg p-3 mb-4 border border-warning/20">
+        <div class="bg-warning/10 rounded-lg p-3 mb-4 border border-warning/20 shrink-0">
           <p class="text-xs font-semibold text-warning tracking-wide mb-1">CURRENTLY RESTRICTED</p>
           <p class="text-sm text-base-content/70">{{ member.restriction_reason }}</p>
           {% if pending_unrestriction_request %}
@@ -57,7 +62,7 @@
         {% endif %}
 
         <!-- Member info: compact key-value list -->
-        <div class="bg-base-200/50 rounded-xl p-4">
+        <div class="bg-base-200/50 rounded-xl p-4 shrink-0">
           <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">MEMBER INFO</p>
           <div class="space-y-2.5">
             <div class="flex items-center justify-between gap-3">
@@ -83,22 +88,48 @@
           </div>
         </div>
 
-        <!-- Tabs: Borrow History / Restriction History -->
-        <div class="mt-5">
-          <div role="tablist" class="tabs tabs-boxed w-fit">
+        <!-- Tabs: Borrow History / Restriction History. This is the one
+             section allowed to grow/scroll -- tab bar stays put (shrink-0),
+             only the visible panel's own result list scrolls. -->
+        <div class="mt-5 flex-1 flex flex-col min-h-0">
+          <div role="tablist" class="tabs tabs-boxed w-fit shrink-0">
             <a role="tab" id="profile-tab-history" class="tab tab-active">Borrow History</a>
             <a role="tab" id="profile-tab-restrictions" class="tab">Restriction History</a>
           </div>
 
-          <div id="profile-history-panel" class="mt-4 min-h-[6rem]">
-            <div class="flex justify-center py-8">
-              <span class="loading loading-spinner loading-sm text-primary"></span>
+          <!-- Wrapped so "View Full History" stays pinned below the
+               scrollable list instead of scrolling with it. Both panels
+               only show their 3 most recent entries (sliced client-side);
+               the link opens a paginated modal stacked on top instead of navigating away. -->
+          <div id="profile-history-panel-wrap" class="mt-4 flex-1 flex flex-col min-h-0">
+            <div id="profile-history-panel" class="flex-1 overflow-y-auto min-h-[6rem] pr-1 -mr-1">
+              <div class="flex justify-center py-8">
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+              </div>
+            </div>
+            <div class="shrink-0 pt-2 border-t border-base-200 mt-2">
+              <button type="button" class="text-xs font-medium text-primary hover:underline"
+                      hx-get="/api/v1/members/{{ member.id }}/borrow-history-modal"
+                      hx-target="#modal-container"
+                      hx-swap="beforeend">
+                View Full History &rarr;
+              </button>
             </div>
           </div>
 
-          <div id="profile-restrictions-panel" class="mt-4 min-h-[6rem] hidden">
-            <div class="flex justify-center py-8">
-              <span class="loading loading-spinner loading-sm text-primary"></span>
+          <div id="profile-restrictions-panel-wrap" class="mt-4 flex-1 flex flex-col min-h-0 hidden">
+            <div id="profile-restrictions-panel" class="flex-1 overflow-y-auto min-h-[6rem] pr-1 -mr-1">
+              <div class="flex justify-center py-8">
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+              </div>
+            </div>
+            <div id="profile-restrictions-footer" class="shrink-0 pt-2 border-t border-base-200 mt-2 hidden">
+              <button type="button" class="text-xs font-medium text-primary hover:underline"
+                      hx-get="/api/v1/members/{{ member.id }}/restriction-history-modal"
+                      hx-target="#modal-container"
+                      hx-swap="beforeend">
+                View Full History &rarr;
+              </button>
             </div>
           </div>
         </div>
@@ -210,20 +241,25 @@
 
   const historyTab = document.getElementById('profile-tab-history');
   const restrictionsTab = document.getElementById('profile-tab-restrictions');
+  // Toggles the whole wrap (list + "View Full History" link) as one unit,
+  // not just the scrollable list -- see the wrap's own comment above.
+  const historyPanelWrap = document.getElementById('profile-history-panel-wrap');
   const historyPanel = document.getElementById('profile-history-panel');
+  // Same whole-wrap toggle as history above.
+  const restrictionsPanelWrap = document.getElementById('profile-restrictions-panel-wrap');
   const restrictionsPanel = document.getElementById('profile-restrictions-panel');
 
   historyTab.addEventListener('click', function () {
     historyTab.classList.add('tab-active');
     restrictionsTab.classList.remove('tab-active');
-    historyPanel.classList.remove('hidden');
-    restrictionsPanel.classList.add('hidden');
+    historyPanelWrap.classList.remove('hidden');
+    restrictionsPanelWrap.classList.add('hidden');
   });
   restrictionsTab.addEventListener('click', function () {
     restrictionsTab.classList.add('tab-active');
     historyTab.classList.remove('tab-active');
-    restrictionsPanel.classList.remove('hidden');
-    historyPanel.classList.add('hidden');
+    restrictionsPanelWrap.classList.remove('hidden');
+    historyPanelWrap.classList.add('hidden');
   });
 
   function escapeHtml(str) {
@@ -241,7 +277,7 @@
     return `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${escapeHtml(status)}</span>`;
   }
 
-  fetch(`/api/v1/members/${memberId}/transactions?limit=10`)
+  fetch(`/api/v1/members/${memberId}/transactions?limit=3`)
     .then(function (res) { return res.json(); })
     .then(function (data) {
       const results = data.results || [];
@@ -278,16 +314,29 @@
       historyPanel.innerHTML = '<p class="text-center py-8 text-sm text-error">Couldn\'t load borrow history.</p>';
     });
 
+  // Inline teaser depth for both tabs -- the profile modal only ever
+  // shows the 3 most recent of anything; the rest is one click away via
+  // each tab's own "View Full History" link/button.
+  const PROFILE_TEASER_LIMIT = 3;
+
   fetch(`/api/v1/members/${memberId}/restriction-history`)
     .then(function (res) { return res.json(); })
     .then(function (data) {
-      const events = data.restriction_events || [];
-      const requests = data.unrestriction_requests || [];
+      const allEvents = data.restriction_events || [];
+      const allRequests = data.unrestriction_requests || [];
 
-      if (events.length === 0 && requests.length === 0) {
+      if (allEvents.length === 0 && allRequests.length === 0) {
         restrictionsPanel.innerHTML = '<p class="text-center py-8 text-sm text-base-content/40">No restriction history.</p>';
         return;
       }
+
+      // Footer only shows once there's something to view -- unlike borrow
+      // history's link (unconditional there since it's properly paginated),
+      // this one's a flat teaser/full split, see _restriction_history_modal.html.
+      document.getElementById('profile-restrictions-footer').classList.remove('hidden');
+
+      const events = allEvents.slice(0, PROFILE_TEASER_LIMIT);
+      const requests = allRequests.slice(0, PROFILE_TEASER_LIMIT);
 
       let html = '';
       if (events.length > 0) {

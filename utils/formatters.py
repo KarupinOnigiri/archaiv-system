@@ -8,14 +8,8 @@ def full_name(first_name, last_name, middle_name=None, suffix=None):
 
 
 def humanize_label(value):
-    """Turns a snake_case DB value (e.g. asset.condition's 'for_repair')
-    into a display label ('For Repair'). Plain Jinja `capitalize` only
-    touches the first character and leaves the underscore in place --
-    fine for single-word values like 'functional' or 'disposed', but it
-    rendered the literal string "For_repair" everywhere condition was
-    shown, since that's the one condition value with more than one word.
-    Safe to use on any snake_case enum-like column, not just condition --
-    single-word values pass through capitalize's usual behavior unchanged."""
+    """Turns a snake_case value into a display label, e.g. 'for_repair' -> 'For Repair'.
+    Jinja's `capitalize` leaves the underscore in place, so it rendered "For_repair"."""
     if not value:
         return value
     return value.replace("_", " ").title()

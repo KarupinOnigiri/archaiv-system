@@ -16,7 +16,11 @@
    entry -- there's one list, not a checklist plus a separate cart. #}
 <dialog id="return-scan-modal" class="modal" open>
   <div class="modal-box max-w-[33.6rem]">
-    <h3 class="font-bold text-lg mb-1">Return Items</h3>
+    <div class="flex justify-between items-start">
+      <h3 class="font-bold text-lg mb-1">Return Items</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p id="return-scan-step-hint" class="text-sm text-base-content/60 mb-3">Scan or enter the member's barcode to start.</p>
 
     <!-- Step 1: identify the returning member -->

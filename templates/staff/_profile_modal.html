@@ -30,19 +30,23 @@
         <h3 class="font-bold text-lg leading-snug">{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "—" }} &middot; @{{ staff_member.username }}</p>
       </div>
-      <button type="button" class="btn btn-sm btn-circle btn-ghost" onclick="this.closest('.fixed').remove()" aria-label="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      <!-- ESC pill instead of an X icon -- see assets/_details_modal.html for why. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
+              onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
+        ESC
       </button>
     </div>
 
     <!-- Two-column body -->
     <div class="flex-1 flex min-h-0 overflow-hidden">
 
-      <!-- Left: main details -->
-      <div class="flex-1 overflow-y-auto min-h-0 p-5">
+      <!-- overflow-hidden not overflow-y-auto -- the banners/info box above have
+           fixed height and shouldn't scroll; only Account Activity's own list
+           further down grows unbounded and gets a scrollbar. -->
+      <div class="flex-1 flex flex-col min-h-0 overflow-hidden p-5">
 
         {% if is_locked %}
-        <div class="bg-warning/10 rounded-lg p-3 mb-4 border border-warning/20">
+        <div class="bg-warning/10 rounded-lg p-3 mb-4 border border-warning/20 shrink-0">
           <p class="text-xs font-semibold text-warning tracking-wide mb-1">ACCOUNT LOCKED</p>
           <p class="text-sm text-base-content/70">
             {% if staff_member.locked_until == INDEFINITE_LOCK_UNTIL %}
@@ -53,21 +57,22 @@
           </p>
         </div>
         {% elif not staff_member.is_active %}
-        <div class="bg-base-300/60 rounded-lg p-3 mb-4 border border-base-300">
+        <div class="bg-base-300/60 rounded-lg p-3 mb-4 border border-base-300 shrink-0">
           <p class="text-xs font-semibold text-base-content/60 tracking-wide mb-1">ACCOUNT INACTIVE</p>
           <p class="text-sm text-base-content/70">This account no longer has system access.</p>
         </div>
         {% endif %}
 
         {% if pending_deactivation_request %}
-        <div class="bg-error/10 rounded-lg p-3 mb-4 border border-error/20">
+        <div class="bg-error/10 rounded-lg p-3 mb-4 border border-error/20 shrink-0">
           <p class="text-xs font-semibold text-error tracking-wide mb-1">DEACTIVATION REQUESTED</p>
           <p class="text-sm text-base-content/70">
             Requested by @{{ pending_deactivation_request.requested_by_username }} on {{ pending_deactivation_request.created_at | format_date('%b %d, %Y') }}: {{ pending_deactivation_request.reason }}
           </p>
           <div class="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-error/20">
             <p class="text-xs text-error/80">
-              {{ pending_deactivation_request.approvals_received }}/{{ pending_deactivation_request.required_approvals }} {{ pending_deactivation_request.required_tier.replace("_", " ") }} approval(s) so far.
+              {{ pending_deactivation_request.approvals_received }}/{{ pending_deactivation_request.required_approvals }} approved
+              ({{ pending_deactivation_request.in_charge_approvals_received }}/{{ pending_deactivation_request.required_in_charge }} in_charge) so far.
             </p>
             <a href="/requests" class="btn btn-xs btn-error btn-outline shrink-0">View</a>
           </div>
@@ -75,7 +80,7 @@
         {% endif %}
 
         <!-- Staff info: compact key-value list -->
-        <div class="bg-base-200/50 rounded-xl p-4">
+        <div class="bg-base-200/50 rounded-xl p-4 shrink-0">
           <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">STAFF INFO</p>
           <div class="space-y-2.5">
             <div class="flex items-center justify-between gap-3">
@@ -104,15 +109,9 @@
                 {% endif %}
               </span>
             </div>
-            <!-- Usage -- same remaining-days/Indefinite/Expired reasoning
-                 as the staff table's USAGE column (routes/staff.py's
-                 compute_usage_status), just spelled out in full sentence
-                 form here instead of a compact badge since there's room
-                 for it. Omitted entirely for admin/in_charge (usage_status
-                 is None for them) and for a tool_keeper with no window
-                 set yet -- the Assigned row above already covers both of
-                 those cases ("Permanent" / "Not set"), so repeating either
-                 here would be redundant rather than informative. -->
+            <!-- Same usage logic as the table's USAGE badge, spelled out in full sentences.
+                 Hidden for admin/in_charge and a windowless tool_keeper since Assigned
+                 above already covers those cases. -->
             {% if usage_status %}
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Usage</span>
@@ -139,17 +138,29 @@
         </div>
 
         {% if can_manage %}
-        <!-- Activity tab -- admin-only, see staff_profile()'s docstring in
-             routes/staff.py for why non-admins don't get this: the backing
-             endpoint can't actually scope by staff_id for them. -->
-        <div class="mt-5">
-          <div role="tablist" class="tabs tabs-boxed w-fit">
+        <!-- Activity tab is admin-only since the backing endpoint can't scope by
+             staff_id for non-admins (see staff_profile() in routes/staff.py). Only
+             this section scrolls; the tab bar stays put. -->
+        <div class="mt-5 flex-1 flex flex-col min-h-0">
+          <div role="tablist" class="tabs tabs-boxed w-fit shrink-0">
             <a role="tab" id="profile-tab-activity" class="tab tab-active">Account Activity</a>
           </div>
 
-          <div id="profile-activity-panel" class="mt-4 min-h-[6rem]">
-            <div class="flex justify-center py-8">
-              <span class="loading loading-spinner loading-sm text-primary"></span>
+          <div class="mt-4 flex-1 flex flex-col min-h-0">
+            <div id="profile-activity-panel" class="flex-1 overflow-y-auto min-h-[6rem] pr-1 -mr-1">
+              <div class="flex justify-center py-8">
+                <span class="loading loading-spinner loading-sm text-primary"></span>
+              </div>
+            </div>
+            <!-- Stacks _full_activity_modal.html on top rather than navigating to
+                 /audit-log -- that used to replace this profile modal outright. -->
+            <div class="shrink-0 pt-2 border-t border-base-200 mt-2">
+              <button type="button" class="text-xs font-medium text-primary hover:underline"
+                      hx-get="/api/v1/staff/{{ staff_member.id }}/full-activity-modal"
+                      hx-target="#modal-container"
+                      hx-swap="beforeend">
+                View Full Activity &rarr;
+              </button>
             </div>
           </div>
         </div>
@@ -196,14 +207,9 @@
             <span class="text-sm font-medium text-right">{{ staff_member.barcode_id }}</span>
           </div>
           {% if can_manage %}
-          <!-- RFID keycard/tag -- admin-only, both here and in the Edit
-               modal (see staff/_edit_modal.html). Laying the groundwork
-               for a future RFID-based access/login protocol; not every
-               staff account will have a card issued yet, hence the
-               "Not assigned" fallback rather than hiding the row
-               entirely when empty -- an admin scanning this profile
-               should be able to tell "no card on file" apart from
-               "I can't see this field". -->
+          <!-- RFID card, admin-only same as the Edit modal. Shows "Not assigned"
+               instead of hiding the row -- an admin should be able to tell "no
+               card on file" apart from "I can't see this field". -->
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">RFID card</span>
             <span class="text-sm font-medium text-right {% if not staff_member.rfid_id %}text-base-content/40{% endif %}">{{ staff_member.rfid_id or "Not assigned" }}</span>
@@ -244,7 +250,9 @@
         {% if staff_member.is_active %}
           {% if staff_member.role == "admin" %}
           <button type="button" class="btn btn-outline btn-error"
-                  onclick="requestStaffDeactivation({{ staff_member.id }})">
+                  hx-get="/api/v1/staff/{{ staff_member.id }}/request-deactivation-form"
+                  hx-target="#modal-container"
+                  hx-swap="beforeend">
             Request Deactivation
           </button>
           {% else %}
@@ -257,21 +265,17 @@
           {% endif %}
         {% else %}
         <button type="button" class="btn btn-outline btn-success"
-                onclick="staffAction('/api/v1/staff/{{ staff_member.id }}/reactivate', 'Reactivate this account?', 'Account reactivated')">
+                hx-get="/api/v1/staff/{{ staff_member.id }}/reactivate-confirm"
+                hx-target="#modal-container"
+                hx-swap="beforeend">
           Reactivate
         </button>
         {% endif %}
 
         {% if staff_member.role != "admin" %}
-        <!-- Reassign Usage -- same quick door as the staff table's row
-             action (staff/_table.html); shown here too since this
-             profile panel is the other place someone's likely to be
-             looking right before deciding to extend/reassign someone's
-             access. Always available for a tool_keeper account, not
-             gated behind it already being expired/expiring -- reassigning
-             ahead of time (e.g. extending someone who's still well
-             within their window) is just as valid a use as fixing one
-             that's already lapsed. -->
+        <!-- Same shortcut as the table's row action. Always shown, not just when
+             expired/expiring -- extending someone ahead of time is just as valid
+             a use as fixing a lapsed window. -->
         <button type="button" class="btn btn-outline"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/reassign-form"
                 hx-target="#modal-container"
@@ -304,7 +308,7 @@
     return div.innerHTML;
   }
 
-  fetch(`/api/v1/audit-log?staff_id=${staffId}&limit=15`)
+  fetch(`/api/v1/audit-log?staff_id=${staffId}&limit=20`)
     .then(function (res) { return res.json(); })
     .then(function (data) {
       const results = data.results || [];

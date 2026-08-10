@@ -64,12 +64,9 @@ def require_session(conn):
 
 
 def cleanup_expired_sessions():
-    """Deletes session rows that are expired or have gone past the idle
-    timeout, even if nobody ever tried to use that token again. Sessions
-    are also lazily deleted the moment someone attempts to use a stale
-    token (see require_session above), but an abandoned session — browser
-    closed, kiosk terminal power-cycled mid-shift — would otherwise sit in
-    the table indefinitely. Run on a schedule so it doesn't grow unbounded."""
+    """Deletes expired/idle-timed-out session rows even if nobody ever tries
+    that token again -- otherwise an abandoned session (browser closed,
+    kiosk power-cycled) sits in the table forever. Run on a schedule."""
     conn = get_db_connection()
     try:
         idle_minutes = get_session_idle_minutes(conn)
@@ -87,22 +84,6 @@ def cleanup_expired_sessions():
         logger.warning(f"Failed to clean up expired sessions: {e}")
     finally:
         conn.close()
-
-
-def validate_staff(staff_id, conn):
-    """Returns (staff_row, error_response) — staff_row is None if invalid."""
-    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
-
-    if staff is None:
-        return None, (
-            jsonify({"error": "Invalid staff_id: staff member not found"}),
-            404,
-        )
-
-    if not staff["is_active"]:
-        return None, (jsonify({"error": "This staff account is not active"}), 403)
-
-    return staff, None
 
 
 def login_required(f):
@@ -125,20 +106,15 @@ def login_required(f):
 
 def feature_required(name, redirect_to_dashboard=True):
     """Gates a route behind an admin-controlled feature flag (see
-    services/settings_service.py's FEATURE_FLAGS, migrations/0033_feature_flags.sql).
+    settings_service.FEATURE_FLAGS).
 
-    redirect_to_dashboard=True (the default, for the *_page view functions
-    in routes/pages.py) sends a disabled-tab visit back to '/' with a
-    ?feature_disabled=<label> query param base.html's JS picks up and
-    toasts -- this app has no server-side flash(), so a query param is the
-    established way to hand a one-shot message across a redirect.
+    redirect_to_dashboard=True (default, for page view functions) redirects
+    to '/' with a ?feature_disabled=<label> param that base.html's JS toasts
+    -- this app has no server-side flash(), so that's the one-shot-message
+    trick across a redirect. redirect_to_dashboard=False (for blueprint
+    before_request hooks) returns a plain JSON 403 instead.
 
-    redirect_to_dashboard=False (for use in a blueprint's before_request,
-    see routes/assets.py etc.) returns a plain JSON 403 instead, matching
-    every other error response those API blueprints already give.
-
-    Stacks under @roles_required/@login_required -- put this decorator
-    closest to the view function so the role check still runs first."""
+    Stack this closest to the view function, under @roles_required/@login_required."""
 
     def decorator(f):
         @wraps(f)

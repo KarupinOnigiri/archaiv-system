@@ -1,13 +1,10 @@
 """
 Backs up toolroom.db using SQLite's online backup API.
 
-This is deliberately NOT a plain file copy. With WAL mode enabled, the
-"real" state of the database is spread across toolroom.db plus its
--wal and -shm sidecar files, and a live write can be in progress at the
-exact moment a cron job fires. sqlite3's Connection.backup() takes a
-consistent snapshot safely while the app keeps running, and produces a
-single self-contained .db file — the only kind of backup worth keeping
-on failure-prone SD-card storage.
+Deliberately not a plain file copy: WAL mode spreads the "real" state across
+toolroom.db plus -wal/-shm sidecar files, and a write could be mid-flight
+when the cron job fires. Connection.backup() takes a safe consistent
+snapshot while the app keeps running and produces one self-contained file.
 
 Usage:
     python backup_db.py                  # backs up to ./backups
@@ -26,11 +23,8 @@ ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
 DB_PATH = os.path.join(ROOT_DIR, "instance", "toolroom.db")
 DEFAULT_BACKUP_DIR = os.path.join(ROOT_DIR, "backups")
 
-# How many backups to keep before pruning the oldest. At one run/day this
-# is ~2 weeks of history; adjust to taste. Pruning only ever deletes files
-# matching the toolroom_*.db pattern this script itself writes, never
-# anything else that might be in the backup directory.
-KEEP_LAST_N = 14
+# Backups to keep before pruning oldest; only ever deletes toolroom_*.db files it wrote itself.
+KEEP_LAST_N = 5
 
 
 def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
@@ -41,9 +35,7 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
     try:
         os.makedirs(backup_dir, exist_ok=True)
     except OSError as e:
-        # Most common cause on a Pi: backup_dir points at a USB drive that
-        # isn't mounted right now. Fail loudly rather than silently
-        # skipping the backup.
+        # Usually means backup_dir is an unmounted USB drive on a Pi -- fail loudly, don't skip silently.
         print(f"ERROR: could not create/access backup directory {backup_dir}: {e}")
         sys.exit(1)
 
@@ -58,8 +50,7 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
         print(f"Backup written to {backup_path}")
     except Exception as e:
         print(f"ERROR: backup failed: {e}")
-        # Remove a partial/corrupt backup file rather than leaving it
-        # around looking like a valid one.
+        # Don't leave a partial/corrupt file around looking like a valid backup.
         if os.path.exists(backup_path):
             os.remove(backup_path)
         sys.exit(1)

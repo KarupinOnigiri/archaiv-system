@@ -1,0 +1,115 @@
+{% if transactions %}
+<table class="table table-sm w-full" data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
+  <thead>
+    <tr class="text-xs text-base-content/50">
+      <th class="font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">Item</th>
+      <th class="font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">Out</th>
+      <th class="font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">In</th>
+      <th class="font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for tx in transactions %}
+    <tr class="border-t border-base-200">
+      <td class="py-2">
+        <div class="font-medium">{{ tx.asset_name }}</div>
+        <div class="text-xs text-base-content/40">{{ tx.asset_code }}</div>
+      </td>
+      <td class="py-2 text-xs text-base-content/60">{{ tx.time_out }}</td>
+      <td class="py-2 text-xs text-base-content/60">{{ tx.time_in or "—" }}</td>
+      <td class="py-2">
+        {% if tx.status == "borrowed" %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-info/15 text-info">borrowed</span>
+        {% elif tx.status == "returned" %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-success/15 text-success">returned</span>
+        {% else %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-base-300 text-base-content/60">{{ tx.status }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-center py-8 text-sm text-base-content/40">No borrow history yet.</p>
+{% endif %}
+
+<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+     members/staff/transactions/notifications/audit-log. -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/members/{{ member_id }}/borrow-history-modal/table"
+            hx-trigger="change"
+            hx-target="#borrow-history-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#borrow-history-spinner"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0}'>
+      <option value="5" {% if limit == 5 %}selected{% endif %}>5</option>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }}
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            data-tooltip="Previous page" aria-label="Previous page"
+            hx-get="/api/v1/members/{{ member_id }}/borrow-history-modal/table"
+            hx-target="#borrow-history-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#borrow-history-spinner"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/members/{{ member_id }}/borrow-history-modal/table"
+                hx-target="#borrow-history-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#borrow-history-spinner"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }} }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            data-tooltip="Next page" aria-label="Next page"
+            hx-get="/api/v1/members/{{ member_id }}/borrow-history-modal/table"
+            hx-target="#borrow-history-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#borrow-history-spinner"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }} }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>

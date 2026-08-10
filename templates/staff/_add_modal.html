@@ -1,24 +1,24 @@
 <div class="modal modal-open">
-  <!-- Wide (max-w-4xl, vs. the app's usual max-w-md/lg/2xl) specifically
-       so every field fits without this modal needing its own scroll
-       area -- no inner flex/overflow wrapper or custom scrollbar here
-       anymore; modal-box's own built-in overflow handling (daisyUI) is
-       the only safety net left, for a viewport short enough that even a
-       wide, short-as-possible layout still can't fit -- not something
-       styled/managed here, just the honest fallback. -->
-  <div class="modal-box max-w-4xl p-0">
+  <!-- Wider than usual (max-w-4xl) so most fields fit side by side; still
+       capped/scrolling like every other modal rather than growing past the viewport. -->
+  <div class="modal-box max-w-4xl p-0 flex flex-col max-h-[85vh]">
 
-    <div class="p-6 pb-4">
+    <div class="p-6 pb-4 shrink-0">
       <div class="flex justify-between items-start">
         <div>
           <h3 class="font-bold text-xl">Add New Staff</h3>
           <p class="text-sm text-base-content/50 mt-1">Grant system access to an existing member.</p>
         </div>
+        <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
       </div>
 
-      <div id="add-staff-error" class="alert alert-error text-sm mt-4 py-2 hidden"></div>
+      <!-- Always in the DOM, just `invisible` when empty -- keeps its height
+           reserved so the layout doesn't jump when an error appears. -->
+      <div id="add-staff-error" class="alert alert-error text-sm mt-4 py-2 invisible"></div>
     </div>
 
+    <div class="flex-1 overflow-y-auto min-h-0">
     <form id="add-staff-form" onsubmit="submitAddStaffForm(event)">
       <div class="px-6 pb-2">
       <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
@@ -32,11 +32,9 @@
             <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="clearEligibleMember()">Change</button>
           </div>
 
-          <!-- Type-ahead search (name / member code / barcode) rather than a
-               preloaded <select> -- with enough members, a full dropdown
-               stops scaling and makes finding the right person tedious.
-               Barcode scanners just type the code + Enter, so the same box
-               covers that case too without a separate field. -->
+          <!-- Type-ahead search instead of a preloaded <select> -- a full dropdown
+               stops scaling once there are enough members. Also doubles as the
+               barcode-scanner input, since scanners just type the code + Enter. -->
           <div id="member-picker-search-wrap" class="mt-1 relative">
             <input type="text" id="member-search-input" placeholder="Search by name, member code, or barcode..." autocomplete="off"
                    class="input input-bordered w-full bg-base-100"
@@ -58,7 +56,7 @@
               </button>
               <button type="button" id="clear-member-picker-btn"
                       class="btn btn-ghost btn-circle text-error hover:bg-error/10 hidden w-4 h-4 min-h-0 p-0"
-                      aria-label="Clear results" title="Clear results"
+                      aria-label="Clear results" data-tooltip="Clear results"
                       onclick="dismissEligibleMemberResults()">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
               </button>
@@ -82,7 +80,8 @@
           </div>
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE <span class="text-error">*</span></label>
-            <select name="role" required class="select select-bordered w-full mt-1 bg-base-100">
+            <select name="role" id="add-staff-role" required class="select select-bordered w-full mt-1 bg-base-100"
+                    onchange="handleAddStaffRoleChange(this)">
               <option value="" disabled selected hidden>Select Role</option>
               <option value="tool_keeper">Tool Keeper</option>
               <option value="in_charge">In Charge</option>
@@ -101,14 +100,10 @@
             <input type="date" name="assigned_end" id="add-staff-assigned-end" class="input input-bordered w-full mt-1 bg-base-100">
           </div>
         </div>
-        <!-- Quick-set shortcuts -- Tool Keeper accounts actually require
-             both dates to log in (routes/auth.py's login()), so "leave it
-             blank" below isn't really an option for that role in
-             practice; these cover the three durations staff get assigned
-             for most often without hand-picking an end date. Permanent
-             writes PERMANENT_ASSIGNED_END (a Jinja global set in app.py)
-             rather than leaving assigned_end blank, since blank still
-             means "not set, can't log in" for a Tool Keeper. -->
+        <!-- Quick-set shortcuts for the three durations staff get assigned most
+             often. "Permanent" writes the PERMANENT_ASSIGNED_END sentinel instead
+             of leaving assigned_end blank -- blank still means "not set, can't
+             log in" for a Tool Keeper (see routes/auth.py's login()). -->
         <div class="flex flex-wrap gap-2 -mt-2">
           <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset('permanent')">Permanent</button>
           <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset(180)">6 Months</button>
@@ -124,7 +119,7 @@
       </div>
       </div>
 
-      <div class="modal-action flex justify-between items-center border-t border-base-300 px-6 py-4 m-0">
+      <div class="modal-action flex justify-between items-center border-t border-base-300 px-6 py-4 m-0 sticky bottom-0 bg-base-100">
         <button type="button" onclick="document.getElementById('add-staff-form').reset(); clearEligibleMember();" class="text-sm text-base-content/50 hover:text-base-content">
           Clear form
         </button>
@@ -134,15 +129,13 @@
         </div>
       </div>
     </form>
+    </div>
   </div>
 </div>
 
 <script>
-// Assigned-window quick presets -- see the comment above the buttons in
-// the form for why "Permanent" writes a sentinel date instead of leaving
-// assigned_end blank. Start defaults to today only if it's still empty,
-// so re-clicking a different preset after already picking a start date
-// doesn't stomp on it.
+// Start defaults to today only if it's still empty, so re-clicking a different
+// preset after already picking a start date doesn't stomp on it.
 const ADD_STAFF_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
 
 function formatDateLocalAddStaff(d) {
@@ -166,13 +159,24 @@ function setAddStaffAssignedPreset(preset) {
   endInput.value = formatDateLocalAddStaff(end);
 }
 
-// Type-ahead member picker: clicking a search result (rendered by
-// staff/_eligible_member_results.html) calls this to record the choice
-// and swap the search box for a confirmation card. Reads id/label off
-// data-* attributes (safely HTML-escaped by normal Jinja templating)
-// rather than taking them as inline JS-string arguments -- interpolating
-// a name straight into an onclick="...(...)" string isn't safe if that
-// name ever contains a quote character.
+// Admin defaults to Permanent the moment that role is picked -- the profile
+// modal already displays every admin as Permanent regardless, so leaving the
+// actual columns null was a gap between the record and how it's shown
+// elsewhere. Only fires when both fields are still empty, so it won't stomp
+// on dates someone already picked before landing on Admin.
+function handleAddStaffRoleChange(select) {
+  if (select.value !== 'admin') return;
+  const startInput = document.getElementById('add-staff-assigned-start');
+  const endInput = document.getElementById('add-staff-assigned-end');
+  if (!startInput.value && !endInput.value) {
+    setAddStaffAssignedPreset('permanent');
+  }
+}
+
+// Clicking a search result calls this to record the choice and swap the search
+// box for a confirmation card. Reads id/label off data-* attributes rather than
+// inline JS-string args -- interpolating a name into onclick="...(...)" isn't
+// safe if it ever contains a quote character.
 function selectEligibleMember(el) {
   const id = el.dataset.memberId;
   const label = el.dataset.memberLabel;
@@ -194,23 +198,16 @@ function clearEligibleMember() {
   input.focus();
 }
 
-// Closes the search/browse results dropdown without picking anyone --
-// called by the red clear button next to "Browse all eligible members",
-// the click-outside listener below, and Escape while the search box is
-// focused. Leaves whatever text is in the search input alone (only
-// clears the results panel itself), so someone who typed a partial name
-// and then backed out doesn't lose it.
+// Closes the results dropdown without picking anyone. Only clears the results
+// panel, not the search input, so a partially-typed name isn't lost.
 function dismissEligibleMemberResults() {
   const results = document.getElementById('eligible-member-results');
   if (results) results.innerHTML = '';
 }
 
-// The red clear button only makes sense to show once there's actually
-// something to clear. Rather than toggling it by hand at every place
-// that can populate or empty #eligible-member-results (typeahead,
-// initial browse, load-more appends, dismiss), a MutationObserver just
-// watches that container directly -- so the button shows/hides itself
-// correctly no matter which of those triggered the change.
+// Rather than toggling the clear button by hand everywhere the results list
+// can change, a MutationObserver just watches the container and shows/hides
+// it automatically.
 (function () {
   const results = document.getElementById('eligible-member-results');
   const clearBtn = document.getElementById('clear-member-picker-btn');
@@ -222,10 +219,8 @@ function dismissEligibleMemberResults() {
   syncClearBtn();
 })();
 
-// Click anywhere outside the search box / browse button / results panel
-// closes the dropdown, same as a normal search-suggestions UI. Guarded
-// so re-opening this modal several times (Cancel, then Add New Staff
-// again) doesn't stack up duplicate listeners on document.
+// Click outside the search box/results closes the dropdown. Guarded so
+// reopening this modal repeatedly doesn't stack duplicate listeners.
 if (!window.__eligibleMemberDismissListenerAdded) {
   window.__eligibleMemberDismissListenerAdded = true;
   document.addEventListener('click', function (e) {
@@ -237,10 +232,8 @@ if (!window.__eligibleMemberDismissListenerAdded) {
   });
 }
 
-// Escape while typing in the search box dismisses just the dropdown.
-// stopPropagation keeps this from also bubbling up to base.html's
-// shared modal-closing Escape handler -- cancelling the picker
-// shouldn't also throw away the rest of the Add Staff form.
+// Escape in the search box dismisses just the dropdown -- stopPropagation keeps
+// it from also triggering base.html's Escape handler and closing the whole form.
 document.getElementById('member-search-input').addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     e.stopPropagation();
@@ -249,21 +242,18 @@ document.getElementById('member-search-input').addEventListener('keydown', funct
   }
 });
 
-// /api/v1/staff/add is a JSON-only endpoint (get_json_or_error() +
-// jsonify() responses, no HTML re-render on error) -- so this posts via
-// fetch instead of a plain htmx form submission, and shows errors inline
-// itself rather than relying on the server to re-render this partial with
-// an `error` variable the way e.g. Members' modals do.
+// /api/v1/staff/add is JSON-only (no HTML re-render on error), so this posts
+// via fetch and shows errors inline instead of relying on a server re-render.
 async function submitAddStaffForm(event) {
   event.preventDefault();
   const form = document.getElementById('add-staff-form');
   const errorBox = document.getElementById('add-staff-error');
-  errorBox.classList.add('hidden');
+  errorBox.classList.add('invisible');
 
   const memberId = document.getElementById('member-id-input').value;
   if (!memberId) {
     errorBox.textContent = 'Search for and select a member first.';
-    errorBox.classList.remove('hidden');
+    errorBox.classList.remove('invisible');
     return;
   }
 
@@ -289,7 +279,7 @@ async function submitAddStaffForm(event) {
 
     if (!res.ok) {
       errorBox.textContent = result.error || "That account couldn't be created";
-      errorBox.classList.remove('hidden');
+      errorBox.classList.remove('invisible');
       return;
     }
 
@@ -300,7 +290,7 @@ async function submitAddStaffForm(event) {
     window.location.reload();
   } catch (err) {
     errorBox.textContent = "That account couldn't be created";
-    errorBox.classList.remove('hidden');
+    errorBox.classList.remove('invisible');
   }
 }
 </script>

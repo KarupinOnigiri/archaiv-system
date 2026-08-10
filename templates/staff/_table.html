@@ -1,9 +1,8 @@
 {% from "_icons.html" import icon_eye, icon_edit, icon_shield_alert, icon_shield_check, icon_trash, icon_user_check %}
 
 {% set can_manage = staff.role == "admin" %}
-{# Bulk actions reuse the exact same admin-only gate as the single-row
-   Deactivate/Reactivate/Unlock actions in this table's own dropdown --
-   both bulk-deactivate and bulk-reactivate routes are @roles_required("admin"). #}
+{# Bulk actions reuse the same admin-only gate as the row dropdown's actions --
+   both bulk routes are @roles_required("admin"). #}
 {% set can_bulk_act = can_manage %}
 
 {% macro sort_header(label, col) %}
@@ -31,11 +30,10 @@
 </th>
 {% endmacro %}
 
-<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}">
+<table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
-    <!-- Checkbox column, unconditional (same reasoning as Members'/Inventory's):
-         keeps the column count -- and everything to its right, including the
-         pagination footer -- from shifting sideways depending on who's viewing it. -->
+    <!-- Checkbox column is unconditional, same as Members'/Inventory's -- keeps
+         the columns from shifting depending on who's viewing it. -->
     <col style="width: 2.5rem">
     <col style="width: 17%">
     <col style="width: 10%">
@@ -52,7 +50,7 @@
       <th class="py-2 w-8 sticky top-0 z-10 bg-base-100 border-b border-base-300">
         {% if can_bulk_act %}
         <input type="checkbox" id="select-all-checkbox" class="checkbox checkbox-sm"
-               aria-label="Select all rows on this page" title="Select all rows on this page">
+               aria-label="Select all rows on this page" data-tooltip="Select all rows on this page">
         {% endif %}
       </th>
       {{ sort_header("STAFF", "name") }}
@@ -107,13 +105,9 @@
         {% elif row.role == "in_charge" %}
         <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-info/10 text-info">In Charge</span>
         {% else %}
-        <!-- whitespace-nowrap -- "Tool Keeper" was wrapping onto two lines
-             in this column's tight width, inflating every row's height.
-             The badge is allowed to overflow its <td> a touch instead
-             (table-fixed only fixes column *track* widths, not content
-             clipping) -- a few px of visual overflow into the roomy
-             DEPARTMENT column next to it reads far better than every row
-             in the table being twice as tall. -->
+        <!-- whitespace-nowrap -- "Tool Keeper" was wrapping onto two lines and
+             inflating row height. Letting the badge overflow a touch into the
+             roomy DEPARTMENT column reads better than doubling every row's height. -->
         <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/70">Tool Keeper</span>
         {% endif %}
       </td>
@@ -128,19 +122,13 @@
           {{ row.assigned_start or "—" }} &rarr; {{ row.assigned_end or "—" }}
           {% endif %}
         {% elif row.role == "admin" %}
-        <!-- Admin accounts never have an assigned window -- see
-             routes/auth.py's login() (only tool_keeper's window is
-             actually enforced there) -- so a blank pair here isn't a
-             missing setup step the way it would be for a tool_keeper,
-             it's just "this role doesn't expire". -->
+        <!-- Admin never has an assigned window enforced (only tool_keeper's is,
+             see routes/auth.py's login()), so blank here just means "doesn't expire". -->
         <span class="text-base-content/50">Permanent</span>
         {% elif row.role == "in_charge" %}
-        <!-- in_charge CAN have a real window set (the Add/Edit forms
-             don't restrict these fields by role) -- it's just not
-             enforced at login() the way tool_keeper's is, so a blank
-             pair here is worth flagging as "not set yet" same as
-             tool_keeper, but without claiming it blocks sign-in (it
-             doesn't, today). -->
+        <!-- in_charge can have a window set but it's not enforced at login like
+             tool_keeper's is -- still worth flagging blank as "not set yet",
+             just without implying it blocks sign-in. -->
         <span class="text-warning" data-tooltip="No assignment period set for this In Charge account yet">Not set</span>
         {% else %}
         <span class="text-warning" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
@@ -152,17 +140,17 @@
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60 whitespace-nowrap">Indefinite</span>
         {% elif row.usage_status == "expired" %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-error/10 text-error whitespace-nowrap"
-              title="Assignment window ended {{ row.assigned_end }} -- this account can no longer log in on it">
+              data-tooltip="Assignment window ended {{ row.assigned_end }} -- this account can no longer log in on it">
           Expired {{ -row.usage_days_left }}d ago
         </span>
         {% elif row.usage_status == "expiring_soon" %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning whitespace-nowrap"
-              title="Assignment window ends {{ row.assigned_end }}">
+              data-tooltip="Assignment window ends {{ row.assigned_end }}">
           {% if row.usage_days_left == 0 %}Last day{% elif row.usage_days_left == 1 %}1 day left{% else %}{{ row.usage_days_left }} days left{% endif %}
         </span>
         {% elif row.usage_status == "active" %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-success/10 text-success whitespace-nowrap"
-              title="Assignment window ends {{ row.assigned_end }}">
+              data-tooltip="Assignment window ends {{ row.assigned_end }}">
           {{ row.usage_days_left }} days left
         </span>
         {% else %}
@@ -175,7 +163,7 @@
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60">Inactive</span>
         {% elif row.locked_until %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning whitespace-nowrap"
-              title="{% if row.locked_until == INDEFINITE_LOCK_UNTIL %}Locked indefinitely by an administrator{% else %}Locked until {{ row.locked_until }}{% endif %}">
+              data-tooltip="{% if row.locked_until == INDEFINITE_LOCK_UNTIL %}Locked indefinitely by an administrator{% else %}Locked until {{ row.locked_until }}{% endif %}">
           Locked{% if row.locked_until == INDEFINITE_LOCK_UNTIL %} &infin;{% endif %}
         </span>
         {% else %}
@@ -185,7 +173,8 @@
 
       <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle">
+          <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" data-tooltip="More actions"
+                 aria-label="Row actions for {{ full_name(row.first_name, row.last_name, row.middle_name, row.suffix) }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
           </label>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-52 p-2 z-50">
@@ -231,16 +220,11 @@
               {% if row.role == "admin" %}
               <li>
                 <a class="flex items-center gap-2 text-error"
-                   onclick="requestStaffDeactivation({{ row.id }})">
+                   hx-get="/api/v1/staff/{{ row.id }}/request-deactivation-form" hx-target="#modal-container" hx-swap="innerHTML">
                   {{ icon_trash() }} Request Deactivation
                 </a>
               </li>
               {% else %}
-              <li>
-                <a class="flex items-center gap-2" onclick="requestStaffPromotion({{ row.id }})">
-                  {{ icon_user_check() }} Request Promotion
-                </a>
-              </li>
               <li>
                 <a class="flex items-center gap-2 text-error" hx-get="/api/v1/staff/{{ row.id }}/delete-confirm" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_trash() }} Deactivate</a>
               </li>
@@ -248,7 +232,7 @@
             {% else %}
             <li>
               <a class="flex items-center gap-2 text-success"
-                 onclick="staffAction('/api/v1/staff/{{ row.id }}/reactivate', 'Reactivate this account?', 'Account reactivated')">
+                 hx-get="/api/v1/staff/{{ row.id }}/reactivate-confirm" hx-target="#modal-container" hx-swap="innerHTML">
                 {{ icon_user_check() }} Reactivate
               </a>
             </li>

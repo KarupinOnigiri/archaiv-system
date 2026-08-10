@@ -161,16 +161,48 @@
     pointer-events: none;
     transition: opacity 0.05s ease 0s;
   }
-  /* The account trigger's avatar is the only thing left visible once the
-     sidebar is collapsed (name/chevron are .sidebar-label and hide via the
-     rule above). Centering it here, rather than relying on its normal
-     left-aligned flex layout, keeps it centered under the hover highlight
-     instead of pinned to one side. */
-  #sidebar.collapsed #sidebar-account label,
-  html.sidebar-collapsed-init #sidebar-account label {
-    justify-content: center;
-    padding-left: 0;
-    padding-right: 0;
+  /* Aligns the avatar with the nav icon column above it (24px left inset
+     +10px to each icon's own center = 34px from the sidebar edge) --
+     AND keeps that alignment fixed across collapse/expand, rather than
+     switching between "centered in the narrow collapsed rail" and "first
+     item in the expanded row's normal flow" (two different previous
+     attempts at this: the first kept the same padding-left in both
+     states but landed on the row's own left edge, not the icons' center;
+     the second centered correctly only while collapsed, but jumped back
+     to that same off-center spot the instant the sidebar expanded).
+     One fixed left padding, applied unconditionally regardless of
+     .collapsed, is what actually makes both problems go away at once:
+     avatar left edge = #sidebar-account's own p-3 (12px) + this 8px =
+     20px, avatar center = 20 + half its own 28px width = 34px -- the
+     exact same x the nav icons sit at, in every state, with nothing left
+     to recompute (or visibly jump) when toggling. Confirmed live via
+     getBoundingClientRect() on a nav link's icon vs #sidebar-avatar,
+     collapsed and expanded. */
+  #sidebar-account label {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  /* Vertical half of the same fix -- horizontal alone (rule above) still
+     left the avatar shifting a few px *vertically* on collapse for any
+     staff name long enough to wrap onto the name span's 2nd line
+     (line-clamp-2, further below): that 2-line text is taller than the
+     28px avatar, so the *expanded* row grows taller than the *collapsed*
+     row (which only ever shows the bare avatar, always exactly
+     avatar-height + padding). #sidebar-account sits at the bottom of a
+     flex column with `nav` as the flex-1 item above it, so a shorter
+     collapsed row doesn't just lose height in place -- its top edge
+     actually moves down to stay pinned against the sidebar's bottom
+     edge, taking the centered avatar with it.
+     Applied unconditionally (not scoped to .collapsed) so both states
+     share the exact same floor instead of the collapsed row being forced
+     to match whatever the expanded one happened to need -- confirmed via
+     live measurement (getBoundingClientRect on #sidebar-avatar) that
+     this is what actually makes the two states pixel-identical, not just
+     "usually close" for short names. 3.5rem comfortably covers avatar
+     (1.75rem) + padding (1.25rem top+bottom) + a 2-line name at this
+     span's font-size, with a little headroom to spare. */
+  #sidebar-account label {
+    min-height: 3.5rem;
   }
   #sidebar-header,
   #sidebar nav {
@@ -512,14 +544,7 @@
     <p class="text-sm text-base-content/60 max-w-xs">Please open this on a desktop or laptop. If you're already on one, try widening the browser window.</p>
   </div>
 
-  <!-- Order follows standard sidebar IA: overview first, then the primary
-       data entities (Inventory/Members), then the transactional workflow
-       that acts on them (Borrow & Return), then the two action queues tied
-       to that workflow (Approvals -- decisions waiting on you -- ahead of
-       Notifications -- passive due/overdue alerts), then Reports as the
-       analytics/lookback tab last, since it's consulted least often day to
-       day. Admin-only tabs (Staff/Activity Log/Feedback/System) follow the
-       same "frequent-first, Settings-always-last" convention further down. -->
+  <!-- Ordered by how often you'd actually reach for each one: overview, data, workflow, action queues, then Reports last. Admin tabs below follow the same idea, Settings always last. -->
   {% set nav_items = [
     ("Dashboard", "/", "grid"),
     ("Inventory", "/assets", "box"),
@@ -539,15 +564,7 @@
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
   {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
   {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
-  <!-- Barcode Labels lives one level under System (its only entry point --
-       see templates/system.html) rather than getting its own sidebar tab,
-       so it gets a 3-level breadcrumb (Dashboard / System / Barcode
-       Labels) instead of the usual 2 -- "System" is a real link back,
-       same idea as a back button but consistent with how every other
-       breadcrumb segment already behaves, rather than a one-off widget
-       that only exists on this page. The System sidebar link itself
-       also stays highlighted while here (see the /system nav link's
-       class below) for the same "this page belongs to System" reason. -->
+  <!-- Barcode Labels has no sidebar tab of its own (System is its only entry point), so it gets a 3-level breadcrumb instead of the usual 2. -->
   {% if request.path == '/barcodes' %}
     {% set ns.current_label = "Barcode Labels" %}
     {% set ns.parent_href = "/system" %}
@@ -568,6 +585,7 @@
           <span id="sidebar-title" class="shrink-0 ml-4 flex items-center text-xl text-base-content tracking-tight" style="font-family: 'Archivo', sans-serif; font-weight: 700; height: 1.5rem; line-height: 1.5rem;">Archaív</span>
         </div>
         <button type="button" id="sidebar-toggle" class="sidebar-label shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-base-200 text-base-content/40 hover:text-base-content cursor-pointer"
+                data-tooltip="Collapse sidebar (Ctrl+E)"
                 aria-label="Collapse sidebar" aria-controls="sidebar" aria-expanded="true">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -579,7 +597,18 @@
       </div>
 
 
-      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+      {# One letter per tab, not a 1-9 digit -- admin can see 11 tabs, and
+         plain Alt+letter collides with pages' own local shortcuts (Alt+N,
+         Alt+M, etc), so this uses Alt+Shift+letter, read off each link's
+         data-shortcut-key by the JS further down. Staff = 'K' not 'S' --
+         Alt+Shift+S is already Edge's Web Capture / Snipping Tool combo. #}
+      {% set SIDEBAR_SHORTCUT_KEYS = {
+        'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
+        'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
+        'Staff': 'K', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y'
+      } %}
+      {% macro tab_tooltip(label) %}{{ label }} (Alt+Shift+{{ SIDEBAR_SHORTCUT_KEYS[label] }}){% endmacro %}
+      <nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
         {% if href != "/assets" or feature_flags.assets %}
@@ -587,7 +616,7 @@
         {% if href != "/transactions" or feature_flags.transactions %}
         {% if href != "/requests" or feature_flags.requests %}
         {% if href != "/reports" or feature_flags.reports %}
-        <a href="{{ href }}" data-tooltip="{{ label }}" data-tooltip-rail aria-label="{{ label }}"
+        <a href="{{ href }}" data-tooltip="{{ tab_tooltip(label) }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS[label] }}" aria-label="{{ label }}"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
@@ -607,28 +636,23 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             {% endif %}
             {% if label == "Approvals" and pending_approvals_count %}
-            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full items-center justify-center leading-none">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
+            <!-- Flips to white-on-blue when the row is already active/blue, so the dot doesn't disappear into it. -->
+            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
+                         {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
             {% endif %}
             {% if label == "Notifications" and unread_notifications_count %}
-            <!-- Same active/inactive flip as the expanded pill badge below
-                 -- when collapsed, .sidebar-link-active still paints the
-                 whole row (icon included) that same blue, so a blue dot
-                 on top of it would disappear just like the pill would. -->
+            <!-- Same active-row color flip as the expanded pill badge below. -->
             <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
                          {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
             {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
           {% if label == "Approvals" and pending_approvals_count %}
-          <span class="sidebar-label ml-auto bg-base-content text-base-100 text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0">{{ pending_approvals_count }}</span>
+          <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
+                       {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
           {% endif %}
           {% if label == "Notifications" and unread_notifications_count %}
-          <!-- Blue on the normal (unhighlighted) row, same family as the
-               header bell's badge -- but the active row's own background
-               is that exact blue (.sidebar-link-active), so a blue badge
-               would vanish into it. Flips to white-on-blue-text there
-               instead, so the count stays legible whichever state the
-               tab is in. -->
+          <!-- Flips to white-on-blue when the row itself is already blue (active), so the badge doesn't vanish into it. -->
           <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
                        {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ unread_notifications_count }}</span>
           {% endif %}
@@ -642,7 +666,7 @@
         {% endfor %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/staff" data-tooltip="Staff" data-tooltip-rail aria-label="Staff"
+        <a href="/staff" data-tooltip="{{ tab_tooltip('Staff') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Staff'] }}" aria-label="Staff"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -653,7 +677,7 @@
         {% endif %}
 
         {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
-        <a href="/audit-log" data-tooltip="Activity Log" data-tooltip-rail aria-label="Activity Log"
+        <a href="/audit-log" data-tooltip="{{ tab_tooltip('Activity Log') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Activity Log'] }}" aria-label="Activity Log"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -664,17 +688,13 @@
         {% endif %}
 
         {% if staff and staff.role == "admin" %}
-        <a href="/feedback" data-tooltip="Feedback" data-tooltip-rail aria-label="Feedback"
+        <a href="/feedback" data-tooltip="{{ tab_tooltip('Feedback') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Feedback'] }}" aria-label="Feedback"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path == '/feedback' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             {% if open_feedback_count %}
-            <!-- Same active/inactive flip as Notifications' badges (both
-                 the collapsed dot here and the expanded pill below) --
-                 .sidebar-link-active paints the whole row that same blue
-                 while /feedback is the active tab, so a plain bg-primary
-                 dot would disappear into it without the flip. -->
+            <!-- Same active-row color flip as Notifications' badge above. -->
             <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
                          {% if request.path == '/feedback' %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if open_feedback_count > 9 else open_feedback_count }}</span>
             {% endif %}
@@ -687,14 +707,9 @@
         </a>
         {% endif %}
 
-        <!-- System (settings) intentionally last -- the near-universal
-             convention of pinning Settings at the very bottom of the nav,
-             below every other admin tool. in_charge sees this too now
-             (system.html itself hides the admin-only cards -- Session
-             Settings/Account Security/Feature Access -- from anyone but
-             admin), just tool_keeper doesn't. -->
+        <!-- System stays last, the usual Settings-at-the-bottom convention. in_charge sees it too (system.html hides the admin-only cards itself), tool_keeper doesn't. -->
         {% if staff and staff.role in ("admin", "in_charge") %}
-        <a href="/system" data-tooltip="System" data-tooltip-rail aria-label="System"
+        <a href="/system" data-tooltip="{{ tab_tooltip('System') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['System'] }}" aria-label="System"
            class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
                   {% if request.path in ['/system', '/barcodes'] %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
@@ -718,7 +733,8 @@
               {% endif %}
             </div>
             <span class="sidebar-label min-w-0 flex-1 text-left overflow-hidden">
-              <span class="block text-[13px] font-medium text-base-content leading-tight line-clamp-2" title="{{ staff_full_name }}">{{ staff_full_name }}</span>
+              <!-- Shows the full name on hover if line-clamp-2 truncates it -- same styled bubble as the rest of the sidebar, not a native title= tooltip. -->
+              <span class="block text-[13px] font-medium text-base-content leading-tight line-clamp-2" data-tooltip="{{ staff_full_name }}">{{ staff_full_name }}</span>
             </span>
             <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-label w-5 h-5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
           </label>
@@ -754,9 +770,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
+              <!-- No tooltip -- "Help" is already a visible label right next to the icon, same as every other row in this dropdown. -->
               <button type="button" onclick="document.getElementById('help-support-modal').showModal()"
-                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors"
-                      data-tooltip="Help">
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 </span>
@@ -764,15 +780,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
-              <!-- Keyboard shortcuts -- split out from Help (was a section
-                   inside the Help & support modal) into its own row/modal
-                   so it's not buried inside an FAQ dialog; the "?" hotkey
-                   now opens this directly too, matching the near-universal
-                   "?" = "show me the shortcuts" convention (GitHub, Slack,
-                   etc.) rather than a general help panel. -->
+              <!-- Its own row/modal, not buried in the Help & support FAQ -- "?" opens it directly too. -->
               <button type="button" onclick="document.getElementById('keyboard-shortcuts-modal').showModal()"
-                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors"
-                      data-tooltip="Keyboard shortcuts (?)">
+                      class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
                 </span>
@@ -814,18 +824,7 @@
       {% endif %}
     </aside>
 
-    <!-- Shared app-wide tooltip -- one reusable element (JS-positioned per
-         hover target via getBoundingClientRect, see the script below)
-         rather than a per-element tooltip embedded wherever data-tooltip is
-         used. That matters for the sidebar rail specifically because the
-         nav list has overflow-y:auto, which per the CSS overflow spec
-         forces overflow-x to auto too (visible + auto on the same element
-         isn't allowed) -- an absolutely-positioned per-link tooltip would
-         get clipped at the nav's edge. Living here at the top level with
-         position:fixed sidesteps that entirely, and doubles as the one
-         tooltip instance every other [data-tooltip] element on the page
-         (header icons, toolbar buttons, filter toggles) shares too -- see
-         the delegated mouseover/mouseout handling further down. -->
+    <!-- One shared, JS-positioned tooltip bubble for every [data-tooltip] element on the page, not a per-element one -- see the delegated mouseover handler further down. -->
     <div id="app-tooltip" role="tooltip"
          class="fixed hidden bg-base-100 text-base-content text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-lg border border-base-300 whitespace-nowrap pointer-events-none z-[200]"></div>
 
@@ -865,11 +864,7 @@
             <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative" data-tooltip="Notifications">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
               {% if unread_notifications_count %}
-              <!-- bg-primary, not bg-error -- matches the earlier decision to
-                   keep the bell's own indicator blue (unlike the sidebar tab
-                   badges, which moved off blue since it blended into the
-                   active-tab highlight; the bell has no such highlight to
-                   clash with, so it explicitly stayed as-is). -->
+              <!-- Stays blue (bg-primary) unlike the sidebar badges -- the bell has no active-tab highlight to blend into. -->
               <span class="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full flex items-center justify-center leading-none">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
               {% endif %}
             </label>
@@ -889,7 +884,7 @@
                           hx-target="#global-modal-container"
                           hx-swap="innerHTML"
                           class="btn btn-ghost btn-circle btn-sm shrink-0" aria-label="Notification settings"
-                          title="Notification settings -- this is the due-soon alert threshold, a shared app-wide setting (same one on the System page), not a personal preference.">
+                          data-tooltip="Notification settings (due-soon alert threshold, shared app-wide)">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px] text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                   </button>
                   {% endif %}
@@ -963,8 +958,17 @@
       <!-- Logout confirmation modal -->
       <dialog id="logout-confirm-modal" class="modal">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-2">Log out?</h3>
-          <p class="text-sm text-base-content/70 mb-4">You'll need to sign in again to continue.</p>
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="font-bold text-lg">Log out?</h3>
+            <form method="dialog">
+              <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                      aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+            </form>
+          </div>
+          <!-- Uses staff_full_name, not full_name(staff.first_name...) -- g.staff is a bare staff row with no joined member columns, so staff.first_name doesn't exist here. -->
+          <p class="text-sm text-base-content/70 mb-4">
+            Log out of {{ staff_full_name }}? You'll need to sign in again to continue.
+          </p>
           <div class="modal-action">
             <form method="dialog">
               <button class="btn">Cancel</button>
@@ -981,7 +985,14 @@
 
       <!-- My Account modal -->
       <dialog id="my-account-modal" class="modal">
-        <div class="modal-box max-w-md">
+        <div class="modal-box max-w-md relative">
+          <!-- Absolutely positioned -- this modal has no title/header row
+               to share with (goes straight into the avatar), unlike most
+               others. -->
+          <form method="dialog" class="absolute top-4 right-4">
+            <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </form>
 
           <div class="flex items-center gap-3">
             <div class="relative shrink-0">
@@ -989,7 +1000,7 @@
                    ondragover="event.preventDefault(); event.stopPropagation(); this.classList.add('ring-2', 'ring-primary')"
                    ondragleave="this.classList.remove('ring-2', 'ring-primary')"
                    ondrop="handleAvatarDrop(event)"
-                   title="{% if staff.photo_path %}View photo{% endif %} — drop or paste an image to replace it"
+                   data-tooltip="{% if staff.photo_path %}View photo — {% endif %}drop or paste an image to replace it"
                    class="bg-primary text-primary-content rounded-full w-[84px] h-[84px] flex items-center justify-center overflow-hidden transition-opacity {% if staff.photo_path %}cursor-pointer hover:opacity-90{% else %}cursor-default{% endif %}">
                 {% if staff.photo_path %}
                 <img src="{{ url_for('static', filename=staff.photo_path) }}" alt="" class="w-full h-full object-cover">
@@ -997,10 +1008,7 @@
                 <span class="text-2xl font-semibold">{{ staff.username[0] | upper }}</span>
                 {% endif %}
               </div>
-              <!-- Spinner shown over the avatar while a photo is uploading; toggled
-                   by uploadProfilePhoto() below, kept separate from the avatar's own
-                   markup so it doesn't get clobbered by renderAvatars() swapping the
-                   initials/<img> in and out. -->
+              <!-- Upload spinner overlay -- kept separate from the avatar markup so renderAvatars() swapping initials/<img> doesn't clobber it. -->
               <div id="account-modal-avatar-spinner" class="hidden absolute inset-0 bg-black/40 rounded-full flex items-center justify-center cursor-wait">
                 <span class="loading loading-spinner loading-sm text-white"></span>
               </div>
@@ -1011,7 +1019,7 @@
               <h3 class="text-lg font-bold truncate">{{ staff_full_name }}</h3>
               <div class="flex items-center gap-1 -ml-1.5">
                 <p class="text-sm text-base-content/50 truncate">@{{ staff.username }}</p>
-                <button type="button" onclick="copyUsername()" title="Copy username"
+                <button type="button" onclick="copyUsername()" data-tooltip="Copy username"
                         class="btn btn-ghost btn-square btn-xs text-base-content/40 hover:text-base-content shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2"></rect>
@@ -1128,35 +1136,29 @@
         </form>
       </dialog>
 
-      <!-- Profile photo lightbox -- opened from the account-modal avatar
-           (openPhotoLightbox() below) to view the current photo at full
-           size. Stacks on top of my-account-modal rather than replacing
-           it (native <dialog> top-layer handles this fine, same as
-           Checkout's expand-over-dock stacking), so closing it (Escape,
-           backdrop click, or the browser's native Escape-to-close since
-           this one isn't wired into the app's custom close-guard system)
-           just returns to the account modal underneath. -->
+      <!-- Full-size photo view, opened from the account modal's avatar. Stacks on top of it (native <dialog> top-layer) rather than replacing it. -->
       <dialog id="photo-lightbox-modal" class="modal">
-        <div class="modal-box max-w-lg p-0 overflow-hidden bg-transparent shadow-none">
+        <div class="modal-box max-w-lg p-0 overflow-hidden bg-transparent shadow-none relative">
           <img id="photo-lightbox-img" src="" alt="Profile photo" class="w-full h-auto rounded-2xl">
+          <!-- Dark pill instead of the usual base-100 one -- needs contrast against the photo, not a themed background. -->
+          <form method="dialog" class="absolute top-3 right-3">
+            <button class="btn btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider rounded-md bg-black/50 text-white border border-white/30 hover:bg-black/70 active:scale-95 transition-all"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </form>
         </div>
         <form method="dialog" class="modal-backdrop">
           <button>close</button>
         </form>
       </dialog>
 
-      <!-- Profile photo crop modal -- the step between picking/dropping/
-           pasting a file and it actually being uploaded. Lets the user pan
-           and zoom the image behind a circular mask so they control what
-           ends up in the avatar, instead of a raw upload getting an
-           arbitrary center-crop from object-cover. openCropModal() below
-           loads the picked file into #crop-image; saveCroppedPhoto() bakes
-           the current pan/zoom to a square canvas and hands that blob to
-           the existing uploadProfilePhoto() flow, so the backend endpoint
-           and validation are untouched. Nothing is uploaded until Save. -->
+      <!-- Pan/zoom crop step between picking a photo and actually uploading it -- saveCroppedPhoto() bakes the crop to a canvas and hands that blob to the normal upload flow. -->
       <dialog id="photo-crop-modal" class="modal" onclose="closeCropModal()">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Reposition photo</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Reposition photo</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('photo-crop-modal').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">Drag to reposition, scroll or use the slider to zoom.</p>
 
           <div id="crop-viewport"
@@ -1167,7 +1169,7 @@
 
           <div class="flex items-center gap-3 mt-5">
             <button type="button" id="crop-zoom-out-btn" onclick="stepCropZoom(-20)"
-                    title="Zoom out — 100% is as far out as it goes, since any less would leave gaps in the circle"
+                    data-tooltip="Zoom out (100% is the minimum)"
                     class="btn btn-ghost btn-square btn-xs shrink-0 text-base-content/40 hover:text-base-content disabled:opacity-30 disabled:cursor-not-allowed">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
@@ -1177,7 +1179,7 @@
             </button>
             <input type="range" id="crop-zoom" min="100" max="300" value="100" step="1"
                    class="range range-xs flex-1" oninput="updateCropZoom(this.value)">
-            <button type="button" id="crop-zoom-in-btn" onclick="stepCropZoom(20)" title="Zoom in"
+            <button type="button" id="crop-zoom-in-btn" onclick="stepCropZoom(20)" data-tooltip="Zoom in"
                     class="btn btn-ghost btn-square btn-xs shrink-0 text-base-content/40 hover:text-base-content disabled:opacity-30 disabled:cursor-not-allowed">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
@@ -1198,19 +1200,13 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
       </dialog>
 
-      <!-- Reusable password/PIN field with a login.html-style show/hide
-           eye toggle -- the button only appears once the field has
-           content (toggleFieldVisibility's paired input listener, wired
-           for every field id passed here in the script block below), and
-           only the `type` attribute flips between password/text; any
-           other attributes (inputmode/pattern/minlength/maxlength for
-           the PIN fields) pass through via extra_attrs untouched. -->
+      <!-- Reusable password/PIN field with a show/hide eye toggle, same as login.html -- the toggle button only appears once the field has content. -->
       {% macro password_toggle_field(field_id, placeholder, extra_attrs='') %}
       <div class="relative">
         <input type="password" id="{{ field_id }}" placeholder="{{ placeholder }}" {{ extra_attrs | safe }}
                class="input input-bordered input-sm w-full pr-9" />
         <button type="button" id="{{ field_id }}-toggle-btn" onclick="toggleFieldVisibility('{{ field_id }}')"
-                aria-label="Show password" tabindex="-1"
+                aria-label="Show password" data-tooltip="Show/hide" tabindex="-1"
                 class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content">
           <svg id="{{ field_id }}-eye-open" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
@@ -1226,10 +1222,19 @@
       <!-- Change password modal -->
       <dialog id="change-password-modal" class="modal" onclose="resetChangePasswordForm()">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Change password</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Change password</h3>
+            <!-- Plain close() here, matching native Escape -- the footer's "Back" button is a different action (returns to my-account-modal). -->
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('change-password-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
 
-          <div id="change-password-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+          <!-- Always in the DOM, invisible (not hidden) when empty --
+               reserves its layout space so the form below doesn't shift
+               when submitChangePassword() fills it in. -->
+          <div id="change-password-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
 
           <form id="change-password-form" onsubmit="return submitChangePassword(event)">
             <div class="space-y-2">
@@ -1256,16 +1261,21 @@
       </dialog>
 
       {% if staff and staff.role == "admin" %}
-      <!-- Change RFID PIN modal -- admin-only, mirrors change-password-
-           modal above exactly (current password required as
-           confirmation, not the current PIN -- see change_rfid_pin_submit
-           in routes/staff.py for why). -->
+      <!-- Admin-only, mirrors change-password above -- confirms with current password, not current PIN. -->
       <dialog id="change-rfid-pin-modal" class="modal" onclose="resetChangeRfidPinForm()">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Change RFID PIN</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Change RFID PIN</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('change-rfid-pin-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
 
-          <div id="change-rfid-pin-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+          <!-- Always in the DOM, invisible (not hidden) when empty --
+               reserves its layout space so the form below doesn't shift
+               when submitChangeRfidPin() fills it in. -->
+          <div id="change-rfid-pin-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
 
           <form id="change-rfid-pin-form" onsubmit="return submitChangeRfidPin(event)">
             <div class="space-y-2">
@@ -1295,11 +1305,17 @@
       <!-- Display & accessibility modal -->
       <dialog id="display-accessibility-modal" class="modal">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Display &amp; accessibility</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Display &amp; accessibility</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('display-accessibility-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">These preferences are saved to this account and this browser.</p>
 
           <div class="space-y-0.5">
-            <button type="button" id="theme-mode-toggle-btn" onclick="toggleThemeMode()"
+            <!-- toggleInlineDropdown() moves each panel to a fixed-position child of <body> on first open (same trick as #app-tooltip) -- keeping it absolute in place still grew the modal-box's scroll height. -->
+            <button type="button" id="theme-mode-toggle-btn" onclick="toggleInlineDropdown('theme-mode-menu', 'theme-mode-chevron')"
                     class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
               <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                 <span id="theme-mode-icon" class="w-[18px] h-[18px] text-base-content/70">
@@ -1308,9 +1324,32 @@
               </span>
               <span class="flex-1 text-sm font-medium text-base-content">Theme mode</span>
               <span id="theme-mode-label" class="text-xs text-base-content/50">Mixed Mode</span>
+              <svg id="theme-mode-chevron" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
+            <div id="theme-mode-menu" class="inline-dropdown-menu hidden z-[10000] bg-base-100 border border-base-300 rounded-xl shadow-lg p-1 space-y-0.5">
+              <button type="button" class="theme-mode-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-mode="mixed" onclick="setThemeMode('mixed')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Mixed Mode</span>
+                <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <button type="button" class="theme-mode-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-mode="light" onclick="setThemeMode('light')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Light Mode</span>
+                <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <button type="button" class="theme-mode-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-mode="dark" onclick="setThemeMode('dark')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Dark Mode</span>
+                <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <button type="button" class="theme-mode-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-mode="modern" onclick="setThemeMode('modern')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12.79A9 9 0 1110.21 3a7 7 0 008.79 9.79z" fill="currentColor" stroke="none"/><path d="M19 3v4M17 5h4"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Modern Dark</span>
+                <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+            </div>
 
-            <button type="button" id="toast-style-toggle-btn" onclick="toggleToastStyle()"
+            <button type="button" id="toast-style-toggle-btn" onclick="toggleInlineDropdown('toast-style-menu', 'toast-style-chevron')"
                     class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
               <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
                 <span id="toast-style-icon" class="w-[18px] h-[18px] text-base-content/70">
@@ -1319,7 +1358,25 @@
               </span>
               <span class="flex-1 text-sm font-medium text-base-content">Notification style</span>
               <span id="toast-style-label" class="text-xs text-base-content/50">Material Design</span>
+              <svg id="toast-style-chevron" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/40 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
+            <div id="toast-style-menu" class="inline-dropdown-menu hidden z-[10000] bg-base-100 border border-base-300 rounded-xl shadow-lg p-1 space-y-0.5">
+              <button type="button" class="toast-style-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-style="light" onclick="setToastStyle('light')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Light Mode</span>
+                <svg class="toast-style-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <button type="button" class="toast-style-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-style="inverted" onclick="setToastStyle('inverted')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Dark Mode</span>
+                <svg class="toast-style-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <button type="button" class="toast-style-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-style="md3" onclick="setToastStyle('md3')">
+                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c-5.5 0-10-4.5-10-10S6.5 2 12 2s10 4 10 9a3.5 3.5 0 01-3.5 3.5h-1.8a2 2 0 00-1 3.7A2 2 0 0114 22z"/><circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="16.5" cy="10.5" r="1" fill="currentColor" stroke="none"/></svg></span>
+                <span class="flex-1 text-sm text-base-content">Material Design</span>
+                <svg class="toast-style-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+            </div>
           </div>
 
           <div class="modal-action">
@@ -1341,7 +1398,12 @@
            (see services/notification_service.py's PREF_FILTER_SQL). -->
       <dialog id="settings-privacy-modal" class="modal">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Settings &amp; privacy</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Settings &amp; privacy</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('settings-privacy-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">Controls which alerts land in your own notification bell. Saved to this account.</p>
 
           <div class="space-y-0.5">
@@ -1375,13 +1437,7 @@
                      onchange="updateNotificationPref('notify_requests', this.checked)">
             </label>
 
-            <!-- Toast display duration -- personal, this account only (see
-                 routes/staff.py's update_own_notification_prefs and the
-                 staff.toast_duration_seconds column, migrations/0038).
-                 Drives TOAST_DEFAULT_DURATION_MS/TOAST_ACTION_DURATION_MS
-                 below rather than a per-toast-call value, so it's a
-                 one-time page-load setting, not something that can change
-                 mid-session without a reload. -->
+            <!-- Personal toast duration, drives TOAST_DEFAULT_DURATION_MS below -- changing it needs a reload to take effect. -->
             <div class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl">
               <span class="flex-1">
                 <span class="block text-sm font-medium text-base-content">Toast display duration</span>
@@ -1408,18 +1464,15 @@
         </form>
       </dialog>
 
-      <!-- Help modal -- static FAQ, no backend. If this needs to grow into
-           something that reaches an actual admin (a contact form, ticket
-           queue), that's a separate feature; this is intentionally just
-           answers to the handful of "how do I..." questions this app
-           raises. Keyboard shortcuts used to be a section at the bottom of
-           this same modal; split out into its own modal/menu row (see
-           #keyboard-shortcuts-modal below) since a full shortcuts
-           reference isn't really a FAQ answer, and burying it at the
-           bottom of one made it easy to miss. -->
+      <!-- Static FAQ modal, no backend. Keyboard shortcuts used to live here too, split into its own modal since it isn't really a FAQ answer. -->
       <dialog id="help-support-modal" class="modal">
         <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg mb-1">Help</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Help</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('help-support-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">Quick answers. For anything else, reach out to an admin directly.</p>
 
           <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -1441,7 +1494,7 @@
             </div>
             <div>
               <p class="text-sm font-semibold text-base-content">Something looks wrong or broken.</p>
-              <p class="text-xs text-base-content/60 mt-1">Note what you were doing and let an admin know directly — there's no in-app bug report yet.</p>
+              <p class="text-xs text-base-content/60 mt-1">Use "Give feedback" from the account menu to send a bug report (with screenshots if it helps) straight to admins from inside the app.</p>
             </div>
             <div>
               <p class="text-sm font-semibold text-base-content">Is there a list of keyboard shortcuts?</p>
@@ -1449,12 +1502,20 @@
             </div>
           </div>
 
-          <div class="modal-action items-center justify-between">
-            <button type="button" class="btn btn-outline btn-sm gap-1.5"
-                    onclick="document.getElementById('help-support-modal').close(); document.getElementById('keyboard-shortcuts-modal').showModal()">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M10 12h.01"/><path d="M14 12h.01"/><path d="M18 12h.01"/><path d="M7 16h10"/></svg>
-              View keyboard shortcuts
-            </button>
+          <div class="modal-action items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <!-- Opens the full manual as a modal, not a /help page -- closing it leaves you right where you were. -->
+              <button type="button" class="btn btn-outline btn-sm gap-1.5"
+                      onclick="document.getElementById('help-support-modal').close(); document.getElementById('full-help-modal').showModal();">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                Open full Help
+              </button>
+              <button type="button" class="btn btn-outline btn-sm gap-1.5"
+                      onclick="document.getElementById('help-support-modal').close(); document.getElementById('keyboard-shortcuts-modal').showModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M10 12h.01"/><path d="M14 12h.01"/><path d="M18 12h.01"/><path d="M7 16h10"/></svg>
+                Shortcuts
+              </button>
+            </div>
             <form method="dialog">
               <button class="btn btn-sm">Close</button>
             </form>
@@ -1465,130 +1526,261 @@
         </form>
       </dialog>
 
-      <!-- Keyboard shortcuts modal -- see the account-menu row above that
-           opens it, and the "?" hotkey (base.html's own keydown listener
-           further down) which opens it from anywhere. -->
+      {% if staff %}
+      <!-- Full Help & User Manual, a wide modal instead of a /help page so you never leave the page you're on. p-0 on modal-box since the header/TOC/content each need their own padding and scroll region. -->
+      <dialog id="full-help-modal" class="modal">
+        <div class="modal-box max-w-6xl w-11/12 flex flex-col max-h-[90vh] p-0 overflow-hidden">
+
+          <div class="flex items-start justify-between gap-4 px-8 pt-6 pb-4 border-b border-base-300 shrink-0">
+            <div>
+              <h3 class="font-bold text-xl">Help &amp; User Manual</h3>
+              <p class="text-sm text-base-content/50 mt-1">Everything Archaív does, organized by tab. Only shows what your role can actually see.</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" class="btn btn-outline btn-sm gap-1.5"
+                      onclick="document.getElementById('full-help-modal').close(); document.getElementById('keyboard-shortcuts-modal').showModal();">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M10 12h.01"/><path d="M14 12h.01"/><path d="M18 12h.01"/><path d="M7 16h10"/></svg>
+                Keyboard shortcuts
+              </button>
+              <button type="button" class="btn btn-outline btn-sm"
+                      onclick="document.getElementById('full-help-modal').close(); document.getElementById('give-feedback-modal').showModal();">
+                Report a problem
+              </button>
+              <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+                   header close button for the full reasoning. Native
+                   <dialog> Escape-to-close already applies here regardless
+                   (this is a real <dialog>, unlike the div.modal ones that
+                   comment references), so the hint is doubly accurate. -->
+              <form method="dialog">
+                <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
+                  ESC
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="flex-1 flex min-h-0">
+            {% include "_help_content.html" %}
+          </div>
+
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+      {% endif %}
+
+      <!-- Keyboard shortcuts modal, opened via the account menu or "?" from anywhere. Two-column card grid with live search instead of one long scrolling list, so finding one shortcut doesn't mean scrolling past everyone else's page first. -->
+      {# Staff is 'K', not 'S' -- Alt+Shift+S is already Microsoft Edge's
+         own Web Capture shortcut (and Snipping Tool's, system-wide on
+         Windows), so the browser/OS ate that combo before it ever reached
+         this page's keydown listener. Picked a letter with no known
+         browser/OS binding instead of another mnemonic first-letter. #}
+      {% set SIDEBAR_SHORTCUT_KEYS = {
+        'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
+        'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
+        'Staff': 'K', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y'
+      } %}
+      {% macro cat_icon(name) %}
+        {% if name == 'everywhere' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+        {% elif name == 'grid' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        {% elif name == 'box' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+        {% elif name == 'users' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        {% elif name == 'swap' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+        {% elif name == 'check' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        {% elif name == 'bell' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        {% elif name == 'chart' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>
+        {% elif name == 'staff' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+        {% elif name == 'log' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        {% elif name == 'feedback' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        {% elif name == 'system' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        {% elif name == 'barcode' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4v16M7 4v16M11 4v10M15 4v16M19 4v10M21 4v16" stroke-linecap="round"/></svg>
+        {% endif %}
+      {% endmacro %}
+      {% macro shortcut_category(title, icon) %}
+        <div class="shortcut-category rounded-xl border border-base-300 p-3.5" data-category-name="{{ title|lower }}">
+          <div class="flex items-center gap-2 mb-2 pb-2 border-b border-base-200">
+            <span class="text-base-content/40 shrink-0">{{ cat_icon(icon) }}</span>
+            <p class="text-xs font-semibold text-base-content/80">{{ title }}</p>
+          </div>
+          <div class="space-y-1.5">
+            {{ caller() }}
+          </div>
+        </div>
+      {% endmacro %}
+      {% macro srow(desc, keys) %}
+        <div class="shortcut-row flex items-center justify-between gap-3 text-xs py-0.5">
+          <span class="text-base-content/60">{{ desc }}</span>
+          <span class="flex gap-1 shrink-0">
+            {% for k in keys %}<kbd class="kbd kbd-sm">{{ k }}</kbd>{% endfor %}
+          </span>
+        </div>
+      {% endmacro %}
       <dialog id="keyboard-shortcuts-modal" class="modal">
-        <div class="modal-box max-w-md">
-          <h3 class="font-bold text-lg mb-1">Keyboard shortcuts</h3>
-          <p class="text-xs text-base-content/50 mb-4">Disabled while typing in a text field, and while a dialog is open (except Esc, which closes it).</p>
-
-          <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        <div class="modal-box max-w-4xl">
+          <div class="flex justify-between items-start">
             <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Everywhere</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-base-content/60">Open this panel</span>
-                  <kbd class="kbd kbd-sm">?</kbd>
-                </div>
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-base-content/60">Close the open dialog</span>
-                  <kbd class="kbd kbd-sm">Esc</kbd>
-                </div>
-              </div>
+              <h3 class="font-bold text-lg mb-1">Keyboard shortcuts</h3>
+              <p class="text-xs text-base-content/50">Disabled while typing in a text field, and while a dialog is open (except Esc, which closes it).</p>
             </div>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('keyboard-shortcuts-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Inventory</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show archived</span><kbd class="kbd kbd-sm">`</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Available / Borrowed / Needs attention</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new item</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Manage categories</span><kbd class="kbd kbd-sm">Alt+M</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Import CSV</span><kbd class="kbd kbd-sm">Alt+I</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Export data</span><kbd class="kbd kbd-sm">Alt+E</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+          <!-- Live filter -- matches against a row's own description/keys
+               text, OR (if it matches) shows every row in a whole
+               category whose title matches, e.g. typing "inventory" shows
+               the entire Inventory card rather than nothing. -->
+          <div class="relative mt-4 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" id="shortcuts-search-input" class="input input-bordered input-sm w-full pl-9"
+                   placeholder="Search shortcuts&hellip; e.g. &quot;export&quot;, &quot;filter&quot;, &quot;Alt+N&quot;"
+                   oninput="filterShortcuts(this.value)" autocomplete="off" autofocus>
+          </div>
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Members</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show inactive</span><kbd class="kbd kbd-sm">`</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active / Restricted / Inactive</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new member</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Manage departments</span><kbd class="kbd kbd-sm">Alt+M</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+          <div id="shortcuts-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[62vh] overflow-y-auto pr-1">
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Borrow &amp; Return</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active loans / Overdue / Returned</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Quick date filter: Today / Yesterday</span><span class="flex gap-1"><kbd class="kbd kbd-sm">T</kbd><kbd class="kbd kbd-sm">Y</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">New checkout</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Return items</span><kbd class="kbd kbd-sm">Alt+R</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Everywhere', 'everywhere') %}
+              {{ srow('Open this panel', ['?']) }}
+              {{ srow('Close the open dialog', ['Esc']) }}
+              {{ srow('Collapse / expand sidebar', ['Ctrl+E']) }}
+              {% for tab_label in ['Dashboard', 'Inventory', 'Members', 'Borrow & Return', 'Approvals', 'Notifications', 'Reports'] %}
+                {% if tab_label != 'Reports' or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
+                {% if tab_label != 'Inventory' or feature_flags.assets %}
+                {% if tab_label != 'Members' or feature_flags.members %}
+                {% if tab_label != 'Borrow & Return' or feature_flags.transactions %}
+                {% if tab_label != 'Approvals' or feature_flags.requests %}
+                {% if tab_label != 'Reports' or feature_flags.reports %}
+                {{ srow('Jump to sidebar &middot; ' + tab_label, ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS[tab_label]]) }}
+                {% endif %}{% endif %}{% endif %}{% endif %}{% endif %}{% endif %}
+              {% endfor %}
+              {% if staff and staff.role == "admin" %}
+                {{ srow('Jump to sidebar &middot; Staff', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Staff']]) }}
+              {% endif %}
+              {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
+                {{ srow('Jump to sidebar &middot; Activity Log', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Activity Log']]) }}
+              {% endif %}
+              {% if staff and staff.role == "admin" %}
+                {{ srow('Jump to sidebar &middot; Feedback', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Feedback']]) }}
+              {% endif %}
+              {% if staff and staff.role in ("admin", "in_charge") %}
+                {{ srow('Jump to sidebar &middot; System', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['System']]) }}
+              {% endif %}
+            {% endcall %}
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Approvals</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Reset current tab's filters to default</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Dashboard', 'grid') %}
+              {{ srow('New checkout', ['Alt+N']) }}
+              {{ srow('Return items', ['Alt+R']) }}
+              {% if staff and staff.role in ["admin", "in_charge"] %}
+              {{ srow('Add member', ['Alt+M']) }}
+              {{ srow('Add asset', ['Alt+A']) }}
+              {% endif %}
+            {% endcall %}
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Notifications</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Mark all as read</span><kbd class="kbd kbd-sm">Alt+A</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Inventory', 'box') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Jump to item by scanned/typed barcode (in search box)', ['Enter']) }}
+              {{ srow('Toggle show archived', ['`']) }}
+              {{ srow('Filter: All / Available / Borrowed / Needs attention', ['1', '2', '3', '4']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('Add new item', ['Alt+N']) }}
+              {{ srow('Manage categories', ['Alt+M']) }}
+              {{ srow('Import CSV', ['Alt+I']) }}
+              {{ srow('Export data', ['Alt+E']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Reports</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Customize widgets</span><kbd class="kbd kbd-sm">Alt+C</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Export</span><kbd class="kbd kbd-sm">Alt+E</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear date range filter</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Members', 'users') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Jump to member by scanned/typed barcode (in search box)', ['Enter']) }}
+              {{ srow('Toggle show inactive', ['`']) }}
+              {{ srow('Filter: All / Active / Restricted / Inactive', ['1', '2', '3', '4']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('Add new member', ['Alt+N']) }}
+              {{ srow('Manage departments', ['Alt+M']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
+
+            {% call shortcut_category('Borrow & Return', 'swap') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Filter: All / Active loans / Overdue / Returned', ['1', '2', '3', '4']) }}
+              {{ srow('Quick date filter: Today / Yesterday', ['T', 'Y']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('New checkout', ['Alt+N']) }}
+              {{ srow('Return items', ['Alt+R']) }}
+              {{ srow('Export data', ['Alt+E']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
+
+            {% call shortcut_category('Approvals', 'check') %}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow("Reset current tab's filters to default", ['Esc']) }}
+            {% endcall %}
+
+            {% call shortcut_category('Notifications', 'bell') %}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('Mark all as read', ['Alt+A']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
+
+            {% call shortcut_category('Reports', 'chart') %}
+              {{ srow('Customize widgets', ['Alt+C']) }}
+              {{ srow('Export', ['Alt+E']) }}
+              {{ srow('Clear date range filter', ['Esc']) }}
+            {% endcall %}
 
             {% if staff and staff.role == "admin" %}
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Staff</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Focus search</span><kbd class="kbd kbd-sm">/</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Toggle show inactive</span><kbd class="kbd kbd-sm">`</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: All / Active / Locked / Inactive</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd><kbd class="kbd kbd-sm">4</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Add new staff</span><kbd class="kbd kbd-sm">Alt+N</kbd></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Staff', 'staff') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Jump to staff by scanned/typed barcode (in search box)', ['Enter']) }}
+              {{ srow('Toggle show inactive', ['`']) }}
+              {{ srow('Filter: All / Active / Locked / Inactive', ['1', '2', '3', '4']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('Add new staff', ['Alt+N']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
             {% endif %}
 
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Feedback &amp; Bug Reports</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Filter: Open / Resolved / All</span><span class="flex gap-1"><kbd class="kbd kbd-sm">1</kbd><kbd class="kbd kbd-sm">2</kbd><kbd class="kbd kbd-sm">3</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-              </div>
-            </div>
+            {% if staff and staff.role in ["admin", "in_charge"] %}
+            {% call shortcut_category('System', 'system') %}
+              {{ srow('Open a card\'s "Manage" (numbered top to bottom, left to right)', ['1', '&ndash;', '9']) }}
+              {{ srow('Open Barcode Labels', ['0']) }}
+            {% endcall %}
+
+            {% call shortcut_category('Barcode Labels', 'barcode') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Switch tab: Inventory / Members', ['1', '2']) }}
+              {{ srow('Generate labels', ['Alt+G']) }}
+              {{ srow('Back to System', ['Alt+B']) }}
+            {% endcall %}
+            {% endif %}
+
+            {% call shortcut_category('Feedback & Bug Reports', 'feedback') %}
+              {{ srow('Filter: Open / Resolved / All', ['1', '2', '3']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+            {% endcall %}
 
             {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
-            <div>
-              <p class="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide mb-1">Activity Log</p>
-              <div class="space-y-1">
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Previous / next page</span><span class="flex gap-1"><kbd class="kbd kbd-sm">←</kbd><kbd class="kbd kbd-sm">→</kbd></span></div>
-                <div class="flex items-center justify-between text-xs"><span class="text-base-content/60">Clear all filters</span><kbd class="kbd kbd-sm">Esc</kbd></div>
-              </div>
-            </div>
+            {% call shortcut_category('Activity Log', 'log') %}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
             {% endif %}
+
           </div>
 
-          <div class="modal-action">
+          <p id="shortcuts-no-results" class="hidden text-center text-sm text-base-content/40 py-10">
+            No shortcuts match &quot;<span id="shortcuts-no-results-query"></span>&quot;
+          </p>
+
+          <!-- Not hidden, just not shouted about -- an actually-rendered
+               credit line (unlike a view-source-only HTML comment) tucked
+               into the one corner of the app someone only reaches by
+               opening this modal in the first place, then reading all the
+               way to the bottom of it. -->
+          <div class="modal-action items-center justify-between">
+            <span class="text-[10px] text-base-content/25 select-none">Made by Karupin/artkaru</span>
             <form method="dialog">
               <button class="btn btn-sm">Close</button>
             </form>
@@ -1598,19 +1790,63 @@
           <button>close</button>
         </form>
       </dialog>
-      <!-- Give feedback modal -- an in-app bug/issue report, POSTed to
-           routes/feedback.py (submit_feedback). Reviewed by admins from
-           the Feedback tab (templates/feedback.html, admin-only sidebar
-           link). page_path is auto-captured from the current URL when the
-           modal opens, not typed by hand -- one less field, and it's more
-           reliable than a staff member's memory of exactly where they
-           were when something broke. -->
+      <script>
+        // Filters both individual rows and whole categories live as you
+        // type -- a row stays visible if its own text matches OR its
+        // parent category's title matches (so "inventory" surfaces the
+        // whole Inventory card, not just a row that happens to contain
+        // that word). A category card hides itself once none of its rows
+        // are visible, and the "no matches" message only shows once
+        // nothing anywhere matched.
+        function filterShortcuts(query) {
+          const q = query.trim().toLowerCase();
+          const grid = document.getElementById('shortcuts-grid');
+          if (!grid) return;
+          let anyVisible = false;
+          grid.querySelectorAll('.shortcut-category').forEach(function (cat) {
+            const catMatches = !q || (cat.dataset.categoryName || '').includes(q);
+            let catHasVisibleRow = false;
+            cat.querySelectorAll('.shortcut-row').forEach(function (row) {
+              const visible = !q || catMatches || row.textContent.toLowerCase().includes(q);
+              row.classList.toggle('hidden', !visible);
+              if (visible) catHasVisibleRow = true;
+            });
+            cat.classList.toggle('hidden', !catHasVisibleRow);
+            if (catHasVisibleRow) anyVisible = true;
+          });
+          const noResults = document.getElementById('shortcuts-no-results');
+          if (noResults) {
+            noResults.classList.toggle('hidden', anyVisible || !q);
+            const queryEl = document.getElementById('shortcuts-no-results-query');
+            if (queryEl) queryEl.textContent = query;
+          }
+        }
+
+        // Resets the filter on every close (not just on open) so
+        // reopening the modal later -- via "?", the account menu, or the
+        // Help modal's own link into it -- never starts back up mid-filter
+        // from whatever was typed last time.
+        document.getElementById('keyboard-shortcuts-modal')?.addEventListener('close', function () {
+          const input = document.getElementById('shortcuts-search-input');
+          if (input) input.value = '';
+          filterShortcuts('');
+        });
+      </script>
+      <!-- In-app bug report, reviewed by admins on the Feedback tab. page_path auto-captures the current URL instead of relying on memory. -->
       <dialog id="give-feedback-modal" class="modal" onclose="resetGiveFeedbackForm()">
         <div class="modal-box max-w-sm">
-          <h3 class="font-bold text-lg mb-1">Give feedback</h3>
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Give feedback</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('give-feedback-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
           <p class="text-xs text-base-content/50 mb-4">Report a bug, suggest something, or just tell us what's on your mind. Goes straight to the admins.</p>
 
-          <div id="give-feedback-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+          <!-- Always in the DOM, invisible (not hidden) when empty --
+               reserves its layout space so the form below doesn't shift
+               when submitGiveFeedback() fills it in. -->
+          <div id="give-feedback-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
 
           <form id="give-feedback-form" onsubmit="return submitGiveFeedback(event)">
             <div class="space-y-3">
@@ -1677,83 +1913,29 @@
 
   <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 items-end pointer-events-none"></div>
 
-  <!-- Target for modals opened from the sidebar/header (account dropdown,
-       notifications dropdown) -- distinct from the #modal-container every
-       page defines inside its own page-content block, which isn't in
-       scope for anything in base.html itself (the sidebar/header render
-       outside that block). Same "lives here, not tied to one page" reason
-       as #checkout-modal-container below. -->
+  <!-- Modal target for the sidebar/header dropdowns, separate from each page's own #modal-container. -->
   <div id="global-modal-container"></div>
 
   {% if staff %}
-  <!-- Lives here, outside the page content area, specifically so it
-       isn't tied to any one page -- sidebar links are plain full-page
-       navigations, not htmx swaps, so anything mounted only inside a
-       page's own content gets destroyed the moment staff click to
-       another tab. This re-fetches on every full page load and shows
-       nothing if the current staff member has no open checkout sessions,
-       so each minimized dock (and its session) only really goes away
-       when the backend session does -- on completion, cancellation, or
-       timing out after SESSION_STALE_MINUTES.
-
-       A staff member can have MORE THAN ONE checkout session in progress
-       at once (one minimized while a second trainee is being checked
-       out), so this holds a <dialog class="checkout-modal"> per session,
-       appended rather than replacing one another -- see _checkout_modal.html
-       and Checkout below. hx-swap stays "innerHTML" here only because
-       this particular request only ever fires once, on page load; every
-       later checkout action (New Checkout, Resume) explicitly appends
-       instead, so open sessions are never clobbered by this container's
-       own load-swap logic.
-
-       Guarded by {% raw %}{% if staff %}{% endraw %}: this block (and the
-       session-timeout modal below) must never render on anonymous pages
-       like /login. Without staff being present there's no session to poll
-       for, so the hx-get below would 401 immediately on page load and pop
-       the "Session timed out" modal for a visitor who was never logged in
-       in the first place. -->
+  <!-- Outside the page content so it survives full-page nav clicks. Re-fetches on every load, holds one <dialog class="checkout-modal"> per open session (a staff member can have more than one going at once). Guarded by staff-check so it never fires on /login. -->
   <div id="checkout-modal-container"
        data-passive-region
        hx-get="/api/v1/checkout-sessions/dock"
        hx-trigger="load"
        hx-swap="innerHTML"></div>
 
-  <!-- Stack of minimized checkout docks. A fixed-position flex column,
-       same pattern as #toast-container above -- each dock is a normal
-       (non-fixed) flex item, so the tray lays multiple docks out in a
-       stack instead of every dock independently claiming the same
-       corner and burying whatever was minimized before it.
-       Docks are delivered here via hx-swap-oob from _checkout_modal.html,
-       never written to directly. pointer-events-none on the tray (empty
-       space between docks shouldn't block clicks on the page underneath),
-       pointer-events-auto on each dock itself.
-
-       Anchored bottom-right, same as before. The checkout dialog itself
-       now renders as a full-height panel docked to that same right edge
-       (see .checkout-modal in the <style> block above), and a native
-       <dialog> shown via showModal() always paints above regular
-       fixed-position elements (browser top layer) regardless of z-index
-       -- so while a checkout is actually expanded it would otherwise
-       bury this tray. Rather than relocate the tray permanently, the
-       `body.checkout-panel-open` rule below just shifts it left, clear
-       of the panel, only for as long as one is actually open; see
-       syncPanelOpenClass() in the script below for what
-       toggles that class. -->
+  <!-- Stack of minimized checkout docks, filled via hx-swap-oob from _checkout_modal.html. body.checkout-panel-open shifts it left while a checkout panel is open so the two don't overlap. -->
   <div id="checkout-docks-tray" class="fixed bottom-4 right-4 z-40 flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
 
-  <!-- Shared confirmation dialog for closing a checkout directly from its
-       minimized dock. One instance shared by every dock (only one dock
-       close is ever being confirmed at a time), rather than a native
-       window.confirm() -- keeps the look consistent with the rest of the
-       app's modals instead of an unstyled browser prompt. Lives outside
-       #checkout-modal-container on purpose: it's not itself a checkout
-       instance and shouldn't be swept up by anything scoped to
-       "> dialog.checkout-modal" in there. Checkout.requestClose() sets
-       its message and remembers which client_id it's confirming for;
-       see Checkout.confirmCloseFromDock / cancelCloseConfirm below. -->
+  <!-- Shared "close this checkout?" confirm dialog for the minimized docks -- one instance, not a native window.confirm(). -->
   <dialog id="checkout-close-confirm-modal" class="modal">
     <div class="modal-box max-w-sm">
-      <h3 class="font-bold text-lg mb-2">Close checkout?</h3>
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-lg">Close checkout?</h3>
+        <!-- cancelCloseConfirm(), same as "Keep it" -- dismissing this should default to NOT closing the checkout. -->
+        <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                onclick="Checkout.cancelCloseConfirm()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+      </div>
       <p id="checkout-close-confirm-message" class="text-sm text-base-content/70 mb-4"></p>
       <div class="modal-action">
         <button type="button" class="btn btn-sm" onclick="Checkout.cancelCloseConfirm()">Keep it</button>
@@ -1788,7 +1970,9 @@
   function syncToggleState() {
     const collapsed = sidebar.classList.contains('collapsed');
     toggleBtn.setAttribute('aria-expanded', String(!collapsed));
-    toggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    const label = (collapsed ? 'Expand sidebar' : 'Collapse sidebar') + ' (Ctrl+E)';
+    toggleBtn.setAttribute('aria-label', label);
+    toggleBtn.setAttribute('data-tooltip', label);
   }
 
   function setCollapsed(collapsed) {
@@ -1828,27 +2012,56 @@
     }
   });
 
-  // Shared app-wide tooltip -- one styled bubble (#app-tooltip, up near the
-  // sidebar markup) reused for every [data-tooltip] element on the page,
-  // not just the sidebar's collapsed-rail links. Delegated on `document`
-  // via mouseover/mouseout (which bubble; mouseenter/mouseleave don't)
-  // rather than binding per-element, since a lot of what carries
-  // data-tooltip now -- table pagination buttons, filter toggles -- lives
-  // inside htmx swap targets and gets replaced wholesale after every
-  // request; a one-time querySelectorAll+addEventListener pass at load
-  // would silently stop covering those elements after their first swap.
-  //
-  // Two flavors, told apart by the data-tooltip-rail marker:
-  //  - Rail (sidebar nav links, the account avatar): only makes sense
-  //    while the sidebar is collapsed to icons-only -- expanded, the
-  //    label is already visible text right next to it. Positioned to the
-  //    right of the icon, matching the rail's own layout.
-  //  - Everything else (header icons, toolbar buttons, filter toggles):
-  //    always shown on hover, positioned below-center like a typical
-  //    top-bar/toolbar tooltip.
-  // 150ms show-delay in both cases (fast on purpose -- about half the
-  // ~300ms a "normal" tooltip delay would use), no delay on hide so it
-  // never lingers once the cursor leaves.
+  // Ctrl+E (Cmd+E on Mac) -- collapse/expand the sidebar, same toggle as
+  // clicking #sidebar-toggle. Chosen over a bare single key (the pattern
+  // most pages here use for their own local shortcuts, e.g. Staff's "`")
+  // because this one is global -- it needs to work from every page
+  // without colliding with whatever bare keys that page's own listener
+  // already claims. preventDefault() stops it from also hitting whatever
+  // the browser itself binds Ctrl/Cmd+E to (varies by browser; usually
+  // nothing on the page itself).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'e' && e.key !== 'E') return;
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    const target = e.target;
+    const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+    if (isTyping) return;
+    e.preventDefault();
+    setCollapsed(!sidebar.classList.contains('collapsed'));
+  });
+
+  // Alt+Shift+<letter> -- jump straight to a sidebar tab. One mnemonic
+  // letter per tab (see SIDEBAR_SHORTCUT_KEYS in base.html's nav markup),
+  // read off each rendered link's data-shortcut-key rather than a
+  // hardcoded route list, so it automatically matches whichever tabs are
+  // actually visible for this staff member's role and the current
+  // feature flags. Shift is the whole reason this can use mnemonic
+  // letters instead of being capped at digits 1-9: plain Alt+<letter> is
+  // already claimed per-page all over the app (Alt+N "new checkout",
+  // Alt+M "manage categories", Alt+A "add asset"/"mark all read", Alt+R
+  // "return items", Alt+G "generate labels", etc.) -- adding Shift into
+  // the combo means this global shortcut can never collide with any of
+  // those local ones, and isn't limited to 9 tabs the way a bare-digit
+  // scheme would be.
+  document.addEventListener('keydown', function (e) {
+    if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if (e.key.length !== 1 || !/[a-zA-Z]/.test(e.key)) return;
+    const target = e.target;
+    const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+    if (isTyping) return;
+    if (document.querySelector('dialog[open]')) return;
+    const letter = e.key.toUpperCase();
+    const link = sidebar.querySelector(`nav .sidebar-link[data-shortcut-key="${letter}"]`);
+    if (!link) return;
+    e.preventDefault();
+    window.location.href = link.getAttribute('href');
+  });
+
+  // One shared #app-tooltip bubble for every [data-tooltip] element, delegated on document
+  // (mouseover bubbles, so this still covers stuff htmx swaps in later). Rail tooltips
+  // (sidebar links, account avatar) only show while collapsed unless data-tooltip-show-expanded
+  // is set too (sidebar tabs use this to surface their Alt+Shift+letter shortcut even expanded).
+  // Everything else just shows on hover, positioned below-center. 150ms show-delay, instant hide.
   const TOOLTIP_SHOW_DELAY_MS = 150;
   const tooltipEl = document.getElementById('app-tooltip');
   let tooltipShowTimer = null;
@@ -1867,7 +2080,8 @@
     const el = e.target.closest('[data-tooltip]');
     if (!el || el === tooltipTarget) return;
     const isRail = el.hasAttribute('data-tooltip-rail');
-    if (isRail && !sidebar.classList.contains('collapsed')) return;
+    const showExpanded = el.hasAttribute('data-tooltip-show-expanded');
+    if (isRail && !showExpanded && !sidebar.classList.contains('collapsed')) return;
 
     tooltipTarget = el;
     if (tooltipShowTimer) clearTimeout(tooltipShowTimer);
@@ -1877,7 +2091,18 @@
       tooltipEl.textContent = text;
       tooltipEl.classList.remove('hidden');
       const rect = el.getBoundingClientRect();
-      if (isRail) {
+      // Non-rail tooltips normally go below-center (toolbar buttons, filter
+      // toggles -- plenty of room under them). The account row's name span
+      // (line 728 below) is the one non-rail tooltip that sits right at the
+      // bottom of the viewport (sidebar-account is the last thing in the
+      // sidebar) -- "below" there pushed the bubble half off-screen, so it
+      // read as cut off/not shown. Rather than special-case that one
+      // element, flip to the same right-of-element placement rail tooltips
+      // already use whenever there isn't roughly a tooltip's height of room
+      // below -- works for this element today and for anything else that
+      // ever ends up hugging the bottom edge later.
+      const TOOLTIP_EST_HEIGHT = 36;
+      if (isRail || rect.bottom + TOOLTIP_EST_HEIGHT > window.innerHeight) {
         tooltipEl.style.top = (rect.top + rect.height / 2) + 'px';
         tooltipEl.style.left = (rect.right + 10) + 'px';
         tooltipEl.style.transform = 'translateY(-50%)';
@@ -1907,6 +2132,107 @@
   toggleBtn.addEventListener('click', hideTooltip);
 })();
 
+// Full Help modal (#full-help-modal) -- TOC click + scroll-spy. Lives
+// inside a <dialog>, not the page itself, so a plain <a href="#id"> can't
+// be left to the browser's native anchor-jump: that scrolls (and
+// URL-hashes) the outer window, not #full-help-scroll, which is the
+// element that's actually scrollable here. Every TOC link intercepts its
+// click and scrolls the content pane directly instead.
+//
+// The active-link highlight (which section you're "on" while scrolling)
+// is driven by a plain 'scroll' listener + getBoundingClientRect() checks
+// on every section, NOT IntersectionObserver -- tried that first, and
+// confirmed (via a bare-minimum viewport-rooted observer, no custom root
+// or rootMargin involved) that it never fires at all for anything inside
+// a native <dialog> shown via showModal(): elements promoted to the
+// browser's top layer apparently don't participate in intersection
+// tracking the normal way. rAF-throttled so this can't run more than
+// once per frame even during a fast scroll.
+(function () {
+  const modal = document.getElementById('full-help-modal');
+  if (!modal) return;
+  const scrollPane = document.getElementById('full-help-scroll');
+  const tocLinks = Array.from(modal.querySelectorAll('[data-help-toc-link]'));
+  if (!scrollPane || tocLinks.length === 0) return;
+
+  const sections = tocLinks
+    .map(function (link) { return document.getElementById(link.getAttribute('href').slice(1)); })
+    .filter(Boolean);
+
+  function setActiveLink(id) {
+    tocLinks.forEach(function (link) {
+      const active = link.getAttribute('href') === '#' + id;
+      link.classList.toggle('bg-base-200', active);
+      link.classList.toggle('text-base-content', active);
+      link.classList.toggle('font-semibold', active);
+      link.classList.toggle('text-base-content/70', !active);
+    });
+  }
+
+  tocLinks.forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      const id = link.getAttribute('href').slice(1);
+      const target = document.getElementById(id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveLink(id);
+    });
+  });
+
+  // Trigger line sits a little below the pane's own top edge (roughly
+  // where a heading ends up right after scrolling to it), not dead
+  // center -- the last section whose heading has crossed above that line
+  // is "current." Sections are in document order, so the first one that
+  // *hasn't* crossed it yet means every later one hasn't either; no need
+  // to keep checking past that point.
+  const TRIGGER_OFFSET_PX = 96;
+
+  function updateActiveFromScroll() {
+    // Scrolled all the way to the bottom -- the last section forces
+    // itself active here rather than via the trigger-line loop below,
+    // since a short final section (not much page left beneath it) may
+    // never actually scroll far enough to cross that line on its own,
+    // which would otherwise leave the second-to-last section looking
+    // "current" even once there's nothing left to scroll to.
+    const atBottom = scrollPane.scrollTop + scrollPane.clientHeight >= scrollPane.scrollHeight - 1;
+    if (atBottom) {
+      setActiveLink(sections[sections.length - 1].id);
+      return;
+    }
+
+    const paneTop = scrollPane.getBoundingClientRect().top;
+    const triggerY = paneTop + TRIGGER_OFFSET_PX;
+    let current = sections[0];
+    for (let i = 0; i < sections.length; i++) {
+      if (sections[i].getBoundingClientRect().top <= triggerY) {
+        current = sections[i];
+      } else {
+        break;
+      }
+    }
+    if (current) setActiveLink(current.id);
+  }
+
+  // Called directly on every 'scroll' event, no rAF/debounce wrapper --
+  // there are only a handful of sections (~13 at most, one per app tab),
+  // so the getBoundingClientRect() loop above is cheap enough not to need
+  // throttling, and skipping it sidesteps rAF's own quirk of not firing
+  // at all on a backgrounded/non-compositing tab.
+  scrollPane.addEventListener('scroll', updateActiveFromScroll);
+
+  // showModal() doesn't fire a load/open event browsers expose directly,
+  // so this hooks the button that actually calls showModal() on this
+  // dialog (the "Open full Help" row) -- simplest reliable "this just
+  // became visible" signal available. Resets scroll position + highlight
+  // to the top on every open, same as a fresh page load would.
+  document.querySelectorAll('[onclick*="full-help-modal\').showModal"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      scrollPane.scrollTop = 0;
+      setActiveLink(sections[0] ? sections[0].id : tocLinks[0].getAttribute('href').slice(1));
+    });
+  });
+})();
+
 // A disabled-tab redirect (services/auth_service.py's feature_required)
 // lands here as '/?feature_disabled=<label>' -- this app has no
 // server-side flash(), so the one-shot message rides a query param
@@ -1924,6 +2250,27 @@ document.addEventListener('DOMContentLoaded', function () {
     const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
     history.replaceState(null, '', newUrl);
   }
+
+  // Same one-shot-param pattern as feature_disabled above -- an old
+  // bookmark/link to the /help page (routes/pages.py's help_page, now a
+  // redirect) lands here as '/?open_help=1'; this is what actually opens
+  // the modal that page used to be, then cleans the param back off the
+  // URL so a refresh doesn't reopen it.
+  const openHelp = params.get('open_help');
+  if (openHelp) {
+    // .click() (not a direct .showModal() call) so this goes through the
+    // exact same button the "Open full Help" row uses -- that button has
+    // its own click listener (see the scroll-spy IIFE above) that resets
+    // the TOC highlight/scroll position and starts the IntersectionObserver;
+    // calling showModal() directly here would open the dialog without any
+    // of that ever running.
+    const openHelpBtn = document.querySelector('[onclick*="full-help-modal\').showModal"]');
+    if (openHelpBtn) openHelpBtn.click();
+    params.delete('open_help');
+    const newSearch = params.toString();
+    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+    history.replaceState(null, '', newUrl);
+  }
 });
 
 // Accumulated across possibly-repeated "Add screenshot" clicks -- a plain
@@ -1937,7 +2284,7 @@ function resetGiveFeedbackForm() {
   const form = document.getElementById('give-feedback-form');
   if (form) form.reset();
   const errorEl = document.getElementById('give-feedback-error');
-  if (errorEl) errorEl.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('invisible');
   const btn = document.getElementById('give-feedback-submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Send feedback'; }
   feedbackScreenshotFiles = [];
@@ -1979,7 +2326,7 @@ function handleFeedbackScreenshotSelect(event) {
   const errorEl = document.getElementById('give-feedback-error');
   if (picked.length > room) {
     errorEl.textContent = `Only ${room} more screenshot${room === 1 ? '' : 's'} can be added (max ${MAX_FEEDBACK_SCREENSHOTS}).`;
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
   }
   feedbackScreenshotFiles.push(...picked.slice(0, room));
   renderFeedbackScreenshotPreviews();
@@ -1989,14 +2336,14 @@ async function submitGiveFeedback(event) {
   event.preventDefault();
 
   const errorEl = document.getElementById('give-feedback-error');
-  errorEl.classList.add('hidden');
+  errorEl.classList.add('invisible');
 
   const category = document.querySelector('input[name="feedback-category"]:checked')?.value;
   const message = document.getElementById('feedback-message').value.trim();
 
   if (!message) {
     errorEl.textContent = 'Say a bit about what happened or what you have in mind.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
 
@@ -2030,7 +2377,7 @@ async function submitGiveFeedback(event) {
     const data = await res.json();
     if (!res.ok) {
       errorEl.textContent = data.error || "Couldn't send feedback.";
-      errorEl.classList.remove('hidden');
+      errorEl.classList.remove('invisible');
       btn.disabled = false;
       btn.textContent = 'Send feedback';
       return false;
@@ -2040,7 +2387,7 @@ async function submitGiveFeedback(event) {
     showToast(data.message || 'Thanks — feedback sent', 'success');
   } catch (e) {
     errorEl.textContent = "Couldn't send feedback. Check your connection and try again.";
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.textContent = 'Send feedback';
   }
@@ -2099,7 +2446,7 @@ function resetChangePasswordForm() {
   const form = document.getElementById('change-password-form');
   if (form) form.reset();
   const errorEl = document.getElementById('change-password-error');
-  if (errorEl) errorEl.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('invisible');
   const btn = document.getElementById('change-password-submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Update password'; }
   ['cp-current', 'cp-new', 'cp-confirm'].forEach(resetPasswordToggleField);
@@ -2109,7 +2456,7 @@ async function submitChangePassword(event) {
   event.preventDefault();
 
   const errorEl = document.getElementById('change-password-error');
-  errorEl.classList.add('hidden');
+  errorEl.classList.add('invisible');
 
   const currentPassword = document.getElementById('cp-current').value;
   const newPassword = document.getElementById('cp-new').value;
@@ -2117,17 +2464,17 @@ async function submitChangePassword(event) {
 
   if (!currentPassword || !newPassword || !confirmPassword) {
     errorEl.textContent = 'Fill in all three fields.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
   if (newPassword !== confirmPassword) {
     errorEl.textContent = "New password and confirmation don't match.";
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
   if (newPassword.length < 8) {
     errorEl.textContent = 'New password must be at least 8 characters.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
 
@@ -2159,7 +2506,7 @@ async function submitChangePassword(event) {
 
     if (!res.ok) {
       errorEl.textContent = data.error || "Couldn't change password. Please try again.";
-      errorEl.classList.remove('hidden');
+      errorEl.classList.remove('invisible');
       btn.disabled = false;
       btn.textContent = 'Update password';
       return false;
@@ -2169,7 +2516,7 @@ async function submitChangePassword(event) {
     showToast('Password changed successfully', 'success');
   } catch (err) {
     errorEl.textContent = 'Network error — check your connection and try again.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.textContent = 'Update password';
   }
@@ -2186,7 +2533,7 @@ function resetChangeRfidPinForm() {
   const form = document.getElementById('change-rfid-pin-form');
   if (form) form.reset();
   const errorEl = document.getElementById('change-rfid-pin-error');
-  if (errorEl) errorEl.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('invisible');
   const btn = document.getElementById('change-rfid-pin-submit-btn');
   if (btn) { btn.disabled = false; btn.textContent = 'Update PIN'; }
   ['crp-current-password', 'crp-new-pin', 'crp-confirm-pin'].forEach(resetPasswordToggleField);
@@ -2196,7 +2543,7 @@ async function submitChangeRfidPin(event) {
   event.preventDefault();
 
   const errorEl = document.getElementById('change-rfid-pin-error');
-  errorEl.classList.add('hidden');
+  errorEl.classList.add('invisible');
 
   const currentPassword = document.getElementById('crp-current-password').value;
   const newPin = document.getElementById('crp-new-pin').value;
@@ -2204,17 +2551,17 @@ async function submitChangeRfidPin(event) {
 
   if (!currentPassword || !newPin || !confirmPin) {
     errorEl.textContent = 'Fill in all three fields.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
   if (newPin !== confirmPin) {
     errorEl.textContent = "New PIN and confirmation don't match.";
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
   if (!/^\d{6}$/.test(newPin)) {
     errorEl.textContent = 'New PIN must be exactly 6 digits.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     return false;
   }
 
@@ -2245,7 +2592,7 @@ async function submitChangeRfidPin(event) {
 
     if (!res.ok) {
       errorEl.textContent = data.error || "Couldn't change PIN. Please try again.";
-      errorEl.classList.remove('hidden');
+      errorEl.classList.remove('invisible');
       btn.disabled = false;
       btn.textContent = 'Update PIN';
       return false;
@@ -2255,7 +2602,7 @@ async function submitChangeRfidPin(event) {
     showToast('RFID PIN changed successfully', 'success');
   } catch (err) {
     errorEl.textContent = 'Network error — check your connection and try again.';
-    errorEl.classList.remove('hidden');
+    errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.textContent = 'Update PIN';
   }
@@ -2819,17 +3166,101 @@ function syncThemeModeLabel() {
   if (label) label.textContent = THEME_MODE_LABELS[THEME_MODE];
   const icon = document.getElementById('theme-mode-icon');
   if (icon) icon.innerHTML = THEME_MODE_ICONS[THEME_MODE];
+  document.querySelectorAll('.theme-mode-option').forEach(function (opt) {
+    const check = opt.querySelector('.theme-mode-check');
+    if (check) check.classList.toggle('hidden', opt.dataset.mode !== THEME_MODE);
+  });
 }
 syncThemeModeLabel();
 
-function toggleThemeMode() {
-  const idx = THEME_MODES.indexOf(THEME_MODE);
-  THEME_MODE = THEME_MODES[(idx + 1) % THEME_MODES.length];
+// List-and-click picker, shared by Theme mode and Notification style
+// below: a click opens the option list as a floating panel, a click on
+// an option selects it directly and closes the panel again.
+//
+// The panel is relocated to a direct child of <body> the first time it
+// opens and positioned with `position: fixed` from its toggle button's
+// own getBoundingClientRect() -- same technique the shared #app-tooltip
+// bubble elsewhere in this file already uses. This isn't just "floating
+// instead of inline" for its own sake: an earlier version kept the panel
+// in place with plain `position: absolute` (containing block = an
+// intermediate `position: relative` wrapper, exactly as intended), and
+// that was *still* enough to grow #display-accessibility-modal's
+// `.modal-box` own auto height while the panel was open, because
+// modal-box has `overflow-y: auto` and Chromium factors an
+// absolutely-positioned descendant's extent into that box's auto-height
+// even when its containing block is a nearer ancestor. Moving the panel
+// fully outside the scrolling box sidesteps that instead of fighting it.
+const INLINE_DROPDOWN_TOGGLE_BTN = {
+  'theme-mode-menu': 'theme-mode-toggle-btn',
+  'toast-style-menu': 'toast-style-toggle-btn',
+};
+
+function toggleInlineDropdown(menuId, chevronId) {
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+  const opening = menu.classList.contains('hidden');
+
+  // Only one of these floating panels open at a time -- opening one
+  // closes any other that's already open, same as a native <select>.
+  document.querySelectorAll('.inline-dropdown-menu').forEach(function (m) {
+    if (m === menu) return;
+    m.classList.add('hidden');
+    const otherBtnId = INLINE_DROPDOWN_TOGGLE_BTN[m.id];
+    const otherChevron = otherBtnId && document.getElementById(otherBtnId)?.querySelector('svg[id$="-chevron"]');
+    if (otherChevron) otherChevron.style.transform = '';
+  });
+
+  if (opening) {
+    const btn = document.getElementById(INLINE_DROPDOWN_TOGGLE_BTN[menuId]);
+    if (btn) {
+      // Appended to the enclosing <dialog>, not document.body: a native
+      // <dialog> opened via showModal() is promoted to the browser's top
+      // layer and always paints above ordinary page content regardless of
+      // z-index (same quirk noted for #checkout-modal-container above). A
+      // plain document.body child falls outside that top layer, so it was
+      // rendering *behind* this modal instead of above it. Keeping the
+      // panel inside the dialog preserves that top-layer promotion while
+      // still escaping .modal-box's overflow (the original reason it's
+      // relocated at all -- see the comment above this function).
+      (btn.closest('dialog') || document.body).appendChild(menu);
+      const rect = btn.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.left = rect.left + 'px';
+      menu.style.width = rect.width + 'px';
+    }
+  }
+
+  menu.classList.toggle('hidden', !opening);
+  const chevron = chevronId ? document.getElementById(chevronId) : null;
+  if (chevron) chevron.style.transform = opening ? 'rotate(180deg)' : '';
+}
+
+// Closes any open floating dropdown panel on an outside click -- same
+// "click away to dismiss" behavior a native <select> gets for free.
+// Once relocated to <body>, a panel is no longer near its toggle button
+// in the DOM, so "outside" is checked against the button directly
+// (tracked via INLINE_DROPDOWN_TOGGLE_BTN) rather than a shared wrapper.
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('.inline-dropdown-menu:not(.hidden)').forEach(function (menu) {
+    if (menu.contains(e.target)) return;
+    const btn = document.getElementById(INLINE_DROPDOWN_TOGGLE_BTN[menu.id]);
+    if (btn && btn.contains(e.target)) return;
+    menu.classList.add('hidden');
+    const chevron = btn?.querySelector('svg[id$="-chevron"]');
+    if (chevron) chevron.style.transform = '';
+  });
+});
+
+function setThemeMode(mode) {
+  if (!THEME_MODE_ATTRS[mode]) return;
+  THEME_MODE = mode;
   applyThemeMode(THEME_MODE);
   try {
     localStorage.setItem('app-theme:' + STAFF_KEY, THEME_MODE);
   } catch (e) {}
   syncThemeModeLabel();
+  toggleInlineDropdown('theme-mode-menu', 'theme-mode-chevron');
   showToast(`Theme mode set to ${THEME_MODE_LABELS[THEME_MODE]}`, 'success');
 }
 
@@ -2855,16 +3286,23 @@ function syncToastStyleLabel() {
   if (label) label.textContent = TOAST_STYLE_LABELS[TOAST_STYLE];
   const icon = document.getElementById('toast-style-icon');
   if (icon) icon.innerHTML = TOAST_STYLE_ICONS[TOAST_STYLE];
+  document.querySelectorAll('.toast-style-option').forEach(function (opt) {
+    const check = opt.querySelector('.toast-style-check');
+    if (check) check.classList.toggle('hidden', opt.dataset.style !== TOAST_STYLE);
+  });
 }
 syncToastStyleLabel();
 
-function toggleToastStyle() {
-  const idx = TOAST_STYLES.indexOf(TOAST_STYLE);
-  TOAST_STYLE = TOAST_STYLES[(idx + 1) % TOAST_STYLES.length];
+// List-and-click, same as Theme mode above -- replaces the old
+// cycle-through-on-click toggle (see toggleInlineDropdown's comment).
+function setToastStyle(style) {
+  if (!TOAST_STYLES.includes(style)) return;
+  TOAST_STYLE = style;
   try {
     localStorage.setItem('toast-style:' + STAFF_KEY, TOAST_STYLE);
   } catch (e) {}
   syncToastStyleLabel();
+  toggleInlineDropdown('toast-style-menu', 'toast-style-chevron');
   showToast(`Notification style set to ${TOAST_STYLE_LABELS[TOAST_STYLE]}`, 'success');
 }
 
@@ -3237,32 +3675,13 @@ document.body.addEventListener('htmx:sendError', function (evt) {
   showToast("Network error — check your connection and try again.", 'error');
 });
 
-// ---------------------------------------------------------------------
-// Checkout widget controller
-//
-// A staff member can have several checkout sessions in flight at once
-// (e.g. one minimized while a second trainee is being checked out), so
-// this can't assume a single global dialog/dock pair. Every checkout
-// "instance" -- a <dialog class="checkout-modal"> in #checkout-modal-container
-// plus its sibling dock in #checkout-docks-tray -- shares a data-client-id.
-// For a brand-new checkout that id is a throwaway crypto.randomUUID()
-// minted before the member even has a session; once a real session
-// exists server-side, the id used IS the session id, which is what lets
-// resumeOrExpand() recognize "this session is already open in this tab"
-// with a plain getElementById lookup instead of a server round-trip.
-//
-// State that used to live in each fragment's own closure (sessionId,
-// completedCount) now lives in this module's `state` map, keyed by
-// client id -- the <script> shipped with each fragment only calls
-// Checkout.init(), it doesn't redefine any of these methods.
-// ---------------------------------------------------------------------
-// Explicitly attached to window (not just `const Checkout = ...`) because
-// htmx's hx-trigger/hx-vals "js:" expressions are evaluated via `new
-// Function(...)`, which only resolves true globals -- a top-level const
-// is invisible to it even though it's visible to ordinary inline
-// onclick="..." handlers elsewhere on the page. Without this, the New
-// Checkout button's hx-trigger="click[Checkout.countOk()]" would silently
-// fail to fire.
+// Checkout widget controller. A staff member can have several checkout sessions open at once
+// (one minimized while checking out a second trainee), so every instance -- a dialog in
+// #checkout-modal-container plus its dock in #checkout-docks-tray -- gets its own data-client-id
+// and its state lives in this module's `state` map, keyed by that id.
+// Attached to window (not just `const Checkout = ...`) because htmx's "js:" hx-vals expressions
+// run through `new Function(...)`, which can only see true globals -- a plain const would be
+// invisible to hx-trigger="click[Checkout.countOk()]" even though onclick="" can see it fine.
 window.Checkout = (function () {
   const state = new Map();
   const MAX_CONCURRENT_CHECKOUTS = 4;
@@ -3904,6 +4323,25 @@ window.requestCheckoutModalClose = function () {
   if (minimizeBtn) Checkout.requestClose(minimizeBtn);
 };
 
+// Shared data-close-guard target for the CSV import modals (Assets/
+// Members/Staff -- templates/{assets,members,staff}/_import_modal.html),
+// each set data-close-guard="guardImportModalClose" on their outer
+// .modal.modal-open div. Only one of these can ever be open at a time
+// (same one-modal-in-#modal-container assumption requestCheckoutModalClose
+// above makes), so this doesn't need to know which app it's for. The
+// import form itself toggles data-uploading="1" on this same div via
+// hx-on::before-request/after-request (there's no htmx-request class on
+// the outer div itself to check instead -- that class only lands on the
+// elements htmx actually targets/indicates). While a preview/commit
+// request is in flight, the click/Escape is swallowed entirely rather
+// than closing mid-upload and losing the file selection or leaving an
+// import half-applied with no visible outcome.
+window.guardImportModalClose = function () {
+  const modalEl = document.querySelector('.modal.modal-open[data-close-guard="guardImportModalClose"]');
+  if (!modalEl || modalEl.dataset.uploading === '1') return;
+  modalEl.remove();
+};
+
 // Native Escape-to-close on <dialog> bypasses our explicit "Keep it"
 // button, so this catches every way the shared close-confirm dialog can
 // end up closed (button clicks, backdrop click, Escape) and makes sure
@@ -3975,6 +4413,34 @@ document.addEventListener('keydown', function (e) {
   topModal.remove();
 });
 
+// Backdrop-click-to-close for the older div.modal.modal-open pattern (see
+// the Escape handler's comment above for why two modal patterns coexist).
+// Native <dialog> modals already get this for free via their own
+// <form method="dialog" class="modal-backdrop"> sibling -- clicking the
+// backdrop submits that hidden form, which calls the dialog's native
+// close(), no JS needed. The div-based pattern has no dialog semantics
+// at all, so it's never had backdrop-click-close -- this adds it,
+// sharing the exact same data-close-guard contract the Escape handler
+// above uses, so a modal only ever needs to opt into ONE guard function
+// to protect itself from both dismissal paths at once.
+document.addEventListener('click', function (e) {
+  // Only fires when the click landed directly on the outer wrapper
+  // itself (the backdrop) -- not on .modal-box or anything inside it.
+  // e.target === the modal div is the standard way to detect that with
+  // a single delegated listener instead of attaching one per modal.
+  if (!e.target.classList || !e.target.classList.contains('modal') || !e.target.classList.contains('modal-open')) {
+    return;
+  }
+
+  const guardFnName = e.target.dataset.closeGuard;
+  if (guardFnName && typeof window[guardFnName] === 'function') {
+    window[guardFnName]();
+    return;
+  }
+
+  e.target.remove();
+});
+
 (function () {
   const pending = sessionStorage.getItem('pending-toast');
   if (pending) {
@@ -3987,5 +4453,6 @@ document.addEventListener('keydown', function (e) {
 })();
 </script>
 
+<!-- Made by Karupin/artkaru -->
 </body>
 </html>

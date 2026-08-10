@@ -28,8 +28,10 @@
         <h3 class="font-bold text-lg leading-snug">Asset Details</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ asset.asset_id }}</p>
       </div>
-      <button type="button" class="btn btn-sm btn-circle btn-ghost" onclick="this.closest('.fixed').remove()" aria-label="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      <!-- ESC pill instead of an X icon -- doubles as a hint that Escape closes it too, used on every modal header. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
+              onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
+        ESC
       </button>
     </div>
 
@@ -63,7 +65,7 @@
               <span class="text-sm font-medium text-right">{{ asset.barcode_id }}</span>
             </div>
             <div class="flex items-center justify-between gap-3">
-              <span class="text-xs text-base-content/50">RFID ID</span>
+              <span class="text-xs text-base-content/50">RFID Tag</span>
               <span class="text-sm font-medium text-right">{{ asset.rfid_id or "—" }}</span>
             </div>
             <div class="flex items-center justify-between gap-3">
@@ -172,10 +174,11 @@
           {% endif %}
 
           {% if history_total_count > 0 %}
+          <!-- beforeend (not innerHTML) stacks the history modal on top instead of wiping out this one. -->
           <button type="button" class="text-xs font-medium text-primary hover:underline mt-3"
                   hx-get="/api/v1/assets/{{ asset.id }}/history-modal"
                   hx-target="#modal-container"
-                  hx-swap="innerHTML">
+                  hx-swap="beforeend">
             View Full History ({{ history_total_count }}) &rarr;
           </button>
           {% endif %}
@@ -183,23 +186,31 @@
       </div>
     </div>
 
-    <!-- Footer actions -->
+    <!-- Footer actions role-gated to match the backend's @roles_required (edit/delete: admin+in_charge,
+         restore: admin-only, routes/assets.py) so tool_keeper/in_charge can't click into a 403. -->
+    {% set can_edit_delete = g.staff.role in ["admin", "in_charge"] %}
+    {% set can_restore = g.staff.role == "admin" %}
     <div class="flex justify-end gap-2 p-5 border-t border-base-300 shrink-0">
       <button type="button" class="btn w-20" onclick="this.closest('.fixed').remove()">Cancel</button>
       {% if asset.deleted_at %}
+      {% if can_restore %}
       <button type="button" class="btn btn-primary w-20"
               hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">
         Restore
       </button>
+      {% endif %}
+      {% if can_edit_delete %}
       <button type="button" class="btn btn-outline w-20"
               hx-get="/api/v1/assets/{{ asset.id }}/edit-form?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">
         Edit
       </button>
+      {% endif %}
       {% else %}
+      {% if can_edit_delete %}
       <button type="button" class="btn btn-error btn-outline w-20"
               hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm?return_to=details"
               hx-target="#modal-container"
@@ -212,6 +223,7 @@
               hx-swap="beforeend">
         Edit
       </button>
+      {% endif %}
       {% endif %}
     </div>
 

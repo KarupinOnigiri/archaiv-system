@@ -9,16 +9,13 @@
       
     </div>
     <div class="flex items-center gap-2">
-      <!-- Customize -- opens a reorderable/toggleable list of every widget
-           this role can see (services/report_widgets.py), rather than
-           dragging cards directly in the live grid: a modal list keeps
-           reordering well-defined even while some widgets are hidden,
-           which a free-form grid full of display:none gaps wouldn't. -->
-      <button type="button" id="reports-customize-btn" class="btn btn-outline btn-sm gap-1.5" onclick="openCustomizeModal()">
+      <!-- Customize -- a modal list to reorder/toggle widgets, rather than
+           dragging cards live: stays well-defined even while some are hidden. -->
+      <button type="button" id="reports-customize-btn" class="btn btn-outline btn-sm gap-1.5" data-tooltip="Customize widgets (Alt+C)" onclick="openCustomizeModal()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Customize
       </button>
-      <button type="button" id="reports-export-btn" class="btn btn-outline btn-sm gap-1.5" onclick="openExportModal()">
+      <button type="button" id="reports-export-btn" class="btn btn-outline btn-sm gap-1.5" data-tooltip="Export report (Alt+E)" onclick="openExportModal()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export
       </button>
@@ -40,22 +37,18 @@
               onclick="clearReportsDateFilter()" aria-label="Clear date range" data-tooltip="Clear date range (Esc)" disabled>
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
       </button>
-      <input type="date" id="reports-since-filter" aria-label="From date" title="From" value="{{ since }}"
+      <input type="date" id="reports-since-filter" aria-label="From date" data-tooltip="From" value="{{ since }}"
              class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
       <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
-      <input type="date" id="reports-until-filter" aria-label="To date" title="To" value="{{ until }}"
+      <input type="date" id="reports-until-filter" aria-label="To date" data-tooltip="To" value="{{ until }}"
              class="input input-bordered input-sm join-item w-32" onchange="fetchAllReports()">
     </div>
     <span class="text-xs text-base-content/40">Leave blank for all-time. Applies to every report below.</span>
   </div>
 
-  <!-- Every widget this role could ever see lives in the DOM unconditionally
-       -- /api/v1/stats/layout (role-scoped server-side, see
-       services/report_widgets.py) decides which ones actually get shown and
-       in what order; applyReportLayout() below hides/orders the rest. This
-       keeps "what am I allowed to see" defined in exactly one place (the
-       backend registry) instead of duplicated in Jinja role-check
-       conditionals here too. -->
+  <!-- Every widget this role could see lives in the DOM unconditionally --
+       /api/v1/stats/layout decides what's shown/ordered (applyReportLayout below),
+       keeping role visibility in one place instead of duplicated Jinja checks. -->
   <div id="reports-widgets" class="grid grid-cols-1 xl:grid-cols-2 gap-4">
 
     <!-- Summary KPIs -->
@@ -254,13 +247,8 @@
       </div>
     </div>
 
-    <!-- Staff Activity -- admin-only (see routes/stats.py's staff_activity
-         endpoint docstring for why: staff oversight is admin territory
-         everywhere else in the app, in_charge doesn't get this one). The
-         role gate is enforced by /api/v1/stats/layout never listing this
-         widget for non-admins, not by a Jinja role check here -- see the note
-         above the widgets container. Deliberately a plain table (not a bar
-         chart) and sorted alphabetically server-side, not by any count --
+    <!-- Staff Activity -- admin-only (role gate enforced by /api/v1/stats/layout,
+         not a Jinja check). A plain table, sorted alphabetically not by count --
          workload visibility, not a leaderboard. -->
     <div class="report-widget xl:col-span-2" data-widget-id="staff_activity">
       <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
@@ -280,11 +268,8 @@
       </div>
     </div>
 
-    <!-- Tool Keeper's "own activity only" widgets -- see
-         services/report_widgets.py: never shown to admin/in_charge (the
-         layout endpoint won't list them), and every query behind them
-         filters to the requesting staff member's own id server-side
-         regardless of what role asks. -->
+    <!-- Tool Keeper's "own activity only" widgets -- never shown to admin/in_charge,
+         and every query filters to the requesting staff member's own id server-side. -->
     <div class="report-widget" data-widget-id="my_checkouts">
       <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
@@ -344,15 +329,17 @@
 
 <div id="modal-container"></div>
 
-<!-- Customize modal -- reorder (drag rows) and show/hide every widget this
-     role can see. Native HTML5 drag-and-drop (draggable + dragstart/
-     dragover/drop) on a plain vertical list, not a vendored library: a
-     linear list reorder is simple enough for it to be robust, and it
-     keeps this page dependency-free the same way the rest of the app's
-     drag interactions (base.html's avatar-crop widget) already are. -->
+<!-- Customize modal -- reorder/show-hide widgets via native HTML5 drag-and-drop,
+     not a vendored library, keeping this page dependency-free. -->
 <dialog id="customize-modal" class="modal">
   <div class="modal-box max-w-md">
-    <h3 class="font-bold text-lg mb-1">Customize Reports</h3>
+    <div class="flex justify-between items-start">
+      <h3 class="font-bold text-lg mb-1">Customize Reports</h3>
+      <form method="dialog">
+        <button class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+      </form>
+    </div>
     <p class="text-xs text-base-content/50 mb-4">Drag <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 inline" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg> to reorder, toggle to show or hide. Saved to your account.</p>
     <ul id="customize-widget-list" class="space-y-1.5 max-h-[55vh] overflow-y-auto pr-1"></ul>
     <div class="modal-action items-center justify-between">
@@ -366,15 +353,15 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- Export modal -- per-section checkboxes (pre-scoped to one widget when
-     opened via a card's own export icon) and a format choice. XLSX/CSV
-     are built server-side (routes/stats.py export_stats, sections= param);
-     PDF is assembled client-side with the already-vendored jsPDF, reusing
-     the exact same on-screen chart images/row data rather than a second
-     server round trip. -->
+<!-- Export modal -- XLSX/CSV built server-side (routes/stats.py export_stats);
+     PDF assembled client-side with jsPDF, reusing the on-screen chart/row data. -->
 <dialog id="export-modal" class="modal">
   <div class="modal-box max-w-md">
-    <h3 class="font-bold text-lg mb-1">Export Reports</h3>
+    <div class="flex justify-between items-start">
+      <h3 class="font-bold text-lg mb-1">Export Reports</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="document.getElementById('export-modal').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p class="text-xs text-base-content/50 mb-4">Same date range as the page. Pick what to include.</p>
 
     <div class="flex items-center justify-between mb-2">
@@ -427,14 +414,9 @@ const REPORT_EMPTY_STATE = '<p class="text-center py-8 text-sm text-base-content
 const REPORT_ERROR_STATE = '<p class="text-center py-8 text-sm text-error">Couldn\'t load this report.</p>';
 const REPORT_LOADING_STATE = '<div class="flex justify-center py-8"><span class="loading loading-spinner loading-sm text-primary"></span></div>';
 
-// Opens the existing Inventory/Members row-click modals from here too --
-// reuses the exact same routes those pages already use (this doesn't
-// duplicate that markup or logic), via htmx.ajax() rather than a raw
-// fetch()+innerHTML so the modal's own trailing <script> (which fetches
-// its history/activity tabs) actually runs the same way it does when
-// opened the normal way through htmx's declarative hx-get -- a plain
-// innerHTML injection wouldn't execute it, leaving those tabs spinning
-// forever.
+// Opens the existing Inventory/Members row-click modals via htmx.ajax(), not raw
+// fetch()+innerHTML -- innerHTML wouldn't run the modal's trailing <script>
+// (which loads its history/activity tabs), leaving those tabs spinning forever.
 function openMemberProfile(id) {
   htmx.ajax('GET', `/api/v1/members/${id}/profile`, { target: '#modal-container', swap: 'innerHTML' });
 }
@@ -458,11 +440,8 @@ window.__reportRowClick = function (elId, index) {
 };
 window.__reportRowClickData = {};
 
-// Reads a daisyUI theme color straight off the CSS custom property (an
-// oklch(...) string, which Canvas/Chart.js accept natively as a color) --
-// rather than hardcoding hex values here that could quietly drift from
-// whatever the actual theme defines, and so a theme swap is reflected
-// automatically without this file needing to know the theme's palette.
+// Reads a daisyUI theme color off the CSS custom property (oklch string, which
+// Chart.js accepts natively) instead of hardcoding hex, so theme swaps just work.
 function themeColor(varName) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
@@ -470,17 +449,9 @@ function themeColor(varName) {
 const REPORT_CHARTS = {}; // elId -> Chart instance, so a refetch can destroy-and-recreate instead of leaking canvases
 const REPORT_LAST_ROWS = {}; // elId -> last-rendered rows, reused by the PDF export builder below
 
-// Real bar chart (Chart.js, vendored locally -- static/js/chart.min.js,
-// see the <script> tag above) for the three pure "ranking" reports, where
-// a chart genuinely earns its place: one metric, ranked, nothing else to
-// show per row. The other reports stay as tables -- multiple
-// differently-shaped columns don't compress into one chart cleanly, and a
-// table already reads better for those than forcing a chart would.
-//
-// Bars use a top-to-bottom gradient fill (solid theme color fading toward
-// transparent) rather than a flat fill, rounded corners, and a themed
-// tooltip box -- purely cosmetic, same underlying data/interaction as
-// before (onClick still opens the matching Inventory/Members modal).
+// Real bar chart (Chart.js) for the three pure "ranking" reports -- one metric,
+// ranked, nothing else per row. Other reports stay tables since multi-column data
+// doesn't compress into a chart cleanly. Gradient fill + rounded corners are cosmetic only.
 function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', colorVar, onClick = null }) {
   const el = document.getElementById(elId);
   REPORT_LAST_ROWS[elId] = rows;
@@ -564,11 +535,8 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
   REPORT_CHARTS[elId] = chart;
 }
 
-// Re-renders whatever charts are currently on screen when the theme
-// toggles (base.html's toggleThemeMode()), so bar/text/grid colors
-// actually follow it instead of staying frozen at whatever they were
-// when first drawn -- charts read colors once at creation time, they
-// don't watch CSS variables the way the rest of the page's styling does.
+// Re-renders charts on screen when the theme toggles -- Chart.js reads colors
+// once at creation time, so they'd otherwise stay frozen at the old theme.
 new MutationObserver(function () {
   if (Object.keys(REPORT_CHARTS).length === 0) return;
   fetchMostBorrowedAssets();
@@ -815,14 +783,9 @@ function fetchMyOverdueHandled() {
   });
 }
 
-// Keeps the address bar in sync with the current since/until range --
-// this page has no htmx requests to hook a configRequest listener onto
-// (everything's a plain fetch(), see the module docstring in
-// routes/pages.py's reports_page), so the sync just lives right here at
-// the one function every date change (manual pick, preset click, Clear,
-// Escape) already funnels through. routes/pages.py reads since/until
-// back out of the URL on load so a bookmarked or refreshed
-// /reports?since=...&until=... reopens with that same range applied.
+// Keeps the address bar in sync with since/until -- this page uses plain fetch()
+// (no htmx configRequest hook), so this lives here instead, at the one function
+// every date change funnels through. routes/pages.py reads it back on load.
 function syncReportsDateUrl() {
   try {
     const since = document.getElementById('reports-since-filter').value;
@@ -1300,7 +1263,11 @@ async function exportSectionsAsPdf(sectionIds) {
     drawTable(columns, rows.map(spec.row));
   }
 
-  const basename = `reports_${new Date().toISOString().slice(0, 10)}`;
+  // toISOString() converts to UTC first, which rolls back to the previous
+  // calendar day for anyone east of UTC (e.g. UTC+8) -- build the filename
+  // from local date parts instead.
+  const _now = new Date();
+  const basename = `reports_${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
   doc.save(`${basename}.pdf`);
 }
 

@@ -8,7 +8,7 @@
       <h1 class="text-2xl font-bold">Borrow &amp; Return</h1>
     </div>
     <div class="flex items-center gap-2">
-      <button type="button" id="export-transactions-btn" class="btn btn-outline btn-sm rounded-full" onclick="exportTransactions()">
+      <button type="button" id="export-transactions-btn" class="btn btn-outline btn-sm rounded-full" data-tooltip="Export data (Alt+E)" onclick="exportTransactions()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         Export
       </button>
@@ -31,11 +31,8 @@
     </div>
   </div>
 
-  <!-- Shown only when arriving via a notification's "open" link
-       (?member_id=...) -- the table below is filtered to that one
-       borrower's loans (see the member_id filter in
-       _build_transactions_filters), which would otherwise look like an
-       unexplained subset of the usual full list. -->
+  <!-- Shown when a notification's "open" link (?member_id=...) filters the
+       table to one borrower's loans, so that subset doesn't look unexplained. -->
   {% if filtered_member_name %}
   <div id="member-filter-banner" class="alert bg-primary/10 border border-primary/20 text-sm py-2.5 flex items-center justify-between">
     <span>Showing loans for <strong>{{ filtered_member_name }}</strong>.</span>
@@ -43,12 +40,9 @@
   </div>
   {% endif %}
 
-  <!-- Auto-opens one loan's details modal on top of the (possibly
-       borrower-filtered, see above) table when arriving via a
-       notification's "open" link (?open_transaction=<id>) -- gives the
-       specific loan the notification was about immediate focus. isdigit()
-       guards against a tampered/non-numeric query param turning into a
-       malformed hx-get URL. -->
+  <!-- Auto-opens one loan's details modal when arriving via a notification's
+       "open" link (?open_transaction=<id>). isdigit() guards against a
+       tampered/non-numeric query param breaking the hx-get URL. -->
   {% set open_transaction_id = request.args.get('open_transaction') %}
   {% if open_transaction_id and open_transaction_id.isdigit() %}
   <div hx-get="/api/v1/transactions/{{ open_transaction_id }}/details-modal"
@@ -74,20 +68,16 @@
 
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-        <!-- Not a visible control -- carries the borrower-scoping filter
-             from a notification's "open" link (?member_id=...) through
-             every subsequent htmx request on this page (search, status,
-             dates, sort, paging), the same way the visible filter inputs
-             already do for each other via hx-include. Without this,
-             each of those requests rebuilds its params from only the
-             visible fields and silently drops member_id the moment any
-             of them fires -- which is exactly what "the notification
-             filter didn't stick" turned out to be. Empty string when
-             unset, matching every other optional filter here (backend
-             treats blank as "not set"). -->
+        <!-- Not a visible control -- carries the notification's member_id
+             filter through every htmx request on this page (search, status,
+             dates, sort, paging) via hx-include, same as the visible filters. -->
         <input type="hidden" id="member-id-filter" name="member_id" value="{{ request.args.get('member_id', '') }}">
 
-        <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" title="Search">
+        <button type="button" id="refresh-transactions-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh transactions list" onclick="refreshTransactionsTable()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
+        <div id="search-filter-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
           <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           </div>
@@ -103,14 +93,14 @@
                  hx-include="#status-filter, #time-out-from-filter, #time-out-to-filter, #member-id-filter"
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
           <button type="button" id="search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
-                  aria-label="Clear search" title="Clear search" onclick="clearSearch()">
+                  aria-label="Clear search" data-tooltip="Clear search" onclick="clearSearch()">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           </button>
         </div>
 
-        <div id="status-filter-wrap" class="join rounded-lg transition-shadow" title="Status">
+        <div id="status-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Status">
           <button type="button" id="status-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                  onclick="clearStatusFilter()" aria-label="Clear status filter" title="Clear status filter" disabled>
+                  onclick="clearStatusFilter()" aria-label="Clear status filter" data-tooltip="Clear status filter" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
           </button>
           <select id="status-filter" name="status"
@@ -130,16 +120,16 @@
           </select>
         </div>
 
-        <div id="date-filters" class="join rounded-lg transition-shadow" title="Time out range">
+        <div id="date-filters" class="join rounded-lg transition-shadow" data-tooltip="Time out range">
           <button type="button" id="date-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
-                  onclick="clearDateFilter()" aria-label="Clear time out range filter" title="Clear time out range filter" disabled>
+                  onclick="clearDateFilter()" aria-label="Clear time out range filter" data-tooltip="Clear time out range filter" disabled>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
           </button>
           <input type="date" id="time-out-from-filter" name="time_out_from"
                  aria-label="Time out from date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('time_out_from', '') }}"
-                 title="Time out from"
+                 data-tooltip="Time out from"
                  hx-get="/api/v1/transactions/table"
                  hx-trigger="change"
                  hx-target="#transaction-table-container"
@@ -152,7 +142,7 @@
                  aria-label="Time out to date"
                  class="input input-bordered input-sm join-item w-32"
                  value="{{ request.args.get('time_out_to', '') }}"
-                 title="Time out to"
+                 data-tooltip="Time out to"
                  hx-get="/api/v1/transactions/table"
                  hx-trigger="change"
                  hx-target="#transaction-table-container"
@@ -162,14 +152,10 @@
                  hx-vals='{"limit": {{ limit }}, "offset": 0}'>
         </div>
 
-        <!-- Today/Yesterday -- one-click shortcuts for the two ranges
-             people actually reach for the date picker for most often
-             (start/end of shift review), same "quick preset next to the
-             full picker" pattern the Audit Log page already uses for its
-             own date range. Each sets both from/to to the same date
-             (a single-day window), then fires the exact same htmx
-             request the pickers themselves would. -->
-        <div id="date-quick-filters" class="join rounded-lg" title="Quick date filter">
+        <!-- Today/Yesterday quick presets, same pattern as Audit Log's date
+             range. Each sets from/to to the same single day and fires the
+             same htmx request the pickers themselves would. -->
+        <div id="date-quick-filters" class="join rounded-lg" data-tooltip="Quick date filter">
           <button type="button" id="date-quick-today-btn" class="join-item btn btn-outline btn-sm"
                   onclick="applyDateQuickFilter('today')" data-tooltip="Filter to today's transactions (t)">
             Today
@@ -187,14 +173,9 @@
 
       </div>
 
-      <!-- Batch-return bar -- sits directly on top of the filter row above
-           (same absolute-overlay + visibility toggle as members.html's
-           #bulk-actions-bar) rather than stacking below it, so selecting
-           rows swaps the search bar out for this instead of pushing the
-           table down. Hidden until at least one open-loan row's checkbox
-           is ticked. Selection lives in JS only (selectedTxnIds); nothing
-           here is persisted, so a table refresh (page, sort, filter, or a
-           return elsewhere) just clears it via clearTxnSelection(). -->
+      <!-- Batch-return bar -- overlays the filter row (same pattern as
+           members.html's #bulk-actions-bar) once a row's checked, instead of
+           pushing the table down. Selection is JS-only and clears on refresh. -->
       <div id="batch-action-bar" class="pointer-events-none flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-sm" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
         <span><span id="batch-selected-count">0</span> selected</span>
         <div class="flex items-center gap-2">
@@ -227,21 +208,17 @@
 <div id="modal-container"></div>
 
 <script>
-// Exports whatever the table currently shows -- reuses the same
-// getBaseFilterParams() the stat cards and status dropdown already share,
-// so "what's on screen" and "what gets exported" can never quietly
-// diverge. A plain navigation (not fetch/htmx) since the response is a
-// file download, not markup to swap in.
+// Exports whatever the table currently shows, reusing getBaseFilterParams()
+// so exports never drift from what's on screen. Plain navigation (not
+// fetch/htmx) since the response is a file download.
 function exportTransactions() {
   const params = getBaseFilterParams();
   window.open('/api/v1/transactions/export?' + params.toString(), '_blank');
 }
 
-// # # # Batch return -- row checkboxes -> selectedTxnIds -> the
-// batch-action bar -> the batch-return-confirm modal. Selection is
-// JS-only (no server round-trip just to tick a box), and gets thrown
-// away on every table refresh via clearTxnSelection() below, since a
-// refreshed table can reorder or drop rows out from under stale ids.
+// Batch return: row checkboxes -> selectedTxnIds -> batch-action bar -> the
+// batch-return-confirm modal. JS-only selection, cleared on every table
+// refresh via clearTxnSelection() since refreshed rows can reorder/drop ids.
 let selectedTxnIds = new Set();
 
 function updateBatchActionBar() {
@@ -292,9 +269,8 @@ function toggleSelectAllTxn(checked) {
   updateBatchActionBar();
 }
 
-// Called on table refresh and after a successful batch return (see
-// _batch_return_confirm.html) -- clears both the JS set and whatever
-// checkboxes happen to still be in the DOM.
+// Called on table refresh and after a successful batch return -- clears
+// both the JS set and whatever checkboxes are still in the DOM.
 function clearTxnSelection() {
   selectedTxnIds.clear();
   document.querySelectorAll('.txn-row-checkbox').forEach(function (cb) { cb.checked = false; });
@@ -325,7 +301,7 @@ async function openBatchReturnConfirm() {
   }
 }
 
-// Clears just the search box, matching clearSearch() on the assets page.
+// Clears just the search box, matching the assets page's own clearSearch().
 function clearSearch() {
   const input = document.getElementById('transaction-search');
   input.value = '';
@@ -348,13 +324,9 @@ function clearDateFilter() {
   from.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// Today/Yesterday quick filter -- sets the from/to range to a single
-// local calendar day (matching how the Audit Log's own Today/Yesterday
-// presets and the dashboard's Top Borrowed "today"/"yesterday" ranges
-// all reason about "today": local midnight-to-midnight, not a rolling
-// 24 hours) and fires the table refetch through the same date input
-// that change-triggers it, so this behaves identically to typing the
-// date into the picker by hand.
+// Sets from/to to a single local calendar day (midnight-to-midnight, same
+// as Audit Log's presets) and fires the change event so this behaves
+// exactly like typing the date into the picker by hand.
 function applyDateQuickFilter(which) {
   const target = new Date();
   if (which === 'yesterday') target.setDate(target.getDate() - 1);
@@ -370,10 +342,8 @@ function applyDateQuickFilter(which) {
 }
 
 // Single source of truth for "what does the filter row currently say" --
-// used by filterByStatus() and clearAllFilters() so a stat-card click (or
-// the 1-4 shortcut) never silently drops whatever search text or date
-// range is already active, same reasoning as the assets page's
-// getBaseFilterParams().
+// keeps a stat-card click (or the 1-4 shortcut) from dropping whatever
+// search/date filters are already active.
 function getBaseFilterParams() {
   const q = document.getElementById('transaction-search').value.trim();
   const status = document.getElementById('status-filter').value;
@@ -390,9 +360,25 @@ function getBaseFilterParams() {
   return params;
 }
 
-// Fires a real htmx request (not just flipping the <select>'s value) so
-// clicking a stat card behaves exactly like picking that option from the
-// Status dropdown -- same URL-sync, same loading spinner, same result.
+// Re-fetches the table with whatever filters/sort/page are currently in
+// effect -- unlike most other actions here, a manual refresh shouldn't
+// jump back to page 1.
+function refreshTransactionsTable() {
+  const table = document.querySelector('#transaction-table-container table');
+  const params = getBaseFilterParams();
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '0');
+  params.set('sort_by', (table && table.dataset.sortBy) || '{{ sort_by }}');
+  params.set('sort_dir', (table && table.dataset.sortDir) || '{{ sort_dir }}');
+  htmx.ajax('GET', '/api/v1/transactions/table', {
+    target: '#transaction-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+}
+
+// Fires a real htmx request so clicking a stat card behaves exactly like
+// picking that option from the Status dropdown.
 function filterByStatus(status) {
   const select = document.getElementById('status-filter');
   select.value = status;
@@ -412,9 +398,7 @@ function clearAllFilters() {
   document.getElementById('status-filter').value = '';
   document.getElementById('time-out-from-filter').value = '';
   document.getElementById('time-out-to-filter').value = '';
-  // Also drops the borrower scope from a notification's "open" link, if
-  // one is active -- "Clear filters" clearing every filter but this one
-  // would be a surprising exception.
+  // Also drops the notification's member_id scope, if active.
   document.getElementById('member-id-filter').value = '';
   const banner = document.getElementById('member-filter-banner');
   if (banner) banner.remove();
@@ -427,8 +411,8 @@ function clearAllFilters() {
 }
 
 // Active-filter highlighting + "Clear filters" + search clear (x) + stat-card
-// quick filters -- purely client-side chrome; every control still drives
-// the table through its own hx-get.
+// quick filters -- client-side chrome only; every control still drives the
+// table through its own hx-get.
 function updateFilterUI() {
   const search = document.getElementById('transaction-search');
   const status = document.getElementById('status-filter');
@@ -451,10 +435,8 @@ function updateFilterUI() {
   document.getElementById('date-filters').classList.toggle('ring-primary/40', dateActive);
   document.getElementById('date-filter-clear-btn').disabled = !dateActive;
 
-  // Highlights whichever quick-filter button (if any) matches the
-  // current from/to range exactly, so picking "Today" then coming back
-  // to this page still shows it as the active choice instead of just a
-  // plain unlabeled date range.
+  // Highlights whichever quick-filter button matches the current range
+  // exactly, so "Today" still shows as active on revisit.
   const todayIso = new Date();
   const isoOf = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const yesterdayIso = new Date();
@@ -475,9 +457,8 @@ function updateFilterUI() {
   updateStatCardUI(status.value);
 }
 
-// Keeps the stat cards' ring/border highlight in sync with whichever
-// status they represent. "All Transactions" (data-status="") is active
-// whenever no status filter is set.
+// Keeps the stat cards' ring/border highlight in sync with the active
+// status. "All Transactions" (data-status="") is active when unset.
 const STAT_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
   'borrowed': 'ring-info/40 border-info/40',
@@ -496,9 +477,8 @@ function updateStatCardUI(currentStatus) {
   });
 }
 
-// Keeps the address bar in sync with whatever combination of search,
-// filters, sort, and paging is currently on screen -- same reasoning and
-// mechanism as the assets page's htmx:configRequest listener.
+// Keeps the address bar in sync with search/filters/sort/paging, same
+// pattern as the assets page's htmx:configRequest listener.
 document.body.addEventListener('htmx:configRequest', function (evt) {
   const tableContainer = document.getElementById('transaction-table-container');
   if (evt.detail.target !== tableContainer) return;
@@ -529,10 +509,8 @@ document.addEventListener('htmx:afterSwap', function (evt) {
 document.addEventListener('DOMContentLoaded', function () {
   updateFilterUI();
 
-  // Cold-load replay: same reasoning as the assets page -- fires the real
-  // htmx request (via values, not a hand-built query string) so a hard
-  // refresh on a filtered URL renders that same state server-side and the
-  // filter chrome (rings, clear button) matches immediately.
+  // Cold-load replay: fires the real htmx request so a hard refresh on a
+  // filtered URL renders that same state, filter chrome included.
   var params = new URLSearchParams({
     limit: '{{ limit }}',
     offset: '{{ offset }}',
@@ -638,9 +616,17 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter back to blank, same
-  // as clicking "Clear filters" by hand. When a modal is open, the shared
-  // Escape handler in base.html closes it instead.
+  // Alt+E — Export data, matching the Alt+E convention used on
+  // Inventory/Members/Staff's own Export buttons.
+  if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+    if (isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('export-transactions-btn').click();
+    return;
+  }
+
+  // Escape — with no modal open, reset every filter, same as clicking
+  // "Clear filters". A modal open lets base.html's handler close it instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {

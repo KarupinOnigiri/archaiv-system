@@ -7,16 +7,9 @@ logger = logging.getLogger(__name__)
 def log_action(
     staff_id, action, target_table=None, target_id=None, details=None, target_name=None
 ):
-    """target_name is a snapshot of the target's human-readable label at
-    the moment this action happened (an asset's name, a member's full
-    name, a staff username, ...) -- not something resolved later by
-    joining back to the live row, which would go blank for anything
-    since deleted/archived/renamed, or for rows (checkout sessions,
-    unrestriction requests, ...) that get cleaned up once resolved.
-    Every call site that already has the target's name in scope (which
-    is nearly all of them -- they just created/fetched/modified it)
-    should pass it here; the Activity Log's Target column falls back to
-    the bare "table #id" form when it's None."""
+    """target_name is a snapshot of the target's label at the time of the action, not something
+    re-joined later (which would go blank for deleted/renamed/cleaned-up rows). Pass it whenever
+    you have it in scope; the Activity Log falls back to "table #id" when it's None."""
     conn = None
     try:
         conn = get_db_connection()

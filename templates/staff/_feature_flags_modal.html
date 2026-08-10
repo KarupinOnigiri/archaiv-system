@@ -6,17 +6,17 @@
         <h3 class="font-bold text-xl">Feature Access</h3>
         <p class="text-sm text-base-content/50 mt-1">Turning a tab off hides it from the sidebar for everyone and blocks its pages/actions directly. Notifications, Feedback, Staff, Activity Log, and System always stay on.</p>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
-    {% if error %}
-    <div class="alert alert-error text-sm mb-4 py-2">{{ error }}</div>
-    {% endif %}
+    <!-- Always rendered, invisible when empty -- reserves layout space so content
+         below doesn't jump when an error appears. -->
+    <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
-    <!-- No password field here on purpose -- picking toggles and
-         confirming your password are two separate steps now (see
-         openFeatureFlagsPasswordConfirm below), not one form submitted
-         all at once. onsubmit intercepts the actual POST until that
-         second step passes. -->
+    <!-- No password field here on purpose -- picking toggles and confirming your
+         password are two separate steps (see openFeatureFlagsPasswordConfirm
+         below); onsubmit holds the actual POST until step two passes. -->
     <form id="feature-flags-form" onsubmit="return openFeatureFlagsPasswordConfirm(event)" class="space-y-3">
 
       {% for name, label in [
@@ -41,13 +41,9 @@
   </div>
 </div>
 
-<!-- Password confirmation -- shown only after Save Changes, so an admin
-     picks their toggle changes first and only then has to prove it's
-     really them, rather than typing a password upfront before even
-     deciding what to change. Submits straight to the JSON form of
-     /api/v1/feature-flags/update (routes/staff.py's update_feature_flags
-     already accepts {flags, current_password} JSON, same endpoint the
-     htmx form used before). -->
+<!-- Shown only after Save Changes, so an admin picks their toggles first and only
+     then proves it's them. Submits straight to /api/v1/feature-flags/update's
+     JSON form ({flags, current_password}, see routes/staff.py). -->
 <dialog id="feature-flags-confirm-dialog" class="modal">
   <div class="modal-box max-w-sm">
     <h3 class="font-bold text-lg mb-1">Confirm your password</h3>
@@ -55,10 +51,8 @@
 
     <div id="feature-flags-confirm-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
 
-    <!-- Wrapped in its own form (was a bare input) so pressing Enter in
-         the password field submits it, matching every other password
-         prompt in the app (change-password-form, RFID PIN, etc.) instead
-         of requiring a mouse click on Confirm. -->
+    <!-- Wrapped in its own form so Enter submits it, matching every other
+         password prompt in the app instead of requiring a click on Confirm. -->
     <form onsubmit="submitFeatureFlagsUpdate(event); return false;">
       <input type="password" id="feature-flags-confirm-password" placeholder="Current password"
              autocomplete="current-password" class="input input-bordered input-sm w-full">

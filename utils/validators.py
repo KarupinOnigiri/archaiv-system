@@ -65,13 +65,8 @@ RFID_PIN_LENGTH = 6
 
 
 def validate_rfid_pin(pin):
-    """Exactly 6 digits, numeric only — a PIN paired with an RFID card is
-    meant to be fast to type at a card reader, not a second password. Still
-    a real second factor: see routes/staff.py (where it's set, hashed the
-    same way a password is) and routes/auth.py:login_rfid (where it's
-    checked). Fixed-length (rather than the old 4-8 range) so it reads
-    consistently at a glance and matches the login form's fixed-width PIN
-    field."""
+    """Exactly 6 digits -- fast to type at a card reader, still a real second factor
+    (hashed like a password, see routes/staff.py and routes/auth.py:login_rfid)."""
     if not pin or not pin.isdigit() or len(pin) != RFID_PIN_LENGTH:
         return (
             jsonify(
@@ -135,12 +130,8 @@ def validate_due_date(value, field_name="due_date"):
     return None
 
 
-# The only tables validate_lookup_id is ever called with (see call sites in
-# routes/members.py, routes/assets.py, routes/setup.py). `table` gets
-# interpolated straight into SQL below since SQLite doesn't support binding
-# identifiers as parameters — this allowlist is what actually keeps that
-# safe, rather than relying solely on callers to remember the docstring
-# rule not to pass user input as the table name.
+# `table` gets interpolated straight into SQL below (SQLite can't bind identifiers),
+# so this allowlist is the actual safety net -- not just the docstring warning below.
 _LOOKUP_TABLES = {"departments", "categories"}
 
 

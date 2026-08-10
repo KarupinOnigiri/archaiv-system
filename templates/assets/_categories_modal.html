@@ -1,6 +1,13 @@
 <dialog id="manage-categories-modal" class="modal" aria-labelledby="manage-categories-title" aria-describedby="manage-categories-desc">
   <div class="modal-box max-w-md flex flex-col max-h-[85vh]">
-    <h3 id="manage-categories-title" class="text-lg font-bold shrink-0">Manage Categories</h3>
+    <div class="flex justify-between items-start shrink-0">
+      <h3 id="manage-categories-title" class="text-lg font-bold">Manage Categories</h3>
+      <!-- Shares data-close-categories-modal with the footer's Close button
+           (same click listener in this file's script), so an unsaved
+           reorder still prompts via confirmDiscardOrder() either way. -->
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              data-close-categories-modal aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
     <p id="manage-categories-desc" class="text-sm text-base-content/50 mt-1 mb-4 shrink-0">
       Add, rename, reorder, or remove categories. Drag <span class="inline-block align-middle">&#9776;</span> or use the arrows to reorder, then click Save Order.
     </p>
@@ -9,7 +16,7 @@
       <span class="text-xs font-semibold text-base-content/40 tracking-wide">CATEGORIES</span>
       <div class="flex items-center gap-2">
         <span id="cat-order-status" class="text-xs text-base-content/40 transition-opacity duration-300 opacity-0" aria-hidden="true">Saved</span>
-        <button type="button" id="sort-az-btn" class="btn btn-ghost btn-xs" title="Sort categories alphabetically">Sort A&rarr;Z</button>
+        <button type="button" id="sort-az-btn" class="btn btn-ghost btn-xs" data-tooltip="Sort categories alphabetically">Sort A&rarr;Z</button>
         <button type="button" id="save-order-btn" class="btn btn-primary btn-xs" disabled>Save Order</button>
       </div>
     </div>
@@ -20,7 +27,7 @@
            data-cat-id="{{ cat.id }}" data-cat-name="{{ cat.name }}" draggable="true">
 
         <button type="button" class="cat-drag-handle shrink-0 p-1 rounded text-base-content/30 hover:text-base-content/60 hover:bg-base-200 cursor-grab active:cursor-grabbing"
-                aria-label="Drag to reorder {{ cat.name }}" title="Drag to reorder">
+                aria-label="Drag to reorder {{ cat.name }}" data-tooltip="Drag to reorder">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <circle cx="9" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/>
             <circle cx="15" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="15" cy="18" r="1.4"/>
@@ -29,11 +36,11 @@
 
         <div class="flex flex-col shrink-0 -my-1">
           <button type="button" class="cat-move-up-btn p-0.5 text-base-content/30 hover:text-primary disabled:opacity-20 disabled:pointer-events-none leading-none"
-                  aria-label="Move {{ cat.name }} up">
+                  aria-label="Move {{ cat.name }} up" data-tooltip="Move up">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
           </button>
           <button type="button" class="cat-move-down-btn p-0.5 text-base-content/30 hover:text-primary disabled:opacity-20 disabled:pointer-events-none leading-none"
-                  aria-label="Move {{ cat.name }} down">
+                  aria-label="Move {{ cat.name }} down" data-tooltip="Move down">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </button>
         </div>
@@ -45,7 +52,7 @@
         <button type="button" class="btn btn-outline btn-sm cat-rename-btn" disabled>Save</button>
 
         <button type="button" class="btn btn-ghost btn-sm btn-square text-error/70 hover:text-error hover:bg-error/10 cat-delete-btn"
-                aria-label="Delete {{ cat.name }}" title="Delete category"
+                aria-label="Delete {{ cat.name }}" data-tooltip="Delete category"
                 data-asset-count="{{ cat.asset_count | default(0) }}">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
@@ -89,52 +96,43 @@
   const announcer = document.getElementById('cat-reorder-announcer');
   const orderStatus = document.getElementById('cat-order-status');
 
-  // Use showModal() rather than a static `open` attribute -- it's what
-  // actually gives this dialog focus trapping, a real ::backdrop (so the
-  // click-outside-to-close <form method="dialog"> below actually works),
-  // and native Escape-to-close. A plain `open` attribute provides none of
-  // that; it just makes the element visible.
+  // showModal() (not a plain `open` attribute) is what gives this dialog
+  // focus trapping, a real ::backdrop, and native Escape-to-close.
   if (typeof dialogEl.showModal === 'function') {
     dialogEl.showModal();
   } else {
     dialogEl.setAttribute('open', '');
   }
 
-  // Whatever closes the dialog -- the Close button, clicking the backdrop,
-  // or pressing Escape -- should also remove it from the DOM. Previously
-  // only the Close button's onclick did this, so an Escape-key close left
-  // a hidden orphan <dialog> behind.
+  // Any close path (button, backdrop, Escape) should remove the dialog
+  // from the DOM, not just leave a hidden orphan <dialog> behind.
   dialogEl.addEventListener('close', function () {
     dialogEl.remove();
   });
-  document.querySelector('[data-close-categories-modal]').addEventListener('click', function () {
-    if (!saveOrderBtn.disabled) {
-      confirmDiscardOrder(function () { dialogEl.close(); });
-    } else {
-      dialogEl.close();
-    }
+  // querySelectorAll since both the header ESC pill and footer Close button
+  // carry this attribute and need the same guarded-close behavior.
+  document.querySelectorAll('[data-close-categories-modal]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!saveOrderBtn.disabled) {
+        confirmDiscardOrder(function () { dialogEl.close(); });
+      } else {
+        dialogEl.close();
+      }
+    });
   });
 
-  // Notifies the rest of the page (currently just the category filter
-  // dropdown -- see its hx-trigger="categories-changed from:body" in
-  // assets/index.html) that category data changed, so it can refetch itself
-  // via htmx. Fired the moment an add or reorder-save actually succeeds,
-  // not deferred until the modal closes -- so a dropdown left open in
-  // another tab, or just visible behind the modal, updates live instead
-  // of requiring a full page reload.
+  // Tells the category filter dropdown (hx-trigger="categories-changed
+  // from:body") to refetch itself the moment an add/reorder succeeds,
+  // rather than waiting for the modal to close or a full page reload.
   function notifyCategoriesChanged() {
     document.body.dispatchEvent(new CustomEvent('categories-changed', { bubbles: true }));
   }
 
   // ---------------------------------------------------------------------
-  // Add / rename: same fetch -> pending-toast -> full reload shape used by
-  // every other modal in this app (see _add_modal.html, assetAction in
-  // assets/index.html). A reload also re-populates the category filter
-  // dropdown and the add/edit asset forms with the new/renamed/removed
-  // category, which a partial swap inside this modal alone wouldn't do.
-  // Returns false on failure (so the caller can re-enable its own inputs);
-  // on success the page is already on its way to reloading, so there's
-  // nothing left for the caller to do.
+  // Add / rename: fetch -> pending-toast -> full reload, same shape as
+  // every other modal in the app -- the reload re-populates the category
+  // dropdown and add/edit forms with whatever changed. Returns false on
+  // failure so the caller can re-enable its own inputs.
   async function submitCategory(url, body, successMessage) {
     try {
       const res = await fetch(url, {
@@ -214,21 +212,11 @@
           return;
         }
 
-        // Rather than guessing what shape /add responds with and faking a
-        // row/id client-side (that caused real bugs: a made-up id doesn't
-        // exist in the categories table, so Save Order failed the moment
-        // it tried to persist an order containing it), re-fetch this same
-        // modal fresh from the server. That guarantees the new row has its
-        // real id and sits in whatever order the backend actually put it in.
-        //
-        // The dialog itself is never touched here -- only the *contents* of
-        // #category-list are replaced, by parsing the fetched HTML and
-        // pulling out just that element. Swapping the whole modal (or even
-        // the whole #modal-container) forces the <dialog> to be torn down
-        // and rebuilt, which replays its open animation/backdrop from
-        // scratch -- that's the flicker. Updating just the rows means the
-        // dialog stays mounted and open the entire time; only the list
-        // content changes underneath it.
+        // Re-fetch the modal fresh instead of faking a row/id client-side --
+        // a made-up id doesn't exist server-side, so Save Order used to fail
+        // trying to persist an order containing it. Only #category-list's
+        // contents get replaced (not the whole dialog), so it stays mounted
+        // and open instead of retriggering its open animation/flicker.
         showToast(`Category "${name}" added`, 'success');
         notifyCategoriesChanged();
         return fetch('/api/v1/categories/manage-form')
@@ -366,13 +354,9 @@
           let parsed = null;
           try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* not JSON */ }
           if (!res.ok) {
-            // Surfacing the real status + server message here instead of a
-            // generic "couldn't save" -- swallowing it made this
-            // impossible to diagnose. Check the browser console for this
-            // log if the toast message alone isn't enough to tell what's
-            // wrong (e.g. a 403 means a permissions/CSRF problem, a 400
-            // usually means the server didn't like the payload shape,
-            // a 500 is a server-side error to check your logs for).
+            // Log the real status/message instead of a generic "couldn't
+            // save" -- check the console if the toast isn't enough to tell
+            // what's wrong (403 = permissions/CSRF, 400 = bad payload, 500 = server-side).
             console.error('Reorder failed:', res.status, text);
             const serverMessage = parsed && parsed.error ? parsed.error : null;
             throw new Error(serverMessage || `Server responded ${res.status}`);
@@ -396,12 +380,9 @@
       });
   });
 
-  // Guard against accidentally losing a staged (unsaved) reorder when the
-  // modal is closed -- via the Close button, clicking the backdrop, or
-  // pressing Escape. The dialog's native "cancel" event fires for both
-  // Escape and the backdrop <form method="dialog"> before the dialog
-  // actually closes, so a single listener here covers every close path
-  // except the explicit Close button, which is handled separately below.
+  // Guards against losing a staged (unsaved) reorder on close. The dialog's
+  // native "cancel" event covers both Escape and the backdrop close, so this
+  // one listener catches every path except the explicit Close button (handled below).
   function confirmDiscardOrder(onConfirm) {
     const backdrop = document.createElement('div');
     backdrop.className = 'fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4';
@@ -414,14 +395,9 @@
           <button type="button" id="discard-order-confirm-btn" class="btn btn-error btn-sm">Discard</button>
         </div>
       </div>`;
-    // Appended inside the <dialog> (not document.body): a dialog shown via
-    // showModal() renders in the browser's "top layer", which sits above
-    // every ordinary element on the page regardless of z-index. A prompt
-    // appended to document.body while the dialog is still open would be
-    // stuck behind the dialog's own backdrop -- invisible, but still
-    // dimming the screen, which is exactly the "close just darkens the
-    // background" symptom. Living inside the dialog's own subtree puts it
-    // in that same top layer, on top of the dialog's backdrop and content.
+    // Appended inside the <dialog>, not document.body -- showModal() renders
+    // in the browser's top layer, so anything appended to body while it's
+    // open gets stuck invisible behind its backdrop instead of showing on top.
     dialogEl.appendChild(backdrop);
 
     function close() {
@@ -608,16 +584,9 @@
   refreshMoveButtons();
 
   // ---- Sort A→Z / Z→A ----------------------------------------------------
-  // Alphabetizes the list client-side only -- like drag/arrow reordering,
-  // this just stages a new order in the DOM. Nothing is persisted until
-  // "Save Order" is clicked, so a mis-click here is a no-op you can undo
-  // by just not saving (or by closing the modal, which now asks first
-  // since it discards an unsaved order same as any other reorder).
-  //
-  // Clicking again reverses direction. The button label always names the
-  // direction the *next* click will produce (mirrors the sort arrows on
-  // the asset table's), so it reads correctly right after either
-  // an alphabetical sort or a manual drag/arrow reorder.
+  // Client-side only, same as drag/arrow reordering -- stages a new order
+  // that's only persisted once "Save Order" is clicked. Clicking again
+  // reverses direction; the label always names what the *next* click will do.
   const sortAzBtn = document.getElementById('sort-az-btn');
   let sortAscending = true;
   sortAzBtn.addEventListener('click', function () {

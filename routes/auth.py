@@ -27,29 +27,19 @@ from extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
 
-# Cookies get the Secure flag (browser refuses to send them over plain
-# HTTP) whenever the app isn't running in local debug mode -- same
-# FLASK_DEBUG check app.py uses to decide whether the scheduler/reloader
-# assume "developer's own machine over HTTP". Anything else (a kiosk
-# deployment, a shared server) should be behind HTTPS, and there's no
-# reason a session cookie should ever be allowed to leak over plaintext
-# there.
+# Cookies get Secure unless we're in local FLASK_DEBUG mode (same check app.py uses) -- anything
+# else is a kiosk/shared server and should be HTTPS-only.
 _COOKIE_SECURE = os.environ.get("FLASK_DEBUG", "0") != "1"
 
-# Precomputed once at import time so login() has a constant-cost hash to
-# # check against when no matching account exists — keeps response timing
-# # for "no such account" close to "wrong password", so timing alone
-# # doesn't reveal whether a username/barcode is valid.
+# Constant-cost hash to check against when no account matches, so "no such account" and
+# "wrong password" take the same time and timing can't leak which usernames exist.
 _DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety")
 
 
 def _login_response(payload, status, redirect_to=None, cookie_data=None):
-    """Returns JSON if this was a JSON request (existing API behavior,
-    untouched); redirects if it was a plain form POST from login.html.
-    On error redirects, echoes back whatever identifier the user typed
-    (username or barcode_id) so the field isn't cleared on reload —
-    password is deliberately never echoed back, for the same reason
-    browsers never resubmit a password into a visible field."""
+    """JSON response for JSON requests, redirect for plain form POSTs from login.html.
+    On error redirects, echoes back the typed username/barcode (never the password) so the
+    field survives a page reload."""
     if request.is_json:
         response = make_response(jsonify(payload), status)
     else:
@@ -130,7 +120,7 @@ def login():
                     409,
                 )
             else:
-                # cookie is stale (expired/timed out) — quietly clean it up, not a real block
+                # stale cookie (expired/timed out) -- just clean it up, not a real block
                 conn.execute("DELETE FROM sessions WHERE token = ?", (existing_token,))
                 conn.commit()
 
@@ -144,13 +134,9 @@ def login():
             """,
             (username,),
         ).fetchone()
-        # login.html's single identifier field accepts either a typed
-        # username or a scanned barcode (same box, same "username" POST
-        # key -- no separate field or param needed) -- if it didn't match
-        # a username, try it as a barcode before giving up. Only when the
-        # caller didn't *also* pass an explicit barcode_id: a JSON caller
-        # that deliberately sent both shouldn't have username's failed
-        # lookup silently retried against a different, unrelated value.
+        # login.html's identifier field can hold either a username or scanned barcode, so retry
+        # as a barcode if the username lookup misses -- but only when barcode_id wasn't also
+        # explicitly passed (that'd mean the caller sent two distinct values on purpose).
         if staff is None and not barcode_id:
             staff = conn.execute(
                 """
@@ -174,25 +160,19 @@ def login():
 
     if staff is None:
         conn.close()
-        # run a dummy hash check so response timing doesn't reveal
-        # # whether this username/barcode belongs to a real account
+        # dummy hash check so timing doesn't reveal whether the account exists
         check_password_hash(_DUMMY_PASSWORD_HASH, password)
-        # return jsonify({"error": "Invalid credentials"}), 401
         return _login_response({"error": "Invalid credentials"}, 401)
 
-    # Mutable from here on -- the auto-unlock branch below needs to update
-    # failed_login_attempts/locked_until in place so the check just below
-    # it (on this same request) sees the cleared values, not the stale
-    # sqlite3.Row snapshot from the SELECT above.
+    # dict so the auto-unlock branch below can mutate failed_login_attempts/locked_until
+    # in place and have the rest of this request see the updated values
     staff = dict(staff)
 
     # Check lockout before even touching the password
     if staff["locked_until"]:
-        # The auto-lockout below (too many failed attempts) and an admin's
-        # manual lock (routes/staff.py: lock_staff) both just write to this
-        # same column -- from here they're indistinguishable except for the
-        # sentinel value an indefinite manual lock uses, which gets its own
-        # message instead of a "try again in ~4 million minutes" one.
+        # Auto-lockout and an admin's manual lock (routes/staff.py: lock_staff) share this same
+        # column; the indefinite-lock sentinel gets its own message instead of "try again in ~4
+        # million minutes".
         if staff["locked_until"] == INDEFINITE_LOCK_UNTIL:
             conn.close()
             return _login_response(
@@ -209,15 +189,9 @@ def login():
                 },
                 403,
             )
-        # Lockout window has elapsed. failed_login_attempts is only ever
-        # reset to 0 on a *successful* login further down -- without
-        # clearing it here too, it's still sitting at (or above)
-        # max_failed_attempts, so a single further wrong guess right after
-        # expiry would immediately re-trip the "too many attempts" branch
-        # below and re-lock the account for a full fresh window. That
-        # looked indistinguishable from "the lockout never actually
-        # expired" even though the time-based check above was working
-        # correctly the whole time.
+        # Lockout expired but failed_login_attempts only resets on a successful login -- clear it
+        # here too, or the next wrong guess immediately re-trips the "too many attempts" branch
+        # and re-locks the account, making it look like the lockout never actually expired.
         conn.execute(
             "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
             (staff["id"],),
@@ -263,7 +237,6 @@ def login():
         )
         conn.commit()
         conn.close()
-        # return jsonify({"error": "Invalid credentials"}), 401
         return _login_response({"error": "Invalid credentials"}, 401)
 
     # Correct password — reset lockout tracking
@@ -299,9 +272,7 @@ def login():
 
         token = secrets.token_hex(32)
         csrf_token = secrets.token_hex(32)
-        # Captured once here and reused below for the cookie's max_age --
-        # session_conn is closed (see finally below) by the time the
-        # cookie gets set, so it can't be looked up again there.
+        # grab this now -- session_conn is closed by the time the cookie gets set below
         absolute_hours = get_session_absolute_hours(session_conn)
         expires_at = (
             datetime.now() + timedelta(hours=absolute_hours)
@@ -318,9 +289,7 @@ def login():
     finally:
         session_conn.close()
 
-    # Symmetric with login_rfid's "logged_in_rfid" audit entry below --
-    # every successful sign-in (password/barcode here, RFID+PIN there)
-    # should leave a trace, for every role, not just the RFID admin path.
+    # mirrors login_rfid's "logged_in_rfid" entry -- every successful sign-in gets logged
     log_action(
         staff_id=staff["id"],
         action="logged_in",
@@ -344,24 +313,12 @@ def login():
             "csrf_token": csrf_token,
         },
         200,
-        # The temporary setup admin (services.seed_service) lands on the
-        # setup wizard instead of the normal dashboard -- see
-        # pages.setup_page's docstring for why.
+        # temp setup admin (services.seed_service) goes to the setup wizard, not the dashboard
         redirect_to=url_for("pages.setup_page") if staff["is_system_seeded"] else url_for("home"),
     )
-    # No max_age here on purpose -- omitting it makes this a session
-    # cookie (the browser discards it when the browser itself closes)
-    # rather than a persistent one written to disk. This is a shared
-    # toolroom terminal, not a personal device, so surviving a browser
-    # close/OS restart is the wrong default: the next person to sit down
-    # should get a fresh login, not silently inherit whoever was signed
-    # in before. The actual expiry enforcement doesn't depend on this at
-    # all -- `expires_at` (absolute_hours out, above) and the idle-timeout
-    # check are both re-verified server-side on every request (see the
-    # session_is_live check earlier in this function/module), so someone
-    # bypassing session-cookie semantics some other way still hits the
-    # same wall. This only controls how long the browser itself is
-    # willing to hang onto the token.
+    # No max_age on purpose -- makes it a session cookie so the next person on this shared
+    # terminal doesn't inherit the previous login. Doesn't weaken security: expires_at and the
+    # idle timeout are re-checked server-side on every request regardless.
     response.set_cookie(
         "session_token",
         token,
@@ -372,23 +329,106 @@ def login():
     return response
 
 
+@auth_bp.route("/username-lookup", methods=["POST"])
+@limiter.limit("20 per minute; 100 per hour")
+def username_lookup():
+    """Gmail-style step-1 check: does this username/barcode belong to a real, active account?
+    Lets the login page greet "Sign in as <name>" with a photo before asking for a password.
+    Returns the same generic 404 for unknown/inactive/ineligible accounts so it can't be used
+    to enumerate which accounts exist -- rate limited for the same reason."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    identifier = (data.get("identifier") or "").strip()
+    if not identifier:
+        return jsonify({"error": "Provide identifier"}), 400
+
+    conn = get_db_connection()
+    staff = conn.execute(
+        """
+        SELECT members.first_name, members.last_name, members.middle_name, members.suffix,
+               staff.photo_path
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE staff.username = ? AND staff.is_active = 1
+        """,
+        (identifier,),
+    ).fetchone()
+    if staff is None:
+        staff = conn.execute(
+            """
+            SELECT members.first_name, members.last_name, members.middle_name, members.suffix,
+                   staff.photo_path
+            FROM staff
+            JOIN members ON staff.member_id = members.id
+            WHERE UPPER(members.barcode_id) = UPPER(?) AND staff.is_active = 1
+            """,
+            (identifier,),
+        ).fetchone()
+    conn.close()
+
+    if staff is None:
+        return jsonify({"error": "We couldn't find an account with that username or barcode ID."}), 404
+
+    return jsonify(
+        {
+            "name": full_name(
+                staff["first_name"], staff["last_name"], staff["middle_name"], staff["suffix"]
+            ),
+            "photo_path": staff["photo_path"],
+        }
+    )
+
+
+@auth_bp.route("/rfid-lookup", methods=["POST"])
+@limiter.limit("20 per minute; 100 per hour")
+def rfid_lookup():
+    """Looks up which admin a scanned card belongs to before the PIN is entered, so the login
+    page can greet "Sign in as <name>" the moment a card is tapped. Safe to do PIN-less since
+    the card ID isn't a secret (any reader can read it). Same eligibility gate and generic
+    response as login_rfid, so it can't be used to fish for which cards exist."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    rfid_id = data.get("rfid_id")
+    if not rfid_id:
+        return jsonify({"error": "Provide rfid_id"}), 400
+
+    conn = get_db_connection()
+    staff = conn.execute(
+        """
+        SELECT staff.id, staff.is_active, staff.rfid_pin_hash, staff.photo_path,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE UPPER(staff.rfid_id) = UPPER(?) AND staff.role = 'admin'
+        """,
+        (rfid_id,),
+    ).fetchone()
+    conn.close()
+
+    if staff is None or not staff["rfid_pin_hash"] or not staff["is_active"]:
+        return jsonify({"error": "Card not recognized"}), 404
+
+    return jsonify(
+        {
+            "name": full_name(
+                staff["first_name"], staff["last_name"], staff["middle_name"], staff["suffix"]
+            ),
+            "photo_path": staff["photo_path"],
+        }
+    )
+
+
 @auth_bp.route("/login-rfid", methods=["POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login_rfid():
-    """RFID-card login -- admin-only by design (see the docstring
-    discussion that led here): a keycard alone is "something you have"
-    with no second factor, and cloning/losing a card would otherwise
-    hand over the single most privileged role in the system with
-    nothing to stop it. Pairs the card (staff.rfid_id) with a short PIN
-    (staff.rfid_pin_hash, hashed the same way a password is) instead --
-    still much faster to enter at a reader than a full password, but a
-    stolen/cloned card alone isn't enough on its own.
-
-    Shares its lockout bookkeeping (failed_login_attempts/locked_until)
-    with the regular password login above rather than tracking it
-    separately -- simpler, and there's no reason repeated bad PIN
-    attempts should be lawed differently than repeated bad passwords for
-    the same account."""
+    """RFID-card login, admin-only: a card alone is "something you have" with no second
+    factor, so it's paired with a short PIN (hashed like a password) to stop a stolen/cloned
+    card from being enough on its own. Shares lockout bookkeeping with the password login
+    above rather than tracking it separately."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -402,12 +442,8 @@ def login_rfid():
     if not rfid_id or not pin:
         return jsonify({"error": "Provide rfid_id and pin"}), 400
 
-    # PINs are always exactly RFID_PIN_LENGTH digits (see
-    # utils/validators.py:validate_rfid_pin, used when a PIN is set).
-    # Malformed input here can't be a legitimate near-miss guess of a real
-    # PIN, so it's safe to reject before even touching the DB -- same
-    # generic message as a wrong PIN so it doesn't leak the format rule to
-    # anyone probing the endpoint.
+    # PINs are always RFID_PIN_LENGTH digits (see validate_rfid_pin) -- reject malformed input
+    # before touching the DB, same generic error so it doesn't leak the format rule.
     if not pin.isdigit() or len(pin) != RFID_PIN_LENGTH:
         return jsonify({"error": "Invalid credentials"}), 401
 
@@ -462,16 +498,11 @@ def login_rfid():
 
     if staff is None or not staff["rfid_pin_hash"]:
         conn.close()
-        # Same timing-safety reasoning as the password login above --
-        # constant-cost dummy check whether the card doesn't exist, isn't
-        # an admin's, or has no PIN set yet, so response timing alone
-        # can't distinguish those cases from a wrong PIN.
+        # same timing-safety trick as login() -- constant-cost check either way
         check_password_hash(_DUMMY_PASSWORD_HASH, pin)
         return _login_response({"error": "Invalid credentials"}, 401)
 
-    # See the mirrored comment in login() above -- mutable so the
-    # auto-unlock branch below can update failed_login_attempts/
-    # locked_until in place for the rest of this same request.
+    # mutable so the auto-unlock branch below can update in place, same as login() above
     staff = dict(staff)
 
     if staff["locked_until"]:
@@ -489,8 +520,7 @@ def login_rfid():
                 {"error": f"Account locked. Try again in {remaining} minute(s)."},
                 403,
             )
-        # Lockout window elapsed -- see login()'s identical fix above for
-        # why this has to happen here too, not just on a later success.
+        # lockout elapsed -- same reset-here-too fix as login() above
         conn.execute(
             "UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
             (staff["id"],),
@@ -568,11 +598,7 @@ def login_rfid():
     finally:
         session_conn.close()
 
-    # log_action for a successful RFID login, distinctly tagged rather
-    # than reusing the same action name a password login would -- see
-    # the design discussion this feature came out of: RFID-originated
-    # sessions should stay visible/distinguishable in the audit trail,
-    # not blend in with ordinary password logins.
+    # distinct action name so RFID logins stay visible in the audit trail, not blended with password logins
     log_action(
         staff_id=staff["id"],
         action="logged_in_rfid",
@@ -598,19 +624,7 @@ def login_rfid():
         200,
         redirect_to=url_for("home"),
     )
-    # No max_age here on purpose -- omitting it makes this a session
-    # cookie (the browser discards it when the browser itself closes)
-    # rather than a persistent one written to disk. This is a shared
-    # toolroom terminal, not a personal device, so surviving a browser
-    # close/OS restart is the wrong default: the next person to sit down
-    # should get a fresh login, not silently inherit whoever was signed
-    # in before. The actual expiry enforcement doesn't depend on this at
-    # all -- `expires_at` (absolute_hours out, above) and the idle-timeout
-    # check are both re-verified server-side on every request (see the
-    # session_is_live check earlier in this function/module), so someone
-    # bypassing session-cookie semantics some other way still hits the
-    # same wall. This only controls how long the browser itself is
-    # willing to hang onto the token.
+    # session cookie on purpose (no max_age) -- see login() above for why
     response.set_cookie(
         "session_token",
         token,

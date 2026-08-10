@@ -17,18 +17,13 @@ report_layout_service.py can import it without a routes -> services ->
 routes circular import.
 """
 
-# Every role that can ever see Reports at all. Order here also fixes the
-# default widget order for a fresh install / a staff member who's never
-# customized their layout -- roughly "orientation numbers first, ranked
-# lists next, detail tables last", same top-to-bottom read order the page
-# already used before this became reorderable.
+# Every role that can ever see Reports at all. Order here also sets the default widget order
+# (orientation numbers first, ranked lists next, detail tables last) for a fresh install.
 ADMIN_IN_CHARGE = ("admin", "in_charge")
 
 WIDGETS = [
-    # admin/in_charge only, NOT tool_keeper -- these are system-wide totals
-    # (every checkout, every borrower), which would break "own activity
-    # only" scoping if shown to tool_keeper. /stats/summary itself is also
-    # gated to admin/in_charge only, so this stays consistent with that.
+    # admin/in_charge only, NOT tool_keeper -- these are system-wide totals that would break
+    # "own activity only" scoping if shown to tool_keeper; matches /stats/summary's own gating.
     {
         "id": "summary",
         "title": "At-a-glance summary",
@@ -83,11 +78,9 @@ WIDGETS = [
         "type": "table",
         "roles": ("admin",),
     },
-    # Tool Keeper's Reports access is deliberately "own activity only" --
-    # no cross-staff comparisons, no other borrowers' aggregate stats (see
-    # the plan this shipped under). These three widgets are the only ones
-    # a tool_keeper role can ever see; every query behind them filters to
-    # g.staff["id"] regardless of what's in the request.
+    # Tool Keeper's Reports access is deliberately "own activity only" -- no cross-staff
+    # comparisons. These three widgets are the only ones a tool_keeper can see; every
+    # query behind them filters to g.staff["id"] regardless of the request.
     {
         "id": "my_checkouts",
         "title": "My Checkouts Processed",

@@ -39,11 +39,9 @@ assets_bp = Blueprint("assets", __name__)
 
 @assets_bp.before_request
 def _block_if_assets_disabled():
-    """Blocks every route in this blueprint (create/edit/delete/table
-    partials/export -- not just the /assets page, which routes/pages.py
-    already gates via @feature_required) when an admin has disabled the
-    Inventory tab. JSON 403, not a redirect -- every route here already
-    returns JSON/htmx fragments, never a full page."""
+    """Blocks every route in this blueprint when the Inventory tab is disabled.
+    Returns JSON 403 instead of a redirect since every route here returns
+    JSON/htmx fragments, never a full page."""
     if not is_feature_enabled("assets"):
         return jsonify({"error": f"{get_feature_label('assets')} is currently disabled"}), 403
 
@@ -51,20 +49,11 @@ ADDITIONAL_IMAGE_SLOTS = (1, 2)
 
 
 def _ensure_category_sort_order_column():
-    """One-time, idempotent migration: the categories table predates the
-    Manage Categories reordering UI and has no sort_order column, so
-    everything currently sorts alphabetically (ORDER BY name) everywhere in
-    this file. Manage Departments already relies on such a column existing
-    on `departments`; this brings `categories` up to the same shape so
-    drag/arrow reordering + Save Order can persist an order the same way.
-
-    Runs once at import time (module-level call below), wrapped so a
-    column that already exists (e.g. after a restart, or if a real
-    migration system adds it later) is a silent no-op rather than an
-    error. Existing rows get sequential sort_order values based on their
-    current alphabetical order, so nothing visually jumps around the
-    first time this runs -- only *subsequent* reordering changes it.
-    """
+    """One-time idempotent migration adding sort_order to categories (mirrors
+    departments) so drag/arrow reordering has somewhere to persist to.
+    Safe to call every startup -- no-ops if the column already exists.
+    Backfills existing rows in their current alphabetical order so nothing
+    visually jumps until someone actually reorders."""
     conn = get_db_connection()
     try:
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(categories)").fetchall()}
@@ -113,20 +102,13 @@ SORTABLE_COLUMNS = {
 
 
 def get_assets_table_context(args):
-    """Builds everything _table.html needs (assets, total_count, limit,
-    offset, show_archived, sort_by, sort_dir) from a request.args-like
-    object. Shared by view_assets() (the htmx partial endpoint) and
-    assets_page() in routes/pages.py (the full page load) so the two
-    can't quietly drift out of sync on what the template requires --
-    which is exactly what happened before this function existed:
-    _table.html needed 'offset' and pages.py never supplied it.
+    """Builds everything _table.html needs, shared by view_assets() (htmx
+    partial) and pages.py's assets_page() so they can't drift apart on what
+    the template requires -- this used to bite us when pages.py forgot to
+    pass 'offset'.
 
-    Returns (context_dict, None) on success, or (None, error_response)
-    on a bad query param -- callers should return the error response
-    as-is for an API/htmx caller, or fall back to defaults for a full
-    page load where a stray bad query string shouldn't 500/400 the
-    whole page.
-    """
+    Returns (context_dict, None) on success, or (None, error_response) on a
+    bad query param."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -162,11 +144,9 @@ def get_assets_table_context(args):
         where_clauses.append("assets.condition = ?")
         params.append(condition_filter)
 
-    # Only meaningful when viewing archived items -- deleted_at is NULL for
-    # everything else, and guarding on show_archived here (rather than just
-    # relying on the date inputs being hidden client-side) means a leftover
-    # date value can't ever silently empty out the active-items table if
-    # the toggle gets flipped off without the fields being cleared.
+    # Guard on show_archived server-side too, not just hidden client-side
+    # inputs -- otherwise a leftover date value could silently empty the
+    # active-items table if the toggle got flipped off without clearing it.
     deleted_from = args.get("deleted_from")
     if show_archived and deleted_from:
         error = validate_date_string(deleted_from, "deleted_from")
@@ -245,11 +225,9 @@ def view_assets():
 @assets_bp.route("/assets/stat-cards")
 @login_required
 def asset_stat_cards():
-    """Returns just the 4 stat-card numbers as HTML. Listened to via the
-    'assets-refreshed' HX-Trigger event (see #stat-cards-container in
-    assets.html) so the cards stay in sync with the table after
-    delete/restore/import -- those flows don't do a full page reload the
-    way add/edit's HX-Redirect does, so without this the cards go stale."""
+    """Just the 4 stat-card numbers as HTML, refetched on the 'assets-refreshed'
+    HX-Trigger event so cards stay in sync after delete/restore/import (those
+    flows don't do a full page reload like add/edit's HX-Redirect)."""
     conn = get_db_connection()
     counts = conn.execute(
         """
@@ -287,11 +265,8 @@ def view_categories():
 @roles_required("admin", "in_charge")
 def manage_categories_form():
     conn = get_db_connection()
-    # LEFT JOIN + COUNT (restricted to non-archived assets, same
-    # deleted_at IS NULL convention used everywhere else in this file) so
-    # dept.asset_count in _categories_modal.html reflects assets that would
-    # actually block a delete -- a category whose only assets are already
-    # archived should still be deletable.
+    # asset_count only counts non-archived assets, so a category whose
+    # assets are all archived still shows as deletable.
     categories = conn.execute(
         """
         SELECT categories.*, COUNT(assets.id) AS asset_count
@@ -308,10 +283,8 @@ def manage_categories_form():
 @assets_bp.route("/categories/options")
 @login_required
 def category_options():
-    """Returns just the <option> tags for the category filter dropdown on
-    the Inventory page, in the current custom order. Fetched on demand
-    whenever the Manage Categories modal fires a `categories-changed`
-    event (add, reorder, or delete), mirroring department_options()."""
+    """<option> tags for the category filter dropdown, in custom order.
+    Refetched on the modal's `categories-changed` event; mirrors department_options()."""
     conn = get_db_connection()
     categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     conn.close()
@@ -332,9 +305,8 @@ def add_category():
 
     conn = get_db_connection()
     try:
-        # New categories land at the end of the custom order by default --
-        # COALESCE handles the very first category ever created, when
-        # MAX(sort_order) is NULL. Matches add_department's behavior.
+        # New categories go at the end of the order; COALESCE covers the
+        # first-ever category where MAX(sort_order) is NULL.
         next_order = conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM categories"
         ).fetchone()["next_order"]
@@ -469,10 +441,9 @@ def reorder_categories():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def delete_category(id):
-    """Deletes a category, as long as no non-archived asset currently
-    belongs to it. Mirrors delete_department: refuses outright and asks
-    for assets to be reassigned first rather than silently nulling out
-    category_id or letting a foreign-key error leak through as a 500."""
+    """Refuses to delete a category with non-archived assets still assigned
+    to it -- asks for reassignment first rather than nulling category_id
+    or letting a foreign-key error surface as a 500. Mirrors delete_department."""
     conn = get_db_connection()
     category = conn.execute("SELECT * FROM categories WHERE id = ?", (id,)).fetchone()
     if category is None:
@@ -540,11 +511,9 @@ def add_asset_submit():
     else:
         data = request.form
 
-    # barcode_id is no longer taken from the form -- it's auto-generated
-    # below to match the asset's own generated asset_id, same numbering,
-    # no dash (e.g. asset_id "AST00042" -> barcode_id "AST00042" too).
-    # Keeps every asset's barcode uniform and in step with its ID instead
-    # of depending on a staff member typing/scanning one in correctly.
+    # barcode_id isn't taken from the form -- it's auto-generated below to
+    # match the asset's own asset_id (e.g. "AST00042" for both), so it's
+    # always uniform instead of depending on someone typing it right.
     required_fields = ["name"]
     for field in required_fields:
         if field not in data or not data[field]:
@@ -589,9 +558,8 @@ def add_asset_submit():
                 200,
             )
 
-    # Additional images (optional, up to 2 fixed slots) -- validated
-    # up front for the same reason as the main image: never leave a
-    # half-created asset behind because a later image turned out invalid.
+    # Same as above: validate additional images up front so we never leave
+    # a half-created asset behind because a later one turned out invalid.
     additional_image_files = {}
     for slot in ADDITIONAL_IMAGE_SLOTS:
         file = request.files.get(f"additional_image_{slot}") if request.files else None
@@ -708,7 +676,7 @@ def add_asset_submit():
 
         conn.commit()
     except sqlite3.IntegrityError as e:
-        print(f"IntegrityError: {e}")
+        logger.error(f"IntegrityError: {e}")
         conn.rollback()
         if saved_image_path:
             delete_asset_image(saved_image_path)
@@ -774,15 +742,11 @@ def import_assets_form():
 
 
 def _import_error_response(error_msg, status):
-    """Mirrors the other _*_error_response helpers: JSON for API callers,
-    the modal re-rendered with an inline error for htmx/form callers.
-
-    HX-Retarget/HX-Reswap force the swap back onto #modal-container
-    regardless of what the triggering request declared as its target.
-    That matters here specifically because the initial (preview-step)
-    submit targets the inner #import-step-content div, not the modal
-    itself -- without this override, this full modal re-render would
-    get nested inside that inner div instead of replacing the modal."""
+    """JSON for API callers, modal re-render with inline error otherwise.
+    HX-Retarget/HX-Reswap force the swap onto #modal-container -- needed
+    because the preview-step submit targets the inner #import-step-content
+    div, and without the override this re-render would nest inside it
+    instead of replacing the whole modal."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     response = make_response(
@@ -794,21 +758,12 @@ def _import_error_response(error_msg, status):
 
 
 def _parse_import_deleted_at(raw):
-    """Best-practice rule for the archive/active split on import: a row is
-    archived if (and only if) its deleted_at cell is non-blank, active
-    otherwise -- so importing is a data-driven mirror of the delete/restore
-    actions rather than needing a separate "import as archived" toggle.
-
-    Accepts either a bare date (YYYY-MM-DD, easy to type/hand-edit) or a
-    full timestamp (YYYY-MM-DD HH:MM:SS, what a round-tripped export of the
-    archived view actually contains -- see delete_asset, which stores
-    deleted_at in that exact format). Normalizes to the same
-    "%Y-%m-%d %H:%M:%S" format used everywhere else deleted_at is written,
-    so an archived row imported this way is indistinguishable from one
-    archived through the UI. Returns None if raw is unparseable in either
-    format -- the caller treats that as a row-level error rather than
-    silently falling back to "active", since guessing wrong here would
-    quietly un-archive something the CSV clearly intended to keep archived."""
+    """A row is archived if its deleted_at cell is non-blank, active otherwise
+    -- no separate "import as archived" toggle needed. Accepts a bare date
+    or a full timestamp (what a round-tripped archived-view export contains)
+    and normalizes to the same format delete_asset writes. Returns None if
+    unparseable, so the caller treats it as a row error instead of silently
+    defaulting to "active" and un-archiving something the CSV meant to keep archived."""
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d %H:%M:%S")
@@ -841,16 +796,8 @@ def import_assets_csv():
     reader = csv.DictReader(io.StringIO(content))
     raw_fieldnames = reader.fieldnames or []
 
-    # Import used to only accept the canonical snake_case keys (name,
-    # barcode_id, ...), but Export writes human-readable labels (Name,
-    # Barcode ID, ...) via EXPORT_FIELD_LABELS -- so re-importing the app's
-    # own export, or the archived view's export (which is exactly what the
-    # import modal's help text describes as a supported workflow), failed
-    # immediately on "missing required column(s)". This maps either form
-    # back to the canonical key so both work; an unrecognized header is
-    # just lowercased/underscored and, if it doesn't match anything the
-    # loop below reads, silently ignored -- same as an unknown column
-    # always was.
+    # Accept both canonical snake_case headers and Export's human-readable labels
+    # (Name, Barcode ID, ...), so re-importing our own export just works.
     reverse_labels = {label.lower(): key for key, label in EXPORT_FIELD_LABELS.items()}
     header_map = {}
     for h in raw_fieldnames:
@@ -867,17 +814,9 @@ def import_assets_csv():
         )
 
     conn = get_db_connection()
-    # Manual transaction control for this connection only (doesn't affect
-    # any other request/route): Python's sqlite3 wrapper, in its default
-    # mode, silently COMMITs any open transaction before executing a
-    # statement it doesn't recognize as INSERT/UPDATE/DELETE/SELECT --
-    # which includes the raw SAVEPOINT/RELEASE/ROLLBACK TO statements
-    # below. Left in that default mode, every row's SAVEPOINT would
-    # implicitly commit the *previous* row to disk before it even started,
-    # so preview mode's rollback-the-whole-batch-at-the-end had nothing
-    # left to roll back -- rows were getting permanently created except
-    # the ones that errored. isolation_level=None hands full control to
-    # the explicit BEGIN/COMMIT/ROLLBACK calls below instead.
+    # sqlite3's default isolation mode auto-commits before statements it doesn't recognize,
+    # including our raw SAVEPOINT/ROLLBACK TO below -- would silently commit each row before
+    # preview mode's final rollback. isolation_level=None hands control to our own BEGIN/COMMIT.
     conn.isolation_level = None
     conn.execute("BEGIN")
     created, errors, new_categories = [], [], []
@@ -886,11 +825,9 @@ def import_assets_csv():
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         name = (row.get("name") or "").strip()
-        # barcode_id is no longer read from the CSV -- even on a bulk
-        # import, every asset gets an auto-generated barcode matching its
-        # generated asset_id, same as the single-asset Add form. Any
-        # barcode_id column in the file (e.g. from a round-tripped export)
-        # is simply ignored.
+        # barcode_id isn't read from the CSV -- it's always auto-generated
+        # to match asset_id, same as single-asset Add. Any barcode_id column
+        # in the file is ignored.
         if not name:
             errors.append({"row": row_num, "error": "name is required"})
             continue
@@ -900,10 +837,8 @@ def import_assets_csv():
             errors.append({"row": row_num, "error": "invalid date format"})
             continue
 
-        # Blank/missing deleted_at -> active; a non-blank value archives the
-        # row on import. See _parse_import_deleted_at for why an unparseable
-        # (rather than blank) value is a hard error instead of a silent
-        # fallback to active.
+        # Blank deleted_at -> active, non-blank -> archived. See
+        # _parse_import_deleted_at for why unparseable is a hard error.
         deleted_at_raw = (row.get("deleted_at") or "").strip()
         deleted_at = None
         if deleted_at_raw:
@@ -974,12 +909,9 @@ def import_assets_csv():
                 {"row": row_num, "error": f"duplicate or constraint violation: {e}"}
             )
 
-    # Preview mode runs every row for real -- including auto-created
-    # categories and actual UNIQUE-constraint checks against both the DB
-    # and the rest of the same file -- so it can't disagree with what a
-    # real commit would do (e.g. two rows in the same file sharing a
-    # barcode). It just discards the whole batch here instead of keeping
-    # it, so nothing from a preview is ever actually persisted.
+    # Preview mode runs every row for real (category creation, UNIQUE
+    # checks and all) so it can't disagree with what an actual commit would
+    # do -- it just discards the whole batch at the end instead of keeping it.
     if dry_run:
         conn.execute("ROLLBACK")
     else:
@@ -989,9 +921,7 @@ def import_assets_csv():
     archived_count = sum(1 for c in created if c["archived"])
 
     if dry_run:
-        # Nothing was persisted (rolled back above), so this deliberately
-        # doesn't call log_action -- an audit trail entry for an import that
-        # never happened would be misleading.
+        # No log_action here -- nothing was actually persisted, rolled back above.
         return render_template(
             "assets/_import_preview.html",
             rows_to_create=len(created),
@@ -1028,9 +958,8 @@ def import_assets_csv():
     return response
 
 
-# Columns match REQUIRED_CSV_COLUMNS/OPTIONAL_CSV_COLUMNS above (plus
-# read-only status/condition, and deleted_at when exporting the archived
-# view) so a round trip through export -> edit -> import stays consistent.
+# Matches the import columns above (plus read-only status/condition, and
+# deleted_at for the archived view) so export -> edit -> import round-trips.
 EXPORT_CSV_COLUMNS = (
     "asset_id",
     "name",
@@ -1045,14 +974,13 @@ EXPORT_CSV_COLUMNS = (
     "notes",
 )
 
-# Human-readable labels for the export modal's field checklist. Keys mirror
-# EXPORT_CSV_COLUMNS (+ deleted_at, archived-only) so the checklist and the
-# actual export columns can never drift out of sync with each other.
+# Labels for the export modal's field checklist; keys mirror EXPORT_CSV_COLUMNS
+# (+ deleted_at, archived-only) so checklist and actual columns can't drift.
 EXPORT_FIELD_LABELS = {
     "asset_id": "Asset ID",
     "name": "Name",
     "barcode_id": "Barcode ID",
-    "rfid_id": "RFID ID",
+    "rfid_id": "RFID Tag",
     "category": "Category",
     "status": "Status",
     "condition": "Condition",
@@ -1072,18 +1000,13 @@ def _default_export_basename(show_archived):
 
 
 def _default_export_dir():
-    """<app root>/export -- current_app.root_path is the folder app.py
-    lives in, i.e. what the person means by "the root folder of the
-    system" here (this is a self-hosted internal tool, not a shared public
-    host, so exposing/using that folder is the intended behavior)."""
+    """<app root>/export -- fine to use the app folder directly since this
+    is a self-hosted internal tool, not a shared public host."""
     return os.path.join(current_app.root_path, "export")
 
 
-# Only safe filename characters survive; anything else (path separators,
-# quotes, whitespace, etc.) becomes an underscore. Extension is stripped
-# too, since the export format -- not whatever the user typed -- decides
-# it, so ".exe" or a mismatched ".csv" typed while Excel is selected can't
-# sneak through into the actual downloaded filename.
+# Strips anything that isn't a safe filename char, and strips any typed
+# extension too -- the export format decides the real extension, not the user.
 _FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9_\-]+")
 _FILENAME_EXT_RE = re.compile(r"\.(csv|xlsx?)$", re.IGNORECASE)
 
@@ -1098,14 +1021,11 @@ def _sanitize_export_filename(raw, fallback):
 
 
 def _resolve_within_root(raw_path, default_dir):
-    """Resolves raw_path to an absolute path that's guaranteed to stay
-    inside the app root -- a relative path (e.g. "export" or "export/2026")
-    is resolved against the app root, and an absolute path is only honored
-    if it's already inside the app root; anything that would escape it
-    (e.g. "../../etc", or an unrelated absolute path) falls back to
-    default_dir instead. Returns (resolved_dir, was_clamped). Shared by the
-    final export save-path resolution and the folder browser below, so
-    both enforce exactly the same boundary."""
+    """Resolves raw_path to an absolute path guaranteed to stay inside the
+    app root -- anything that would escape it (e.g. "../../etc") falls back
+    to default_dir instead. Returns (resolved_dir, was_clamped). Shared by
+    the export save-path resolution and the folder browser so both enforce
+    the same boundary."""
     app_root = os.path.realpath(current_app.root_path)
 
     raw_path = (raw_path or "").strip()
@@ -1127,10 +1047,9 @@ def _resolve_within_root(raw_path, default_dir):
 
 
 def _resolve_export_dir(raw_path):
-    """Resolves the user-entered save folder for an actual export. Falls
-    back silently (no error surfaced) since this runs as a side effect of
-    a file download and there's no good way to show a validation error
-    mid-download; see _resolve_within_root for the boundary rule itself."""
+    """Resolves the user-entered save folder for an export. Falls back
+    silently rather than erroring, since there's no good way to surface a
+    validation error mid-download."""
     return _resolve_within_root(raw_path, _default_export_dir())
 
 
@@ -1140,14 +1059,10 @@ _FOLDER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 @assets_bp.route("/assets/export/browse")
 @login_required
 def browse_export_folders():
-    """Lists subfolders under the app root so the export modal's folder
-    picker can let staff click through the server's real directory
-    structure instead of typing a path by hand. Read-only (just
-    os.listdir) and scoped to the app root the same way the final export
-    save-path is clamped, so this can't be used to peek at the rest of the
-    server's filesystem -- only login_required, since it doesn't reveal
-    anything the export route's own save-path clamping wouldn't already
-    let a logged-in user reach anyway."""
+    """Lists subfolders under the app root for the export modal's folder
+    picker. Read-only and clamped to the app root same as the export
+    save-path, so login_required is enough -- it doesn't expose anything
+    a logged-in user couldn't already reach."""
     app_root = os.path.realpath(current_app.root_path)
     resolved, _ = _resolve_within_root(request.args.get("path", ""), app_root)
 
@@ -1177,12 +1092,10 @@ def browse_export_folders():
 @assets_bp.route("/assets/export/browse/mkdir", methods=["POST"])
 @login_required
 def create_export_folder():
-    """Creates a subfolder from within the folder picker, e.g. so staff can
-    make "export/2026" on the fly instead of needing someone with server
-    access to create it first. Same app-root boundary as everything else
-    here; the folder name itself is restricted to a safe character set
-    (not just sanitized) since, unlike the export filename, there's no
-    sensible fallback to silently substitute for a bad folder name."""
+    """Creates a subfolder from the folder picker, e.g. "export/2026", so
+    staff don't need server access to make one first. Folder name is
+    restricted to a safe charset (rejected, not sanitized) since unlike the
+    export filename there's no sensible fallback to substitute."""
     app_root = os.path.realpath(current_app.root_path)
     resolved, _ = _resolve_within_root(request.form.get("path", ""), app_root)
     if not os.path.isdir(resolved):
@@ -1206,12 +1119,9 @@ def create_export_folder():
 @assets_bp.route("/assets/export-form")
 @login_required
 def export_assets_form():
-    """Opens the export modal (fields, filename, format, save folder) into
-    #modal-container -- read-only like the export route's GET path, so any
-    logged-in staff can see it. show_archived is passed through the same
-    way the page's other modals get it, so the modal's default filename,
-    field list, and description match whichever table view (active/
-    archived) the user was looking at."""
+    """Opens the export modal -- read-only like the export GET route, so any
+    logged-in staff can see it. show_archived matches whichever table view
+    the user was looking at, so filename/field list/description line up."""
     show_archived = request.args.get("show_archived") == "1"
     fields = list(EXPORT_CSV_COLUMNS)
     if show_archived:
@@ -1228,21 +1138,15 @@ def export_assets_form():
 @assets_bp.route("/assets/export", methods=["GET", "POST"])
 @login_required
 def export_assets():
-    """Read-only for GET, so any logged-in staff can use it -- deliberately
-    not roles_required like add/import, since exporting doesn't mutate
-    anything. Mirrors the current table view: respects show_archived the
-    same way the Export Data button's link already passes it, rather than
-    always dumping every asset regardless of what's on screen. Supports
-    CSV (default, for round-tripping back through Import CSV) and Excel, a
-    user-chosen subset of columns, and a user-chosen filename.
+    """GET is read-only and login_required-only (not roles_required) since
+    exporting doesn't mutate anything; respects show_archived so it mirrors
+    whatever table view is on screen. Supports CSV (round-trips through
+    Import CSV) and Excel, a chosen column subset, and a chosen filename.
 
-    POST (used by the export modal, via fetch so it can also read the
-    response headers below) additionally writes a copy of the export to a
-    folder on the server -- this is the one side effect this route has, so
-    it's gated to POST specifically to keep the plain-link GET path free of
-    side effects and to get CSRF protection on the part that touches disk.
-    request.values covers both request.args (GET) and request.form (POST)
-    so the rest of this function doesn't need to branch on method."""
+    POST additionally saves a copy to a server folder -- gated to POST to
+    keep the plain-link GET side-effect free and to get CSRF protection on
+    the disk write. request.values covers both GET args and POST form so
+    the rest of the function doesn't need to branch on method."""
     show_archived = request.values.get("show_archived") == "1"
     export_format = request.values.get("format", "csv").lower()
     if export_format not in ("csv", "xlsx"):
@@ -1314,9 +1218,7 @@ def export_assets():
         writer.writerow([EXPORT_FIELD_LABELS.get(col, col) for col in columns])
         for asset in assets:
             writer.writerow([asset[col] if asset[col] is not None else "" for col in columns])
-        # utf-8-sig (BOM) so Excel opens accented/special characters correctly
-        # when double-clicking the CSV directly, matching how the CSV import
-        # side already expects/tolerates a BOM.
+        # BOM so Excel opens accented characters correctly on double-click.
         file_bytes = output.getvalue().encode("utf-8-sig")
         content_type = "text/csv"
 
@@ -1382,10 +1284,8 @@ def edit_asset_form(id):
     categories = conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
     additional_images = _fetch_asset_images(id, conn)
     conn.close()
-    # Where to send the user on Cancel: back to the Details modal if that's
-    # where Edit was opened from, or just close (back to the table) if it
-    # was opened directly from a row action. Defaults to 'table' so an
-    # unrecognized/missing value fails toward the safer "just close" option.
+    # Where Cancel sends the user back to (Details modal vs just closing).
+    # Defaults to 'table' so a bad/missing value fails toward "just close".
     return_to = request.args.get("return_to", "table")
     if return_to not in ("table", "details"):
         return_to = "table"
@@ -1446,9 +1346,8 @@ def edit_asset_submit(id):
     else:
         data = request.form
 
-    # Carried through from the hidden field the edit form sets on load, so
-    # Cancel still routes correctly (back to Details, or just closes) if
-    # this submit fails validation and the modal has to be re-rendered.
+    # From the hidden field the edit form sets on load, so Cancel still
+    # routes correctly if this submit fails validation and re-renders.
     return_to = data.get("return_to", "table")
     if return_to not in ("table", "details"):
         return_to = "table"
@@ -1545,12 +1444,8 @@ def edit_asset_submit(id):
                 "old_path": existing_row["image_path"],
             }
 
-    # Reorder: swap the main image with an already-saved additional-image
-    # slot (the "Set as Main" button in the edit modal). Only applies when
-    # neither side of the swap is also being independently replaced/removed
-    # in this same submit -- an explicit replace/remove always wins, and the
-    # frontend disables the swap controls in that case so this should only
-    # ever be reached with a clean swap request.
+    # "Set as Main": swap main image with an additional-image slot, unless either side
+    # is also being replaced/removed this submit -- an explicit replace/remove wins.
     swap_requested = str(data.get("swap_with_slot", "")).strip()
     if (
         swap_requested in ("1", "2")
@@ -1740,9 +1635,8 @@ def edit_asset_submit(id):
         action="updated_asset",
         target_table="assets",
         target_id=asset["id"],
-        # asset["name"] is the pre-edit row fetched earlier -- this
-        # reflects the actually-saved name (possibly just changed by
-        # this same edit), same expression the UPDATE itself used.
+        # data.get(..., asset["name"]) mirrors the UPDATE's own fallback,
+        # so this reflects the actually-saved name.
         target_name=f"{asset['asset_id']} — {data.get('name', asset['name'])}",
         details=f"Updated asset {asset['asset_id']}",
     )
@@ -1904,21 +1798,12 @@ def delete_asset(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def undo_delete_asset(id):
-    """Powers the Undo button on the delete toast. Deliberately separate
-    from restore_asset even though the DB change is the same:
-
-    - Permissions: delete is admin/in_charge, but restore is admin-only
-      (reversing a possibly-stale, long-archived item is a bigger call
-      than making one). Undoing your own five-second-old delete isn't
-      that -- it should be available to whoever could delete in the
-      first place, or an in_charge staffer's Undo button would silently
-      fail against an admin-only endpoint.
-    - No condition prompt: restore_asset requires picking a new condition
-      when the asset's condition is 'disposed', since a long-archived
-      item's condition may need re-assessing. A freshly soft-deleted
-      asset's condition was never touched by delete, so there's nothing
-      to re-assess -- this always restores with the condition unchanged.
-    """
+    """Powers the Undo button on the delete toast. Kept separate from
+    restore_asset (same DB change) for two reasons: it's admin/in_charge
+    like delete, not admin-only like restore, since undoing your own
+    just-made delete shouldn't need extra permissions; and it never prompts
+    for a condition, since delete doesn't touch condition so there's nothing
+    to re-assess."""
     conn = get_db_connection()
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
 
@@ -1958,11 +1843,9 @@ def undo_delete_asset(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_delete_assets():
-    """Soft-deletes multiple assets in one request. Unlike delete_asset,
-    a single problem row (not found / already deleted / checked out)
-    doesn't fail the whole batch -- it's recorded in `skipped` and the
-    rest proceed, since the caller is a multi-select UI where "some of
-    these are checked out" is an expected, not exceptional, outcome."""
+    """Soft-deletes multiple assets. Unlike delete_asset, one bad row
+    (not found/already deleted/checked out) goes into `skipped` instead of
+    failing the whole batch -- expected outcome for a multi-select UI."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -2047,16 +1930,12 @@ def bulk_delete_assets():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def bulk_restore_assets():
-    """Restores multiple archived assets in one request. Mirrors
-    bulk_delete_assets's shape (deleted/skipped -> restored/skipped), with
-    one deliberate difference: admin-only, not admin/in_charge, matching
-    the single-item restore_asset route -- reversing a disposal is a
-    bigger call than making one.
-
-    Assets whose condition is 'disposed' are always skipped here rather
-    than restored with their old condition, since picking a replacement
-    condition needs the single-item restore modal's dropdown -- there's
-    no per-row UI for that in a bulk action."""
+    """Restores multiple archived assets. Mirrors bulk_delete_assets's
+    shape but admin-only (matching single-item restore_asset, since
+    reversing a disposal is a bigger call than deleting). Disposed assets
+    are always skipped here rather than restored, since picking a new
+    condition needs the single-item restore modal's dropdown -- no per-row
+    UI for that in a bulk action."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -2262,10 +2141,8 @@ def restore_asset(id):
                 "type": "success",
                 "action": {
                     "label": "Undo",
-                    # Re-archiving is the natural inverse of this route.
-                    # Permission-compatible too: restore is admin-only and
-                    # delete is admin/in_charge, so anyone who could reach
-                    # this restore toast can also hit this endpoint.
+                    # Re-archiving undoes a restore; works permission-wise too
+                    # since delete (admin/in_charge) is looser than restore (admin).
                     "url": f"/api/v1/assets/{id}/delete",
                     "method": "POST",
                     "successMessage": "Restore undone",
@@ -2381,19 +2258,12 @@ DETAILS_RECENT_ACTIVITY_LIMIT = 3
 @assets_bp.route("/assets/by-barcode/<string:barcode>")
 @login_required
 def asset_by_barcode(barcode):
-    """Exact-match barcode lookup for the Inventory search box's Enter-key
-    shortcut (assets.html) -- distinct from that same box's existing live
-    substring filter, which already searches barcode_id among other
-    fields but only narrows the table rather than jumping straight to a
-    record. Matches regardless of archived state (not filtered to
-    deleted_at IS NULL) -- scanning an archived item's barcode should
-    still show its (now-archived) details, not act like it doesn't
-    exist. Renders the same details modal a row click already opens on
-    a hit; a shared "no match" modal (used by the members/staff
-    equivalents too) on a miss. Both return 200 rather than 404 --
-    htmx.ajax() (see assets.html's own script) only swaps on 2xx by
-    default, and a "not found" result here is an expected, valid
-    response to render, not an error condition."""
+    """Exact-match barcode lookup for the search box's Enter-key shortcut,
+    as opposed to its live substring filter which only narrows the table.
+    Matches archived items too, since scanning an archived barcode should
+    still show its details. Renders the same details modal on a hit, or a
+    shared "no match" modal on a miss -- both return 200 (not 404) since
+    htmx.ajax() only swaps on 2xx and "not found" is a valid result here."""
     conn = get_db_connection()
     asset = conn.execute(
         "SELECT id FROM assets WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)

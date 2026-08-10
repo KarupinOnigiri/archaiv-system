@@ -29,12 +29,13 @@ def _block_if_members_disabled():
         return jsonify({"error": f"{get_feature_label('members')} is currently disabled"}), 403
 VALID_MEMBER_TYPES = ("trainee", "trainer")
 
+# Flat cap instead of real pagination -- see get_member_restriction_history docstring.
+RESTRICTION_HISTORY_CAP = 20
+
 
 # # # LIST / VIEW ------------------------------------------------------------
 
-# "name" maps to two columns since there's no single stored full-name field
-# -- last_name then first_name, both sorted in the same direction so the one
-# header/icon in _table.html controls both.
+# "name" maps to last_name + first_name (no single full-name column), both sorted the same direction.
 SORTABLE_COLUMNS = {
     "name": "members.last_name, members.first_name",
     "member_code": "members.member_code",
@@ -46,11 +47,8 @@ SORTABLE_COLUMNS = {
 
 
 def get_members_table_context(args):
-    """Shared query logic for the members table -- used by both the htmx
-    partial route below and the full-page /members route (routes/pages.py),
-    the same way get_assets_table_context is shared on the assets side.
-    Keeping this in one place means the full-page load and the htmx
-    refetch can never drift out of sync on what filters/columns exist.
+    """Shared query logic for the members table, used by both the htmx partial route
+    and the full-page /members route so they can't drift apart on filters/columns.
     Returns (context_dict, error_response)."""
     limit, offset, error = parse_pagination_params(args)
     if error:
@@ -76,13 +74,9 @@ def get_members_table_context(args):
         where_clauses.append("members.department_id = ?")
         params.append(department_id)
 
-    # Truthiness check (not "is not None") because the filter <select>'s
-    # unset/placeholder option submits as an empty string, not an absent
-    # param -- and hx-include on the sort/page/limit controls sends that
-    # empty string on every request, not just ones where this filter was
-    # actually touched. Falling through to "is not None" here would silently
-    # apply "is_restricted = 0" on every sort/page/limit action, hiding
-    # restricted members whenever nothing was actually chosen in the filter.
+    # Truthiness check on purpose: the unset filter <select> submits "" (not absent),
+    # and hx-include resends that on every sort/page request. "is not None" would treat
+    # that "" as is_restricted=0 and silently hide restricted members.
     is_restricted = args.get("is_restricted")
     if is_restricted:
         if is_restricted.lower() not in ("0", "1", "true", "false"):
@@ -107,10 +101,8 @@ def get_members_table_context(args):
     if sort_dir not in ("asc", "desc"):
         return None, (jsonify({"error": "sort_dir must be 'asc' or 'desc'"}), 400)
 
-    # sort_column can be a single column ("members.barcode_id") or several
-    # comma-separated ones (name -> last_name, first_name) -- apply the
-    # chosen direction to every column in the group so one control sorts
-    # all of them consistently.
+    # sort_column can be one column or several comma-separated ones (name -> last_name, first_name);
+    # apply the direction to all of them.
     dir_sql = sort_dir.upper()
     order_by_sql = ", ".join(
         f"{col.strip()} {dir_sql}" for col in SORTABLE_COLUMNS[sort_by].split(",")
@@ -173,19 +165,10 @@ def view_members():
 @members_bp.route("/members/stat-cards")
 @login_required
 def member_stat_cards():
-    """Recomputes the four summary counts and re-renders the stat-card
-    partial. Fired by the `members-refreshed from:body` listener on
-    #member-stat-cards-container in members.html -- dispatched after every
-    restrict/unrestrict/deactivate/reactivate action -- so the cards stay in
-    sync with whatever just changed without a full page reload. This route
-    was simply missing before, which is why every one of those four actions
-    was throwing a 404 here and tripping the global htmx:responseError
-    toast alongside the action's own success toast.
-
-    Mirrors the exact same queries members_page() (routes/pages.py) uses
-    for the initial full-page render, so the two can never drift out of
-    sync on what counts as active/restricted/inactive.
-    """
+    """Recomputes the four summary counts and re-renders the stat-card partial.
+    Fired by the `members-refreshed from:body` listener after restrict/unrestrict/
+    deactivate/reactivate so the cards update without a full reload.
+    Mirrors the same queries as members_page() in routes/pages.py so the two stay in sync."""
     conn = get_db_connection()
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
     stat_active = conn.execute(
@@ -211,12 +194,9 @@ def member_stat_cards():
 @members_bp.route("/members/by-barcode/<string:barcode>")
 @login_required
 def member_by_barcode(barcode):
-    """Exact-match barcode lookup for the Borrowers search box's Enter-key
-    shortcut (members.html) -- see assets.py:asset_by_barcode for the
-    full reasoning, identical here. Matches regardless of active/
-    restricted state -- scanning a deactivated member's barcode should
-    still show their profile (which already displays that state), not
-    act like they don't exist."""
+    """Exact-match barcode lookup for the Borrowers search box's Enter key (see
+    assets.py:asset_by_barcode for the same pattern). Matches regardless of active/
+    restricted state so scanning a deactivated member still shows their profile."""
     conn = get_db_connection()
     member = conn.execute(
         "SELECT id FROM members WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)
@@ -232,13 +212,9 @@ def member_by_barcode(barcode):
 @members_bp.route("/members/<int:id>/profile")
 @login_required
 def member_profile(id):
-    """Renders the read-only profile modal -- member details plus a shell
-    that the modal's own JS fills in by calling the existing
-    /members/<id>/transactions and /members/<id>/restriction-history JSON
-    endpoints. Those two routes return JSON (not HTML partials), matching
-    every other JSON API route in this file, so the modal fetches and
-    renders them client-side rather than this route trying to assemble
-    everything server-side."""
+    """Renders the read-only profile modal. The modal's JS fills in the rest by
+    calling /members/<id>/transactions and /members/<id>/restriction-history directly,
+    so this route doesn't need to assemble everything server-side."""
     conn = get_db_connection()
     member = conn.execute(
         """
@@ -250,12 +226,8 @@ def member_profile(id):
         (id,),
     ).fetchone()
 
-    # Surfaces an already-pending unrestriction request right on the
-    # profile, rather than leaving it discoverable only by going to
-    # Approvals and searching -- a tool_keeper looking at a restricted
-    # member has no other way to tell "someone already flagged this" from
-    # "nobody has yet", and the create endpoint already 409s on a duplicate
-    # so this is purely about surfacing what it silently already knows.
+    # Surface an already-pending unrestriction request on the profile itself, so staff
+    # don't have to dig through Approvals to see "someone already flagged this".
     pending_unrestriction_request = None
     if member is not None and member["is_restricted"]:
         pending_unrestriction_request = conn.execute(
@@ -303,11 +275,8 @@ def add_member_submit():
     else:
         data = request.form
 
-    # barcode_id is no longer taken from the form -- it's auto-generated
-    # below to match the member's own generated member_code, same
-    # numbering, no dash (e.g. member_code "MBR00042" -> barcode_id
-    # "MBR00042" too). Also what a staff account derived from this member
-    # scans/logs in with (see routes/staff.py: get_staff_by_barcode).
+    # barcode_id isn't taken from the form -- auto-generated below to match member_code
+    # (e.g. "MBR00042" for both). Also what a linked staff account logs in by scanning.
     required_fields = [
         "first_name",
         "last_name",
@@ -827,13 +796,9 @@ def unrestrict_member(id):
 @members_bp.route("/members/<int:id>/request-unrestriction-form")
 @roles_required("tool_keeper")
 def request_unrestriction_form(id):
-    """Renders the modal a tool_keeper uses to flag a restricted member for
-    review, submitting to requests_bp's POST /unrestriction-requests (the
-    create endpoint already existed and worked -- this is the missing UI
-    that actually calls it; before this, a tool_keeper looking at a
-    restricted member had no button anywhere to request it be lifted).
-    admin/in_charge don't get this -- they have direct "Lift Restriction"
-    instead, same as restrict/unrestrict's existing split."""
+    """Modal for a tool_keeper to flag a restricted member for review, posting to
+    requests_bp's /unrestriction-requests. admin/in_charge skip this and use
+    "Lift Restriction" directly instead."""
     conn = get_db_connection()
     member = conn.execute("SELECT * FROM members WHERE id = ?", (id,)).fetchone()
     conn.close()
@@ -952,10 +917,13 @@ def delete_member(id):
         )
 
     try:
-        conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (id,))
+        conn.execute(
+            "UPDATE members SET is_active = 0, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
+            (id,),
+        )
         if linked_staff is not None:
             conn.execute(
-                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
                 (linked_staff["id"],),
             )
         conn.commit()
@@ -1046,7 +1014,7 @@ def reactivate_member(id):
         )
 
     try:
-        conn.execute("UPDATE members SET is_active = 1 WHERE id = ?", (id,))
+        conn.execute("UPDATE members SET is_active = 1, deactivated_at = NULL WHERE id = ?", (id,))
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
@@ -1099,17 +1067,10 @@ def reactivate_member(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_deactivate_members():
-    """Deactivates multiple members in one request. Mirrors
-    bulk_delete_assets's shape (deleted/skipped -> deactivated/skipped): a
-    single problem row doesn't fail the whole batch, it's recorded in
-    `skipped` and the rest proceed, since the caller is a multi-select UI
-    where "some of these can't be deactivated right now" is an expected
-    outcome, not an exceptional one.
-
-    Every guard from the single-item delete_member route applies per-row
-    here too (already deactivated, open borrow transaction, open checkout
-    session, linked active staff account), since bulk is just that same
-    route run in a loop -- not a shortcut around its rules."""
+    """Deactivates multiple members in one request. Mirrors bulk_delete_assets:
+    a bad row goes into `skipped` and the rest still proceed. Runs the same
+    per-row guards as the single delete_member route (already deactivated, open
+    loan/session, linked staff account) -- bulk doesn't skip any of those checks."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1196,10 +1157,13 @@ def bulk_deactivate_members():
             continue
 
         try:
-            conn.execute("UPDATE members SET is_active = 0 WHERE id = ?", (member_id,))
+            conn.execute(
+                "UPDATE members SET is_active = 0, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
+                (member_id,),
+            )
             if linked_staff is not None:
                 conn.execute(
-                    "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL WHERE id = ?",
+                    "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",
                     (linked_staff["id"],),
                 )
             conn.commit()
@@ -1253,11 +1217,9 @@ def bulk_deactivate_members():
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_reactivate_members():
-    """Reactivates multiple members in one request. Mirrors
-    bulk_reactivate_members's sibling bulk_deactivate_members above, and --
-    like the single-item reactivate_member route it fans out -- admin/
-    in_charge, not admin-only, since reactivating carries none of the
-    "reverses a disposal" weight that made asset bulk-restore admin-only."""
+    """Reactivates multiple members in one request, mirroring bulk_deactivate_members
+    above. Open to admin/in_charge (not admin-only) since reactivating a member
+    doesn't carry the "reverses a disposal" weight that asset bulk-restore does."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1293,7 +1255,9 @@ def bulk_reactivate_members():
             continue
 
         try:
-            conn.execute("UPDATE members SET is_active = 1 WHERE id = ?", (member_id,))
+            conn.execute(
+                "UPDATE members SET is_active = 1, deactivated_at = NULL WHERE id = ?", (member_id,)
+            )
             conn.commit()
             reactivated.append({"id": member_id, "name": name})
         except sqlite3.IntegrityError as e:
@@ -1406,22 +1370,75 @@ def get_member_transactions(id):
     )
 
 
-@members_bp.route("/members/<int:id>/restriction-history")
+@members_bp.route("/members/<int:id>/borrow-history-modal")
 @login_required
-def get_member_restriction_history(id):
-    """Combines the audit trail of direct restrict/unrestrict actions with
-    the full unrestriction_requests trail for this member — the reason
-    someone was flagged, who cleared them (and how), and every request
-    filed in between. Available to any logged-in staff (including
-    tool_keeper) since they need this context to judge whether a member
-    is ready to borrow again before filing a request."""
+def borrow_history_modal(id):
+    """"View Full History" destination for the profile modal's Borrow History tab.
+    Modal shell only -- rows load from borrow_history_modal_table below via
+    hx-trigger="load", same shell+partial split as restriction_history_modal."""
     conn = get_db_connection()
+    member = conn.execute(
+        """
+        SELECT members.id, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM members WHERE members.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+    if member is None:
+        return jsonify({"error": "Member not found"}), 404
 
+    return render_template("members/_borrow_history_modal.html", member=member)
+
+
+@members_bp.route("/members/<int:id>/borrow-history-modal/table")
+@login_required
+def borrow_history_modal_table(id):
+    """htmx partial backing borrow_history_modal -- same query as get_member_transactions
+    but actually paginated instead of a fixed limit=3."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    conn = get_db_connection()
     member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
     if member is None:
         conn.close()
         return jsonify({"error": "Member not found"}), 404
 
+    total_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM transactions WHERE member_id = ?", (id,)
+    ).fetchone()["cnt"]
+
+    transactions = conn.execute(
+        """
+        SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code
+        FROM transactions
+        JOIN assets ON transactions.asset_id = assets.id
+        WHERE transactions.member_id = ?
+        ORDER BY transactions.time_out DESC
+        LIMIT ? OFFSET ?
+        """,
+        (id, limit, offset),
+    ).fetchall()
+    conn.close()
+
+    return render_template(
+        "members/_borrow_history_table.html",
+        member_id=id,
+        transactions=transactions,
+        total_count=total_count,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _fetch_restriction_history(id, conn):
+    """Shared query for get_member_restriction_history and restriction_history_modal --
+    combines restrict/unrestrict audit events with the unrestriction_requests trail.
+    Capped (not paginated) since there's no "view all" page to link to like borrow
+    history has; RESTRICTION_HISTORY_CAP is just headroom against unbounded scroll.
+    Returns (events, requests), newest first."""
     restriction_events = conn.execute(
         """
         SELECT audit_log.action, audit_log.details, audit_log.created_at,
@@ -1434,8 +1451,9 @@ def get_member_restriction_history(id):
             'auto_restricted_member', 'auto_unrestricted_member'
         )
         ORDER BY audit_log.created_at DESC
+        LIMIT ?
         """,
-        (id,),
+        (id, RESTRICTION_HISTORY_CAP),
     ).fetchall()
 
     unrestriction_requests = conn.execute(
@@ -1448,16 +1466,115 @@ def get_member_restriction_history(id):
         LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
         WHERE unrestriction_requests.member_id = ?
         ORDER BY unrestriction_requests.created_at DESC
+        LIMIT ?
         """,
-        (id,),
+        (id, RESTRICTION_HISTORY_CAP),
     ).fetchall()
+
+    return restriction_events, unrestriction_requests
+
+
+@members_bp.route("/members/<int:id>/restriction-history")
+@login_required
+def get_member_restriction_history(id):
+    """JSON feed for the profile modal's Restriction History tab teaser.
+    Open to any logged-in staff (including tool_keeper) since they need this
+    context to judge if a member's ready to borrow again before filing a request."""
+    conn = get_db_connection()
+
+    member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    restriction_events, unrestriction_requests = _fetch_restriction_history(id, conn)
     conn.close()
 
     return jsonify(
         {
             "restriction_events": [dict(row) for row in restriction_events],
             "unrestriction_requests": [dict(row) for row in unrestriction_requests],
+            "capped_at": RESTRICTION_HISTORY_CAP,
         }
+    )
+
+
+@members_bp.route("/members/<int:id>/restriction-history-modal")
+@login_required
+def restriction_history_modal(id):
+    """"View Full History" destination for Restriction History -- modal shell only,
+    rows load from restriction_history_modal_table below (hx-trigger="load"),
+    same shell+partial split used by the other full-history popups."""
+    conn = get_db_connection()
+
+    member = conn.execute(
+        """
+        SELECT members.id, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM members WHERE members.id = ?
+        """,
+        (id,),
+    ).fetchone()
+    conn.close()
+    if member is None:
+        return jsonify({"error": "Member not found"}), 404
+
+    return render_template("members/_restriction_history_modal.html", member=member)
+
+
+@members_bp.route("/members/<int:id>/restriction-history-modal/table")
+@login_required
+def restriction_history_modal_table(id):
+    """htmx partial backing restriction_history_modal, actually paginated (unlike
+    the capped teaser). audit_log events and unrestriction_requests are different
+    tables with no shared key, so they're normalized and UNION ALL'd into one
+    timeline before paging, instead of two separately-capped lists."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    conn = get_db_connection()
+    member = conn.execute("SELECT id FROM members WHERE id = ?", (id,)).fetchone()
+    if member is None:
+        conn.close()
+        return jsonify({"error": "Member not found"}), 404
+
+    union_sql = """
+        SELECT 'event' AS kind, audit_log.action AS title, audit_log.details AS detail,
+               staff.username AS actor, NULL AS reviewer, audit_log.created_at AS created_at
+        FROM audit_log
+        LEFT JOIN staff ON audit_log.staff_id = staff.id
+        WHERE audit_log.target_table = 'members' AND audit_log.target_id = ?
+        AND audit_log.action IN (
+            'restricted_member', 'unrestricted_member',
+            'auto_restricted_member', 'auto_unrestricted_member'
+        )
+        UNION ALL
+        SELECT 'request' AS kind, unrestriction_requests.status AS title, unrestriction_requests.reason AS detail,
+               requester.username AS actor, reviewer.username AS reviewer, unrestriction_requests.created_at AS created_at
+        FROM unrestriction_requests
+        JOIN staff AS requester ON unrestriction_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
+        WHERE unrestriction_requests.member_id = ?
+    """
+    params = (id, id)
+
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM ({union_sql})", params
+    ).fetchone()["cnt"]
+
+    rows = conn.execute(
+        f"{union_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + (limit, offset),
+    ).fetchall()
+    conn.close()
+
+    return render_template(
+        "members/_restriction_history_table.html",
+        member_id=id,
+        rows=rows,
+        total_count=total_count,
+        limit=limit,
+        offset=offset,
     )
 
     # # # DEPARTMENTS (lookup table) -----------------------------------------
@@ -1467,12 +1584,8 @@ def get_member_restriction_history(id):
 @roles_required("admin", "in_charge")
 def manage_departments_form():
     conn = get_db_connection()
-    # LEFT JOIN + COUNT so departments.member_count is always a real number
-    # (0 for an empty department, not just absent). The delete button in
-    # _departments_modal.html reads dept.member_count to warn "N members
-    # will need to be reassigned" before someone confirms a delete -- that
-    # warning was previously always showing 0/nothing, since this query
-    # never actually computed it.
+    # LEFT JOIN + COUNT gives member_count = 0 for empty departments instead of NULL/absent,
+    # which the delete modal needs to warn "N members will need to be reassigned".
     departments = conn.execute(
         """
         SELECT departments.*, COUNT(members.id) AS member_count
@@ -1498,13 +1611,9 @@ def view_departments():
 @members_bp.route("/departments/options")
 @login_required
 def department_options():
-    """Returns just the <option> tags for the department filter dropdown on
-    the Members page, in the current custom order. Fetched on demand
-    whenever the Manage Departments modal fires a `departments-changed`
-    event (add or reorder), so that dropdown -- which stays mounted on the
-    page the whole time, unlike the add/edit member forms which re-render
-    fresh from the server every time they're opened -- doesn't go stale
-    without needing a full page reload."""
+    """<option> tags for the department filter dropdown, refetched whenever the Manage
+    Departments modal fires `departments-changed`, so the dropdown (which stays
+    mounted, unlike the add/edit forms) doesn't go stale without a full reload."""
     conn = get_db_connection()
     departments = conn.execute("SELECT * FROM departments ORDER BY sort_order, name").fetchall()
     conn.close()
@@ -1525,9 +1634,7 @@ def add_department():
 
     conn = get_db_connection()
     try:
-        # New departments land at the end of the custom order by default --
-        # COALESCE handles the very first department ever created, when
-        # MAX(sort_order) is NULL.
+        # New departments go at the end of the order; COALESCE handles the first-ever department (MAX is NULL).
         next_order = conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM departments"
         ).fetchone()["next_order"]
@@ -1607,11 +1714,10 @@ def edit_department(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def reorder_departments():
-    """Persists the department order set in the Manage Departments modal.
-    Expects {"order": [id, id, ...]} -- every department id, listed in the
-    new top-to-bottom order. Requiring the *complete* set (rather than
-    accepting a partial list) means a stale or tampered request can't
-    silently orphan a department at whatever sort_order it last had."""
+    """Persists department order from the Manage Departments modal.
+    Expects {"order": [id, id, ...]} with every department id included --
+    requiring the full set stops a stale/partial request from silently
+    orphaning a department at its old sort_order."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1672,13 +1778,9 @@ def reorder_departments():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def delete_department(id):
-    """Deletes a department, as long as no member currently belongs to it.
-    Members reference departments via a required (NOT NULL) department_id,
-    so deleting out from under an assigned member isn't a safe default --
-    unlike the frontend's confirm dialog (which only *warns* about affected
-    members), the server refuses the delete outright and asks for members
-    to be reassigned first, rather than silently orphaning or nulling out
-    their department_id."""
+    """Deletes a department only if no member belongs to it. department_id is
+    NOT NULL on members, so unlike the frontend's confirm dialog (which just warns),
+    the server hard-refuses and requires reassignment first."""
     conn = get_db_connection()
     department = conn.execute(
         "SELECT * FROM departments WHERE id = ?", (id,)
@@ -1706,10 +1808,7 @@ def delete_department(id):
         conn.execute("DELETE FROM departments WHERE id = ?", (id,))
         conn.commit()
     except sqlite3.IntegrityError:
-        # Belt-and-suspenders: the member_count check above should already
-        # prevent this, but if a foreign key constraint exists at the DB
-        # level too, surface the same friendly message instead of a raw
-        # 500/IntegrityError leaking out.
+        # Backstop in case a DB-level FK constraint also fires -- keep the message friendly, not a raw 500.
         conn.rollback()
         conn.close()
         return (
@@ -1745,11 +1844,9 @@ def import_members_form():
 
 
 def _members_import_error_response(error_msg, status):
-    """Mirrors assets.py's _import_error_response: JSON for API callers,
-    the modal re-rendered with an inline error for htmx/form callers. See
-    that function's docstring for why HX-Retarget/HX-Reswap are needed --
-    same reasoning applies here (the preview step targets an inner div,
-    not the modal itself)."""
+    """Mirrors assets.py's _import_error_response: JSON for API callers, re-rendered
+    modal with inline error for htmx/form callers. HX-Retarget/HX-Reswap needed since
+    the preview step targets an inner div, not the whole modal."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     response = make_response(
@@ -1764,12 +1861,10 @@ def _members_import_error_response(error_msg, status):
 @roles_required("admin", "in_charge")
 @limiter.limit("5 per minute")
 def import_members_csv():
-    """Bulk-adds members from a CSV, mirroring routes/assets.py's
-    import_assets_csv: a dry-run 'preview' mode that runs every row for
-    real (including auto-created departments and actual UNIQUE-constraint
-    checks) then rolls the whole batch back, and a 'commit' mode that
-    keeps it. See import_assets_csv's comments for why manual
-    BEGIN/SAVEPOINT/ROLLBACK transaction control is needed here."""
+    """Bulk-adds members from a CSV, mirroring routes/assets.py's import_assets_csv:
+    'preview' mode runs every row for real (departments, UNIQUE checks) then rolls
+    back the whole batch; 'commit' keeps it. See import_assets_csv for why manual
+    BEGIN/SAVEPOINT/ROLLBACK is needed."""
     if "file" not in request.files:
         return _members_import_error_response("Missing file upload (field name: 'file')", 400)
 
@@ -1799,10 +1894,8 @@ def import_members_csv():
         )
 
     conn = get_db_connection()
-    # See import_assets_csv's comment on isolation_level=None -- same
-    # reasoning: raw SAVEPOINT/RELEASE/ROLLBACK TO statements would
-    # otherwise silently commit the previous row via sqlite3's default
-    # implicit-transaction handling.
+    # isolation_level=None -- otherwise sqlite3's implicit-transaction handling would
+    # silently commit the previous row on each SAVEPOINT/RELEASE/ROLLBACK TO. See import_assets_csv.
     conn.isolation_level = None
     conn.execute("BEGIN")
     created, errors, new_departments = [], [], []
@@ -1812,9 +1905,7 @@ def import_members_csv():
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         first_name = (row.get("first_name") or "").strip()
         last_name = (row.get("last_name") or "").strip()
-        # barcode_id is no longer read from the CSV -- same reasoning as
-        # import_assets_csv: every member gets an auto-generated barcode
-        # matching its generated member_code, even on a bulk import.
+        # barcode_id isn't read from the CSV -- always auto-generated to match member_code, even on import.
         department_name = (row.get("department") or "").strip()
         member_type = (row.get("member_type") or "").strip().lower()
 
@@ -1893,8 +1984,7 @@ def import_members_csv():
     conn.close()
 
     if dry_run:
-        # Nothing was persisted -- see import_assets_csv's identical note on
-        # why this deliberately skips log_action.
+        # Nothing was persisted, so no log_action here -- same as import_assets_csv.
         return render_template(
             "members/_import_preview.html",
             rows_to_create=len(created),
@@ -1929,9 +2019,7 @@ def import_members_csv():
 
 # # # EXPORT --------------------------------------------------------------
 
-# Deliberately excludes nothing sensitive -- unlike staff, a member record
-# has no password/credential fields, so everything shown in the table is
-# fair game to export.
+# No exclusions needed -- unlike staff, members have no password/credential fields.
 MEMBERS_EXPORT_COLUMNS = (
     "member_code",
     "first_name",
@@ -1975,10 +2063,8 @@ def _default_members_export_basename(show_inactive):
 @members_bp.route("/members/export-form")
 @login_required
 def export_members_form():
-    """Read-only, so any logged-in staff can open it -- mirrors
-    assets.py's export_assets_form. show_inactive is passed through so
-    the modal's default filename/description matches whichever table view
-    (active/inactive) the user was looking at."""
+    """Read-only, mirrors assets.py's export_assets_form. show_inactive is passed
+    through so the modal's default filename matches the table view the user was on."""
     show_inactive = request.args.get("show_inactive") == "1"
     return render_template(
         "members/_export_modal.html",
@@ -1992,12 +2078,9 @@ def export_members_form():
 @members_bp.route("/members/export", methods=["GET", "POST"])
 @login_required
 def export_members():
-    """Mirrors routes/assets.py's export_assets: read-only for GET so any
-    logged-in staff can use it, respects the active/inactive toggle the
-    same way the Export Data button already passes it, supports CSV/Excel
-    and a user-chosen column subset and filename. POST additionally saves
-    a copy on the server (see export_assets's docstring for why that's
-    gated to POST specifically)."""
+    """Mirrors routes/assets.py's export_assets: GET is read-only for any staff,
+    supports CSV/Excel with a chosen column subset and filename. POST additionally
+    saves a copy server-side (see export_assets for why that's POST-only)."""
     show_inactive = request.values.get("show_inactive") == "1"
     export_format = request.values.get("format", "csv").lower()
     if export_format not in ("csv", "xlsx"):
