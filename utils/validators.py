@@ -47,8 +47,7 @@ MIN_PASSWORD_LENGTH = 8
 
 
 def validate_password_strength(password, field_name="password"):
-    """Length-only check for now — kept simple on purpose. Tighten later
-    (e.g. require a digit/letter mix) if the thesis defense calls for it."""
+    """Length-only check for now; tighten later if a stronger policy is needed."""
     if password is None or len(password) < MIN_PASSWORD_LENGTH:
         return (
             jsonify(
@@ -84,10 +83,7 @@ MAX_PAGE_LIMIT = 100
 
 
 def parse_pagination_params(args):
-    """Parses and validates ?limit= and ?offset= query params.
-    Returns (limit, offset, error_response) — error_response is None if valid.
-    limit defaults to DEFAULT_PAGE_LIMIT and is capped at MAX_PAGE_LIMIT
-    (same safety-cap idea as the audit log route). offset defaults to 0."""
+    """Parses/validates ?limit= and ?offset=; limit defaults to 20, capped at 100."""
     try:
         limit = int(args.get("limit", DEFAULT_PAGE_LIMIT))
     except ValueError:
@@ -130,16 +126,12 @@ def validate_due_date(value, field_name="due_date"):
     return None
 
 
-# `table` gets interpolated straight into SQL below (SQLite can't bind identifiers),
-# so this allowlist is the actual safety net -- not just the docstring warning below.
+# `table` is interpolated into SQL; this allowlist is the real safety net.
 _LOOKUP_TABLES = {"departments", "categories"}
 
 
 def validate_lookup_id(conn, table, id_value, field_name, required=False):
-    """Checks that id_value references an existing row in `table`.
-    `table` must always be a hardcoded literal from your own code — never
-    pass user input as the table name. Returns an error response, or None
-    if valid (or if not required and id_value is None)."""
+    """Checks id_value exists in `table`; table must always be hardcoded, never user input."""
     if table not in _LOOKUP_TABLES:
         raise ValueError(
             f"validate_lookup_id: {table!r} is not an allowed lookup table "

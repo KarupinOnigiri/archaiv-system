@@ -13,8 +13,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 ASSET_IMAGE_SUBDIR = os.path.join("uploads", "assets")
 ASSET_IMAGE_DIR = os.path.join(STATIC_DIR, ASSET_IMAGE_SUBDIR)
 
-# Own subdir, separate from asset images -- different lifecycle (one per staff account)
-# and avoids a staff_code/asset_id collision on the same filename prefix.
+# Own subdir, separate lifecycle from asset images -- avoids filename collisions.
 STAFF_PHOTO_SUBDIR = os.path.join("uploads", "staff")
 STAFF_PHOTO_DIR = os.path.join(STATIC_DIR, STAFF_PHOTO_SUBDIR)
 
@@ -25,6 +24,35 @@ FEEDBACK_IMAGE_DIR = os.path.join(STATIC_DIR, FEEDBACK_IMAGE_SUBDIR)
 # Cap per report on top of the per-file MAX_IMAGE_SIZE_BYTES cap -- more than this is abuse.
 MAX_FEEDBACK_IMAGES = 5
 
+# Downscale caps in px (longest side); nothing here ever displays a photo this large.
+ASSET_IMAGE_MAX_DIMENSION = 1600
+STAFF_PHOTO_MAX_DIMENSION = 800
+FEEDBACK_IMAGE_MAX_DIMENSION = 1920
+
+
+def _save_resized_image(file_storage, absolute_path, ext, max_dimension):
+    """Downscales and re-saves the upload; falls back to a plain save on any Pillow error."""
+    try:
+        file_storage.stream.seek(0)
+        with Image.open(file_storage.stream) as img:
+            img.load()  # decode now, while the stream is still open
+            # JPEG has no alpha channel -- P/RGBA/LA images need flattening first or save fails.
+            if ext in ("jpg", "jpeg") and img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
+            save_kwargs = (
+                {"quality": 85, "optimize": True}
+                if ext in ("jpg", "jpeg")
+                else {"optimize": True}
+            )
+            img.save(absolute_path, **save_kwargs)
+    except Exception as e:
+        logger.warning(f"Image resize failed for {absolute_path}, saving original: {e}")
+        file_storage.stream.seek(0)
+        file_storage.save(absolute_path)
+    finally:
+        file_storage.stream.seek(0)
+
 
 def _extension(filename):
     if not filename or "." not in filename:
@@ -33,11 +61,7 @@ def _extension(filename):
 
 
 def validate_image_upload(file_storage):
-    """Returns an error message string, or None if the upload is valid.
-    Checks extension and size, then actually decodes the file with
-    Pillow to confirm it's a real image — a renamed .exe with a .jpg
-    extension and a spoofed Content-Type would pass the first two checks
-    but fail this one."""
+    """Checks extension, size, and actually decodes the file to confirm it's a real image."""
     if file_storage is None or file_storage.filename == "":
         return "No image file provided"
 
@@ -57,8 +81,7 @@ def validate_image_upload(file_storage):
     try:
         with Image.open(file_storage.stream) as img:
             img.verify()
-    # SyntaxError too: Pillow's PNG decoder raises that (not the other two) for a
-    # valid signature with corrupt chunk data. Want a clean 400, not a 500 crash.
+    # SyntaxError too -- Pillow's PNG decoder raises it for corrupt chunk data.
     except (UnidentifiedImageError, OSError, SyntaxError):
         return "File is not a valid image"
     finally:
@@ -68,9 +91,7 @@ def validate_image_upload(file_storage):
 
 
 def save_asset_image(file_storage, asset_code):
-    """Validates and saves an asset image. Returns (relative_path, error) -- relative_path
-    goes straight into assets.image_path and is None on failure. asset_code (e.g. 'AST00001')
-    is just a filename prefix for readability; a random suffix keeps re-uploads from colliding."""
+    """Validates and saves an asset image; returns (relative_path, error) for assets.image_path."""
     error = validate_image_upload(file_storage)
     if error:
         return None, error
@@ -82,13 +103,12 @@ def save_asset_image(file_storage, asset_code):
     relative_path = os.path.join(ASSET_IMAGE_SUBDIR, filename).replace(os.sep, "/")
     absolute_path = os.path.join(ASSET_IMAGE_DIR, filename)
 
-    file_storage.save(absolute_path)
+    _save_resized_image(file_storage, absolute_path, ext, ASSET_IMAGE_MAX_DIMENSION)
     return relative_path, None
 
 
 def save_staff_photo(file_storage, staff_username):
-    """Validates and saves a staff profile photo. Same contract as save_asset_image
-    -- returns (relative_path, error) for staff.photo_path, random suffix appended."""
+    """Validates and saves a staff profile photo; same contract as save_asset_image."""
     error = validate_image_upload(file_storage)
     if error:
         return None, error
@@ -100,14 +120,12 @@ def save_staff_photo(file_storage, staff_username):
     relative_path = os.path.join(STAFF_PHOTO_SUBDIR, filename).replace(os.sep, "/")
     absolute_path = os.path.join(STAFF_PHOTO_DIR, filename)
 
-    file_storage.save(absolute_path)
+    _save_resized_image(file_storage, absolute_path, ext, STAFF_PHOTO_MAX_DIMENSION)
     return relative_path, None
 
 
 def save_feedback_screenshot(file_storage, report_id):
-    """Validates and saves one feedback screenshot. Same (relative_path, error) contract.
-    Takes a single file rather than a list -- the route calls this per file and cleans up
-    any already-saved files itself if one in the batch fails."""
+    """Validates and saves one feedback screenshot; takes a single file, not a list."""
     error = validate_image_upload(file_storage)
     if error:
         return None, error
@@ -119,7 +137,7 @@ def save_feedback_screenshot(file_storage, report_id):
     relative_path = os.path.join(FEEDBACK_IMAGE_SUBDIR, filename).replace(os.sep, "/")
     absolute_path = os.path.join(FEEDBACK_IMAGE_DIR, filename)
 
-    file_storage.save(absolute_path)
+    _save_resized_image(file_storage, absolute_path, ext, FEEDBACK_IMAGE_MAX_DIMENSION)
     return relative_path, None
 
 
@@ -128,8 +146,7 @@ def delete_feedback_screenshot(relative_path):
 
 
 def _delete_static_file(relative_path, kind):
-    """Best-effort delete, e.g. when replacing an image. Safe with None/missing paths;
-    failures are logged, not raised, since a missing file shouldn't block a valid DB update."""
+    """Best-effort delete; failures are logged, not raised, so a DB update isn't blocked."""
     if not relative_path:
         return
     absolute_path = os.path.join(STATIC_DIR, relative_path)

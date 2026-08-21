@@ -2,20 +2,9 @@ from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from services.settings_service import is_feature_enabled, get_feature_label
-from utils.logger import log_action
-from utils.formatters import full_name
+from services import unrestriction_service
 from utils.validators import parse_pagination_params
-from services.notification_service import (
-    create_unrestriction_requested_notifications,
-    create_unrestriction_resolved_notification,
-    clear_unrestriction_pending_notifications,
-)
-from datetime import datetime
-import sqlite3
 from extensions import limiter
-import logging
-
-logger = logging.getLogger(__name__)
 
 requests_bp = Blueprint("requests", __name__)
 
@@ -26,7 +15,7 @@ def _block_if_requests_disabled():
         return jsonify({"error": f"{get_feature_label('requests')} is currently disabled"}), 403
 
 
-VALID_STATUSES = ("pending", "approved", "denied", "cancelled")
+VALID_STATUSES = unrestriction_service.VALID_STATUSES
 
 
 # # # CREATE (tool_keeper flags a restricted member for review) -----------
@@ -36,7 +25,6 @@ VALID_STATUSES = ("pending", "approved", "denied", "cancelled")
 @limiter.limit("20 per minute")
 @roles_required("tool_keeper")
 def create_unrestriction_request():
-    """tool_keeper can't unrestrict directly, they file a request that admin/in_charge reviews below."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -50,74 +38,14 @@ def create_unrestriction_request():
         return jsonify({"error": "Missing required field: reason"}), 400
 
     conn = get_db_connection()
-    member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
-
-    if member is None:
-        conn.close()
-        return jsonify({"error": "Member not found"}), 404
-
-    if not member["is_restricted"]:
-        conn.close()
-        return jsonify({"error": "Member is not currently restricted"}), 400
-
-    existing_pending = conn.execute(
-        "SELECT id FROM unrestriction_requests WHERE member_id = ? AND status = 'pending'",
-        (member_id,),
-    ).fetchone()
-
-    if existing_pending is not None:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "A pending unrestriction request already exists for this member",
-                    "request_id": existing_pending["id"],
-                }
-            ),
-            409,
-        )
-
-    updated_name = full_name(
-        member["first_name"],
-        member["last_name"],
-        member["middle_name"],
-        member["suffix"],
-    )
-
     try:
-        cursor = conn.execute(
-            """
-            INSERT INTO unrestriction_requests (member_id, requested_by_staff_id, reason)
-            VALUES (?, ?, ?)
-            """,
-            (member_id, g.staff["id"], reason),
-        )
-        request_id = cursor.lastrowid
-        # same transaction as the insert, so we never end up with a request and no notification (or vice versa)
-        create_unrestriction_requested_notifications(
-            conn, request_id, updated_name, g.staff["username"]
-        )
-        conn.commit()
-    except sqlite3.IntegrityError as e:
-        conn.rollback()
-        logger.error(f"IntegrityError: {e}")
-        return jsonify({"error": "A database constraint was violated."}), 400
+        result, error = unrestriction_service.create_unrestriction_request(conn, member_id, reason, g.staff)
     finally:
         conn.close()
 
-    log_action(
-        staff_id=g.staff["id"],
-        action="requested_unrestriction",
-        target_table="unrestriction_requests",
-        target_id=request_id,
-        target_name=updated_name,
-        details=f"Requested unrestriction for member {updated_name}: {reason}",
-    )
-
-    return (
-        jsonify({"message": "Unrestriction request submitted", "id": request_id}),
-        201,
-    )
+    if error:
+        return error
+    return jsonify(result), 201
 
 
 @requests_bp.route("/unrestriction-requests/<int:id>/cancel", methods=["POST"])
@@ -129,59 +57,14 @@ def cancel_unrestriction_request(id):
     review_notes = data.get("review_notes") if not error else None
 
     conn = get_db_connection()
-    req, error = _load_pending_request(id, conn)
-    if error:
-        conn.close()
-        return error
-
-    if g.staff["id"] != req["requested_by_staff_id"]:
-        conn.close()
-        return (
-            jsonify(
-                {"error": "Only the staff member who filed this request can cancel it"}
-            ),
-            403,
-        )
-
-    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     try:
-        conn.execute(
-            """
-            UPDATE unrestriction_requests
-            SET status = 'cancelled', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
-            WHERE id = ?
-            """,
-            (g.staff["id"], review_notes, reviewed_at, id),
-        )
-        # requester doesn't need a notification, but clear admin/in_charge's pending-review notice since there's nothing left to review
-        clear_unrestriction_pending_notifications(conn, id)
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+        result, error = unrestriction_service.cancel_unrestriction_request(conn, id, review_notes, g.staff)
     finally:
-        # req only has member_id, not a name -- look it up here for a readable Activity Log entry
-        cancel_req_member = conn.execute(
-            "SELECT first_name, last_name, middle_name, suffix FROM members WHERE id = ?",
-            (req["member_id"],),
-        ).fetchone()
         conn.close()
 
-    log_action(
-        staff_id=g.staff["id"],
-        action="cancelled_unrestriction_request",
-        target_table="unrestriction_requests",
-        target_id=id,
-        target_name=(
-            full_name(cancel_req_member['first_name'], cancel_req_member['last_name'], cancel_req_member['middle_name'], cancel_req_member['suffix'])
-            if cancel_req_member else None
-        ),
-        details=f"Requester cancelled their own unrestriction request #{id}"
-        + (f": {review_notes}" if review_notes else ""),
-    )
-
-    return jsonify({"message": "Request cancelled"})
+    if error:
+        return error
+    return jsonify(result)
 
 
 # # # LIST (the "tab") ----------------------------------------------------
@@ -195,100 +78,32 @@ def list_unrestriction_requests():
     if error:
         return error
 
-    status_filter = request.args.get("status")
-    if status_filter and status_filter not in VALID_STATUSES:
-        return (
-            jsonify({"error": f"status must be one of: {', '.join(VALID_STATUSES)}"}),
-            400,
-        )
-
     conn = get_db_connection()
+    try:
+        context, error = unrestriction_service.get_unrestriction_requests_context(
+            conn, request.args, limit, offset, g.staff
+        )
+    finally:
+        conn.close()
 
-    where_clauses = []
-    params = []
-
-    if g.staff["role"] not in ("admin", "in_charge"):
-        where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
-        params.append(g.staff["id"])
-    elif request.args.get("mine") == "1":
-        # opt-in filter for admin/in_charge to narrow the full queue down to just their own filings
-        where_clauses.append("unrestriction_requests.requested_by_staff_id = ?")
-        params.append(g.staff["id"])
-
-    if status_filter:
-        where_clauses.append("unrestriction_requests.status = ?")
-        params.append(status_filter)
-
-    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-
-    total_count = conn.execute(
-        f"SELECT COUNT(*) AS cnt FROM unrestriction_requests {where_sql}", params
-    ).fetchone()["cnt"]
-
-    rows = conn.execute(
-        f"""
-        SELECT unrestriction_requests.*,
-               members.first_name, members.last_name, members.middle_name, members.suffix,
-               members.restriction_reason AS member_restriction_reason,
-               members.restriction_source AS member_restriction_source,
-               requester.username AS requested_by_username,
-               reviewer.username AS reviewed_by_username
-        FROM unrestriction_requests
-        JOIN members ON unrestriction_requests.member_id = members.id
-        JOIN staff AS requester ON unrestriction_requests.requested_by_staff_id = requester.id
-        LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
-        {where_sql}
-        ORDER BY unrestriction_requests.created_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        params + [limit, offset],
-    ).fetchall()
-    conn.close()
-
-    context = {
-        "total_count": total_count,
-        "limit": limit,
-        "offset": offset,
-        "status_filter": status_filter or "",
-        "requests_list": rows,
-    }
+    if error:
+        return error
 
     if request.headers.get("HX-Request") == "true":
-        # staff=g.staff needed even here -- the partial's can_review check reads it, and without it review actions silently vanish after htmx swaps
-        return render_template(
-            "requests/_unrestriction_table.html", staff=g.staff, **context
-        )
+        # staff=g.staff needed here too, or the partial's can_review check silently breaks after htmx swaps.
+        return render_template("requests/_unrestriction_table.html", staff=g.staff, **context)
 
     return jsonify(
         {
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset,
-            "results": [dict(row) for row in rows],
+            "total_count": context["total_count"],
+            "limit": context["limit"],
+            "offset": context["offset"],
+            "results": [dict(row) for row in context["requests_list"]],
         }
     )
 
 
 # # # REVIEW (admin/in_charge only) ---------------------------------------
-
-
-def _load_pending_request(id, conn):
-    """Returns (request_row, error_response). error_response is None if
-    the request exists and is still pending."""
-    req = conn.execute(
-        "SELECT * FROM unrestriction_requests WHERE id = ?", (id,)
-    ).fetchone()
-
-    if req is None:
-        return None, (jsonify({"error": "Request not found"}), 404)
-
-    if req["status"] != "pending":
-        return None, (
-            jsonify({"error": f"This request has already been {req['status']}"}),
-            409,
-        )
-
-    return req, None
 
 
 @requests_bp.route("/unrestriction-requests/<int:id>/approve", methods=["POST"])
@@ -299,74 +114,14 @@ def approve_unrestriction_request(id):
     review_notes = data.get("review_notes") if not error else None
 
     conn = get_db_connection()
-    req, error = _load_pending_request(id, conn)
-    if error:
-        conn.close()
-        return error
-
-    member = conn.execute(
-        "SELECT * FROM members WHERE id = ?", (req["member_id"],)
-    ).fetchone()
-
-    if member is None:
-        conn.close()
-        return jsonify({"error": "Member no longer exists"}), 404
-
-    if g.staff["member_id"] == req["member_id"]:
-        conn.close()
-        return (
-            jsonify(
-                {
-                    "error": "You cannot approve an unrestriction request for your own account.",
-                    "reason": "Ask another admin or in_charge to review it.",
-                }
-            ),
-            403,
-        )
-
-    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    updated_name = full_name(
-        member["first_name"],
-        member["last_name"],
-        member["middle_name"],
-        member["suffix"],
-    )
-
     try:
-        # same effect as the direct unrestrict_member route, just gated behind a second set of eyes
-        conn.execute(
-            "UPDATE members SET is_restricted = 0, restriction_reason = NULL, restriction_source = NULL WHERE id = ?",
-            (req["member_id"],),
-        )
-        conn.execute(
-            """
-            UPDATE unrestriction_requests
-            SET status = 'approved', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
-            WHERE id = ?
-            """,
-            (g.staff["id"], review_notes, reviewed_at, id),
-        )
-        clear_unrestriction_pending_notifications(conn, id)
-        create_unrestriction_resolved_notification(
-            conn, id, req["requested_by_staff_id"], updated_name, approved=True
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+        result, error = unrestriction_service.approve_unrestriction_request(conn, id, review_notes, g.staff)
     finally:
         conn.close()
 
-    log_action(
-        staff_id=g.staff["id"],
-        action="approved_unrestriction_request",
-        target_table="unrestriction_requests",
-        target_id=id,
-        target_name=updated_name,
-        details=f"Approved unrestriction for member {updated_name}",
-    )
-
-    return jsonify({"message": "Request approved, member unrestricted"})
+    if error:
+        return error
+    return jsonify(result)
 
 
 @requests_bp.route("/unrestriction-requests/<int:id>/deny", methods=["POST"])
@@ -382,49 +137,11 @@ def deny_unrestriction_request(id):
         return jsonify({"error": "Missing required field: review_notes"}), 400
 
     conn = get_db_connection()
-    req, error = _load_pending_request(id, conn)
-    if error:
-        conn.close()
-        return error
-
-    member = conn.execute(
-        "SELECT * FROM members WHERE id = ?", (req["member_id"],)
-    ).fetchone()
-    updated_name = (
-        full_name(member["first_name"], member["last_name"], member["middle_name"], member["suffix"])
-        if member is not None
-        else "the member"
-    )
-
-    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     try:
-        conn.execute(
-            """
-            UPDATE unrestriction_requests
-            SET status = 'denied', reviewed_by_staff_id = ?, review_notes = ?, reviewed_at = ?
-            WHERE id = ?
-            """,
-            (g.staff["id"], review_notes, reviewed_at, id),
-        )
-        clear_unrestriction_pending_notifications(conn, id)
-        create_unrestriction_resolved_notification(
-            conn, id, req["requested_by_staff_id"], updated_name, approved=False, review_notes=review_notes
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+        result, error = unrestriction_service.deny_unrestriction_request(conn, id, review_notes, g.staff)
     finally:
         conn.close()
 
-    log_action(
-        staff_id=g.staff["id"],
-        action="denied_unrestriction_request",
-        target_table="unrestriction_requests",
-        target_id=id,
-        target_name=updated_name,
-        details=f"Denied unrestriction request: {review_notes}",
-    )
-
-    return jsonify({"message": "Request denied"})
+    if error:
+        return error
+    return jsonify(result)

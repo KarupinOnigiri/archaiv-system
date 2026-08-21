@@ -1,26 +1,20 @@
-"""
-Backs up toolroom.db using SQLite's online backup API.
-
-Deliberately not a plain file copy: WAL mode spreads the "real" state across
-toolroom.db plus -wal/-shm sidecar files, and a write could be mid-flight
-when the cron job fires. Connection.backup() takes a safe consistent
-snapshot while the app keeps running and produces one self-contained file.
+"""Backs up toolroom.db via SQLite's online backup API, not a plain file copy (WAL splits state across sidecar files).
 
 Usage:
     python backup_db.py                  # backs up to ./backups
     python backup_db.py /mnt/usb/backups  # backs up to a mounted USB drive
 
-Run this on a schedule via toolroom-backup.timer (systemd) or a cron
-entry — see DEPLOYMENT.md.
+Runs automatically every 30 min via services/backup_service.py; see DEPLOYMENT.md for standalone scheduling.
 """
 
 import os
-import sqlite3
 import sys
 from datetime import datetime
 
+# Sourced from database.py, not stdlib -- a mismatched driver would silently produce an unencrypted backup.
+from database import DB_PATH, DB_ENCRYPTION_KEY, sqlite3, harden_backup_file
+
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(ROOT_DIR, "instance", "toolroom.db")
 DEFAULT_BACKUP_DIR = os.path.join(ROOT_DIR, "backups")
 
 # Backups to keep before pruning oldest; only ever deletes toolroom_*.db files it wrote itself.
@@ -45,6 +39,10 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
     src = sqlite3.connect(DB_PATH)
     dst = sqlite3.connect(backup_path)
     try:
+        if DB_ENCRYPTION_KEY:
+            # Both src and dst need the key -- one to read encrypted pages, the other to write them.
+            src.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
+            dst.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
         with dst:
             src.backup(dst)
         print(f"Backup written to {backup_path}")
@@ -58,6 +56,7 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
         src.close()
         dst.close()
 
+    harden_backup_file(backup_path)
     _prune_old_backups(backup_dir, keep_last_n)
 
 

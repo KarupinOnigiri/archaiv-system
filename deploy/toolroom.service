@@ -1,0 +1,50 @@
+[Unit]
+Description=Archaiv toolroom inventory system
+After=network.target
+# Belt-and-suspenders: also wait for the network to actually be online, not
+# just the interface existing, so FLASK_HOST=0.0.0.0 is reliably reachable
+# by other devices right after boot instead of racing DHCP.
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Adjust these two if you didn't install to /opt/toolroom or aren't using a
+# dedicated `toolroom` user -- see DEPLOYMENT.md. Whatever user you pick
+# needs to already own WorkingDirectory (the app writes to instance/,
+# static/uploads/, backups/, and toolroom.log under here).
+User=toolroom
+Group=toolroom
+WorkingDirectory=/opt/toolroom
+# python-dotenv (app.py) loads .env from WorkingDirectory itself, so this
+# doesn't need an EnvironmentFile= line -- one source of truth for config,
+# not two that can drift out of sync.
+ExecStart=/opt/toolroom/.venv/bin/python /opt/toolroom/wsgi.py
+
+# Restart on crash, but back off if it's crash-looping (e.g. a bad .env)
+# instead of hammering the SD card with restart attempts forever.
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Mild sandboxing -- safe defaults that don't need anything the app
+# actually touches (instance/, static/uploads/, backups/, toolroom.log
+# are all under WorkingDirectory, which none of these restrict).
+# Deliberately not going further (ProtectHome, RestrictAddressFamilies,
+# etc.) without a real Pi to verify against -- getting one of those wrong
+# fails silently as "service won't start" with a non-obvious cause.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+# journald captures stdout/stderr automatically (`journalctl -u toolroom`)
+# -- separate from the app's own toolroom.log (RotatingFileHandler,
+# app.py), which is fine, they're not meant to replace each other: the
+# log file survives `journalctl --vacuum`, journald survives the log
+# file's own rotation/rare accidental deletion.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

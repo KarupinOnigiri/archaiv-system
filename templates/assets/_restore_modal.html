@@ -34,6 +34,22 @@
         </select>
       </div>
 
+      <!-- Restoring an archived asset back into active inventory is
+           security-sensitive enough to require the acting admin's own
+           password plus a logged reason, same re-confirmation pattern as
+           staff/_reactivate_modal.html and /feature-flags/update. -->
+      <div class="form-control mb-2">
+        <label class="label"><span class="label-text">Your password <span class="text-error">*</span></span></label>
+        <input type="password" name="current_password" placeholder="Current password"
+               autocomplete="current-password" class="input input-bordered w-full">
+      </div>
+      <div class="form-control mb-2">
+        <label class="label"><span class="label-text">Reason <span class="text-error">*</span></span></label>
+        <textarea name="reason" rows="2" required
+                  placeholder="Why is this asset being restored?"
+                  class="textarea textarea-bordered w-full"></textarea>
+      </div>
+
       <div class="modal-action">
         <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
         <button type="submit" class="btn btn-primary">Restore</button>

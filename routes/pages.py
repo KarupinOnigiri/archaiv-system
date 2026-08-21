@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
 from services.auth_service import login_required, roles_required, feature_required
+from services import asset_service, member_service, staff_service, transaction_service
 from routes.assets import get_assets_table_context  # adjust path if assets.py lives elsewhere
 from routes.members import get_members_table_context  # same
 from routes.staff import get_staff_table_context  # same
@@ -21,11 +22,7 @@ def login_page():
 @pages_bp.route("/setup")
 @login_required
 def setup_page():
-    """One-time first-admin setup wizard, only usable while logged in as the temp
-    system-seeded admin (services/seed_service.seed_initial_admin); posts to
-    /api/v1/setup/complete which creates the real admin and retires this one.
-    No `staff` passed to the template so base.html hides the sidebar/header.
-    Anyone else who hits this gets redirected to the dashboard."""
+    """First-admin setup wizard; only the temp seeded admin sees it, everyone else gets redirected."""
     if not g.staff["is_system_seeded"]:
         return redirect(url_for("home"))
     conn = get_db_connection()
@@ -41,18 +38,7 @@ def setup_page():
 @feature_required("assets")
 def assets_page():
     conn = get_db_connection()
-    stat_all = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL"
-    ).fetchone()["cnt"]
-    stat_available = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'available'"
-    ).fetchone()["cnt"]
-    stat_borrowed = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'borrowed'"
-    ).fetchone()["cnt"]
-    stat_maintenance = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND status = 'maintenance'"
-    ).fetchone()["cnt"]
+    stats = asset_service.get_asset_stat_cards(conn)
     # get_assets_table_context() only returns table/pagination state, not lookup
     # data, so without this the category dropdown stayed empty until an htmx swap.
     categories = conn.execute(
@@ -60,13 +46,11 @@ def assets_page():
     ).fetchall()
     conn.close()
 
-    # Same query logic as view_assets()'s htmx partial, so a hard refresh on a
-    # filtered URL (?q=...&sort_by=...&show_archived=1) renders correctly server-side
-    # instead of showing defaults until the JS re-syncs the filters.
+    # Same query logic as view_assets()'s htmx partial, so a filtered hard
+    # refresh renders server-side instead of showing defaults.
     table_context, error = get_assets_table_context(request.args)
     if error:
-        # Bad query string: fall back to defaults instead of erroring the whole page
-        # (an API caller would get a 400 here instead).
+        # Bad query string: fall back to defaults instead of erroring the page.
         table_context = {
             "assets": [],
             "total_count": 0,
@@ -81,14 +65,10 @@ def assets_page():
     return render_template(
         "assets.html",
         staff=g.staff,
-        stat_all=stat_all,
-        stat_available=stat_available,
-        stat_borrowed=stat_borrowed,
-        stat_maintenance=stat_maintenance,
         categories=categories,
-        # table_context skips q/category_id/status/condition/deleted_from/deleted_to since
-        # _table.html doesn't need them, but assets.html does (to mark selected options and
-        # fill date inputs) -- pull them from request.args directly.
+        **stats,
+        # table_context skips q/category_id/status/condition/deleted_from/deleted_to;
+        # assets.html needs them too (selected options, date inputs) so pull from request.args.
         category_id=request.args.get("category_id"),
         status_filter=request.args.get("status"),
         condition_filter=request.args.get("condition"),
@@ -103,23 +83,14 @@ def assets_page():
 @feature_required("members")
 def members_page():
     conn = get_db_connection()
-    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
-    stat_active = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 0"
-    ).fetchone()["cnt"]
-    stat_restricted = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 1"
-    ).fetchone()["cnt"]
-    stat_inactive = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 0"
-    ).fetchone()["cnt"]
+    stats = member_service.get_member_stat_cards(conn)
     departments = conn.execute(
         "SELECT * FROM departments ORDER BY sort_order, name"
     ).fetchall()
     conn.close()
 
-    # Same reasoning as assets_page: reuse view_members()'s query logic so a hard
-    # refresh on a filtered URL renders that state server-side instead of defaults.
+    # Same reasoning as assets_page: reuse view_members()'s query logic so a
+    # filtered hard refresh renders that state instead of defaults.
     table_context, error = get_members_table_context(request.args)
     if error:
         table_context = {
@@ -136,11 +107,8 @@ def members_page():
     return render_template(
         "members.html",
         staff=g.staff,
-        stat_all=stat_all,
-        stat_active=stat_active,
-        stat_restricted=stat_restricted,
-        stat_inactive=stat_inactive,
         departments=departments,
+        **stats,
         **table_context,
     )
 
@@ -149,28 +117,7 @@ def members_page():
 @roles_required("admin")
 def staff_page():
     conn = get_db_connection()
-    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
-    # "Locked" only counts an unexpired lockout -- once locked_until passes, the
-    # account can log in again so it counts as Active instead (they should still
-    # sum to stat_all).
-    stat_locked = conn.execute(
-        """
-        SELECT COUNT(*) AS cnt FROM staff
-        WHERE is_active = 1
-          AND locked_until IS NOT NULL
-          AND locked_until > datetime('now', 'localtime')
-        """
-    ).fetchone()["cnt"]
-    stat_active = conn.execute(
-        """
-        SELECT COUNT(*) AS cnt FROM staff
-        WHERE is_active = 1
-          AND (locked_until IS NULL OR locked_until <= datetime('now', 'localtime'))
-        """
-    ).fetchone()["cnt"]
-    stat_inactive = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM staff WHERE is_active = 0"
-    ).fetchone()["cnt"]
+    stats = staff_service.get_staff_stat_cards(conn)
     departments = conn.execute(
         "SELECT * FROM departments ORDER BY sort_order, name"
     ).fetchall()
@@ -195,11 +142,8 @@ def staff_page():
     return render_template(
         "staff.html",
         staff=g.staff,
-        stat_all=stat_all,
-        stat_active=stat_active,
-        stat_locked=stat_locked,
-        stat_inactive=stat_inactive,
         departments=departments,
+        **stats,
         **table_context,
     )
 
@@ -209,23 +153,11 @@ def staff_page():
 @feature_required("transactions")
 def transactions_page():
     conn = get_db_connection()
-    stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
-    stat_borrowed = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'borrowed'"
-    ).fetchone()["cnt"]
-    # "Overdue" = same condition as /transactions/overdue and the is_overdue
-    # column in get_transactions_table_context(): still borrowed, past due date.
-    stat_overdue = conn.execute(
-        """
-        SELECT COUNT(*) AS cnt FROM transactions
-        WHERE status = 'borrowed' AND due_date IS NOT NULL AND due_date < datetime('now', 'localtime')
-        """
-    ).fetchone()["cnt"]
-    stat_returned = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'returned'"
-    ).fetchone()["cnt"]
+    # "Overdue" = same condition as get_transactions_table_context()'s
+    # is_overdue column: still borrowed, past due date.
+    stats = transaction_service.get_transaction_stat_cards(conn)
 
-    # Only set when arriving via a notification's "open" link (?member_id=<id>) --
+    # Only set when arriving via a notification's "open" link (?member_id=<id>);
     # looked up here so transactions.html can show whose loans are filtered.
     filtered_member_name = None
     member_id = request.args.get("member_id")
@@ -262,11 +194,8 @@ def transactions_page():
     return render_template(
         "transactions.html",
         staff=g.staff,
-        stat_all=stat_all,
-        stat_borrowed=stat_borrowed,
-        stat_overdue=stat_overdue,
-        stat_returned=stat_returned,
         filtered_member_name=filtered_member_name,
+        **stats,
         **table_context,
     )
 
@@ -274,9 +203,8 @@ def transactions_page():
 @pages_bp.route("/notifications")
 @login_required
 def notifications_page():
-    """Table loads via htmx (see notifications.html, routes/notifications.py's
-    /notifications/table) instead of being rendered here. This route just needs
-    limit/offset to seed the container's initial hx-vals for a paginated URL."""
+    """Table loads via htmx (routes/notifications.py's /notifications/table);
+    this route just seeds limit/offset for the container's initial hx-vals."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -286,9 +214,8 @@ def notifications_page():
 @pages_bp.route("/audit-log")
 @login_required
 def audit_log_page():
-    """The missing page for the sidebar's "Activity Log" link, which used to 404
-    since /api/v1/audit-log only returned raw JSON. Table loads via htmx same as
-    notifications_page(); this route just seeds limit/offset for the initial hx-vals."""
+    """Sidebar's "Activity Log" page; /api/v1/audit-log used to only return raw
+    JSON. Table loads via htmx same as notifications_page()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 25, 0
@@ -322,17 +249,14 @@ def audit_log_page():
 @login_required
 @feature_required("requests")
 def requests_page():
-    """Approvals queue for unrestriction and admin-deactivation requests. Was
-    previously unreachable -- the sidebar link pointed here but nothing was
-    registered at this path. Not role-gated beyond login: list_unrestriction_requests
-    and list_admin_deactivation_requests already scope rows per role."""
+    """Approvals queue for unrestriction and deactivation requests; rows are scoped per role downstream."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
 
-    # tab + each panel's status/mine/offset are read from the URL (u_/d_ prefixed
-    # so both tabs round-trip independently) so a refresh reopens on the right
-    # tab/filters instead of resetting to Unrestriction/Pending.
+    # tab + each panel's status/mine/offset are read from the URL (u_/d_
+    # prefixed so both tabs round-trip independently), so a refresh reopens
+    # on the right tab/filters instead of resetting to Unrestriction/Pending.
     tab = request.args.get("tab", "unrestriction")
     if tab not in ("unrestriction", "deactivation"):
         tab = "unrestriction"
@@ -360,16 +284,7 @@ def requests_page():
 @roles_required("admin", "in_charge", "tool_keeper")
 @feature_required("reports")
 def reports_page():
-    """Just the page shell -- all the numbers come from stats.py's JSON report
-    endpoints, fetched and rendered client-side (no htmx here, since it's JSON
-    turned into bars/tables, not an HTML partial to swap in).
-
-    tool_keeper can reach this page too but gets a smaller widget set scoped to
-    their own activity only (see services/report_widgets.py).
-
-    since/until are read back from the URL (bad values just get dropped) so a
-    refreshed /reports?since=...&until=... keeps that range instead of resetting
-    to All Time."""
+    """Just the page shell; numbers come from stats.py's JSON endpoints, fetched client-side."""
 
     def _report_date(param):
         value = request.args.get(param, "")
@@ -386,14 +301,7 @@ def reports_page():
 @pages_bp.route("/barcodes")
 @roles_required("admin", "in_charge")
 def barcodes_page():
-    """Barcode label generator -- pick assets/members, preview CODE128 barcodes,
-    print via the browser dialog. Reachable only from System (batch utility, no
-    sidebar tab). Only "currently present" rows get labels: deleted_at IS NULL
-    for assets, is_active = 1 for members. No separate staff list -- a staff
-    barcode is just their linked member's.
-
-    Both lists are fetched up front and filtered client-side (small dataset,
-    one-time-per-visit picker, no need for htmx round-trips)."""
+    """Barcode label generator; only currently-present assets/members get labels, printed via browser dialog."""
     conn = get_db_connection()
     assets = conn.execute("""
         SELECT id, asset_id, barcode_id, name
@@ -417,27 +325,14 @@ def barcodes_page():
 @pages_bp.route("/system")
 @roles_required("admin", "in_charge")
 def system_page():
-    """Launcher page for app-wide policy knobs (session timeouts, lockout, loan
-    limits, notification threshold) -- just opens existing modal+endpoints, no
-    new settings-storage logic here.
-
-    in_charge can reach this page but system.html hides the Session Settings/
-    Account Security/Feature Access cards (admin-only security knobs) from them.
-    Those three endpoints are still @roles_required("admin") on their own too,
-    so hiding the cards isn't the only thing enforcing that."""
+    """Launcher for app-wide policy knobs; system.html hides admin-only cards from in_charge."""
     return render_template("system.html", staff=g.staff)
 
 
 @pages_bp.route("/feedback")
 @roles_required("admin")
 def feedback_page():
-    """Admin-only tab for reviewing feedback submitted via the account dropdown's
-    "Give feedback" row (routes/feedback.py: submit_feedback). List loads via
-    htmx, same cold-load pattern as Notifications.
-
-    status/category are read from the URL too, not just limit/offset, so a
-    filtered refresh (e.g. /feedback?status=resolved) keeps that filter instead
-    of resetting to the "Open" default."""
+    """Admin-only feedback review tab; list loads via htmx, same pattern as Notifications."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -456,8 +351,5 @@ def feedback_page():
 @pages_bp.route("/help")
 @login_required
 def help_page():
-    """The user manual is a modal now (#full-help-modal in base.html), reachable
-    from the account menu instead of its own page. This route just keeps old
-    /help bookmarks from 404ing -- redirects with a one-shot query param that
-    base.html's JS picks up to open the modal and strip back off the URL."""
+    """The manual is a modal now; this route keeps old /help bookmarks from 404ing."""
     return redirect(url_for("home", open_help=1))

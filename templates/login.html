@@ -214,6 +214,28 @@
   </div>
 </div>
 
+<!-- Shown when GET /api/v1/setup/seed-notice returns a pending temp-admin
+     notice -- i.e. no real admin exists yet and the app just (re)seeded a
+     one-time setup account. Used to only be logged to the terminal/
+     toolroom.log, easy to miss on a headless/kiosk deployment; this pops
+     it up right where whoever's setting the system up is already looking. -->
+<div id="seed-notice-modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Setup admin account ready</h3>
+    <p class="text-sm text-base-content/60 mb-4">
+      No admin account exists yet. Sign in with these one-time credentials to finish setup --
+      this password won't be shown again once a real admin account is created.
+    </p>
+    <div class="bg-base-200 rounded-lg p-3 mb-4 font-mono text-sm space-y-1">
+      <p><span class="text-base-content/50">Username:</span> <span id="seed-notice-username" class="font-semibold"></span></p>
+      <p><span class="text-base-content/50">Password:</span> <span id="seed-notice-password" class="font-semibold"></span></p>
+    </div>
+    <div class="modal-action">
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('seed-notice-modal').classList.remove('modal-open')">Got it</button>
+    </div>
+  </div>
+</div>
+
 <style>
 /* Brief shake on a wrong PIN -- same purpose as the dots clearing, just
    a more immediate "that didn't work" cue than the error text alone. */
@@ -229,6 +251,25 @@
 if (window.location.search.includes('error=')) {
   history.replaceState(null, '', '/login');
 }
+
+// Pops the temp-admin credentials up as a modal instead of leaving them
+// only in the terminal/toolroom.log (services/seed_service.py,
+// routes/setup.py's GET /setup/seed-notice). Empty {} response (setup
+// already completed, or never needed) means nothing renders.
+(async function() {
+  try {
+    const res = await fetch('/api/v1/setup/seed-notice');
+    if (!res.ok) return;
+    const notice = await res.json();
+    if (!notice || !notice.username || !notice.password) return;
+    document.getElementById('seed-notice-username').textContent = notice.username;
+    document.getElementById('seed-notice-password').textContent = notice.password;
+    document.getElementById('seed-notice-modal').classList.add('modal-open');
+  } catch (err) {
+    // No connectivity to check -- fall through silently, same as any other
+    // best-effort UI enhancement on this page.
+  }
+})();
 
 (function() {
   const bgUrl = "{{ url_for('static', filename='images/Login-bg.png') }}";

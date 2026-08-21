@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 instance/
 *.log
+*.log.*
 backups/
 .pytest_cache/
 

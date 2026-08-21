@@ -1,0 +1,72 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm max-h-[85vh] overflow-y-auto">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Delete Backup</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      Permanently delete <strong>{{ filename }}</strong>? This can't be undone -- there's no archive/undo for backup files
+      like there is for most other deletes in this app.
+    </p>
+
+    <div id="delete-backup-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
+
+    <div class="form-control mb-2">
+      <label class="label"><span class="label-text">Your password <span class="text-error">*</span></span></label>
+      <input type="password" id="delete-backup-password" placeholder="Current password"
+             autocomplete="current-password" class="input input-bordered input-sm w-full">
+    </div>
+
+    <div class="modal-action">
+      <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+      <button type="button" class="btn btn-error" onclick="submitDeleteBackupForm('{{ filename }}')">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Backup files are permanent deletes (no archive/undo), so this requires
+// the acting admin's own password -- same check_password_hash
+// re-confirmation pattern as staff/_reactivate_modal.html.
+async function submitDeleteBackupForm(filename) {
+  const errorBox = document.getElementById('delete-backup-error');
+  errorBox.classList.add('hidden');
+
+  const password = document.getElementById('delete-backup-password').value;
+  if (!password) {
+    errorBox.textContent = 'Enter your password to confirm this deletion';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/v1/backup-settings/delete/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ current_password: password }),
+    });
+
+    if (!res.ok) {
+      let message = "That backup couldn't be deleted";
+      try {
+        const result = await res.json();
+        message = result.error || message;
+      } catch (e) {}
+      errorBox.textContent = message;
+      errorBox.classList.remove('hidden');
+      return;
+    }
+
+    const html = await res.text();
+    document.getElementById('backup-file-list').innerHTML = html;
+    document.getElementById('delete-backup-password').closest('.modal').remove();
+  } catch (err) {
+    errorBox.textContent = "That backup couldn't be deleted";
+    errorBox.classList.remove('hidden');
+  }
+}
+</script>

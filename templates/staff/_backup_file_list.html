@@ -11,13 +11,16 @@
     <a href="/api/v1/backup-settings/download/{{ b.name }}" class="btn btn-ghost btn-xs" download>
       Download
     </a>
-    <!-- Confirm text names the specific file, and this delete is permanent (no
-         undo/archive) unlike the app's other delete actions. -->
+    <!-- Styled modal (not a native hx-confirm) since this delete is permanent
+         (no undo/archive) and now also requires the acting admin's password --
+         see staff/_backup_delete_modal.html. Appended to <body> (not swapped
+         into #modal-container) since this list already lives inside the
+         backup-settings modal in #modal-container -- targeting that again
+         would blow away the list this button is sitting in. -->
     <button type="button" class="btn btn-ghost btn-xs text-error"
-            hx-delete="/api/v1/backup-settings/delete/{{ b.name }}"
-            hx-target="#backup-file-list"
-            hx-swap="innerHTML"
-            hx-confirm="Permanently delete {{ b.name }}? This can't be undone.">
+            hx-get="/api/v1/backup-settings/delete-confirm/{{ b.name }}"
+            hx-target="body"
+            hx-swap="beforeend">
       Delete
     </button>
   </div>

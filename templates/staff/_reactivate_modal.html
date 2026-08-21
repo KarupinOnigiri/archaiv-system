@@ -12,19 +12,87 @@
 
     <div id="reactivate-staff-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
 
+    <!-- Reason only here -- entering it and confirming your password are two
+         separate steps (see openReactivateStaffPasswordConfirm below), same
+         split as /feature-flags/update's Save Changes -> password dialog.
+         Reactivating an account (any role: admin, in_charge, tool_keeper) is
+         security-sensitive enough to require both, not just a click. -->
+    <div class="form-control mb-2">
+      <label class="label"><span class="label-text">Reason <span class="text-error">*</span></span></label>
+      <textarea id="reactivate-staff-reason" rows="2" required
+                placeholder="Why is this account being reactivated?"
+                class="textarea textarea-bordered w-full"></textarea>
+    </div>
+
     <div class="modal-action">
       <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
-      <button type="button" class="btn btn-success" onclick="submitReactivateStaffForm({{ staff_member.id }})">Reactivate</button>
+      <button type="button" class="btn btn-success" onclick="openReactivateStaffPasswordConfirm({{ staff_member.id }})">Reactivate</button>
     </div>
   </div>
 </div>
 
+<!-- Shown only after Reactivate, so the reason is entered first and only
+     then does the acting admin prove it's them. Submits straight to
+     /api/v1/staff/<id>/reactivate's JSON body ({current_password, reason}). -->
+<dialog id="reactivate-staff-confirm-dialog" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Confirm your password</h3>
+    <p class="text-xs text-base-content/50 mb-3">Re-enter your password to reactivate this account.</p>
+
+    <div id="reactivate-staff-confirm-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+
+    <!-- Wrapped in its own form so Enter submits it, matching every other
+         password prompt in the app instead of requiring a click on Confirm. -->
+    <form onsubmit="submitReactivateStaffForm(event); return false;">
+      <input type="password" id="reactivate-staff-confirm-password" placeholder="Current password"
+             autocomplete="current-password" class="input input-bordered input-sm w-full">
+
+      <div class="modal-action">
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('reactivate-staff-confirm-dialog').close()">Cancel</button>
+        <button type="submit" id="reactivate-staff-confirm-submit-btn" class="btn btn-success btn-sm">Confirm</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <script>
-// Same fetch+CSRF+reload shape as staff/_delete_modal.html's
-// submitDeleteStaffForm.
-async function submitReactivateStaffForm(id) {
+let reactivateStaffPendingId = null;
+
+function openReactivateStaffPasswordConfirm(id) {
+  const reason = document.getElementById('reactivate-staff-reason').value.trim();
   const errorBox = document.getElementById('reactivate-staff-error');
   errorBox.classList.add('hidden');
+
+  if (!reason) {
+    errorBox.textContent = 'A reason is required to reactivate this account';
+    errorBox.classList.remove('hidden');
+    return;
+  }
+
+  reactivateStaffPendingId = id;
+  document.getElementById('reactivate-staff-confirm-password').value = '';
+  document.getElementById('reactivate-staff-confirm-error').classList.add('hidden');
+  document.getElementById('reactivate-staff-confirm-dialog').showModal();
+}
+
+// Same fetch+CSRF+reload shape as staff/_delete_modal.html's
+// submitDeleteStaffForm, plus the password-dialog step from
+// /feature-flags/update.
+async function submitReactivateStaffForm(event) {
+  if (event) event.preventDefault();
+  const errorEl = document.getElementById('reactivate-staff-confirm-error');
+  errorEl.classList.add('hidden');
+
+  const password = document.getElementById('reactivate-staff-confirm-password').value;
+  if (!password) {
+    errorEl.textContent = 'Enter your password to confirm this change';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  const reason = document.getElementById('reactivate-staff-reason').value.trim();
+  const id = reactivateStaffPendingId;
 
   // Reactivating removes this row from the Inactive filter it was almost
   // certainly opened from (that's the only view a deactivated account's
@@ -46,18 +114,24 @@ async function submitReactivateStaffForm(id) {
   // unfiltered/Active view.
   const staffStatusFilter = typeof currentStaffStatusFilter !== 'undefined' ? currentStaffStatusFilter : null;
 
+  const btn = document.getElementById('reactivate-staff-confirm-submit-btn');
+  btn.disabled = true;
+
   try {
     const res = await fetch(`/api/v1/staff/${id}/reactivate`, {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
       },
+      body: JSON.stringify({ current_password: password, reason: reason }),
     });
     const result = await res.json();
 
     if (!res.ok) {
-      errorBox.textContent = result.error || "That account couldn't be reactivated";
-      errorBox.classList.remove('hidden');
+      errorEl.textContent = result.error || "That account couldn't be reactivated";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
       return;
     }
 
@@ -87,8 +161,9 @@ async function submitReactivateStaffForm(id) {
     // through untouched, same as the old blind reload().
     window.location.href = url.pathname + '?' + url.searchParams.toString();
   } catch (err) {
-    errorBox.textContent = "That account couldn't be reactivated";
-    errorBox.classList.remove('hidden');
+    errorEl.textContent = "That account couldn't be reactivated";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
   }
 }
 </script>

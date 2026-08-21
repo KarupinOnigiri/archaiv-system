@@ -1,21 +1,33 @@
 from database import get_db_connection
 from utils.formatters import full_name
+from utils.validators import parse_pagination_params, validate_date_string
 from services.settings_service import get_due_soon_hours, is_feature_enabled
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Visible to `staff` if it's a broadcast (both recipient cols NULL) or targeted at them.
+_VISIBILITY_SQL = (
+    "(recipient_staff_id IS NULL AND recipient_role IS NULL)"
+    " OR recipient_staff_id = ? OR recipient_role = ?"
+)
+
+# Read/cleared state is per (notification, staff), not a shared column on notifications.
+_UPSERT_READ_SQL = """
+    INSERT INTO notification_reads (notification_id, staff_id, is_read, read_at)
+    VALUES (?, ?, 1, datetime('now', 'localtime'))
+    ON CONFLICT(notification_id, staff_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at
+"""
+_UPSERT_CLEAR_SQL = """
+    INSERT INTO notification_reads (notification_id, staff_id, is_cleared, cleared_at)
+    VALUES (?, ?, 1, datetime('now', 'localtime'))
+    ON CONFLICT(notification_id, staff_id) DO UPDATE SET is_cleared = 1, cleared_at = excluded.cleared_at
+"""
+
 
 def sync_loan_notifications():
-    """Creates one 'due_soon' or 'overdue' row per qualifying open loan that
-    doesn't already have one. Runs on a schedule (see app.py), so it opens
-    its own connection like the other scheduled jobs.
-
-    Doesn't touch notifications for loans that got returned/renewed since --
-    they persist until a staff member explicitly clears them (see
-    0025_notification_clearing.sql), like a notification that outlives its
-    source post. (transaction_id, type) UNIQUE + INSERT OR IGNORE keeps a
-    still-due loan from generating duplicate rows on each run."""
+    """Creates a 'due_soon'/'overdue' notification per qualifying loan that doesn't already have one.
+    Runs on a schedule, opening its own connection like the other jobs."""
     conn = get_db_connection()
     try:
         if not is_feature_enabled("transactions", conn):
@@ -55,9 +67,7 @@ def sync_loan_notifications():
                 message = f"{row['asset_name']} borrowed by {member_name} is due soon"
 
             if row["calc_type"] == "overdue":
-                # escalate the existing due_soon row in place instead of leaving a
-                # stale duplicate; also clears everyone's read/cleared state on it
-                # since going overdue is worth resurfacing even if they'd read it
+                # Escalates the row in place instead of duplicating, and clears its read state.
                 existing = conn.execute(
                     "SELECT id FROM notifications WHERE transaction_id = ? AND type = 'due_soon'",
                     (row["transaction_id"],),
@@ -96,10 +106,7 @@ def sync_loan_notifications():
         conn.close()
 
 
-# Append to any notifications query that should respect each staff member's
-# mute toggles from "Settings & privacy". This is a display preference only --
-# it hides muted types from that person's view, not who the notification
-# gets created for or who else can see it.
+# Filters out muted notification types for one viewer; doesn't affect who gets notified.
 PREF_FILTER_SQL = (
     "AND (type NOT IN ('due_soon') OR ? = 1)"
     " AND (type NOT IN ('overdue') OR ? = 1)"
@@ -108,8 +115,7 @@ PREF_FILTER_SQL = (
 
 
 def pref_filter_params(staff):
-    """Param tuple for PREF_FILTER_SQL's three placeholders, from any row
-    that selected the notify_due_soon/notify_overdue/notify_requests columns."""
+    """Param tuple for PREF_FILTER_SQL's three placeholders, from a staff row's notify_* columns."""
     return (
         staff["notify_due_soon"],
         staff["notify_overdue"],
@@ -118,19 +124,8 @@ def pref_filter_params(staff):
 
 
 def get_notification_bell_context(conn, staff_id, role, staff, limit=8):
-    """Returns (notifications, unread_count) for the sidebar bell dropdown,
-    most recent first, capped at `limit`. `staff` just needs to carry the
-    three notify_* pref columns; kept separate from staff_id/role since
-    callers usually already have those from elsewhere.
-
-    Visibility: rows with both recipient columns NULL are broadcasts (loan
-    due/overdue alerts), rows with recipient_staff_id/recipient_role set are
-    scoped to that person/role. PREF_FILTER_SQL then drops muted types.
-
-    is_read/is_cleared come from a LEFT JOIN on notification_reads scoped to
-    this staff_id, not from columns on notifications itself (those would be
-    shared across everyone seeing a broadcast row) -- explicit column list
-    avoids colliding with the old same-named columns still on the table."""
+    """Returns (notifications, unread_count) for the sidebar bell, most recent first.
+    Broadcasts have both recipient columns NULL; is_read/is_cleared come from notification_reads, not notifications itself."""
     pref_params = pref_filter_params(staff)
     notifications = conn.execute(
         f"""
@@ -174,14 +169,11 @@ def get_notification_bell_context(conn, staff_id, role, staff, limit=8):
 
 
 # # # UNRESTRICTION REQUEST LIFECYCLE --------------------------------------
-# Unlike the periodic sync above, these fire once, right when the triggering
-# action happens in routes/requests.py -- nothing to reconcile later.
+# Fire once, right when the triggering action happens -- nothing to reconcile later.
 
 
 def create_unrestriction_requested_notifications(conn, request_id, member_name, requester_username):
-    """Notifies every admin and in_charge that a tool_keeper filed an
-    unrestriction request -- one row per role so each role's read state
-    stays independent."""
+    """Notifies every admin/in_charge of a new request, one row per role."""
     message = f"{requester_username} requested unrestriction for {member_name}"
     for role in ("admin", "in_charge"):
         conn.execute(
@@ -194,10 +186,7 @@ def create_unrestriction_requested_notifications(conn, request_id, member_name, 
 
 
 def create_unrestriction_resolved_notification(conn, request_id, requester_staff_id, member_name, approved, review_notes=None):
-    """Notifies the original requester once their request is approved or
-    denied -- targeted at that one staff member, not broadcast. Not
-    called on cancellation (the requester cancelled it themselves, so
-    they already know; see clear_unrestriction_pending_notifications)."""
+    """Notifies the requester their request was approved/denied; not sent on cancellation."""
     if approved:
         message = f"Your unrestriction request for {member_name} was approved"
     else:
@@ -214,18 +203,11 @@ def create_unrestriction_resolved_notification(conn, request_id, requester_staff
 
 
 # # # ADMIN DEACTIVATION REQUEST LIFECYCLE -----------------------------------
-# Same one-shot-imperative shape as the unrestriction functions above --
-# fired once from routes/staff.py right when each event happens.
+# Same one-shot shape as above -- fired once from routes/staff.py.
 
 
 def create_admin_deactivation_requested_notifications(conn, request_id, target_name, requester_name):
-    """Notifies every in_charge/tool_keeper account -- anyone eligible to
-    review this request, since all of them can vote on any request now
-    regardless of tier. One row per role. Used to notify nobody; reviewers
-    only found out by checking the Approvals tab themselves.
-
-    target_name/requester_name are full names, not usernames -- matches
-    how the deactivation table itself displays people."""
+    """Notifies every in_charge/tool_keeper eligible to review, one row per role."""
     message = f"{requester_name} requested deactivation of admin {target_name}"
     for role in ("in_charge", "tool_keeper"):
         conn.execute(
@@ -238,10 +220,7 @@ def create_admin_deactivation_requested_notifications(conn, request_id, target_n
 
 
 def create_admin_deactivation_resolved_notification(conn, request_id, requester_staff_id, target_name, approved, denial_reason=None):
-    """Notifies the original requester once their admin-deactivation
-    request is approved or denied -- targeted at that one staff member,
-    not broadcast. Not called on the requester's own cancellation (they
-    already know). target_name is a full name, not a username."""
+    """Notifies the requester their deactivation request was approved/denied; not sent on cancellation."""
     if approved:
         message = f"Your request to deactivate admin {target_name} was approved"
     else:
@@ -258,14 +237,11 @@ def create_admin_deactivation_resolved_notification(conn, request_id, requester_
 
 
 # # # FEEDBACK LIFECYCLE ----------------------------------------------------
-# Same one-shot shape as above -- fired once from routes/feedback.py right
-# when each event happens (submit / resolve).
+# Same one-shot shape -- fired once from routes/feedback.py on submit/resolve.
 
 
 def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id, submitter_name, category):
-    """Two rows per submission: a broadcast to every admin, and a personal
-    confirmation back to the submitter (even if they're an admin themselves)
-    so submitting doesn't feel like shouting into a void."""
+    """Two rows: a broadcast to every admin, plus a personal confirmation to the submitter."""
     conn.execute(
         """
         INSERT INTO notifications (type, feedback_report_id, recipient_role, message)
@@ -283,9 +259,7 @@ def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id,
 
 
 def create_feedback_resolved_notification(conn, report_id, submitter_staff_id, response):
-    """Notifies the original submitter once an admin resolves their
-    report, carrying the admin's actual reply text -- not a silent status
-    flip. Not sent on reopen; there's nothing new to tell them yet."""
+    """Notifies the submitter their report was resolved, with the admin's actual reply."""
     conn.execute(
         """
         INSERT INTO notifications (type, feedback_report_id, recipient_staff_id, message)
@@ -296,11 +270,181 @@ def create_feedback_resolved_notification(conn, report_id, submitter_staff_id, r
 
 
 def clear_unrestriction_pending_notifications(conn, request_id):
-    """Removes the admin/in_charge 'pending review' notices once a request
-    is approved, denied, or cancelled -- nothing left to review. Called
-    before the resolved-notice insert (approve/deny) or standalone (cancel,
-    which has no resolved notice)."""
+    """Removes pending-review notices once a request is approved, denied, or cancelled."""
     conn.execute(
         "DELETE FROM notifications WHERE unrestriction_request_id = ? AND type = 'unrestriction_requested'",
         (request_id,),
     )
+
+
+# # # NOTIFICATIONS TAB (list/mark-read/clear/open) -----------------------
+# Everything below backs routes/notifications.py.
+
+
+def get_notifications_table_context(conn, args, staff):
+    """Shared query for the notifications list, used by the page and its htmx partial.
+    is_read/is_cleared come from a LEFT JOIN scoped to this staff member."""
+    limit, offset, error = parse_pagination_params(args)
+    if error:
+        return None, error
+
+    # Parenthesized: AND binds tighter than OR, so the parens keep this filter separate.
+    where_clauses = [f"({_VISIBILITY_SQL})"]
+    params = [staff["id"], staff["role"]]
+    # Drops any type this staff member muted in Settings & privacy.
+    where_clauses.append(PREF_FILTER_SQL.removeprefix("AND "))
+    params.extend(pref_filter_params(staff))
+    # Cleared notifications stay gone -- no "show cleared" view here.
+    where_clauses.append("COALESCE(nr.is_cleared, 0) = 0")
+
+    show_unread_only = args.get("show_unread_only") == "1"
+    if show_unread_only:
+        where_clauses.append("COALESCE(nr.is_read, 0) = 0")
+
+    # Filters on the date portion of created_at, inclusive both ends.
+    since = args.get("since")
+    if since:
+        error = validate_date_string(since, "since")
+        if error:
+            return None, error
+        where_clauses.append("date(notifications.created_at) >= ?")
+        params.append(since)
+
+    until = args.get("until")
+    if until:
+        error = validate_date_string(until, "until")
+        if error:
+            return None, error
+        where_clauses.append("date(notifications.created_at) <= ?")
+        params.append(until)
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}"
+    join_sql = "LEFT JOIN notification_reads nr ON nr.notification_id = notifications.id AND nr.staff_id = ?"
+    join_params = [staff["id"]]
+
+    total_count = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM notifications {join_sql} {where_sql}",
+        (*join_params, *params),
+    ).fetchone()["cnt"]
+    notifications = conn.execute(
+        f"""
+        SELECT notifications.id, notifications.type, notifications.transaction_id,
+               notifications.unrestriction_request_id, notifications.recipient_staff_id,
+               notifications.recipient_role, notifications.message, notifications.created_at,
+               COALESCE(nr.is_read, 0) AS is_read,
+               COALESCE(nr.is_cleared, 0) AS is_cleared
+        FROM notifications
+        {join_sql}
+        {where_sql}
+        ORDER BY notifications.created_at DESC, notifications.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*join_params, *params, limit, offset),
+    ).fetchall()
+
+    return {
+        "notifications": notifications,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "show_unread_only": show_unread_only,
+        "since": since,
+        "until": until,
+    }, None
+
+
+def mark_all_notifications_read(conn, staff):
+    """Marks read only what this staff member can see, without touching anyone else's copy."""
+    conn.execute(
+        f"""
+        INSERT INTO notification_reads (notification_id, staff_id, is_read, read_at)
+        SELECT notifications.id, ?, 1, datetime('now', 'localtime')
+        FROM notifications
+        LEFT JOIN notification_reads nr
+          ON nr.notification_id = notifications.id AND nr.staff_id = ?
+        WHERE COALESCE(nr.is_read, 0) = 0
+          AND COALESCE(nr.is_cleared, 0) = 0
+          AND ({_VISIBILITY_SQL})
+          {PREF_FILTER_SQL}
+        ON CONFLICT(notification_id, staff_id) DO UPDATE SET is_read = 1, read_at = excluded.read_at
+        """,
+        (staff["id"], staff["id"], staff["id"], staff["role"], *pref_filter_params(staff)),
+    )
+    conn.commit()
+
+
+def mark_notification_read(conn, notification_id, staff):
+    notification = conn.execute(
+        f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
+        (notification_id, staff["id"], staff["role"]),
+    ).fetchone()
+    if notification is None:
+        return False
+
+    conn.execute(_UPSERT_READ_SQL, (notification_id, staff["id"]))
+    conn.commit()
+    return True
+
+
+def clear_notification(conn, notification_id, staff):
+    """The '×' on each row -- clears one notification at a time."""
+    notification = conn.execute(
+        f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
+        (notification_id, staff["id"], staff["role"]),
+    ).fetchone()
+    if notification is None:
+        return False
+
+    conn.execute(_UPSERT_CLEAR_SQL, (notification_id, staff["id"]))
+    conn.commit()
+    return True
+
+
+def clear_notifications_bulk(conn, ids, staff):
+    """Bulk clear; ids the staff member can't see are silently skipped rather than erroring."""
+    placeholders = ",".join("?" * len(ids))
+    cursor = conn.execute(
+        f"""
+        INSERT INTO notification_reads (notification_id, staff_id, is_cleared, cleared_at)
+        SELECT notifications.id, ?, 1, datetime('now', 'localtime')
+        FROM notifications
+        WHERE notifications.id IN ({placeholders}) AND ({_VISIBILITY_SQL})
+        ON CONFLICT(notification_id, staff_id) DO UPDATE SET is_cleared = 1, cleared_at = excluded.cleared_at
+        """,
+        (staff["id"], *ids, staff["id"], staff["role"]),
+    )
+    cleared_count = cursor.rowcount
+    conn.commit()
+    return cleared_count
+
+
+def resolve_notification_open(conn, notification_id, staff):
+    """Marks a notification read, then returns where to redirect: loans or requests.
+    Returns None if the notification doesn't exist/isn't visible to this staff member."""
+    notification = conn.execute(
+        f"""
+        SELECT notifications.id, notifications.unrestriction_request_id,
+               notifications.transaction_id, transactions.member_id
+        FROM notifications
+        LEFT JOIN transactions ON transactions.id = notifications.transaction_id
+        WHERE notifications.id = ? AND ({_VISIBILITY_SQL})
+        """,
+        (notification_id, staff["id"], staff["role"]),
+    ).fetchone()
+    if notification is None:
+        return None
+
+    conn.execute(_UPSERT_READ_SQL, (notification_id, staff["id"]))
+    conn.commit()
+
+    if notification["unrestriction_request_id"] is not None:
+        return "/requests"
+
+    if notification["transaction_id"] is not None:
+        return (
+            f"/transactions?member_id={notification['member_id']}"
+            f"&open_transaction={notification['transaction_id']}"
+        )
+
+    # Neither kind -- shouldn't happen, but a dead-end redirect beats a 500.
+    return "/notifications"

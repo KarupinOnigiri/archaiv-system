@@ -6343,9 +6343,6 @@
   .col-span-1 {
     grid-column: span 1 / span 1;
   }
-  .col-span-2 {
-    grid-column: span 2 / span 2;
-  }
   .col-span-3 {
     grid-column: span 3 / span 3;
   }
@@ -7926,6 +7923,9 @@
   .max-h-\[90vh\] {
     max-height: 90vh;
   }
+  .max-h-\[95vh\] {
+    max-height: 95vh;
+  }
   .min-h-0 {
     min-height: 0px;
   }
@@ -8215,9 +8215,6 @@
     flex: 2;
   }
   .flex-shrink {
-    flex-shrink: 1;
-  }
-  .shrink {
     flex-shrink: 1;
   }
   .shrink-0 {
@@ -8616,9 +8613,6 @@
   }
   .overflow-hidden {
     overflow: hidden;
-  }
-  .overflow-visible {
-    overflow: visible;
   }
   .overflow-x-hidden {
     overflow-x: hidden;

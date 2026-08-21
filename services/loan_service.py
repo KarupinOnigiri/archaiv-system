@@ -37,7 +37,7 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
             target_table="members",
             target_id=member_id,
             target_name=member_full_name,
-            # name spelled out in the message too, so it reads clearly on its own in the log
+            # Name spelled out too, so this log entry reads clearly on its own.
             details=f"System auto-lifted restriction on {member_full_name} (member #{member_id}): no more overdue items",
         )
         return True
@@ -45,7 +45,7 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
 
 
 def check_and_restrict_overdue_member(member_id, conn):
-    # fetched just for a readable Activity Log target name; not needed for the check itself
+    # Fetched only for a readable Activity Log name, not needed for the check.
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     overdue = conn.execute(
         """
@@ -83,22 +83,8 @@ def check_and_restrict_overdue_member(member_id, conn):
 
 
 def check_and_restrict_damaged_returns(member_id, conn):
-    """Counterpart to check_and_restrict_overdue_member above, for damage
-    instead of lateness: once a member has returned
-    get_damage_restriction_threshold() or more items in a non-functional
-    condition (transactions.condition_in != 'functional' --
-    inoperable/for_repair/disposed all count as "damaged"), restrict
-    their account. Called from routes/transactions.py's _finalize_return()
-    right after a damaged return is recorded.
-
-    Unlike the overdue restriction, this one is deliberately NOT auto-
-    liftable -- restriction_source='auto_damage' (migrations/
-    0039_damage_restriction.sql) is a value check_and_lift_restriction_
-    if_resolved never touches, so it stays restricted until a human
-    reviews it via the existing unrestriction-request flow, the same as
-    a manual restriction would. No "unresolved" state to detect the way
-    overdue has one (a returned item doesn't stop being a past damaged
-    return), so there's nothing analogous to auto-lift on."""
+    """Damage counterpart to check_and_restrict_overdue_member; restricts after enough non-functional returns.
+    Not auto-liftable like overdue -- stays restricted until a human resolves it."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None or member["is_restricted"]:
         return False
@@ -141,20 +127,8 @@ def check_and_restrict_damaged_returns(member_id, conn):
 
 
 def sweep_overdue_members():
-    """Proactively runs the overdue check across every member who
-    currently has an open ('borrowed') loan, instead of relying on
-    check_and_restrict_overdue_member only ever being triggered
-    opportunistically (at checkout-session start/commit). Without this,
-    a member can sit overdue and unrestricted — invisible as "restricted"
-    anywhere in the UI — for as long as nobody happens to try checking
-    something else out to them.
-
-    Meant to be run on a schedule (see app.py, alongside
-    cleanup_stale_checkout_sessions and cleanup_expired_sessions), not
-    tied to any particular request. Opens its own connection for that
-    reason — same pattern as cleanup_stale_checkout_sessions in
-    checkout_service.py — rather than taking one as a parameter like the
-    two request-triggered functions above."""
+    """Proactively restricts every member with an overdue loan, not just at checkout time.
+    Runs on a schedule (app.py); opens its own connection like checkout_service.py's cleanup job."""
     conn = get_db_connection()
     try:
         overdue_member_ids = conn.execute("""

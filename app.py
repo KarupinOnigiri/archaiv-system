@@ -2,8 +2,14 @@
 
 from dotenv import load_dotenv
 import os
+
+# Must run before local imports -- auth.py reads env vars at import time, not request time.
+root_dir = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(root_dir, ".env"))
+
 import atexit
 import logging
+import logging.handlers
 from flask import Flask, jsonify, render_template, request, g, redirect, url_for
 from werkzeug.exceptions import HTTPException
 from routes.requests import requests_bp
@@ -38,16 +44,18 @@ from services.archive_purge_service import run_scheduled_archive_purge
 from routes.dashboard import dashboard_bp
 from datetime import datetime
 
-root_dir = os.path.abspath(os.path.dirname(__file__))
-load_dotenv(os.path.join(root_dir, ".env"))
-
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.join(root_dir, "toolroom.log")),
+        # Rotating, not plain -- keeps the log from filling up the Pi's small SD card.
+        logging.handlers.RotatingFileHandler(
+            os.path.join(root_dir, "toolroom.log"),
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+        ),
     ],
 )
 
@@ -55,9 +63,11 @@ logging.basicConfig(
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
-# 26MB = 5 feedback screenshots at the 5MB cap (utils/uploads.py) plus
-# multipart overhead. Used to be 1MB, which broke single-image uploads.
+# Room for 5 feedback screenshots at the 5MB cap, plus multipart overhead.
 app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024
+
+# 1hr cache on static files -- balances SD-card re-reads against staleness after a redeploy.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 
 if not app.secret_key:
     raise RuntimeError(
@@ -70,7 +80,7 @@ def inject_csrf_token():
     conn = get_db_connection()
     token = request.cookies.get("session_token")
     if not token:
-        # base.html's nav guards run even on the logged-out /login page, so we need this here too.
+        # Needed even here since base.html's nav guards run on the logged-out /login page too.
         feature_flags = get_feature_flags(conn)
         conn.close()
         return {"csrf_token": "", "staff_first_name": "", "feature_flags": feature_flags}
@@ -165,6 +175,14 @@ app.register_blueprint(dashboard_bp, url_prefix="/api/v1")
 app.register_blueprint(pages_bp)
 
 
+@app.after_request
+def cache_uploaded_files_aggressively(response):
+    """Uploaded files get a fresh filename every time, so caching them long-term is safe."""
+    if request.path.startswith("/static/uploads/"):
+        response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+    return response
+
+
 # # # ERROR HANDLERS ---------------------------------------------------------
 
 
@@ -194,10 +212,9 @@ scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 scheduler.add_job(sync_loan_notifications, "interval", minutes=15)
-# Polls every 30 min rather than every configured interval, so a System-page settings
-# change takes effect quickly; the function itself decides if it actually backs up.
+# Polls every 30 min; the function itself decides whether a backup is actually due.
 scheduler.add_job(run_scheduled_backup, "interval", minutes=30)
-# Hourly poll is fine here since retention windows are day-granularity, not minute.
+# Hourly is fine -- retention windows are day-granularity, not minute.
 scheduler.add_job(run_scheduled_archive_purge, "interval", hours=1)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
@@ -218,8 +235,7 @@ def home():
     if error:
         conn.close()
         return redirect(url_for("pages.login_page"))
-    # Temporary setup admin shouldn't see the real dashboard before setup is done --
-    # bounce it to the wizard (covers direct nav/bookmarks, not just the login redirect).
+    # Send the temp setup admin to the wizard instead of the real dashboard.
     if staff["is_system_seeded"]:
         conn.close()
         return redirect(url_for("pages.setup_page"))
@@ -243,16 +259,12 @@ def health():
 
 
 def format_date(value, format="%b %d, %Y %I:%M %p"):
-    """
-    Custom Jinja filter to format dates.
-    Handles datetime objects, ISO string formats, or returns the original value if parsing fails.
-    """
+    """Jinja filter: formats dates, handling datetime objects and ISO strings."""
     if value is None:
         return "—"
 
     if isinstance(value, str):
         try:
-            # Attempts to parse ISO-formatted string dates
             value = datetime.fromisoformat(value)
         except (ValueError, TypeError):
             return value
@@ -263,9 +275,8 @@ def format_date(value, format="%b %d, %Y %I:%M %p"):
     return value
 
 
-# Register the custom filter with Jinja
 app.jinja_env.filters["format_date"] = format_date
-# Optional: Register in globals if you access it directly as a function in templates
+# Also expose as a global, for calling it directly instead of via the | filter.
 app.jinja_env.globals["format_date"] = format_date
 
 # Turns a snake_case DB value into a display label, e.g. 'for_repair' -> 'For Repair'.

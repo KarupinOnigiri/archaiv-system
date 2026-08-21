@@ -3997,10 +3997,9 @@ window.Checkout = (function () {
 
       try {
         // GET /checkout-sessions/available-assets (routes/transactions.py)
-        // returns { assets: [{ code, name }, ...] }. `code` is each
-        // asset's barcode_id specifically -- that's what has to be sent
-        // back through items/add (below) for a clicked row to resolve to
-        // the same asset that was shown.
+        // returns { assets: [{ code, name, category }, ...] }. `code` is
+        // each asset's barcode_id -- sent back through items/add below so
+        // a clicked row resolves to the same asset that was shown.
         const res = await fetch('/api/v1/checkout-sessions/available-assets', { headers: csrfHeaders() });
         const data = await res.json();
 
@@ -4453,6 +4452,6 @@ document.addEventListener('click', function (e) {
 })();
 </script>
 
-<!-- Made by Karupin/artkaru -->
+<!-- Made by Artcin/Karupin/artkaru -->
 </body>
 </html>

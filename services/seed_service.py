@@ -1,8 +1,9 @@
+import json
 import secrets
-import sqlite3
 import logging
 
-from database import get_db_connection
+# Re-exported from database.py, not stdlib -- see routes/assets.py's import for why.
+from database import get_db_connection, sqlite3
 from utils.logger import log_action
 from werkzeug.security import generate_password_hash
 
@@ -10,6 +11,43 @@ logger = logging.getLogger(__name__)
 
 TEMP_ADMIN_USERNAME = "setup-admin"
 TEMP_ADMIN_DEPARTMENT = "Administration"
+
+# Stashes the one-time temp-admin credentials so the login page can show them in a modal.
+SEED_NOTICE_SETTING_KEY = "setup_admin_seed_notice"
+
+
+def _set_seed_notice(conn, username, password):
+    conn.execute(
+        """
+        INSERT INTO app_settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (SEED_NOTICE_SETTING_KEY, json.dumps({"username": username, "password": password})),
+    )
+
+
+def get_seed_notice(conn=None):
+    """Returns {"username", "password"} for the pending temp admin, or None once setup's done."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (SEED_NOTICE_SETTING_KEY,)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row["value"])
+        except (ValueError, TypeError):
+            return None
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def clear_seed_notice(conn):
+    conn.execute("DELETE FROM app_settings WHERE key = ?", (SEED_NOTICE_SETTING_KEY,))
 
 
 def _get_or_create_department_id(conn, name):
@@ -23,14 +61,10 @@ def _get_or_create_department_id(conn, name):
 
 
 def _create_temp_admin(conn):
-    """Creates a brand-new temporary admin: a fresh member + staff row,
-    role='admin', is_system_seeded=1, with a freshly generated random
-    password. Returns (staff_id, password) so the caller can log it."""
+    """Creates a temp admin (member + staff row, role='admin') with a random password."""
     department_id = _get_or_create_department_id(conn, TEMP_ADMIN_DEPARTMENT)
 
-    # Unique per (re)seed — the member row from a *previous* temp admin
-    # still exists (soft-retired, not deleted), so its barcode_id is
-    # already taken and a new one is needed here.
+    # Unique per reseed -- a previous temp admin's barcode_id is already taken.
     barcode_id = f"SETUP{secrets.token_hex(4).upper()}"
     password = secrets.token_urlsafe(12)
     hashed_password = generate_password_hash(password)
@@ -64,12 +98,28 @@ def _create_temp_admin(conn):
     return staff_id, password
 
 
+def purge_temp_admin(conn, staff_id, member_id):
+    """Fully removes the temp admin's rows instead of soft-deactivating, per product decision.
+    Nullable FKs get nulled out; rows only relevant to this staff member get deleted."""
+    conn.execute("UPDATE audit_log SET staff_id = NULL WHERE staff_id = ?", (staff_id,))
+    conn.execute(
+        "UPDATE staff SET created_by_staff_id = NULL WHERE created_by_staff_id = ?",
+        (staff_id,),
+    )
+    conn.execute("UPDATE assets SET deleted_by = NULL WHERE deleted_by = ?", (staff_id,))
+    conn.execute(
+        "UPDATE checkout_sessions SET staff_id = NULL WHERE staff_id = ?", (staff_id,)
+    )
+    conn.execute("DELETE FROM notification_reads WHERE staff_id = ?", (staff_id,))
+    conn.execute("DELETE FROM notifications WHERE recipient_staff_id = ?", (staff_id,))
+    conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff_id,))
+    conn.execute("DELETE FROM staff WHERE id = ?", (staff_id,))
+    conn.execute("DELETE FROM members WHERE id = ?", (member_id,))
+    clear_seed_notice(conn)
+
+
 def _regenerate_temp_admin_password(conn, staff_row):
-    """A temp admin already exists from a previous boot — setup was never
-    completed. Rather than let last boot's printed password stay valid
-    forever, issue a fresh one on every startup and drop any sessions
-    signed in with the old one, so an old log line can't still get
-    someone in."""
+    """Issues a fresh password every boot and drops sessions signed in with the old one."""
     password = secrets.token_urlsafe(12)
     hashed_password = generate_password_hash(password)
     conn.execute(
@@ -81,20 +131,8 @@ def _regenerate_temp_admin_password(conn, staff_row):
 
 
 def seed_initial_admin():
-    """Ensures the system always has a way in, without ever shipping a
-    fixed default username/password.
-
-    If any active admin account exists, this is a no-op. Otherwise, a
-    temporary admin account is created — or, if one already exists from
-    an incomplete previous setup, given a fresh password — and its
-    one-time credentials are logged (stdout + toolroom.log, via the
-    logging config already set up in app.py). Logging in with that
-    account and calling POST /api/v1/setup/complete creates the real
-    first admin and retires the temporary one automatically.
-
-    Safe to call at any time — on app startup, and also whenever an
-    action might have just removed the last active admin (e.g. an
-    admin-deactivation approval finalizing)."""
+    """Ensures the system always has a way in, without a fixed default username/password.
+    No-op if an active admin exists; otherwise (re)seeds a temp admin and logs its credentials."""
     conn = get_db_connection()
 
     active_admin = conn.execute(
@@ -119,6 +157,7 @@ def seed_initial_admin():
         else:
             staff_id, password = _create_temp_admin(conn)
             username = TEMP_ADMIN_USERNAME
+        _set_seed_notice(conn, username, password)
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()

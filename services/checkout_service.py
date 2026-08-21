@@ -8,10 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def cleanup_stale_checkout_sessions():
-    """Finds every open checkout session across all members that's gone
-    stale, releases its reserved assets back to available, and marks it
-    cancelled. Meant to be run on a schedule so abandoned carts don't lock
-    tools indefinitely — not tied to any one member coming back to the kiosk."""
+    """Releases reserved assets and cancels checkout sessions abandoned past the stale timeout."""
     conn = get_db_connection()
 
     stale_sessions = conn.execute(

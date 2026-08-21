@@ -1,12 +1,5 @@
-"""Automatic database backups via the app's own APScheduler instance, so no
-separate OS cron/systemd timer is needed per deployment. backup_db.py's
-CLI entry point still works standalone too -- both paths call the same
-backup_database(), so there's only one real implementation.
-
-Polls every 30 min rather than scheduling exactly at the configured
-interval, so admins see interval/enabled changes take effect quickly. The
-last-run time is stored as an app_settings row (not in memory) so a
-restart doesn't lose track and trigger a redundant backup."""
+"""Automatic backups via the app's own APScheduler; backup_db.py's CLI still works standalone.
+Polls every 30 min, and stores the last-run time in app_settings so a restart doesn't lose track."""
 
 import logging
 from datetime import datetime, timedelta
@@ -14,6 +7,7 @@ from datetime import datetime, timedelta
 import backup_db
 from database import get_db_connection
 from services.settings_service import get_auto_backup_enabled, get_auto_backup_interval_hours
+from utils.logger import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +16,7 @@ _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def get_last_backup_at(conn=None):
-    """Public since the System page's backup-settings modal reads this to
-    show "Last backup: ..." so admins aren't guessing if it's working."""
+    """Public so the System page can show "Last backup: ..." to admins."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -54,15 +47,11 @@ def _set_last_backup_at(conn, when):
 
 
 def run_backup_now():
-    """Runs a backup immediately, no enabled/interval check -- used by both
-    the scheduler and the "Backup Now" button. Records the run time either
-    way, so a manual backup also resets the scheduler's countdown. Returns
-    True/False for success; failure is already logged either way."""
+    """Runs a backup immediately; used by both the scheduler and the "Backup Now" button."""
     try:
         backup_db.backup_database()
     except SystemExit:
-        # backup_database() calls sys.exit(1) on failure; catch it here so it
-        # can't kill the scheduler thread or 500 the "Backup Now" request
+        # backup_database() exits(1) on failure -- catch it so it doesn't kill this thread.
         logger.warning("Database backup failed.")
         return False
 
@@ -75,9 +64,7 @@ def run_backup_now():
 
 
 def run_scheduled_backup():
-    """The actual APScheduler job (app.py). Safe to call as often as the
-    scheduler likes -- it's a no-op unless auto-backup is enabled AND
-    the configured interval has actually elapsed since the last run."""
+    """The APScheduler job -- a no-op unless auto-backup is enabled and its interval has elapsed."""
     conn = get_db_connection()
     try:
         if not get_auto_backup_enabled(conn):
@@ -90,4 +77,12 @@ def run_scheduled_backup():
         conn.close()
 
     logger.info("Running automatic database backup...")
-    run_backup_now()
+    success = run_backup_now()
+
+    # staff_id=None shows as "System" in the Activity Log, distinct from a manual backup's entry.
+    log_action(
+        staff_id=None,
+        action="ran_scheduled_backup" if success else "scheduled_backup_failed",
+        target_table="app_settings",
+        details="Automatic database backup completed" if success else "Automatic database backup failed -- check the server log",
+    )

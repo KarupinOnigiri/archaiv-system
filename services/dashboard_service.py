@@ -2,16 +2,14 @@ from database import get_db_connection
 from services.settings_service import get_due_soon_hours
 from utils.formatters import full_name
 
-# Lower-bound SQL fragment for the Top Borrowed panel's range filter, keyed by the <select>
-# value. "today"/"yesterday" anchor to the start of a calendar day (localtime), not a rolling 24h window.
+# Lower-bound SQL per range key; "today"/"yesterday" anchor to start of calendar day.
 TOP_BORROWED_RANGES = {
     "today": "datetime('now', 'localtime', 'start of day')",
     "yesterday": "datetime('now', 'localtime', 'start of day', '-1 day')",
     "7d": "datetime('now', 'localtime', '-7 days')",
     "30d": "datetime('now', 'localtime', '-30 days')",
 }
-# Upper bound only matters for "yesterday" (everything else's upper bound
-# is just "now", i.e. no upper filter needed).
+# Upper bound only matters for "yesterday"; everything else just uses "now".
 TOP_BORROWED_UPPER_BOUND = {
     "yesterday": "datetime('now', 'localtime', 'start of day')",
 }
@@ -27,11 +25,7 @@ TOP_BORROWED_RANGE_LABELS = {
 
 
 def get_top_borrowed(conn, range_key):
-    """Top 5 most-borrowed assets in the given range -- range_key must be
-    one of TOP_BORROWED_RANGES' keys (callers validate this; see
-    routes/dashboard.py). Shared by get_dashboard_context's initial
-    server render and the htmx-refreshed panel so both use the exact same
-    query, never two competing definitions of "top borrowed"."""
+    """Top 5 most-borrowed assets in range_key's window; shared by the server render and htmx refresh."""
     lower_bound = TOP_BORROWED_RANGES[range_key]
     upper_clause = ""
     params = []
@@ -54,16 +48,8 @@ def get_top_borrowed(conn, range_key):
 
 
 def get_dashboard_context(conn=None):
-    """Everything the Dashboard (templates/home.html, served by app.py's
-    home()) needs in one place. Every count here mirrors the exact query
-    each real tab uses for its own stat cards (assets_page/members_page/
-    transactions_page in routes/pages.py) rather than inventing a new
-    definition of "available"/"overdue"/etc. -- so a number on the
-    dashboard can never quietly disagree with the tab it links to.
-
-    Read-only and cheap (a handful of COUNT/LIMIT queries), fine to run
-    on every dashboard load rather than caching -- same reasoning as
-    every other *_page() route in this app."""
+    """Everything the Dashboard needs in one place; every count mirrors its own tab's query exactly.
+    Read-only and cheap, so it just re-runs on every load instead of caching."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -76,11 +62,7 @@ def get_dashboard_context(conn=None):
             SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS available,
             SUM(CASE WHEN status = 'borrowed' THEN 1 ELSE 0 END) AS borrowed,
             SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) AS maintenance,
-            -- 'reserved' = held for an in-progress checkout session that
-            -- hasn't been confirmed yet (services/checkout_service.py) --
-            -- included so the status breakdown always accounts for every
-            -- asset, not just the three tracked by the Inventory tab's own
-            -- stat cards.
+            -- 'reserved' = held for an in-progress checkout session; included for a complete status breakdown.
             SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) AS reserved
         FROM assets
         WHERE deleted_at IS NULL
@@ -110,9 +92,7 @@ def get_dashboard_context(conn=None):
         """
     ).fetchone()
 
-    # Due Soon list -- replaces a redundant "Notifications" panel that just repeated the
-    # bell dropdown. Reads as a to-do list (soonest-first) instead. Same due_soon_hours
-    # window as notification_service.py's sync job, so this can't disagree with the real alert.
+    # Due Soon list, soonest-first; uses the same window as notification_service.py's sync job.
     due_soon_hours = get_due_soon_hours(conn)
     due_soon_rows = conn.execute(
         """
@@ -153,8 +133,7 @@ def get_dashboard_context(conn=None):
     ).fetchone()["cnt"]
 
     # # # Recent activity --------------------------------------------------
-    # One feed of both "borrowed" and "returned" events -- UNION ALL over transactions,
-    # tagged by which timestamp supplied the event. Caps at 8; a glance feed, not a Transactions-tab substitute.
+    # One feed of borrow/return events via UNION ALL, capped at 8 -- just a glance feed.
     recent_activity = conn.execute(
         """
         SELECT * FROM (

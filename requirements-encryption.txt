@@ -1,0 +1,16 @@
+# Optional -- only needed if you're enabling DB_ENCRYPTION_KEY (see
+# database.py and SECURITY.md). Not part of requirements.txt on purpose:
+# sqlcipher3 has no prebuilt wheel for any platform, so pip installing it
+# unconditionally would break `pip install -r requirements.txt` for every
+# deployment that doesn't want encryption, over a package most won't need.
+#
+# Before installing this on a Raspberry Pi (Raspberry Pi OS / Debian):
+#   sudo apt-get update
+#   sudo apt-get install -y libsqlcipher-dev libssl-dev build-essential python3-dev
+#
+# Then:
+#   pip install -r requirements-encryption.txt
+#
+# This compiles from source (no wheel exists), so expect it to take a
+# while on a Pi -- several minutes, not seconds.
+sqlcipher3

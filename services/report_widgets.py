@@ -1,29 +1,11 @@
-"""Canonical catalog of every Reports-page widget: what it's called, what
-kind of card it renders as, and which roles are even allowed to have it on
-their dashboard. Single source of truth shared by:
-  - routes/stats.py       -- serves this (role-filtered) to the frontend,
-                              and validates `sections=` on /stats/export
-                              against it so a role can't export a widget
-                              it isn't allowed to see.
-  - services/report_layout_service.py -- merges a staff member's saved
-                              order/visibility with this list, dropping any
-                              widget id the registry (or their role) no
-                              longer recognizes.
-  - templates/reports.html -- one <div data-widget-id> per entry, and the
-                              Customize panel's checklist.
+"""Canonical widget catalog: names, card type, and which roles can see each one.
+Shared by routes/stats.py, report_layout_service.py, and templates/reports.html."""
 
-Kept in its own module (rather than living in routes/stats.py) so
-report_layout_service.py can import it without a routes -> services ->
-routes circular import.
-"""
-
-# Every role that can ever see Reports at all. Order here also sets the default widget order
-# (orientation numbers first, ranked lists next, detail tables last) for a fresh install.
+# Order sets the default widget order for a fresh install.
 ADMIN_IN_CHARGE = ("admin", "in_charge")
 
 WIDGETS = [
-    # admin/in_charge only, NOT tool_keeper -- these are system-wide totals that would break
-    # "own activity only" scoping if shown to tool_keeper; matches /stats/summary's own gating.
+    # admin/in_charge only -- these are system-wide totals, not scoped to one staff member.
     {
         "id": "summary",
         "title": "At-a-glance summary",
@@ -78,9 +60,7 @@ WIDGETS = [
         "type": "table",
         "roles": ("admin",),
     },
-    # Tool Keeper's Reports access is deliberately "own activity only" -- no cross-staff
-    # comparisons. These three widgets are the only ones a tool_keeper can see; every
-    # query behind them filters to g.staff["id"] regardless of the request.
+    # Tool Keeper sees only these three, each scoped to their own activity.
     {
         "id": "my_checkouts",
         "title": "My Checkouts Processed",

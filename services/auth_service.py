@@ -64,9 +64,7 @@ def require_session(conn):
 
 
 def cleanup_expired_sessions():
-    """Deletes expired/idle-timed-out session rows even if nobody ever tries
-    that token again -- otherwise an abandoned session (browser closed,
-    kiosk power-cycled) sits in the table forever. Run on a schedule."""
+    """Deletes expired/idle session rows so an abandoned session doesn't sit forever."""
     conn = get_db_connection()
     try:
         idle_minutes = get_session_idle_minutes(conn)
@@ -105,16 +103,8 @@ def login_required(f):
 
 
 def feature_required(name, redirect_to_dashboard=True):
-    """Gates a route behind an admin-controlled feature flag (see
-    settings_service.FEATURE_FLAGS).
-
-    redirect_to_dashboard=True (default, for page view functions) redirects
-    to '/' with a ?feature_disabled=<label> param that base.html's JS toasts
-    -- this app has no server-side flash(), so that's the one-shot-message
-    trick across a redirect. redirect_to_dashboard=False (for blueprint
-    before_request hooks) returns a plain JSON 403 instead.
-
-    Stack this closest to the view function, under @roles_required/@login_required."""
+    """Gates a route behind an admin-controlled feature flag.
+    redirect_to_dashboard=True toasts via a redirect param; False returns a plain JSON 403 instead."""
 
     def decorator(f):
         @wraps(f)

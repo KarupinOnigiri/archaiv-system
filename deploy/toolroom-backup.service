@@ -1,0 +1,23 @@
+[Unit]
+Description=Archaiv toolroom database backup (one-shot)
+# OPTIONAL -- toolroom.service already backs up automatically every 30
+# minutes on its own (app.py's APScheduler job -> services/backup_service.py)
+# for as long as the app is running, which is effectively always once
+# toolroom.service is enabled. This unit + toolroom-backup.timer only add
+# value as a second, independent backup path -- e.g. writing to a mounted
+# USB drive on a schedule the in-app scheduler doesn't cover, or wanting
+# backups to keep happening via cron/systemd even during a stretch where
+# you've deliberately stopped the main app. Most deployments don't need
+# this; skip it unless you have a specific reason to want backups outside
+# the running app process.
+After=toolroom.service
+
+[Service]
+Type=oneshot
+User=toolroom
+Group=toolroom
+WorkingDirectory=/opt/toolroom
+# Add a destination path as an argument to back up somewhere other than
+# the default ./backups -- e.g. a mounted USB drive:
+#   ExecStart=/opt/toolroom/.venv/bin/python /opt/toolroom/backup_db.py /mnt/usb/backups
+ExecStart=/opt/toolroom/.venv/bin/python /opt/toolroom/backup_db.py

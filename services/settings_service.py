@@ -1,19 +1,12 @@
 from database import get_db_connection
 
-# Stored in staff.locked_until to mean "locked with no expiry" without a schema change.
-# Using this instead of datetime.max because datetime.max has microseconds that this format
-# string drops, so it wouldn't round-trip equal through the DB. Special-cased in the login
-# lockout check and admin manual-lock UI instead of showing a nonsense "~4 million minutes" message.
+# Sentinel for "locked with no expiry" in staff.locked_until, without a schema change.
 INDEFINITE_LOCK_UNTIL = "9999-12-31 23:59:59"
 
-# Same sentinel idea as INDEFINITE_LOCK_UNTIL, but for assigned_end (a DATE column) -- lets a
-# tool_keeper's assignment be "Permanent" without a schema change. NULL still means "no
-# assignment, can't log in", so the Permanent quick-option writes this instead of leaving it blank;
-# compute_usage_status special-cases this string the same way the lockout check does for locked_until.
+# Same sentinel idea, for assigned_end -- lets an assignment be "Permanent" without a schema change.
 PERMANENT_ASSIGNED_END = "9999-12-31"
 
-# Fallback values only -- the real, admin-editable numbers live in the app_settings table.
-# Used if a key is somehow missing there; a missing row should never hard-crash a login/session check.
+# Fallback only -- real numbers live in app_settings; a missing row shouldn't crash a login.
 DEFAULT_SETTINGS = {
     "session_idle_minutes": 30,
     "session_absolute_hours": 12,
@@ -23,13 +16,10 @@ DEFAULT_SETTINGS = {
     "default_loan_days": 2,
     "damage_restriction_threshold": 2,
     "auto_backup_interval_hours": 24,
-    # '0' means "None" -- auto-purge disabled. See
-    # migrations/0041_add_archive_purge_settings.sql.
-    "archive_purge_days": 0,
+    "archive_purge_days": 0,  # '0' means "None" -- auto-purge disabled.
 }
 
-# Feature flags all default to enabled -- a missing/unparseable row should never silently
-# lock a feature out, same "fail open" rule DEFAULT_SETTINGS follows for numeric settings.
+# Feature flags default to enabled; a missing row should never silently lock one out.
 DEFAULT_FEATURE_FLAGS = {
     "feature_assets_enabled": True,
     "feature_members_enabled": True,
@@ -38,8 +28,7 @@ DEFAULT_FEATURE_FLAGS = {
     "feature_reports_enabled": True,
 }
 
-# Short name -> (app_settings key, human label for the "<label> is currently disabled"
-# messages and the ?feature_disabled= redirect toast).
+# Short name -> (app_settings key, human label for disabled/redirect messages).
 FEATURE_FLAGS = {
     "assets": ("feature_assets_enabled", "Inventory"),
     "members": ("feature_members_enabled", "Members"),
@@ -50,11 +39,7 @@ FEATURE_FLAGS = {
 
 
 def get_setting_int(key, conn=None):
-    """Looks up an integer app_settings value by key, falling back to
-    DEFAULT_SETTINGS[key] if the row is missing or unparseable. Accepts
-    an existing connection (so callers that already have one open, like
-    require_session, don't need a second one) or opens/closes its own if
-    none is passed."""
+    """Looks up an int setting by key, falling back to DEFAULT_SETTINGS if missing/unparseable."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -106,18 +91,12 @@ def get_auto_backup_interval_hours(conn=None):
 
 
 def get_archive_purge_days(conn=None):
-    """0 means "None" -- auto-purge is disabled. Any positive value is a
-    whole number of days measured from an asset's deleted_at or a
-    member's/staff account's deactivated_at (see
-    services/archive_purge_service.py, which shares this one setting
-    across all three)."""
+    """0 means "None" -- auto-purge disabled; otherwise days since deleted_at/deactivated_at."""
     return get_setting_int("archive_purge_days", conn)
 
 
 def get_setting_bool(key, conn=None):
-    """Same fallback-on-missing/unparseable pattern as get_setting_int, for
-    the '1'/'0' feature-flag rows. Stored as text like every other
-    app_settings value -- '1' is enabled, anything else is disabled."""
+    """Same fallback pattern as get_setting_int, for '1'/'0' feature-flag rows."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -134,19 +113,12 @@ def get_setting_bool(key, conn=None):
 
 
 def get_auto_backup_enabled(conn=None):
-    """Reuses get_setting_bool's fallback-to-True behavior (its missing-row
-    fallback is `DEFAULT_FEATURE_FLAGS.get(key, True)`, which resolves to
-    plain `True` for any key -- like this one -- that isn't an actual
-    feature flag) -- same "never silently turn a safety net off" default
-    as the feature flags themselves."""
+    """Falls back to True by default, like the feature flags' own safety-first default."""
     return get_setting_bool("auto_backup_enabled", conn)
 
 
 def get_feature_flags(conn=None):
-    """Returns {short_name: enabled_bool} for every entry in FEATURE_FLAGS
-    -- fed to the base.html context processor (app.py) so every template
-    can gate nav links/dashboard widgets on it, and to feature_required()
-    (services/auth_service.py) for route-level enforcement."""
+    """Returns {name: enabled} for every FEATURE_FLAGS entry; used by templates and route gating."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -161,9 +133,7 @@ def get_feature_flags(conn=None):
 
 
 def is_feature_enabled(name, conn=None):
-    """Single-flag convenience wrapper around get_feature_flags for callers
-    (feature_required, sync_loan_notifications) that only care about one
-    feature and shouldn't have to build the whole dict."""
+    """Single-flag convenience wrapper around get_feature_flags for callers checking just one."""
     key, _label = FEATURE_FLAGS[name]
     return get_setting_bool(key, conn)
 

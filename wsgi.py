@@ -1,18 +1,9 @@
-"""
-Production entry point for the toolroom app.
-
-`python app.py`'s dev server isn't hardened for production traffic. This serves
-the same Flask app through Waitress instead -- pure-Python, lightweight enough
-for a Pi, no OS-level deps (unlike gunicorn, which doesn't play nice on Windows).
+"""Production entry point -- serves the Flask app through Waitress instead of the dev server.
 
 Usage:
     python wsgi.py
 
-Normally run via toolroom.service (systemd) so it starts on boot and auto-restarts.
-
-Threads default to 4 since we're backed by a single SQLite file -- more threads
-just means more contention, not more throughput. Only raise WAITRESS_THREADS if
-you've confirmed the DB isn't the bottleneck.
+Normally run via toolroom.service (systemd). Don't raise WAITRESS_THREADS without confirming the DB isn't the bottleneck.
 """
 
 import os

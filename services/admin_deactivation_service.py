@@ -2,8 +2,7 @@ from utils.logger import log_action
 from services.seed_service import seed_initial_admin
 from utils.formatters import full_name
 
-# Any active in_charge/tool_keeper account can vote on any pending request now --
-# no more role == required_tier gating. Only these two roles vote; other admins don't.
+# Any active in_charge/tool_keeper can vote now -- other admins can't.
 ELIGIBLE_REVIEWER_ROLES = ("in_charge", "tool_keeper")
 
 
@@ -13,21 +12,9 @@ def is_eligible_reviewer(role):
 
 
 def determine_approval_tier(conn, requester_id, target_id):
-    """Decides how big a consensus a new admin-deactivation request needs,
-    based on how many active in_charge/tool_keeper accounts actually exist
-    right now. Snapshotted once at request creation, never recalculated.
-
-    Tiers (first one actually reachable wins):
-      full:    >=2 active in_charge and >=4 in_charge+tool_keeper combined -> 4 approvals, 2 of them in_charge
-      reduced: >=1 active in_charge and >=3 combined -> 3 approvals, 1 in_charge
-      minimal: >=1 active in_charge and >=2 combined -> 2 approvals, 1 in_charge
-
-    requester_id/target_id are kept for call-site compatibility -- both are
-    always admins, so they'd never show up in the in_charge/tool_keeper
-    counts anyway, unlike the old admin-tier check this replaces.
-
-    Returns (tier, required_approvals, required_in_charge), or (None, None, None)
-    if there simply aren't enough in_charge/tool_keeper accounts to ever satisfy it."""
+    """Picks an approval tier (full/reduced/minimal) from how many in_charge/tool_keeper accounts are active.
+    Snapshotted once at request creation, never recalculated.
+    requester_id/target_id are unused here, kept only for call-site compatibility."""
     active_in_charge = conn.execute(
         "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'in_charge' AND is_active = 1"
     ).fetchone()["cnt"]
@@ -46,8 +33,7 @@ def determine_approval_tier(conn, requester_id, target_id):
 
 
 def get_review_counts(conn, request_id):
-    """(approve_count, in_charge_approve_count, deny_count) for a request --
-    the numbers finalize eligibility is checked against."""
+    """(approve, in_charge_approve, deny) counts for a request's finalize-eligibility check."""
     row = conn.execute(
         """
         SELECT
@@ -64,9 +50,7 @@ def get_review_counts(conn, request_id):
 
 
 def requirements_met(request_row, conn):
-    """Whether a request has enough approve votes (and enough of them from
-    in_charge) to be eligible for the requester to finalize -- doesn't mean
-    it WILL be finalized, that's still the requester's own call."""
+    """Whether a request has enough votes to be finalize-eligible; finalizing itself is still manual."""
     approve_count, in_charge_count, _ = get_review_counts(conn, request_row["id"])
     return (
         approve_count >= request_row["required_approvals"]
@@ -75,15 +59,8 @@ def requirements_met(request_row, conn):
 
 
 def finalize_admin_deactivation(request_row, actor_staff_id, conn):
-    """Actually deactivates the target admin account. Only ever called from
-    the requester-triggered /finalize route -- reaching the required
-    approval count no longer deactivates anything by itself; the requester
-    reviews every vote and its reason first, then pulls the trigger
-    themselves (or not). Returns (ok, error_message).
-
-    Still refuses if the target is the last active admin -- that floor is
-    a hard system invariant, not something peer approval or the requester's
-    own judgment gets to override."""
+    """Deactivates the target admin. Only called from the requester-triggered /finalize route.
+    Refuses if the target is the last active admin -- a hard system invariant."""
     if not requirements_met(request_row, conn):
         return False, "The required approvals haven't been reached yet"
 
@@ -148,7 +125,7 @@ def finalize_admin_deactivation(request_row, actor_staff_id, conn):
         ),
     )
 
-    # re-seed the temporary setup admin now if that just left zero active admins
+    # Re-seeds the temp setup admin if that just left zero active admins.
     seed_initial_admin()
 
     return True, None

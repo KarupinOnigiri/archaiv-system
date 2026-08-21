@@ -1,4 +1,3 @@
-import sqlite3
 from flask import request, jsonify
 import os
 import logging
@@ -8,15 +7,56 @@ logger = logging.getLogger(__name__)
 INSTANCE_DIR = os.path.join(os.path.dirname(__file__), "instance")
 DB_PATH = os.path.join(INSTANCE_DIR, "toolroom.db")
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 # First migration file -- pre-migrations installs already have this schema, see init_db().
 BASELINE_MIGRATION = "0001_initial.sql"
 
+# Optional at-rest encryption via SQLCipher; doesn't protect against a stolen SD card.
+DB_ENCRYPTION_KEY = (os.environ.get("DB_ENCRYPTION_KEY") or "").strip() or None
+
+if DB_ENCRYPTION_KEY:
+    # PRAGMA key needs a literal string, so reject any single-quote in the key here.
+    if "'" in DB_ENCRYPTION_KEY:
+        raise RuntimeError(
+            "DB_ENCRYPTION_KEY can't contain a single-quote character -- "
+            "generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    try:
+        # Every module imports sqlite3 from here, so their except clauses match whichever driver's active.
+        from sqlcipher3 import dbapi2 as sqlite3
+    except ImportError as e:
+        raise RuntimeError(
+            "DB_ENCRYPTION_KEY is set but the sqlcipher3 package isn't "
+            "installed (it needs libsqlcipher-dev on the system first -- "
+            "see SECURITY.md). Install with: "
+            "pip install -r requirements-encryption.txt"
+        ) from e
+else:
+    import sqlite3
+
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
+    # Python-level wait for the connection lock, separate from PRAGMA busy_timeout below.
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+
+    if DB_ENCRYPTION_KEY:
+        # Must run first -- SQLCipher derives the cipher from this before anything else.
+        conn.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
+
+    # These settings matter more on a Pi's slow SD card than on a dev machine.
+    conn.execute("PRAGMA foreign_keys = ON")
+    # WAL lets readers keep working during a writer's commit -- fixes most "database is locked" errors.
+    conn.execute("PRAGMA journal_mode = WAL")
+    # NORMAL only fsyncs at checkpoints, safe because WAL already guarantees crash consistency.
+    conn.execute("PRAGMA synchronous = NORMAL")
+    # Retries for up to 5s on a write-lock collision instead of failing instantly.
+    conn.execute("PRAGMA busy_timeout = 5000")
+    # Keeps ORDER BY/GROUP BY spillage in RAM instead of on the SD card.
+    conn.execute("PRAGMA temp_store = MEMORY")
+    # ~64MB cache per connection, sized for this app's Pi 4B 8GB target.
+    conn.execute("PRAGMA cache_size = -65536")
     return conn
 
 
@@ -76,9 +116,34 @@ def _write_schema_snapshot(conn):
                 f.write(";\n")
         logger.info("Refreshed instance/schema.sql from the live schema.")
     except OSError as e:
-        # A stale schema.sql is a paper-cut, not a reason to fail startup
-        # -- the migration itself already committed successfully above.
+        # Not fatal -- the migration already committed; a stale schema.sql is just a paper-cut.
         logger.warning(f"Could not refresh instance/schema.sql: {e}")
+
+
+def _chmod_best_effort(path, mode):
+    """POSIX-only, best-effort -- a failed chmod is logged, not fatal to startup."""
+    if os.name != "posix":
+        return
+    try:
+        os.chmod(path, mode)
+    except OSError as e:
+        logger.warning(f"Could not set permissions on {path}: {e}")
+
+
+def harden_data_permissions():
+    """Locks instance/ and .env to the owning user only; called on every startup."""
+    _chmod_best_effort(INSTANCE_DIR, 0o700)
+    for name in ("toolroom.db", "toolroom.db-wal", "toolroom.db-shm"):
+        path = os.path.join(INSTANCE_DIR, name)
+        if os.path.exists(path):
+            _chmod_best_effort(path, 0o600)
+    if os.path.exists(ENV_PATH):
+        _chmod_best_effort(ENV_PATH, 0o600)
+
+
+def harden_backup_file(path):
+    """Same owner-only lockdown as the live DB, applied to one backup file."""
+    _chmod_best_effort(path, 0o600)
 
 
 def init_db():
@@ -87,6 +152,7 @@ def init_db():
     is already applied. Each migration runs inside its own transaction."""
     if INSTANCE_DIR and not os.path.exists(INSTANCE_DIR):
         os.makedirs(INSTANCE_DIR, exist_ok=True)
+    harden_data_permissions()
 
     conn = get_db_connection()
     _ensure_migrations_table(conn)
@@ -118,6 +184,8 @@ def init_db():
         _write_schema_snapshot(conn)
 
     conn.close()
+    # Re-run now that toolroom.db actually exists on disk.
+    harden_data_permissions()
 
 
 def get_json_or_error():

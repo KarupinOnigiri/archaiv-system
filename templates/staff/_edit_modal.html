@@ -1,36 +1,47 @@
 <div class="modal modal-open">
-  <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
+  <!-- Same shell as staff/_add_modal.html: max-w-4xl, p-0 with its own
+       header/scrollable-body/sticky-footer sections instead of one plain
+       padded box -- same style and position, not just the same width. -->
+  <div class="modal-box max-w-4xl p-0 flex flex-col max-h-[85vh]">
 
-    <div class="flex justify-between items-start mb-5">
-      <div>
-        <h3 class="font-bold text-xl">Edit Staff</h3>
-        <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "—" }} &middot; Update role and assignment period.</p>
+    <div class="p-6 pb-4 shrink-0">
+      <div class="flex justify-between items-start">
+        <div>
+          <h3 class="font-bold text-xl">Edit Staff</h3>
+          <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "—" }} &middot; Update role and assignment period.</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
       </div>
-      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
-              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+
+      <!-- Always in the DOM, just `hidden` when empty -- same pattern as
+           Add Staff's error box (that one uses `invisible` to reserve
+           height; this one toggles `hidden` like it always has, no
+           functional difference worth risking on a copy-the-style pass). -->
+      <div id="edit-staff-error" class="alert alert-error text-sm mt-4 py-2 hidden"></div>
     </div>
 
-    <div id="edit-staff-error" class="alert alert-error text-sm mb-4 py-2 hidden"></div>
-
+    <div class="flex-1 overflow-y-auto min-h-0">
     <form id="edit-staff-form" onsubmit="submitEditStaffForm(event, {{ staff_member.id }})">
+      <div class="px-6 pb-2">
       <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
 
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEMBER</p>
-            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5">{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</p>
+            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5 truncate">{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</p>
           </div>
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">USERNAME</p>
-            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5">@{{ staff_member.username }}</p>
+            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5 truncate">@{{ staff_member.username }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-base-content/50 tracking-wide">DEPARTMENT</p>
+            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5 truncate">{{ staff_member.department }}</p>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <p class="text-xs font-semibold text-base-content/50 tracking-wide">DEPARTMENT</p>
-            <p class="text-sm mt-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2.5">{{ staff_member.department }}</p>
-          </div>
+        <div class="grid grid-cols-3 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE <span class="text-error">*</span></label>
             <select name="role" required class="select select-bordered w-full mt-1 bg-base-100"
@@ -39,16 +50,7 @@
               <option value="in_charge" {% if staff_member.role == "in_charge" %}selected{% endif %}>In Charge</option>
               <option value="admin" {% if staff_member.role == "admin" %}selected{% endif %}>Admin</option>
             </select>
-            {% if staff_member.role == "admin" %}
-            {# Backend refuses to change an admin's role here (403) -- disabled up front
-               instead of letting someone hit a surprise error on submit. Still readable
-               via form.role.value since this submits through JS/fetch. #}
-            <p class="text-xs text-base-content/40 mt-1">Admin roles can't be changed here — use "Request Deactivation" from the staff table instead.</p>
-            {% endif %}
           </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSIGNED START</label>
             <input type="date" name="assigned_start" id="edit-staff-assigned-start" value="{{ staff_member.assigned_start or '' }}"
@@ -60,6 +62,13 @@
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
         </div>
+        {% if staff_member.role == "admin" %}
+        {# Backend refuses to change an admin's role here (403) -- disabled up front
+           instead of letting someone hit a surprise error on submit. Still readable
+           via form.role.value since this submits through JS/fetch. #}
+        <p class="text-xs text-base-content/40 -mt-2">Admin roles can't be changed here — use "Request Deactivation" from the staff table instead.</p>
+        {% endif %}
+
         <!-- Same quick-set presets as the Add Staff modal -- see its
              comment for why "Permanent" writes a sentinel date rather
              than leaving assigned_end blank. -->
@@ -68,7 +77,6 @@
           <button type="button" class="btn btn-xs btn-outline" onclick="setEditStaffAssignedPreset(180)">6 Months</button>
           <button type="button" class="btn btn-xs btn-outline" onclick="setEditStaffAssignedPreset(365)">1 Year</button>
         </div>
-        <p class="text-xs text-base-content/40 -mt-2">To reset a password or unlock this account, use the row actions on the staff table.</p>
 
         <!-- RFID card + PIN, admin-only (RFID login itself is admin-gated too, though
              fields aren't blocked for other roles in case that widens later). Blank
@@ -88,16 +96,22 @@
                    autocomplete="off"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
-          <p class="text-xs text-base-content/40 col-span-2 -mt-1">Both visible to admins only. RFID login only works once a card and a PIN are both set.</p>
+        </div>
+
+        <div class="bg-info/10 rounded-lg p-3 flex gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <p class="text-xs text-info/80">Both RFID fields are visible to admins only. To reset a password or unlock this account, use the row actions on the staff table.</p>
         </div>
 
       </div>
+      </div>
 
-      <div class="modal-action flex justify-end gap-2 mt-6">
+      <div class="modal-action flex justify-end gap-2 border-t border-base-300 px-6 py-4 m-0 sticky bottom-0 bg-base-100">
         <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
       </div>
     </form>
+    </div>
   </div>
 </div>
 
