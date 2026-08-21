@@ -5,16 +5,20 @@ Must run before setting DB_ENCRYPTION_KEY in .env -- otherwise the app can't ope
 Safety: never touches the live file until export + row-count verification succeed on a copy.
 The original is renamed, not deleted. --verify-only skips the final replace.
 
-Usage:
-    python -c "import secrets; print(secrets.token_hex(32))"             # 1. generate a key
-    DB_ENCRYPTION_KEY=<key> python encrypt_existing_db.py --verify-only  # 2. dry run
-    DB_ENCRYPTION_KEY=<key> python encrypt_existing_db.py                # 3. actually encrypt (stop the app first)
+Usage (run from anywhere -- it locates the project root itself):
+    python -c "import secrets; print(secrets.token_hex(32))"                   # 1. generate a key
+    DB_ENCRYPTION_KEY=<key> python tools/encrypt_existing_db.py --verify-only  # 2. dry run
+    DB_ENCRYPTION_KEY=<key> python tools/encrypt_existing_db.py                # 3. actually encrypt (stop the app first)
     # 4. add DB_ENCRYPTION_KEY=<key> to .env, then restart the app
 """
 
 import os
 import shutil
 import sys
+
+# This script lives in tools/, one level below the project root, but imports
+# database.py from the root -- add the root to sys.path before that import.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import DB_PATH, harden_backup_file
 

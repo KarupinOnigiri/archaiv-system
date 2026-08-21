@@ -70,7 +70,7 @@ sudo -u toolroom /opt/toolroom/deploy/setup.sh --no-encryption
 Already have a database with real data in it from an earlier
 unencrypted deployment and want to add encryption now instead of
 starting fresh? Don't use this script for that -- see
-[SECURITY.md](SECURITY.md)'s `encrypt_existing_db.py` walkthrough
+[SECURITY.md](SECURITY.md)'s `tools/encrypt_existing_db.py` walkthrough
 instead, which migrates existing data safely (verifies row counts before
 touching anything, keeps a backup). Setting `DB_ENCRYPTION_KEY` against
 an already-populated plaintext database without migrating it first will
@@ -214,7 +214,7 @@ the one step in the whole setup that isn't a plain `pip install` (no
 prebuilt wheel exists for it, see [SECURITY.md](SECURITY.md)), so it's
 the most likely thing to hit an environment-specific snag. Re-run with
 `--no-encryption` to get everything else working first (encryption can
-be added later without starting over -- `encrypt_existing_db.py`
+be added later without starting over -- `tools/encrypt_existing_db.py`
 migrates an existing database in place), then debug the compile
 separately: check `apt list --installed | grep sqlcipher` actually shows
 `libsqlcipher-dev`, and that `python3 --version` is 3.9+.
@@ -224,5 +224,5 @@ errors about not being able to read the database** -- setting the key
 against a database that already had real (unencrypted) data in it before
 the key was set doesn't encrypt it retroactively, it just fails to read
 it correctly. Only `deploy/setup.sh` (fresh install, empty database) or
-`encrypt_existing_db.py` (existing data) actually produce a correctly
+`tools/encrypt_existing_db.py` (existing data) actually produce a correctly
 encrypted file -- see [SECURITY.md](SECURITY.md).

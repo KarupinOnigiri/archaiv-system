@@ -8,8 +8,16 @@ instance/
 backups/
 .pytest_cache/
 
+# Default save location for user-initiated asset exports (utils/exports.py's
+# default_export_dir()) -- recreated automatically via os.makedirs on first
+# save, so nothing here needs to be committed. Project documentation (e.g.
+# architecture diagrams) belongs in docs/ instead, not export/.
+export/
+
 # instance/ already covers the real DB path (database.py's DB_PATH), but
 # a stray copy at the repo root (toolroom.db) got committed once before
 # -- see the repo-hygiene history rewrite. Catch any *.db file wherever
 # it turns up so that can't happen again.
 *.db
+# Tailwind CLI binary -- 100MB+, download separately (see DEPLOYMENT.md)
+tools/tailwindcss.exe

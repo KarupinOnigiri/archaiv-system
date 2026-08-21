@@ -112,8 +112,8 @@ to read the still-plaintext file as if it were encrypted and fail:
 
 ```bash
 # Stop the app first -- this isn't meant to run against a live DB.
-DB_ENCRYPTION_KEY=<your key> python encrypt_existing_db.py --verify-only  # dry run, changes nothing
-DB_ENCRYPTION_KEY=<your key> python encrypt_existing_db.py                 # actually encrypts
+DB_ENCRYPTION_KEY=<your key> python tools/encrypt_existing_db.py --verify-only  # dry run, changes nothing
+DB_ENCRYPTION_KEY=<your key> python tools/encrypt_existing_db.py                 # actually encrypts
 ```
 
 That script backs up the original to
