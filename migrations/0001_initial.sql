@@ -2,7 +2,7 @@
 -- Baseline schema. This is a snapshot of schema.sql at the point migrations
 -- were introduced. For installs that already have a database (schema
 -- already applied the old way), database.py detects that and records this
--- migration as "already applied" without re-running it — see init_db().
+-- migration as "already applied" without re-running it - see init_db().
 
 CREATE TABLE "assets" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -35,10 +35,10 @@
           <div class="grid grid-cols-4 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
-              <!-- Not a form field -- barcode_id is auto-generated server-side to match asset_id (add_asset_submit, routes/assets.py). -->
-              <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
-                Auto-generated
-              </div>
+              <input type="text" name="barcode_id" placeholder="Scan existing, or leave blank"
+                     autocomplete="off"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+              <p class="text-[11px] text-base-content/50 mt-1">Blank = auto-generated to match the asset ID.</p>
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>

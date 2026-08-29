@@ -107,7 +107,7 @@ def login():
         conn.close()
         return _login_response(payload, status)
 
-    # Correct password — reset lockout tracking
+    # Correct password - reset lockout tracking
     login_service.reset_lockout_tracking(conn, staff["id"])
     conn.close()
 

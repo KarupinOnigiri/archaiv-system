@@ -50,6 +50,17 @@
                onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanAddItem();}">
         <button type="button" class="btn btn-outline btn-sm join-item" onclick="returnScanAddItem()">Scan</button>
       </div>
+      <!-- Optional, separate from the barcode field on purpose -- a value here means an RFID
+           reader (not the barcode scanner) actually sensed this tag, which lets the backend
+           cross-check it against the asset's registered rfid_id and catch a tool that was
+           swapped after a barcode got peeled and moved onto it. Left blank, returns behave
+           exactly as before RFID verification existed. -->
+      <div class="join w-full mb-1">
+        <input type="text" id="return-scan-rfid-input"
+               class="input input-bordered input-sm join-item w-full"
+               placeholder="Scan RFID tag (optional -- verifies it's the real tool)"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanAddItem();}">
+      </div>
       <div id="return-scan-item-error" class="text-error text-sm mb-2 hidden"></div>
 
       <ul id="return-scan-cart-list" class="space-y-1 max-h-56 overflow-y-auto mb-3"></ul>
@@ -101,6 +112,7 @@ async function returnScanStart() {
   if (!barcode) {
     errorEl.textContent = 'Scan or enter the member barcode.';
     errorEl.classList.remove('hidden');
+    memberInput.focus();
     return;
   }
 
@@ -117,6 +129,7 @@ async function returnScanStart() {
       if (res.status === 401) { showSessionTimeoutModal(); return; }
       errorEl.textContent = data.error || "Couldn't look up that member.";
       errorEl.classList.remove('hidden');
+      clearInputAfterError(memberInput);
       return;
     }
 
@@ -137,8 +150,9 @@ async function returnScanStart() {
     document.getElementById('return-scan-asset-input').focus();
   } catch (err) {
     console.error('returnScanStart failed:', err, 'response:', res);
-    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('hidden');
+    clearInputAfterError(memberInput);
   } finally {
     startBtn.disabled = false;
   }
@@ -146,29 +160,35 @@ async function returnScanStart() {
 
 async function returnScanAddItem() {
   const input = document.getElementById('return-scan-asset-input');
+  const rfidInput = document.getElementById('return-scan-rfid-input');
   const assetCode = input.value.trim();
+  const rfidCode = rfidInput.value.trim();
   const errorEl = document.getElementById('return-scan-item-error');
   errorEl.classList.add('hidden');
   if (!assetCode) return;
 
   const existing = ReturnScanState.loans.find((loan) => loan.asset_barcode === assetCode);
   if (existing && ReturnScanState.checked.has(existing.transaction_id)) {
-    errorEl.textContent = `${assetCode} is already checked.`;
+    errorEl.textContent = `Asset ${assetCode} is already checked.`;
     errorEl.classList.remove('hidden');
-    input.value = '';
-    input.focus();
+    clearInputAfterError(input);
+    if (rfidCode) clearInputAfterError(rfidInput);
+    flashReturnScanRow(existing.transaction_id);
     return;
   }
 
   try {
     const params = new URLSearchParams({ asset_code: assetCode, member_barcode: ReturnScanState.memberBarcode });
+    if (rfidCode) params.set('rfid_code', rfidCode);
     const res = await fetch(`/api/v1/transactions/return-scan-lookup?${params.toString()}`);
     const data = await res.json();
 
     if (!res.ok) {
       if (res.status === 401) { showSessionTimeoutModal(); return; }
-      errorEl.textContent = data.error || "Couldn't find that asset.";
+      errorEl.textContent = data.error || `Asset ${assetCode} not found.`;
       errorEl.classList.remove('hidden');
+      clearInputAfterError(input);
+      if (rfidCode) clearInputAfterError(rfidInput);
       return;
     }
 
@@ -191,13 +211,24 @@ async function returnScanAddItem() {
     }
 
     input.value = '';
+    rfidInput.value = '';
     input.focus();
     renderReturnScanChecklist();
   } catch (err) {
     console.error('returnScanAddItem failed:', err);
-    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('hidden');
+    clearInputAfterError(input);
+    if (rfidCode) clearInputAfterError(rfidInput);
   }
+}
+
+// Finds the checklist row for a rescanned-and-already-checked asset and
+// flashes it via the global flashHighlight() (static/js/ui.js, loaded by
+// base.html) -- same helper the checkout cart's already-in-cart rescan uses.
+function flashReturnScanRow(transactionId) {
+  const li = document.querySelector(`#return-scan-cart-list [data-transaction-id="${CSS.escape(String(transactionId))}"]`);
+  flashHighlight(li);
 }
 
 function returnScanToggle(transactionId, isChecked) {
@@ -237,6 +268,7 @@ function renderReturnScanChecklist() {
 
     const li = document.createElement('li');
     li.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm';
+    li.dataset.transactionId = loan.transaction_id;
 
     const label = document.createElement('label');
     label.className = 'flex items-center gap-2 flex-1 min-w-0 cursor-pointer';
@@ -323,7 +355,7 @@ async function returnScanComplete() {
       showSessionTimeoutModal();
       return;
     }
-    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('hidden');
     btn.disabled = false;
     btn.classList.remove('btn-disabled');

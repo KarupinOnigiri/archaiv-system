@@ -25,14 +25,14 @@
       {% set trainer_limit = limits | selectattr("member_type", "equalto", "trainer") | first %}
 
       <div>
-        <label class="text-xs font-semibold text-base-content/50 tracking-wide">TRAINEE — max concurrent loans</label>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">TRAINEE - max concurrent loans</label>
         <input type="number" name="max_concurrent_loans_trainee" min="1" required
                value="{{ trainee_limit.max_concurrent_loans if trainee_limit else 10 }}"
                class="input input-bordered input-sm w-full mt-1">
       </div>
 
       <div>
-        <label class="text-xs font-semibold text-base-content/50 tracking-wide">TRAINER — max concurrent loans</label>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">TRAINER - max concurrent loans</label>
         <input type="number" name="max_concurrent_loans_trainer" min="1" required
                value="{{ trainer_limit.max_concurrent_loans if trainer_limit else 10 }}"
                class="input input-bordered input-sm w-full mt-1">

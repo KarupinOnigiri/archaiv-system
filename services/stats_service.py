@@ -1,7 +1,7 @@
 """Query-building and data-shaping for the Reports/Stats tab.
 
 Every function here takes an open `conn` (and already-validated filter values) and
-returns plain dicts/tuples ready for the route to jsonify or export — no Flask
+returns plain dicts/tuples ready for the route to jsonify or export - no Flask
 objects, no request parsing. `routes/stats.py` stays a thin HTTP layer: parse
 args, call here, jsonify/return.
 """

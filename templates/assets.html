@@ -402,7 +402,7 @@ function refreshAssetsTable() {
       countEl.textContent = `${ids.length} selected (all matching filters)`;
       matchLink.classList.add('hidden');
     } catch (e) {
-      showToast("Couldn't select every matching item — only what's on this page is selected.", 'error');
+      showToast("Couldn't select every matching item - only what's on this page is selected.", 'error');
     }
   }
 
@@ -806,6 +806,7 @@ document.getElementById('asset-search').addEventListener('keydown', function (e)
   if (!code) return;
   e.preventDefault();
   htmx.ajax('GET', `/api/v1/assets/by-barcode/${encodeURIComponent(code)}`, {
+    source: e.target,
     target: '#modal-container',
     swap: 'innerHTML',
   });
@@ -814,7 +815,7 @@ document.getElementById('asset-search').addEventListener('keydown', function (e)
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
-  // / — focus the search box, like most toolbars with a search field.
+  // / - focus the search box, like most toolbars with a search field.
   if (!e.altKey && e.key === '/') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -822,7 +823,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ` — toggle "Show archived" on/off, same as clicking the toggle.
+  // ` - toggle "Show archived" on/off, same as clicking the toggle.
   if (!e.altKey && e.key === '`') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -832,7 +833,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Available / Borrowed /
+  // 1 / 2 / 3 / 4 - jump to the matching stat card's filter (All / Available / Borrowed /
   // Needs Attention). e.key-based, not e.code, so it doesn't collide with F1-F4 or numpad.
   if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
@@ -842,7 +843,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ArrowLeft / ArrowRight — previous / next page, by clicking whichever
+  // ArrowLeft / ArrowRight - previous / next page, by clicking whichever
   // pagination button is currently in the table footer. Reads the button
   // rather than hand-building the offset math so it automatically respects
   // the same disabled-at-the-edges state the button already shows.
@@ -857,9 +858,9 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+N — open "Add New Item". Alt+M — open "Manage Categories" (staff
+  // Alt+N - open "Add New Item". Alt+M - open "Manage Categories" (staff
   // without permission for it simply won't have the button in the DOM).
-  // Alt+I — open "Import CSV". Alt+E — open "Export Data". All four are
+  // Alt+I - open "Import CSV". Alt+E - open "Export Data". All four are
   // guarded by isModalOpen() so the shortcut can't replace whatever modal
   // (if any) is already open.
   if (e.altKey && (e.key === 'n' || e.key === 'N')) {
@@ -893,7 +894,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter (search, category,
+  // Escape - with no modal open, reset every filter (search, category,
   // condition, status, archived date range) back to blank and blur whatever
   // was focused, the same as clicking "Clear filters" by hand. When a modal
   // *is* open, the shared Escape handler in base.html closes it instead --

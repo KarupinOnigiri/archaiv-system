@@ -23,7 +23,7 @@ def require_session(conn):
     if session is None:
         return None, (jsonify({"error": "Invalid or expired session"}), 401)
 
-    # CSRF check — only required for state-changing methods
+    # CSRF check - only required for state-changing methods
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         submitted_csrf = request.headers.get("X-CSRF-Token")
         if not submitted_csrf or not hmac.compare_digest(

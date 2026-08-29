@@ -8,7 +8,7 @@
       <div class="flex justify-between items-start">
         <div>
           <h3 class="font-bold text-xl">Edit Staff</h3>
-          <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "—" }} &middot; Update role and assignment period.</p>
+          <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "-" }} &middot; Update role and assignment period.</p>
         </div>
         <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
                 onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
@@ -66,7 +66,7 @@
         {# Backend refuses to change an admin's role here (403) -- disabled up front
            instead of letting someone hit a surprise error on submit. Still readable
            via form.role.value since this submits through JS/fetch. #}
-        <p class="text-xs text-base-content/40 -mt-2">Admin roles can't be changed here — use "Request Deactivation" from the staff table instead.</p>
+        <p class="text-xs text-base-content/40 -mt-2">Admin roles can't be changed here - use "Request Deactivation" from the staff table instead.</p>
         {% endif %}
 
         <!-- Same quick-set presets as the Add Staff modal -- see its

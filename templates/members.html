@@ -295,7 +295,7 @@
       countEl.textContent = `${ids.length} selected (all matching filters)`;
       matchLink.classList.add('hidden');
     } catch (e) {
-      showToast("Couldn't select every matching member — only what's on this page is selected.", 'error');
+      showToast("Couldn't select every matching member - only what's on this page is selected.", 'error');
     }
   }
 
@@ -797,6 +797,7 @@ document.getElementById('member-search').addEventListener('keydown', function (e
   if (!code) return;
   e.preventDefault();
   htmx.ajax('GET', `/api/v1/members/by-barcode/${encodeURIComponent(code)}`, {
+    source: e.target,
     target: '#modal-container',
     swap: 'innerHTML',
   });
@@ -805,7 +806,7 @@ document.getElementById('member-search').addEventListener('keydown', function (e
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
-  // / — focus the search box.
+  // / - focus the search box.
   if (!e.altKey && e.key === '/') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -813,7 +814,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ` — toggle "Show inactive" on/off, same as clicking the toggle.
+  // ` - toggle "Show inactive" on/off, same as clicking the toggle.
   if (!e.altKey && e.key === '`') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -823,7 +824,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter (All / Active /
+  // 1 / 2 / 3 / 4 - jump to the matching stat card's filter (All / Active /
   // Restricted / Inactive), same mapping as the stat cards themselves.
   if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
@@ -833,7 +834,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ArrowLeft / ArrowRight — clicks the prev/next pagination button in the
+  // ArrowLeft / ArrowRight - clicks the prev/next pagination button in the
   // table footer, so it respects that button's own disabled-at-edges state.
   if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
@@ -846,7 +847,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+N — open "Add New Member". Alt+M — open "Manage Departments".
+  // Alt+N - open "Add New Member". Alt+M - open "Manage Departments".
   // Both no-op if the button isn't in the DOM (role doesn't have access) or
   // a modal is already open.
   if (e.altKey && (e.key === 'n' || e.key === 'N')) {
@@ -866,7 +867,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — clears every filter and blurs focus, same as "Clear filters".
+  // Escape - clears every filter and blurs focus, same as "Clear filters".
   // Backs off when a modal is open; base.html's shared handler closes that instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;

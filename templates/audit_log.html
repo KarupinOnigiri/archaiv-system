@@ -314,7 +314,7 @@ function isModalOpen() {
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-  // ArrowLeft / ArrowRight — previous / next page.
+  // ArrowLeft / ArrowRight - previous / next page.
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const container = document.getElementById('audit-log-table-container');
@@ -328,7 +328,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter, same as clicking
+  // Escape - with no modal open, reset every filter, same as clicking
   // "Clear filters". A modal open lets base.html's handler close it instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;

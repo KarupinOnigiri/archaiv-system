@@ -28,8 +28,8 @@
         data-when="{{ log.created_at | format_date }}"
         data-staff="{{ log.staff_username or 'System' }}"
         data-action="{{ log.action.replace('_', ' ') }}"
-        data-target="{% if log.target_name %}{{ log.target_table | humanize }}: {{ log.target_name }}{% elif log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}—{% endif %}"
-        data-details="{{ log.details or '—' }}"
+        data-target="{% if log.target_name %}{{ log.target_table | humanize }}: {{ log.target_name }}{% elif log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}-{% endif %}"
+        data-details="{{ log.details or '-' }}"
         onclick="openAuditLogDetail(this)">
       <td class="py-2 text-sm whitespace-nowrap truncate">{{ log.created_at | format_date }}</td>
       <!-- staff_id is NULL for actions no human triggered (overdue sweeps,
@@ -45,10 +45,10 @@
         {% elif log.target_table %}
         {{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}
         {% else %}
-        —
+        -
         {% endif %}
       </td>
-      <td class="py-2 text-sm text-base-content/70 truncate" title="{{ log.details or '' }}">{{ log.details or "—" }}</td>
+      <td class="py-2 text-sm text-base-content/70 truncate" title="{{ log.details or '' }}">{{ log.details or "-" }}</td>
     </tr>
     {% else %}
     <tr>

@@ -97,7 +97,7 @@
 
       <td class="py-2 text-base-content/70 truncate">@{{ row.username }}</td>
 
-      <td class="py-2 text-base-content/70 truncate">{{ row.staff_code or "—" }}</td>
+      <td class="py-2 text-base-content/70 truncate">{{ row.staff_code or "-" }}</td>
 
       <td class="py-2">
         {% if row.role == "admin" %}
@@ -117,9 +117,9 @@
       <td class="py-2 text-base-content/70 truncate">
         {% if row.assigned_start or row.assigned_end %}
           {% if row.assigned_end == PERMANENT_ASSIGNED_END %}
-          {{ row.assigned_start or "—" }} &rarr; <span class="text-base-content/50">Permanent</span>
+          {{ row.assigned_start or "-" }} &rarr; <span class="text-base-content/50">Permanent</span>
           {% else %}
-          {{ row.assigned_start or "—" }} &rarr; {{ row.assigned_end or "—" }}
+          {{ row.assigned_start or "-" }} &rarr; {{ row.assigned_end or "-" }}
           {% endif %}
         {% elif row.role == "admin" %}
         <!-- Admin never has an assigned window enforced (only tool_keeper's is,
@@ -154,7 +154,7 @@
           {{ row.usage_days_left }} days left
         </span>
         {% else %}
-        <span class="text-base-content/40">—</span>
+        <span class="text-base-content/40">-</span>
         {% endif %}
       </td>
 

@@ -21,7 +21,7 @@
                class="input input-bordered input-sm w-full"
                value="{{ transaction.due_date[:16] | replace(' ', 'T') if transaction.due_date else '' }}">
         <span class="text-xs text-base-content/50 mt-1">
-          Current due date: {{ transaction.due_date | format_date if transaction.due_date else "—" }}
+          Current due date: {{ transaction.due_date | format_date if transaction.due_date else "-" }}
         </span>
       </div>
     </form>
@@ -92,7 +92,7 @@ async function submitRenewForm(transactionId) {
       showSessionTimeoutModal();
       return;
     }
-    errorEl.textContent = "Network error — check your connection and try again.";
+    errorEl.textContent = "Network error - check your connection and try again.";
     errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.classList.remove('btn-disabled');

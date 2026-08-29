@@ -4,7 +4,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-INSTANCE_DIR = os.path.join(os.path.dirname(__file__), "instance")
+
+# TOOLROOM_INSTANCE_DIR lets the test suite (tests/conftest.py) point this at
+# an isolated temp directory instead of the real instance/ -- unset in every
+# real deployment, so production behavior is unchanged.
+INSTANCE_DIR = os.environ.get("TOOLROOM_INSTANCE_DIR") or os.path.join(
+    os.path.dirname(__file__), "instance"
+)
 DB_PATH = os.path.join(INSTANCE_DIR, "toolroom.db")
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
@@ -94,7 +100,7 @@ def _bootstrap_pre_migration_db(conn, applied):
         conn.commit()
         applied.add(BASELINE_MIGRATION)
         logger.info(
-            f"Detected pre-existing schema — recorded {BASELINE_MIGRATION} as applied."
+            f"Detected pre-existing schema - recorded {BASELINE_MIGRATION} as applied."
         )
 
     return applied
@@ -148,7 +154,7 @@ def harden_backup_file(path):
 
 def init_db():
     """Applies any migration files in migrations/ that haven't run yet, in
-    filename order. Safe to call on every app startup — no-op if everything
+    filename order. Safe to call on every app startup - no-op if everything
     is already applied. Each migration runs inside its own transaction."""
     if INSTANCE_DIR and not os.path.exists(INSTANCE_DIR):
         os.makedirs(INSTANCE_DIR, exist_ok=True)

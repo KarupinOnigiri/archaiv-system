@@ -1,6 +1,6 @@
 -- 0005_admin_deactivation_requests.sql
 -- Lets an admin request another admin's deactivation instead of doing it
--- unilaterally. It only takes effect once enough approvals come in — the
+-- unilaterally. It only takes effect once enough approvals come in - the
 -- required tier (admin / in_charge / tool_keeper) and count are decided
 -- once at request-creation time (see services/admin_deactivation_service.py)
 -- and snapshotted onto the request row, so staff counts changing later

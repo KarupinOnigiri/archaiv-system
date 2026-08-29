@@ -633,7 +633,7 @@ function activeRequestsTab() {
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-  // ArrowLeft / ArrowRight — previous / next page, on whichever tab is
+  // ArrowLeft / ArrowRight - previous / next page, on whichever tab is
   // currently showing.
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
@@ -649,7 +649,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset the current tab's filters back to
+  // Escape - with no modal open, reset the current tab's filters back to
   // their default (status = Pending, "Only mine" off) and blur whatever
   // was focused, same as clicking that tab's own "Clear filters" button
   // (clearAllRequestsFilters) -- this page has no single filter row

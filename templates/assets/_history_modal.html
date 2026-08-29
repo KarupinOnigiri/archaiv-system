@@ -28,11 +28,11 @@
         </div>
         <div class="grid grid-cols-3 gap-2 text-xs text-base-content/60 mb-2">
           <div><span class="text-base-content/40">Out</span><br>{{ h.time_out }}</div>
-          <div><span class="text-base-content/40">Due</span><br>{{ h.due_date or "—" }}</div>
-          <div><span class="text-base-content/40">In</span><br>{{ h.time_in or "—" }}</div>
+          <div><span class="text-base-content/40">Due</span><br>{{ h.due_date or "-" }}</div>
+          <div><span class="text-base-content/40">In</span><br>{{ h.time_in or "-" }}</div>
         </div>
         <div class="text-xs text-base-content/60">
-          Condition: {{ h.condition_out | humanize if h.condition_out else "—" }}{% if h.condition_in %} &rarr; {{ h.condition_in | humanize }}{% endif %}
+          Condition: {{ h.condition_out | humanize if h.condition_out else "-" }}{% if h.condition_in %} &rarr; {{ h.condition_in | humanize }}{% endif %}
         </div>
         {% if h.return_remarks %}
         <p class="text-xs text-base-content/50 mt-1.5 italic">"{{ h.return_remarks }}"</p>

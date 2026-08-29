@@ -19,6 +19,7 @@ from database import get_db_connection, sqlite3
 from utils.exports import sanitize_export_filename
 from utils.formatters import full_name
 from utils.logger import log_action
+from utils.validators import normalize_barcode_id
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -234,7 +235,10 @@ def get_member_profile(conn, member_id):
 
 
 def create_member(conn, data, staff_id):
-    """Inserts a new member; barcode_id/member_code auto-generate as MBR#####."""
+    """Inserts a new member. member_code always auto-generates as MBR#####; barcode_id
+    matches it unless the caller supplies one (e.g. scanned off the member's existing
+    school/employee ID), in which case that value is reused instead of printing a new
+    barcode."""
     error = _validate_department_id(conn, data.get("department_id"))
     if error:
         return None, _no_ctx(*error)
@@ -243,6 +247,19 @@ def create_member(conn, data, staff_id):
         return None, _no_ctx(
             {"error": f"member_type must be one of: {', '.join(VALID_MEMBER_TYPES)}"}, 400
         )
+
+    custom_barcode, barcode_error = normalize_barcode_id(data.get("barcode_id"))
+    if barcode_error:
+        return None, _no_ctx({"error": barcode_error}, 400)
+
+    if custom_barcode is not None:
+        existing = conn.execute(
+            "SELECT id FROM members WHERE UPPER(barcode_id) = UPPER(?)", (custom_barcode,)
+        ).fetchone()
+        if existing:
+            return None, _no_ctx(
+                {"error": "This barcode is already registered to another member."}, 400
+            )
 
     try:
         cursor = conn.execute(
@@ -266,12 +283,16 @@ def create_member(conn, data, staff_id):
         generated_code = f"MBR{new_member_id:05d}"
         conn.execute(
             "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
-            (generated_code, generated_code, new_member_id),
+            (generated_code, custom_barcode or generated_code, new_member_id),
         )
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()
         logger.error(f"IntegrityError: {e}")
+        if custom_barcode is not None:
+            return None, _no_ctx(
+                {"error": "This barcode is already registered to another member."}, 400
+            )
         return None, _no_ctx(
             {"error": "A database constraint was violated. Check for duplicate barcode/username/ID values."},
             400,
@@ -325,6 +346,33 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
             # even on non-JSON (htmx/form) requests -- no modal re-render, unlike the other errors below.
             return None, _no_ctx(*error)
 
+    new_barcode_id = member["barcode_id"]
+    if "barcode_id" in data:
+        custom_barcode, barcode_error = normalize_barcode_id(data.get("barcode_id"))
+        if barcode_error:
+            return None, ({"error": barcode_error}, 400, {"member": member})
+        # Blank clears back to nothing meaningful to fall back to -- barcode_id is
+        # NOT NULL, so refuse rather than silently keeping the old value or erroring
+        # obscurely at the UPDATE.
+        if custom_barcode is None:
+            return None, (
+                {"error": "barcode_id cannot be blank -- clear it back to the member code instead if needed."},
+                400,
+                {"member": member},
+            )
+        if custom_barcode.upper() != (member["barcode_id"] or "").upper():
+            existing = conn.execute(
+                "SELECT id FROM members WHERE UPPER(barcode_id) = UPPER(?) AND id != ?",
+                (custom_barcode, member_id),
+            ).fetchone()
+            if existing:
+                return None, (
+                    {"error": "This barcode is already registered to another member."},
+                    400,
+                    {"member": member},
+                )
+        new_barcode_id = custom_barcode
+
     old_is_restricted = member["is_restricted"]
     new_is_restricted = data.get("is_restricted", member["is_restricted"])
 
@@ -352,7 +400,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
         conn.execute(
             """
             UPDATE members
-            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department_id = ?, batch = ?, phone_number = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
+            SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?, department_id = ?, batch = ?, phone_number = ?, barcode_id = ?, is_restricted = ?, restriction_reason = ?, restriction_source = ?
             WHERE id = ?
             """,
             (
@@ -363,6 +411,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
                 data.get("department_id", member["department_id"]),
                 data.get("batch", member["batch"]),
                 data.get("phone_number", member["phone_number"]),
+                new_barcode_id,
                 new_is_restricted,
                 data.get("restriction_reason", member["restriction_reason"]),
                 new_restriction_source,
@@ -476,7 +525,7 @@ def get_member_for_unrestrict(conn, member_id):
 
 def unrestrict_member(conn, member_id, staff_id, acting_staff_member_id):
     """Lifting a restriction re-grants borrowing access, so it deliberately
-    requires more authority than restricting — tool_keeper cannot call this."""
+    requires more authority than restricting - tool_keeper cannot call this."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -596,7 +645,7 @@ def deactivate_member(conn, member_id, staff_id, acting_staff_role):
         return None, (
             {
                 "error": "Cannot deactivate member: they have an active admin account",
-                "reason": "Admin accounts cannot be deactivated this way — use /staff/<id>/request-deactivation instead, which requires peer approval.",
+                "reason": "Admin accounts cannot be deactivated this way - use /staff/<id>/request-deactivation instead, which requires peer approval.",
             },
             403,
             {"member": member},

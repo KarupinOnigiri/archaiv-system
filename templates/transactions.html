@@ -81,8 +81,8 @@
           <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           </div>
-          <input type="search" id="transaction-search" name="q" placeholder="Search by asset or member... (/)"
-                 aria-label="Search transactions by asset or member"
+          <input type="search" id="transaction-search" name="q" placeholder="Search by asset, member, or barcode... (/)"
+                 aria-label="Search transactions by asset, member, or member barcode"
                  class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                  value="{{ request.args.get('q', '') }}"
                  hx-get="/api/v1/transactions/table"
@@ -297,7 +297,7 @@ async function openBatchReturnConfirm() {
     const html = await res.text();
     document.getElementById('modal-container').innerHTML = html;
   } catch (err) {
-    showToast('Network error — check your connection and try again.', 'error');
+    showToast('Network error - check your connection and try again.', 'error');
   }
 }
 
@@ -556,7 +556,7 @@ function isModalOpen() {
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
-  // / — focus search
+  // / - focus search
   if (!e.altKey && e.key === '/') {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -564,7 +564,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // 1 / 2 / 3 / 4 — jump to the matching stat card's filter
+  // 1 / 2 / 3 / 4 - jump to the matching stat card's filter
   // (All / Active Loans / Overdue / Returned).
   if (!e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
@@ -574,7 +574,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ArrowLeft / ArrowRight — previous / next page
+  // ArrowLeft / ArrowRight - previous / next page
   if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
@@ -586,7 +586,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // t / y — Today / Yesterday quick date filter.
+  // t / y - Today / Yesterday quick date filter.
   if (!e.altKey && (e.key === 't' || e.key === 'T')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
@@ -600,7 +600,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+N — open "New Checkout"
+  // Alt+N - open "New Checkout"
   if (e.altKey && (e.key === 'n' || e.key === 'N')) {
     if (isModalOpen()) return;
     e.preventDefault();
@@ -608,7 +608,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+R — open "Return Items"
+  // Alt+R - open "Return Items"
   if (e.altKey && (e.key === 'r' || e.key === 'R')) {
     if (isModalOpen()) return;
     e.preventDefault();
@@ -616,7 +616,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+E — Export data, matching the Alt+E convention used on
+  // Alt+E - Export data, matching the Alt+E convention used on
   // Inventory/Members/Staff's own Export buttons.
   if (e.altKey && (e.key === 'e' || e.key === 'E')) {
     if (isModalOpen()) return;
@@ -625,7 +625,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter, same as clicking
+  // Escape - with no modal open, reset every filter, same as clicking
   // "Clear filters". A modal open lets base.html's handler close it instead.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;

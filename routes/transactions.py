@@ -241,10 +241,13 @@ def add_item_to_session(id):
     asset_code = data.get("asset_code")
     if not asset_code:
         return jsonify({"error": "Missing required field: asset_code"}), 400
+    rfid_code = data.get("rfid_code") or None
 
     conn = get_db_connection()
     try:
-        result, error = transaction_service.add_item_to_checkout_session(conn, id, g.staff["id"], asset_code)
+        result, error = transaction_service.add_item_to_checkout_session(
+            conn, id, g.staff["id"], asset_code, rfid_code
+        )
     finally:
         conn.close()
 
@@ -315,7 +318,13 @@ def return_asset():
     conn = get_db_connection()
     try:
         result, error = transaction_service.return_asset_by_scan(
-            conn, data["asset_code"], data["member_barcode"], g.staff["id"], condition_in, data.get("return_remarks")
+            conn,
+            data["asset_code"],
+            data["member_barcode"],
+            g.staff["id"],
+            condition_in,
+            data.get("return_remarks"),
+            data.get("rfid_code") or None,
         )
     finally:
         conn.close()
@@ -358,12 +367,13 @@ def return_scan_lookup():
     """Read-only per-scan lookup for the scan-return cart; nothing mutates until batch-return submits."""
     asset_code = request.args.get("asset_code")
     member_barcode = request.args.get("member_barcode")
+    rfid_code = request.args.get("rfid_code") or None
     if not asset_code or not member_barcode:
         return jsonify({"error": "asset_code and member_barcode are required"}), 400
 
     conn = get_db_connection()
     try:
-        result, error = transaction_service.lookup_return_scan(conn, asset_code, member_barcode)
+        result, error = transaction_service.lookup_return_scan(conn, asset_code, member_barcode, rfid_code)
     finally:
         conn.close()
 
@@ -561,7 +571,7 @@ def list_open_checkout_sessions():
     return jsonify(result)
 
 
-# # # CHECKOUT SESSIONS — explicit finish -------------------------------
+# # # CHECKOUT SESSIONS - explicit finish -------------------------------
 
 
 @transactions_bp.route("/checkout-sessions/<int:id>/checkout", methods=["POST"])

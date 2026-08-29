@@ -89,17 +89,15 @@
           </div>
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
-            <!-- Not a form field -- barcode_id is auto-generated server-side
-                 to match member_code, see add_member_submit in routes/members.py. -->
-            <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
-              Auto-generated on save
-            </div>
+            <input type="text" name="barcode_id" placeholder="Scan existing ID, or leave blank"
+                   autocomplete="off"
+                   class="input input-bordered w-full mt-1 bg-base-100">
           </div>
         </div>
 
         <div class="bg-info/10 rounded-lg p-3 flex gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          <p class="text-xs text-info/80">A member code (e.g. MBR00042) is generated automatically once this member is saved.</p>
+          <p class="text-xs text-info/80">A member code (e.g. MBR00042) is generated automatically once this member is saved. If this trainee/trainer already has a barcoded ID (school/employee card), scan it into the Barcode ID field to reuse it instead of printing a new one -- otherwise leave it blank and one will be generated to match the member code.</p>
         </div>
 
       </div>

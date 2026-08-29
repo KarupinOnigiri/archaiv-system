@@ -327,7 +327,7 @@ def unrestrict_member_confirm(id):
 @limiter.limit("20 per minute")
 def unrestrict_member(id):
     """Lifting a restriction re-grants borrowing access, so it deliberately
-    requires more authority than restricting — tool_keeper cannot call this."""
+    requires more authority than restricting - tool_keeper cannot call this."""
     conn = get_db_connection()
     try:
         result, error = member_service.unrestrict_member(conn, id, g.staff["id"], g.staff["member_id"])

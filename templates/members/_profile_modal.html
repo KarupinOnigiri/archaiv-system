@@ -75,11 +75,11 @@
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Batch</span>
-              <span class="text-sm font-medium text-right">{{ member.batch or "—" }}</span>
+              <span class="text-sm font-medium text-right">{{ member.batch or "-" }}</span>
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Phone</span>
-              <span class="text-sm font-medium text-right">{{ member.phone_number or "—" }}</span>
+              <span class="text-sm font-medium text-right">{{ member.phone_number or "-" }}</span>
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Member since</span>
@@ -164,7 +164,7 @@
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">Batch</span>
-            <span class="text-sm font-medium text-right">{{ member.batch or "—" }}</span>
+            <span class="text-sm font-medium text-right">{{ member.batch or "-" }}</span>
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">Barcode</span>
@@ -172,7 +172,7 @@
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">Phone</span>
-            <span class="text-sm font-medium text-right">{{ member.phone_number or "—" }}</span>
+            <span class="text-sm font-medium text-right">{{ member.phone_number or "-" }}</span>
           </div>
         </div>
       </div>
@@ -293,7 +293,7 @@
               <div class="text-xs text-base-content/40">${escapeHtml(tx.asset_code)}</div>
             </td>
             <td class="py-2 text-xs text-base-content/60">${escapeHtml(tx.time_out)}</td>
-            <td class="py-2 text-xs text-base-content/60">${tx.time_in ? escapeHtml(tx.time_in) : '—'}</td>
+            <td class="py-2 text-xs text-base-content/60">${tx.time_in ? escapeHtml(tx.time_in) : '-'}</td>
             <td class="py-2">${txStatusBadge(tx.status)}</td>
           </tr>`;
       }).join('');

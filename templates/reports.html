@@ -722,7 +722,7 @@ function fetchSummary() {
     })
     .catch(function () {
       ['kpi-total-checkouts', 'kpi-unique-assets', 'kpi-unique-borrowers', 'kpi-overdue-rate', 'kpi-damage-rate'].forEach(function (id) {
-        document.getElementById(id).textContent = '—';
+        document.getElementById(id).textContent = '-';
       });
     });
 }
@@ -740,7 +740,7 @@ function fetchStaffActivity() {
       { header: 'CHECKOUTS', headCls: 'text-right', cls: 'text-right', render: (r) => r.checkouts_processed },
       { header: 'RETURNS', headCls: 'text-right', cls: 'text-right', render: (r) => r.returns_processed },
       { header: 'LOGGED ACTIONS', headCls: 'text-right', cls: 'text-right', render: (r) => r.audit_actions },
-      { header: 'AVG SESSION', headCls: 'text-right', cls: 'text-right', render: (r) => r.avg_session_minutes != null ? `${r.avg_session_minutes}m` : '—' },
+      { header: 'AVG SESSION', headCls: 'text-right', cls: 'text-right', render: (r) => r.avg_session_minutes != null ? `${r.avg_session_minutes}m` : '-' },
     ], { onClick: (r) => openStaffProfile(r.id) });
   });
 }
@@ -1018,7 +1018,7 @@ async function saveReportLayout() {
     // Surface the real reason (e.g. a stale CSRF token, session timeout)
     // instead of a blanket "check your connection" -- much faster to
     // diagnose than guessing at a network issue that isn't the actual cause.
-    showToast(err.message || 'Could not save layout — check your connection', 'error');
+    showToast(err.message || 'Could not save layout - check your connection', 'error');
   }
 }
 
@@ -1037,7 +1037,7 @@ async function resetReportLayout() {
     openCustomizeModal();
     showToast('Layout reset to default', 'success');
   } catch (err) {
-    showToast(err.message || 'Could not reset layout — check your connection', 'error');
+    showToast(err.message || 'Could not reset layout - check your connection', 'error');
   }
 }
 
@@ -1103,7 +1103,7 @@ async function runExport() {
     }
     document.getElementById('export-modal').close();
   } catch (err) {
-    errEl.textContent = 'Export failed — check your connection and try again.';
+    errEl.textContent = 'Export failed - check your connection and try again.';
     errEl.classList.remove('hidden');
   } finally {
     btn.disabled = false;
@@ -1177,7 +1177,7 @@ async function exportSectionsAsPdf(sectionIds) {
   y += 7;
   doc.setFontSize(10);
   doc.setTextColor(120);
-  doc.text(`${since} to ${until} — generated ${new Date().toLocaleString()}`, margin, y);
+  doc.text(`${since} to ${until} - generated ${new Date().toLocaleString()}`, margin, y);
   doc.setTextColor(20);
   y += 10;
 

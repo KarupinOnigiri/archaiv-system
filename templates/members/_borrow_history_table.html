@@ -16,7 +16,7 @@
         <div class="text-xs text-base-content/40">{{ tx.asset_code }}</div>
       </td>
       <td class="py-2 text-xs text-base-content/60">{{ tx.time_out }}</td>
-      <td class="py-2 text-xs text-base-content/60">{{ tx.time_in or "—" }}</td>
+      <td class="py-2 text-xs text-base-content/60">{{ tx.time_in or "-" }}</td>
       <td class="py-2">
         {% if tx.status == "borrowed" %}
         <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-info/15 text-info">borrowed</span>

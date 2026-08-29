@@ -366,7 +366,7 @@ function isModalOpen() {
 document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
-  // ArrowLeft / ArrowRight — previous / next page.
+  // ArrowLeft / ArrowRight - previous / next page.
   if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     const container = document.getElementById('notifications-table-container');
@@ -380,7 +380,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Alt+A — "Mark all as read", same Alt+letter convention as other tabs.
+  // Alt+A - "Mark all as read", same Alt+letter convention as other tabs.
   if (e.altKey && (e.key === 'a' || e.key === 'A')) {
     if (isModalOpen()) return;
     e.preventDefault();
@@ -388,7 +388,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — with no modal open, reset every filter, same as clicking
+  // Escape - with no modal open, reset every filter, same as clicking
   // "Clear filters".
   if (e.key === 'Escape') {
     if (isModalOpen()) return;

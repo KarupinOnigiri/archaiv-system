@@ -71,7 +71,7 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 
 if not app.secret_key:
     raise RuntimeError(
-        "SECRET_KEY is not set in .env — required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
+        "SECRET_KEY is not set in .env - required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
     )
 
 
@@ -218,9 +218,13 @@ scheduler.add_job(run_scheduled_backup, "interval", minutes=30)
 scheduler.add_job(run_scheduled_archive_purge, "interval", hours=1)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+# Set by tests/conftest.py -- a background scheduler thread polling a
+# throwaway test database on an interval has nothing useful to do and just
+# risks firing mid-test against a DB file that's already been torn down.
+testing_mode = os.environ.get("TOOLROOM_TESTING") == "1"
 
 
-if not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+if not testing_mode and (not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
     scheduler.start()
 
     atexit.register(lambda: scheduler.shutdown())
@@ -261,7 +265,7 @@ def health():
 def format_date(value, format="%b %d, %Y %I:%M %p"):
     """Jinja filter: formats dates, handling datetime objects and ISO strings."""
     if value is None:
-        return "—"
+        return "-"
 
     if isinstance(value, str):
         try:

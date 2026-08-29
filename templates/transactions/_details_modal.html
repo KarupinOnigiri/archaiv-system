@@ -27,7 +27,7 @@
       </div>
       <div class="flex justify-between gap-3">
         <dt class="text-base-content/50">Due date</dt>
-        <dd class="text-right">{{ transaction.due_date | format_date if transaction.due_date else "—" }}</dd>
+        <dd class="text-right">{{ transaction.due_date | format_date if transaction.due_date else "-" }}</dd>
       </div>
       {% if transaction.borrowed_by_username %}
       <div class="flex justify-between gap-3">
@@ -37,7 +37,7 @@
       {% endif %}
       <div class="flex justify-between gap-3">
         <dt class="text-base-content/50">Condition out</dt>
-        <dd class="text-right">{{ transaction.condition_out | humanize if transaction.condition_out else "—" }}</dd>
+        <dd class="text-right">{{ transaction.condition_out | humanize if transaction.condition_out else "-" }}</dd>
       </div>
 
       {% if transaction.status == 'returned' %}
@@ -54,7 +54,7 @@
         {% endif %}
         <div class="flex justify-between gap-3">
           <dt class="text-base-content/50">Condition in</dt>
-          <dd class="text-right">{{ transaction.condition_in | humanize if transaction.condition_in else "—" }}</dd>
+          <dd class="text-right">{{ transaction.condition_in | humanize if transaction.condition_in else "-" }}</dd>
         </div>
         {% if transaction.return_remarks %}
         <div>

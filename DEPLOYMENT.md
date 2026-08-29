@@ -3,13 +3,38 @@
 Targets a Pi 4B 8GB specifically (that's what `database.py`'s cache size
 and `wsgi.py`'s thread count are tuned for) running Raspberry Pi OS. Steps
 below assume Raspberry Pi OS Lite (64-bit), no desktop environment --
-recommended for a headless server. A 32GB+ SD card is comfortably more
-than this app needs; card *speed* (A1/A2-rated) matters more than size.
+recommended for a headless server. Storage is comfortably more than this
+app needs either way (a 32GB+ SD card, or a USB SSD -- see the boot
+options in step 1); a USB SSD is the better choice if you have one, both
+for speed and reliability.
 
 ## 1. OS setup
 
-Flash Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager. In the
-imager's settings (gear icon) before flashing:
+### Booting from a USB SSD instead of an SD card (recommended if you have one)
+
+A Pi 4 booting from SSD over USB is noticeably faster and more reliable
+than an SD card (no SD corruption-on-power-loss risk, much better random
+I/O for SQLite's WAL mode). Two things this needs that SD-card booting
+doesn't:
+
+1. **USB boot support in the Pi's bootloader.** Pi 4 units sold from
+   ~mid-2020 onward have this enabled by default -- if yours is newer
+   than that, skip to step 2. If you're not sure or the Pi is older,
+   boot once from a spare SD card with a current Raspberry Pi OS image,
+   run `sudo rpi-eeprom-update -a` to update the bootloader, reboot, then
+   move the SD card aside -- you won't need it again after this.
+2. **Flash Raspberry Pi OS Lite (64-bit) onto the SSD itself**, not an SD
+   card -- connect the SSD via USB (ideally USB 3.0, the blue port) and
+   select it as the target device in Raspberry Pi Imager.
+
+Everything else below is identical whether you're on SD or SSD -- the
+app itself doesn't know or care which one it's running on.
+
+### Flashing
+
+Flash Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, onto the
+SSD (per above) or an SD card. In the imager's settings (gear icon)
+before flashing:
 - Enable SSH
 - Set a hostname (e.g. `toolroom`)
 - Set a username/password (don't leave the default `pi`/no-password)

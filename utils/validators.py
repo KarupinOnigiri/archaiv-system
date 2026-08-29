@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from flask import jsonify
 
@@ -5,7 +6,7 @@ ACCEPTED_DATE_FORMATS = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S")  # single source of tr
 
 
 def _parse_date(value):
-    """Returns a datetime or None. Not exported — internal only."""
+    """Returns a datetime or None. Not exported - internal only."""
     if value is None:
         return None
     for fmt in ACCEPTED_DATE_FORMATS:
@@ -124,6 +125,31 @@ def validate_due_date(value, field_name="due_date"):
             400,
         )
     return None
+
+
+MAX_BARCODE_LENGTH = 64
+_BARCODE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def normalize_barcode_id(raw_value):
+    """Trims/validates a staff-supplied barcode_id (e.g. scanned off an existing ID card).
+
+    Returns (normalized_value_or_None, error_message_or_None). A None normalized
+    value (blank/omitted input) means "no barcode supplied -- caller should
+    auto-generate one", not an error. Framework-agnostic on purpose so both
+    Flask routes and services can wrap the error message in their own response
+    shape (services use plain {"error": ...} dicts, not jsonify).
+    """
+    if raw_value is None:
+        return None, None
+    value = raw_value.strip()
+    if not value:
+        return None, None
+    if len(value) > MAX_BARCODE_LENGTH:
+        return None, f"barcode_id must be at most {MAX_BARCODE_LENGTH} characters"
+    if not _BARCODE_ID_RE.match(value):
+        return None, "barcode_id may only contain letters, numbers, hyphens, underscores, and periods"
+    return value, None
 
 
 # `table` is interpolated into SQL; this allowlist is the real safety net.

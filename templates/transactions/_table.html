@@ -77,10 +77,10 @@
       </td>
       <td class="py-2 text-sm text-base-content/60">{{ txn.time_out | format_date }}</td>
       <td class="py-2 text-sm {% if txn.is_overdue %}text-error font-medium{% else %}text-base-content/60{% endif %}">
-        {{ txn.due_date | format_date if txn.due_date else "—" }}
+        {{ txn.due_date | format_date if txn.due_date else "-" }}
       </td>
       <td class="py-2 text-sm text-base-content/60">
-        {{ txn.time_in | format_date if txn.time_in else "—" }}
+        {{ txn.time_in | format_date if txn.time_in else "-" }}
         {% if txn.returned_by_username %}
         <div class="text-xs text-base-content/40 mt-0.5 truncate">by {{ txn.returned_by_username }}</div>
         {% endif %}

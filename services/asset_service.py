@@ -22,7 +22,7 @@ from openpyxl.utils import get_column_letter
 from database import get_db_connection, sqlite3
 from utils.logger import log_action
 from utils.uploads import save_asset_image, delete_asset_image, validate_image_upload
-from utils.validators import validate_date_fields
+from utils.validators import validate_date_fields, normalize_barcode_id
 
 logger = logging.getLogger(__name__)
 
@@ -409,13 +409,29 @@ def delete_category(conn, category_id, staff_id):
 
 
 def create_asset(conn, data, image_file, additional_image_files, staff_id):
-    """Inserts a new asset; asset_id/barcode_id auto-generate as AST#####.
+    """Inserts a new asset. asset_id always auto-generates as AST#####; barcode_id
+    matches it unless the caller supplies one (e.g. scanned off an existing
+    manufacturer/asset-tag barcode already on the item), in which case that value
+    is reused instead of printing a new barcode sticker.
     Images are validated by the route before this is called; this function
     does the actual save-to-disk + DB write, rolling back and cleaning up
     saved files together if any step fails."""
     error = _validate_category_id(conn, data.get("category_id") or None)
     if error:
         return None, _no_ctx(*error)
+
+    custom_barcode, barcode_error = normalize_barcode_id(data.get("barcode_id"))
+    if barcode_error:
+        return None, _no_ctx({"error": barcode_error}, 400)
+
+    if custom_barcode is not None:
+        existing = conn.execute(
+            "SELECT id FROM assets WHERE UPPER(barcode_id) = UPPER(?)", (custom_barcode,)
+        ).fetchone()
+        if existing:
+            return None, _no_ctx(
+                {"error": "This barcode is already registered to another asset."}, 400
+            )
 
     new_asset_id = None
     generated_code = None
@@ -444,7 +460,7 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
         generated_code = f"AST{new_asset_id:05d}"
         conn.execute(
             "UPDATE assets SET asset_id = ?, barcode_id = ? WHERE id = ?",
-            (generated_code, generated_code, new_asset_id),
+            (generated_code, custom_barcode or generated_code, new_asset_id),
         )
 
         if image_file is not None:
@@ -452,7 +468,7 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
             if img_error:
                 # Roll back the whole submission rather than saving the asset without its image.
                 conn.rollback()
-                return None, _no_ctx({"error": img_error}, 200)
+                return None, _no_ctx({"error": img_error}, 400)
             conn.execute(
                 "UPDATE assets SET image_path = ? WHERE id = ?", (saved_image_path, new_asset_id)
             )
@@ -466,7 +482,7 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
                     delete_asset_image(saved_image_path)
                 for p in saved_additional_paths.values():
                     delete_asset_image(p)
-                return None, _no_ctx({"error": img_error}, 200)
+                return None, _no_ctx({"error": img_error}, 400)
             saved_additional_paths[slot] = saved_path
             conn.execute(
                 "INSERT INTO asset_images (asset_id, slot, image_path) VALUES (?, ?, ?)",
@@ -481,6 +497,10 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
             delete_asset_image(saved_image_path)
         for p in saved_additional_paths.values():
             delete_asset_image(p)
+        if custom_barcode is not None:
+            return None, _no_ctx(
+                {"error": "This barcode is already registered to another asset."}, 400
+            )
         return None, _no_ctx(
             {"error": "A database constraint was violated. Check for duplicate barcode/serial/ID values."}, 400
         )
@@ -490,7 +510,7 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
         action="created_asset",
         target_table="assets",
         target_id=new_asset_id,
-        target_name=f"{generated_code} — {data['name']}",
+        target_name=f"{generated_code} - {data['name']}",
         details=f"Created asset {generated_code}",
     )
 
@@ -836,6 +856,33 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
             # even on non-JSON (htmx/form) requests -- no modal re-render.
             return None, _no_ctx(*error)
 
+    new_barcode_id = asset["barcode_id"]
+    if "barcode_id" in data:
+        custom_barcode, barcode_error = normalize_barcode_id(data.get("barcode_id"))
+        if barcode_error:
+            return None, ({"error": barcode_error}, 400, {"asset": asset})
+        # Blank clears back to nothing meaningful to fall back to -- barcode_id is
+        # NOT NULL, so refuse rather than silently keeping the old value or erroring
+        # obscurely at the UPDATE.
+        if custom_barcode is None:
+            return None, (
+                {"error": "barcode_id cannot be blank -- clear it back to the asset ID instead if needed."},
+                400,
+                {"asset": asset},
+            )
+        if custom_barcode.upper() != (asset["barcode_id"] or "").upper():
+            existing = conn.execute(
+                "SELECT id FROM assets WHERE UPPER(barcode_id) = UPPER(?) AND id != ?",
+                (custom_barcode, asset_id),
+            ).fetchone()
+            if existing:
+                return None, (
+                    {"error": "This barcode is already registered to another asset."},
+                    400,
+                    {"asset": asset},
+                )
+        new_barcode_id = custom_barcode
+
     # Image: replace, remove, or leave untouched (the common default case).
     has_new_image = image_file is not None
     new_image_path = asset["image_path"]
@@ -962,7 +1009,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
         """
         values = [
             data.get("name", asset["name"]),
-            data.get("barcode_id", asset["barcode_id"]),
+            new_barcode_id,
             data.get("rfid_id", asset["rfid_id"]) or None,
             data.get("category_id", asset["category_id"]),
             new_condition,
@@ -1003,7 +1050,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
         target_table="assets",
         target_id=asset["id"],
         # Mirrors the UPDATE's own fallback, so this reflects the name actually saved.
-        target_name=f"{asset['asset_id']} — {updated_name}",
+        target_name=f"{asset['asset_id']} - {updated_name}",
         details=f"Updated asset {asset['asset_id']}",
     )
 
@@ -1013,7 +1060,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
             action="disposed_asset",
             target_table="assets",
             target_id=asset["id"],
-            target_name=f"{asset['asset_id']} — {updated_name}",
+            target_name=f"{asset['asset_id']} - {updated_name}",
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
@@ -1066,7 +1113,7 @@ def delete_asset(conn, asset_id, staff_id):
         action="deleted_asset",
         target_table="assets",
         target_id=asset_id,
-        target_name=f"{asset['asset_id']} — {asset['name']}",
+        target_name=f"{asset['asset_id']} - {asset['name']}",
         details=f"Soft-deleted asset {asset['asset_id']}",
     )
 
@@ -1098,7 +1145,7 @@ def undo_delete_asset(conn, asset_id, staff_id):
         action="undid_asset_delete",
         target_table="assets",
         target_id=asset_id,
-        target_name=f"{asset['asset_id']} — {asset['name']}",
+        target_name=f"{asset['asset_id']} - {asset['name']}",
         details=f"Undid delete of asset {asset['asset_id']}",
     )
 
@@ -1244,7 +1291,7 @@ def restore_asset(conn, asset_id, condition, reason, staff_id):
         action="restored_asset",
         target_table="assets",
         target_id=asset_id,
-        target_name=f"{asset['asset_id']} — {asset['name']}",
+        target_name=f"{asset['asset_id']} - {asset['name']}",
         details=f"Restored asset {asset['asset_id']} (condition set to '{new_condition}') -- reason: {reason}",
     )
 

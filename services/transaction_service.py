@@ -1,7 +1,7 @@
 """Query-building, checkout-session/loan business logic, and export shaping for
 routes/transactions.py. Every function takes an already-open `conn` (the route
-owns open/close) and returns `(data, error)` — `error` is a ready `(jsonify(...), status)`
-tuple on failure, `data` is a plain dict/list/row on success — so routes stay a thin
+owns open/close) and returns `(data, error)` - `error` is a ready `(jsonify(...), status)`
+tuple on failure, `data` is a plain dict/list/row on success - so routes stay a thin
 parse-args -> call service -> jsonify layer, matching utils/validators.py's convention.
 """
 
@@ -28,6 +28,40 @@ DEFAULT_LOAN_DAYS = 2
 MAX_CONCURRENT_LOANS = 10
 MAX_AVAILABLE_ASSETS_LISTED = 300
 MAX_BATCH_RETURN_SIZE = 50
+
+
+def _verify_rfid_scan(asset, rfid_code):
+    """Cross-checks a physically-scanned RFID tag against the asset's registered
+    rfid_id -- the actual anti-swap check (barcode alone only proves a barcode
+    was read, and barcode stickers can be peeled and moved to a different tool).
+
+    Optional by design: `rfid_code` is None whenever staff scan by barcode alone,
+    which must keep working unchanged for assets that aren't RFID-tagged yet.
+    Only returns an error when staff *did* scan an RFID and it doesn't check out.
+    """
+    if not rfid_code:
+        return None
+    if not asset["rfid_id"]:
+        return (
+            jsonify(
+                {
+                    "error": f"Asset {asset['barcode_id']} has no RFID tag on file - can't verify by RFID.",
+                    "code": "rfid_not_on_file",
+                }
+            ),
+            400,
+        )
+    if rfid_code.strip().upper() != asset["rfid_id"].upper():
+        return (
+            jsonify(
+                {
+                    "error": "RFID tag doesn't match this asset - it may not be the tool that was borrowed.",
+                    "code": "rfid_mismatch",
+                }
+            ),
+            409,
+        )
+    return None
 VALID_RETURN_CONDITIONS = ("functional", "inoperable", "for_repair", "disposed")
 
 
@@ -228,10 +262,11 @@ def build_transactions_filters(args):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? OR assets.asset_id LIKE ? OR members.first_name LIKE ? OR members.last_name LIKE ?)"
+            "(assets.name LIKE ? OR assets.asset_id LIKE ? OR members.first_name LIKE ?"
+            " OR members.last_name LIKE ? OR members.barcode_id LIKE ?)"
         )
         like = f"%{q}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
 
     # "overdue" is a virtual status (borrowed + past due); keep in sync with is_overdue below.
     status_filter = args.get("status")
@@ -424,7 +459,8 @@ def start_checkout_session(conn, member_barcode, member_id, staff_id):
         ).fetchone()
 
     if member is None:
-        return None, (jsonify({"error": "Member not found"}), 404)
+        label = member_barcode if member_barcode else "record"
+        return None, (jsonify({"error": f"Member {label} not found", "code": "not_found"}), 404)
 
     if not member["is_active"]:
         return None, (jsonify({"error": "This member account is not active"}), 403)
@@ -507,8 +543,10 @@ def list_available_assets_for_checkout(conn):
     return {"assets": [dict(row) for row in assets]}
 
 
-def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
-    """Scans one asset into the cart; claims it atomically (available -> reserved) before inserting the row."""
+def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_code=None):
+    """Scans one asset into the cart; claims it atomically (available -> reserved) before inserting the row.
+    rfid_code is optional -- when staff also scan the asset's RFID tag (a second, distinct scan from the
+    barcode), it's cross-checked against the asset's registered rfid_id. See _verify_rfid_scan()."""
     session_probe = conn.execute(
         "SELECT member_id, staff_id FROM checkout_sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -530,7 +568,11 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
     ).fetchone()
 
     if asset is None:
-        return None, (jsonify({"error": "Asset not found"}), 404)
+        return None, (jsonify({"error": f"Asset {asset_code} not found", "code": "not_found"}), 404)
+
+    rfid_error = _verify_rfid_scan(asset, rfid_code)
+    if rfid_error:
+        return None, rfid_error
 
     already_in_cart = conn.execute(
         "SELECT id FROM checkout_session_items WHERE checkout_session_id = ? AND asset_id = ?",
@@ -538,11 +580,25 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
     ).fetchone()
 
     if already_in_cart is not None:
-        return None, (jsonify({"error": "This asset is already in the cart"}), 409)
+        return None, (
+            jsonify(
+                {
+                    "error": f"Asset {asset_code} is already in the cart",
+                    "code": "already_in_cart",
+                    "item_id": already_in_cart["id"],
+                }
+            ),
+            409,
+        )
 
     if asset["status"] != "available":
         return None, (
-            jsonify({"error": f"Asset is not available (current status: {asset['status']})"}),
+            jsonify(
+                {
+                    "error": f"Asset {asset_code} is not available (current status: {asset['status']})",
+                    "code": "not_available",
+                }
+            ),
             409,
         )
 
@@ -554,7 +610,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
         if claim.rowcount == 0:
             conn.rollback()
             return None, (
-                jsonify({"error": "Asset was just claimed by another session — try again"}),
+                jsonify({"error": f"Asset {asset_code} was just claimed by another session - try again", "code": "not_available"}),
                 409,
             )
 
@@ -570,7 +626,10 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
         item_id = cursor.lastrowid
     except sqlite3.IntegrityError:
         conn.rollback()
-        return None, (jsonify({"error": "This asset is already in the cart"}), 409)
+        return None, (
+            jsonify({"error": f"Asset {asset_code} is already in the cart", "code": "already_in_cart"}),
+            409,
+        )
     except Exception:
         conn.rollback()
         raise
@@ -580,7 +639,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code):
         action="added_item_to_checkout_session",
         target_table="checkout_session_items",
         target_id=item_id,
-        target_name=f"{asset['asset_id']} — {asset['name']}",
+        target_name=f"{asset['asset_id']} - {asset['name']}",
         details=f"Added asset {asset['asset_id']} to checkout session {session_id}",
     )
 
@@ -637,7 +696,7 @@ def remove_item_from_checkout_session(conn, session_id, item_id, staff_id):
         action="removed_item_from_checkout_session",
         target_table="checkout_session_items",
         target_id=item_id,
-        target_name=f"{asset['asset_id']} — {asset['name']}" if asset else None,
+        target_name=f"{asset['asset_id']} - {asset['name']}" if asset else None,
         details=f"Removed asset from checkout session {session_id}",
     )
 
@@ -722,27 +781,37 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
     }
 
 
-def _find_open_transaction_for_scan(asset_code, member_barcode, conn):
-    """Validates an asset/member barcode pair for a scan return; pure lookup, no mutation."""
+def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=None):
+    """Validates an asset/member barcode pair for a scan return; pure lookup, no mutation.
+    rfid_code is optional -- when staff also scan the returned tool's RFID tag, it's cross-checked
+    against the asset's registered rfid_id, so a barcode peeled off the original tool and stuck on a
+    substitute can't sail through just because the barcode matches. See _verify_rfid_scan()."""
     asset = conn.execute(
         "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
         (asset_code, asset_code),
     ).fetchone()
     if asset is None:
-        return None, None, None, (jsonify({"error": "Asset not found"}), 404)
+        return None, None, None, (jsonify({"error": f"Asset {asset_code} not found", "code": "not_found"}), 404)
+
+    rfid_error = _verify_rfid_scan(asset, rfid_code)
+    if rfid_error:
+        return None, None, None, rfid_error
 
     transaction = conn.execute(
         "SELECT * FROM transactions WHERE asset_id = ? AND status = 'borrowed'",
         (asset["id"],),
     ).fetchone()
     if transaction is None:
-        return None, None, None, (jsonify({"error": "This asset has no open borrow transaction"}), 400)
+        return None, None, None, (
+            jsonify({"error": f"Asset {asset_code} has no open borrow transaction", "code": "not_available"}),
+            400,
+        )
 
     member = conn.execute(
         "SELECT * FROM members WHERE UPPER(barcode_id) = UPPER(?)", (member_barcode,)
     ).fetchone()
     if member is None:
-        return None, None, None, (jsonify({"error": "member not found"}), 404)
+        return None, None, None, (jsonify({"error": f"Member {member_barcode} not found", "code": "not_found"}), 404)
 
     if member["id"] != transaction["member_id"]:
         return (
@@ -761,11 +830,11 @@ def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
         action="returned_asset",
         target_table="transactions",
         target_id=action_target_id,
-        target_name=f"{asset['asset_id']} — {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
+        target_name=f"{asset['asset_id']} - {full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])}",
         details=(
             f"Asset {asset['asset_id']} returned{' (batch)' if batch else ''} by member "
             f"{full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])} "
-            f"— condition: {result['final_condition']}"
+            f"- condition: {result['final_condition']}"
         ),
     )
     if result["is_disposed"]:
@@ -774,13 +843,15 @@ def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
             action="disposed_asset",
             target_table="assets",
             target_id=asset["id"],
-            target_name=f"{asset['asset_id']} — {asset['name']}",
+            target_name=f"{asset['asset_id']} - {asset['name']}",
             details=f"Asset {asset['asset_id']} disposed on return and removed from circulation",
         )
 
 
-def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_in, return_remarks):
-    transaction, asset, member, error = _find_open_transaction_for_scan(asset_code, member_barcode, conn)
+def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_in, return_remarks, rfid_code=None):
+    transaction, asset, member, error = _find_open_transaction_for_scan(
+        asset_code, member_barcode, conn, rfid_code
+    )
     if error:
         return None, error
 
@@ -827,9 +898,11 @@ def get_member_open_loans(conn, member_barcode):
     }, None
 
 
-def lookup_return_scan(conn, asset_code, member_barcode):
+def lookup_return_scan(conn, asset_code, member_barcode, rfid_code=None):
     """Read-only per-scan lookup for the scan-return cart; nothing mutates until batch-return submits."""
-    transaction, asset, _member, error = _find_open_transaction_for_scan(asset_code, member_barcode, conn)
+    transaction, asset, _member, error = _find_open_transaction_for_scan(
+        asset_code, member_barcode, conn, rfid_code
+    )
     if error:
         return None, error
 
@@ -837,6 +910,7 @@ def lookup_return_scan(conn, asset_code, member_barcode):
         "transaction_id": transaction["id"],
         "asset_name": asset["name"],
         "asset_barcode": asset["barcode_id"],
+        "rfid_verified": bool(rfid_code),
     }, None
 
 
@@ -1003,11 +1077,11 @@ def renew_transaction(conn, transaction_id, new_due_date, staff_id):
         target_table="transactions",
         target_id=transaction_id,
         target_name=(
-            f"{txn_asset['asset_id']} — {full_name(txn_member['first_name'], txn_member['last_name'], txn_member['middle_name'], txn_member['suffix'])}"
+            f"{txn_asset['asset_id']} - {full_name(txn_member['first_name'], txn_member['last_name'], txn_member['middle_name'], txn_member['suffix'])}"
             if txn_asset and txn_member
             else None
         ),
-        details=f"Due date extended from {old_due_date or '—'} to {new_due_date}",
+        details=f"Due date extended from {old_due_date or '-'} to {new_due_date}",
     )
 
     return {"message": "Due date updated", "due_date": new_due_date}, None
@@ -1090,7 +1164,7 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
 
     if not items:
         return None, (
-            jsonify({"error": "Cart is empty — scan at least one asset before checking out"}),
+            jsonify({"error": "Cart is empty - scan at least one asset before checking out"}),
             400,
         )
 

@@ -45,7 +45,7 @@
           </tbody>
         </table>
       </div>
-      <p class="text-xs text-base-content/50 mt-2">Fix these rows in your CSV and re-upload just those — already-created rows won't be duplicated as long as barcode IDs stay unique.</p>
+      <p class="text-xs text-base-content/50 mt-2">Fix these rows in your CSV and re-upload just those - already-created rows won't be duplicated as long as barcode IDs stay unique.</p>
     </div>
     {% elif created_count == 0 %}
     <p class="text-sm text-base-content/50">No rows were imported.</p>
@@ -124,7 +124,7 @@
         return;
       }
       const doneCount = data.deleted_count ?? 0;
-      showToast(`Import undone — ${doneCount} item${doneCount === 1 ? '' : 's'} archived`, 'success');
+      showToast(`Import undone - ${doneCount} item${doneCount === 1 ? '' : 's'} archived`, 'success');
       window.location.reload();
     } catch (err) {
       showToast("Couldn't undo the import", 'error');

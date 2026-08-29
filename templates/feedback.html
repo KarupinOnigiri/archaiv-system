@@ -311,7 +311,7 @@ document.addEventListener('keydown', function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (isTypingTarget(e.target) || isModalOpen()) return;
 
-  // 1 / 2 / 3 — jump to the matching status filter (Open / Resolved / All).
+  // 1 / 2 / 3 - jump to the matching status filter (Open / Resolved / All).
   if (['1', '2', '3'].includes(e.key)) {
     const statusByKey = { '1': 'open', '2': 'resolved', '3': 'all' };
     e.preventDefault();
@@ -321,7 +321,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // ArrowLeft / ArrowRight — previous / next page, same pattern as
+  // ArrowLeft / ArrowRight - previous / next page, same pattern as
   // staff.html/transactions.html (clicks the real button so the
   // disabled-at-the-edges state is respected automatically).
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -334,7 +334,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // Escape — reset both filters back to their default (status=Open,
+  // Escape - reset both filters back to their default (status=Open,
   // category blank) and blur whatever was focused, same "Esc = clear
   // filters" convention as assets/members/staff/audit-log.
   if (e.key === 'Escape') {

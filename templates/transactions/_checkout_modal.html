@@ -16,7 +16,7 @@
 
     <h3 class="font-bold text-lg mb-1 pr-8">New Checkout</h3>
     <p data-role="step-hint" class="text-sm text-base-content/60 mb-1">
-      {% if resume_session %}Resuming this checkout — scan more tools or complete it.{% else %}Scan or enter the member's barcode to start.{% endif %}
+      {% if resume_session %}Resuming this checkout - scan more tools or complete it.{% else %}Scan or enter the member's barcode to start.{% endif %}
     </p>
     <p data-role="group-tally" class="text-xs text-success font-medium mb-3 hidden"></p>
 
@@ -50,6 +50,16 @@
                placeholder="Scan or type asset barcode..."
                onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.addItem(this);}">
         <button type="button" class="btn btn-outline btn-sm join-item" onclick="Checkout.addItem(this)">Add</button>
+      </div>
+      <!-- Optional, separate from the barcode field on purpose -- a value here means an RFID
+           reader (not the barcode scanner) actually sensed this tag, which is what lets the
+           backend cross-check it against the asset's registered rfid_id. Left blank, checkout
+           behaves exactly as it did before RFID verification existed. -->
+      <div class="join w-full mb-1">
+        <input type="text" id="checkout-rfid-code-{{ client_id }}" data-role="rfid-code-input"
+               class="input input-bordered input-sm join-item w-full"
+               placeholder="Scan RFID tag (optional -- verifies it's the real tool)"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.addItem(this);}">
       </div>
       <button type="button" data-role="browse-assets-btn" class="btn btn-ghost btn-xs mb-2 gap-1" onclick="Checkout.toggleAvailableAssets(this)">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>

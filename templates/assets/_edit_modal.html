@@ -1,8 +1,10 @@
 <div class="modal modal-open">
   <!-- Copied straight from assets/_add_modal.html (same max-w-5xl, same
        spacing/classes throughout) and adapted for editing: fields
-       pre-filled instead of blank, Barcode ID read-only instead of
-       "Auto-generated", Serial Code (not accepted by edit_asset_submit)
+       pre-filled instead of blank, Barcode ID pre-filled with the current
+       value instead of "Auto-generated" (still editable -- e.g. to attach
+       a manufacturer tag scanned after the asset was created), Serial Code
+       (not accepted by edit_asset_submit)
        swapped for Condition/Status alongside Acquired Date/Last
        Calibrated, and the image column keeps its existing photo (if any)
        instead of starting empty. That's one more field than Add's grid,
@@ -49,11 +51,9 @@
           <div class="grid grid-cols-4 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
-              <!-- Not a form field -- barcode_id stays in sync with asset_id
-                   server-side (routes/assets.py), not staff-editable. -->
-              <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
-                {{ asset.barcode_id }}
-              </div>
+              <input type="text" name="barcode_id" value="{{ asset.barcode_id }}" placeholder="Scan existing"
+                     autocomplete="off"
+                     class="input input-bordered w-full mt-1 bg-base-100">
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>
@@ -63,7 +63,7 @@
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">CATEGORY</label>
               <select name="category_id" class="select select-bordered w-full mt-1 bg-base-100">
-                <option value="">— None —</option>
+                <option value="">- None -</option>
                 {% for category in categories %}
                 <option value="{{ category.id }}" {% if asset.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
                 {% endfor %}
@@ -372,7 +372,7 @@ function toggleSwapMain(slot) {
   if (swappedSlot !== null && swappedSlot !== slot) return; // one swap at a time
 
   if (swappedSlot === slot) {
-    performSwapVisual(slot); // swap is its own inverse — undo by repeating it
+    performSwapVisual(slot); // swap is its own inverse - undo by repeating it
     swappedSlot = null;
   } else {
     performSwapVisual(slot);

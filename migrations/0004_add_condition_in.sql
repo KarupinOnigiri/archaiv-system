@@ -1,5 +1,5 @@
 -- 0004_add_condition_in.sql
--- Adds transactions.condition_in — the condition an asset was recorded as
+-- Adds transactions.condition_in - the condition an asset was recorded as
 -- when it came back in on this specific transaction. Distinct from
 -- assets.condition, which only reflects the asset's *current* condition
 -- and gets overwritten on every borrow/return cycle. This column lets us

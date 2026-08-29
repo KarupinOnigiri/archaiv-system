@@ -163,7 +163,7 @@ def seed_initial_admin():
         conn.rollback()
         logger.error(
             "No active admin account exists and the temporary setup admin "
-            f"could not be (re)seeded — a database constraint was violated: {e}"
+            f"could not be (re)seeded - a database constraint was violated: {e}"
         )
         return
     finally:
@@ -175,11 +175,11 @@ def seed_initial_admin():
         target_table="staff",
         target_id=staff_id,
         target_name=username,
-        details="No active admin found — (re)seeded the temporary setup admin account",
+        details="No active admin found - (re)seeded the temporary setup admin account",
     )
 
     logger.info(
-        "No active admin account found. A temporary setup admin is ready — "
+        "No active admin account found. A temporary setup admin is ready - "
         f"username='{username}' password='{password}'. Log in with these "
         "credentials and call POST /api/v1/setup/complete to create the "
         "real first admin account; the temporary account will then be "

@@ -1,7 +1,7 @@
 -- 0006_departments_categories.sql
 -- Replaces free-text members.department and assets.category with lookup
 -- tables, so a department/category must already exist as a canonical
--- entry before it can be attached to a record — eliminates typo-driven
+-- entry before it can be attached to a record - eliminates typo-driven
 -- fragmentation ("IT" vs "I.T." vs "Info Tech").
 
 PRAGMA foreign_keys = OFF;

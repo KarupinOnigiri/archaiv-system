@@ -235,7 +235,7 @@ def add_asset_submit():
         if field not in data or not data[field]:
             error_msg = f"Missing required field: {field}"
             if request.is_json:
-                return jsonify({"error": error_msg}), 200
+                return jsonify({"error": error_msg}), 400
             return _add_asset_form_error(error_msg)
 
     error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
@@ -250,7 +250,7 @@ def add_asset_submit():
         img_error = validate_image_upload(image_file)
         if img_error:
             if request.is_json:
-                return jsonify({"error": img_error}), 200
+                return jsonify({"error": img_error}), 400
             return _add_asset_form_error(img_error)
 
     # Same reasoning: validate additional images up front too, before any DB writes.
@@ -261,7 +261,7 @@ def add_asset_submit():
             img_error = validate_image_upload(file)
             if img_error:
                 if request.is_json:
-                    return jsonify({"error": img_error}), 200
+                    return jsonify({"error": img_error}), 400
                 return _add_asset_form_error(img_error)
             additional_image_files[slot] = file
 

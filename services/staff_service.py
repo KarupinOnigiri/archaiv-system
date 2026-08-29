@@ -633,7 +633,7 @@ def update_staff(conn, staff_id, data, acting_staff_id):
         return None, _no_ctx(
             {
                 "error": "Cannot change an admin's role directly",
-                "reason": "Demoting or deactivating an admin requires peer approval — use /staff/<id>/request-deactivation instead.",
+                "reason": "Demoting or deactivating an admin requires peer approval - use /staff/<id>/request-deactivation instead.",
             },
             403,
         )

@@ -430,7 +430,7 @@ async function submitGiveFeedback(event) {
     }
 
     document.getElementById('give-feedback-modal').close();
-    showToast(data.message || 'Thanks — feedback sent', 'success');
+    showToast(data.message || 'Thanks - feedback sent', 'success');
   } catch (e) {
     errorEl.textContent = "Couldn't send feedback. Check your connection and try again.";
     errorEl.classList.remove('invisible');
@@ -561,7 +561,7 @@ async function submitChangePassword(event) {
     document.getElementById('change-password-modal').close();
     showToast('Password changed successfully', 'success');
   } catch (err) {
-    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.textContent = 'Update password';
@@ -647,7 +647,7 @@ async function submitChangeRfidPin(event) {
     document.getElementById('change-rfid-pin-modal').close();
     showToast('RFID PIN changed successfully', 'success');
   } catch (err) {
-    errorEl.textContent = 'Network error — check your connection and try again.';
+    errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('invisible');
     btn.disabled = false;
     btn.textContent = 'Update PIN';
@@ -683,7 +683,7 @@ function renderAvatars(url) {
     accountAvatar.classList.toggle('cursor-pointer', !!url);
     accountAvatar.classList.toggle('hover:opacity-90', !!url);
     accountAvatar.classList.toggle('cursor-default', !url);
-    accountAvatar.title = url ? 'View photo — drop or paste an image to replace it' : 'Drop or paste an image to add one';
+    accountAvatar.title = url ? 'View photo - drop or paste an image to replace it' : 'Drop or paste an image to add one';
   }
 
   const removeBtn = document.getElementById('profile-photo-remove-btn');
@@ -705,7 +705,7 @@ function copyUsername() {
   const username = window.APP_CONFIG.staffUsername;
   navigator.clipboard.writeText(username)
     .then(() => showToast('Username copied', 'success'))
-    .catch(() => showToast("Couldn't copy — select and copy manually", 'error'));
+    .catch(() => showToast("Couldn't copy - select and copy manually", 'error'));
 }
 
 function validateProfilePhotoFile(file) {
@@ -714,7 +714,7 @@ function validateProfilePhotoFile(file) {
     return 'Please choose a PNG, JPEG, or WebP image.';
   }
   if (file.size > PROFILE_PHOTO_MAX_BYTES) {
-    return 'That image is too large — please choose one under 5MB.';
+    return 'That image is too large - please choose one under 5MB.';
   }
   return null;
 }
@@ -977,7 +977,7 @@ async function uploadProfilePhoto(blob, input) {
     renderAvatars(data.photo_url);
     showToast('Profile photo updated', 'success');
   } catch (err) {
-    showToast('Network error — check your connection and try again.', 'error');
+    showToast('Network error - check your connection and try again.', 'error');
   } finally {
     btn.disabled = false;
     spinner.classList.add('hidden');
@@ -1013,7 +1013,7 @@ async function removeProfilePhoto() {
     renderAvatars(null);
     showToast('Profile photo removed', 'success');
   } catch (err) {
-    showToast('Network error — check your connection and try again.', 'error');
+    showToast('Network error - check your connection and try again.', 'error');
   } finally {
     removeBtn.disabled = false;
   }
@@ -1073,6 +1073,20 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
       showToast('Notification settings updated', 'success');
     }
   }
+});
+
+// Inventory/Members/Staff's barcode-scan-to-Enter shortcut (asset-search /
+// member-search / staff-search, see each page's own <script>) renders
+// _barcode_not_found_modal.html into #modal-container on a miss -- the
+// modal itself already names the scanned barcode, so once it's up the
+// search box can just be cleared outright for the next scan, same as
+// every other barcode field in the app. `evt.detail.elt` resolves to the
+// search input because each page's htmx.ajax call passes `source: e.target`
+// -- not a hardcoded id, so this one listener covers all three pages.
+document.body.addEventListener('htmx:afterSwap', function (evt) {
+  if (evt.detail.target?.id !== 'modal-container') return;
+  if (!document.getElementById('barcode-not-found-modal')) return;
+  clearInputAfterError(evt.detail.elt);
 });
 
 function updateNotificationPref(field, checked) {
@@ -1455,6 +1469,41 @@ const TOAST_VARIANTS_DARK = {
   },
 };
 
+// Shared by every barcode-scan textbox in the app (checkout cart, return
+// cart, member-barcode fields, the Inventory/Members/Staff search boxes) --
+// on any scan error the field is cleared outright (not just selected) so
+// the next scan/keystroke starts clean; the error message itself is what
+// now carries the barcode that was scanned (see each caller's backend
+// error text), so there's no need to leave the bad value on screen to
+// reference.
+function clearInputAfterError(input) {
+  if (!input) return;
+  input.value = '';
+  input.focus();
+}
+
+// Briefly highlights an element -- used to point at a cart/checklist row
+// that a rescanned barcode turned out to already match (already in the
+// checkout cart, already checked off on a return), so staff can see *which*
+// row it was without hunting the list themselves. Driven entirely by
+// inline styles rather than a stylesheet class/keyframe, so it doesn't
+// depend on static/css/output.css having been rebuilt.
+function flashHighlight(el, ms) {
+  if (!el) return;
+  el.scrollIntoView({ block: 'nearest' });
+  const prevTransition = el.style.transition;
+  const prevBg = el.style.backgroundColor;
+  const prevShadow = el.style.boxShadow;
+  el.style.transition = 'background-color 0.25s ease, box-shadow 0.25s ease';
+  el.style.backgroundColor = 'rgba(67, 160, 71, 0.45)'; // success-green, theme-independent on purpose
+  el.style.boxShadow = '0 0 0 2px rgba(67, 160, 71, 0.65)';
+  setTimeout(() => {
+    el.style.backgroundColor = prevBg;
+    el.style.boxShadow = prevShadow;
+    setTimeout(() => { el.style.transition = prevTransition; }, 300);
+  }, ms || 1500);
+}
+
 function showToast(message, type, action, duration, description) {
   const container = document.getElementById('toast-container');
   if (!container || !message) return;
@@ -1718,7 +1767,7 @@ document.body.addEventListener('htmx:sendError', function (evt) {
     console.warn('Passive region request failed to send:', evt.detail);
     return;
   }
-  showToast("Network error — check your connection and try again.", 'error');
+  showToast("Network error - check your connection and try again.", 'error');
 });
 
 // Checkout widget controller. A staff member can have several checkout sessions open at once
@@ -1764,6 +1813,16 @@ window.Checkout = (function () {
   function cartItemCount(clientId) {
     const list = fieldOf(clientId, 'cart-list');
     return list ? list.children.length : 0;
+  }
+
+  // Finds the cart row for a rescanned-and-already-there asset and flashes
+  // it via the global flashHighlight() -- see that function (near
+  // showToast, above) for why it's inline-style-driven rather than a CSS
+  // class.
+  function flashCartItem(clientId, itemId) {
+    if (!itemId) return;
+    const li = fieldOf(clientId, 'cart-list')?.querySelector(`[data-item-id="${CSS.escape(String(itemId))}"]`);
+    flashHighlight(li);
   }
 
   function isMinimized(clientId) {
@@ -1816,7 +1875,7 @@ window.Checkout = (function () {
     // Checkout" without ever finishing one.
     countOk() {
       if (openInstanceCount() < MAX_CONCURRENT_CHECKOUTS) return true;
-      showToast(`You already have ${MAX_CONCURRENT_CHECKOUTS} checkouts open — finish or close one first.`, 'warning');
+      showToast(`You already have ${MAX_CONCURRENT_CHECKOUTS} checkouts open - finish or close one first.`, 'warning');
       return false;
     },
 
@@ -1848,6 +1907,7 @@ window.Checkout = (function () {
           }
           errorEl.textContent = data.error || "Couldn't start checkout for this member.";
           errorEl.classList.remove('hidden');
+          clearInputAfterError(input);
           return;
         }
 
@@ -1864,8 +1924,9 @@ window.Checkout = (function () {
         fieldOf(clientId, 'cancel-btn').textContent = 'Cancel';
         fieldOf(clientId, 'asset-code-input').focus();
       } catch (err) {
-        errorEl.textContent = 'Network error — check your connection and try again.';
+        errorEl.textContent = 'Network error - check your connection and try again.';
         errorEl.classList.remove('hidden');
+        clearInputAfterError(input);
       }
     },
 
@@ -1897,14 +1958,17 @@ window.Checkout = (function () {
     async addItem(btn) {
       const clientId = clientIdOf(btn);
       const input = fieldOf(clientId, 'asset-code-input');
+      const rfidInput = fieldOf(clientId, 'rfid-code-input');
       const assetCode = input.value.trim();
+      const rfidCode = rfidInput.value.trim();
       if (!assetCode) return;
 
-      const added = await this._addAssetByCode(clientId, assetCode);
-      if (added) {
-        input.value = '';
-        input.focus();
-      }
+      // Clear + refocus either way -- on success there's just nothing else
+      // to show; on failure _addAssetByCode has already set the error text
+      // (and flashed the matching cart row, if it was an already-in-cart hit).
+      await this._addAssetByCode(clientId, assetCode, rfidCode);
+      clearInputAfterError(input);
+      if (rfidCode) clearInputAfterError(rfidInput);
     },
 
     // Shared by the manual scan input above and the browse-available-assets
@@ -1912,7 +1976,8 @@ window.Checkout = (function () {
     // the actual API call + cart-list DOM update only lives once. Returns
     // true/false so each caller can decide what to do with its own control
     // (clear the input vs. re-enable a panel row) on success/failure.
-    async _addAssetByCode(clientId, assetCode) {
+    // rfidCode is optional -- see the template comment on the RFID input.
+    async _addAssetByCode(clientId, assetCode, rfidCode) {
       const s = state.get(clientId);
       const errorEl = fieldOf(clientId, 'item-error');
       errorEl.classList.add('hidden');
@@ -1922,7 +1987,7 @@ window.Checkout = (function () {
         const res = await fetch(`/api/v1/checkout-sessions/${s.sessionId}/items/add`, {
           method: 'POST',
           headers: csrfHeaders(),
-          body: JSON.stringify({ asset_code: assetCode }),
+          body: JSON.stringify({ asset_code: assetCode, rfid_code: rfidCode || null }),
         });
         const data = await res.json();
 
@@ -1930,6 +1995,7 @@ window.Checkout = (function () {
           if (res.status === 401) { showSessionTimeoutModal(); return false; }
           errorEl.textContent = data.error || "Couldn't add that asset.";
           errorEl.classList.remove('hidden');
+          if (data.code === 'already_in_cart') flashCartItem(clientId, data.item_id);
           return false;
         }
 
@@ -1961,7 +2027,7 @@ window.Checkout = (function () {
         this._updateCartCount(clientId);
         return true;
       } catch (err) {
-        errorEl.textContent = 'Network error — check your connection and try again.';
+        errorEl.textContent = 'Network error - check your connection and try again.';
         errorEl.classList.remove('hidden');
         return false;
       }
@@ -1987,7 +2053,7 @@ window.Checkout = (function () {
           if (row) row.disabled = false;
         }
       } catch (err) {
-        showToast("Couldn't remove that item — try again.", 'error');
+        showToast("Couldn't remove that item - try again.", 'error');
       }
     },
 
@@ -2067,7 +2133,7 @@ window.Checkout = (function () {
           listEl.appendChild(empty);
         }
       } catch (err) {
-        errorEl.textContent = 'Network error — check your connection and try again.';
+        errorEl.textContent = 'Network error - check your connection and try again.';
         errorEl.classList.remove('hidden');
       } finally {
         loadingEl.classList.add('hidden');
@@ -2164,7 +2230,7 @@ window.Checkout = (function () {
         document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
         this._resetForNextTrainee(clientId);
       } catch (err) {
-        errorEl.textContent = 'Network error — check your connection and try again.';
+        errorEl.textContent = 'Network error - check your connection and try again.';
         errorEl.classList.remove('hidden');
       }
     },
