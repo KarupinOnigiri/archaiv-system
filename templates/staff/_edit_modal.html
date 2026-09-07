@@ -1,7 +1,7 @@
 <div class="modal modal-open">
   <!-- Same shell as staff/_add_modal.html: max-w-4xl, p-0 with its own
        header/scrollable-body/sticky-footer sections instead of one plain
-       padded box -- same style and position, not just the same width. -->
+       padded box - same style and position, not just the same width. -->
   <div class="modal-box max-w-4xl p-0 flex flex-col max-h-[85vh]">
 
     <div class="p-6 pb-4 shrink-0">
@@ -14,7 +14,7 @@
                 onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
       </div>
 
-      <!-- Always in the DOM, just `hidden` when empty -- same pattern as
+      <!-- Always in the DOM, just `hidden` when empty - same pattern as
            Add Staff's error box (that one uses `invisible` to reserve
            height; this one toggles `hidden` like it always has, no
            functional difference worth risking on a copy-the-style pass). -->
@@ -63,13 +63,13 @@
           </div>
         </div>
         {% if staff_member.role == "admin" %}
-        {# Backend refuses to change an admin's role here (403) -- disabled up front
+        {# Backend refuses to change an admin's role here (403) - disabled up front
            instead of letting someone hit a surprise error on submit. Still readable
            via form.role.value since this submits through JS/fetch. #}
         <p class="text-xs text-base-content/40 -mt-2">Admin roles can't be changed here - use "Request Deactivation" from the staff table instead.</p>
         {% endif %}
 
-        <!-- Same quick-set presets as the Add Staff modal -- see its
+        <!-- Same quick-set presets as the Add Staff modal - see its
              comment for why "Permanent" writes a sentinel date rather
              than leaving assigned_end blank. -->
         <div class="flex flex-wrap gap-2 -mt-2">
@@ -85,14 +85,14 @@
         <div class="border-t border-base-300 pt-4 grid grid-cols-2 gap-4">
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID CARD</label>
-            <input type="text" name="rfid_id" value="{{ staff_member.rfid_id or '' }}" placeholder="Not assigned -- scan or enter a card ID"
+            <input type="text" name="rfid_id" value="{{ staff_member.rfid_id or '' }}" placeholder="Not assigned - scan or enter a card ID"
                    autocomplete="off"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
           <div>
             <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID PIN</label>
             <input type="text" name="rfid_pin" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6"
-                   placeholder="{{ 'PIN is set -- leave blank to keep it' if staff_member.rfid_pin_hash else 'No PIN set -- exactly 6 digits' }}"
+                   placeholder="{{ 'PIN is set - leave blank to keep it' if staff_member.rfid_pin_hash else 'No PIN set - exactly 6 digits' }}"
                    autocomplete="off"
                    class="input input-bordered w-full mt-1 bg-base-100">
           </div>
@@ -154,7 +154,7 @@ async function submitEditStaffForm(event, id) {
     assigned_start: form.assigned_start.value || null,
     assigned_end: form.assigned_end.value || null,
     rfid_id: form.rfid_id.value.trim(),
-    // Omitted entirely when empty -- missing rfid_pin means "don't touch the
+    // Omitted entirely when empty - missing rfid_pin means "don't touch the
     // existing PIN" (same as an explicit empty string), so simplest to just
     // not send the key at all.
     ...(form.rfid_pin.value.trim() ? { rfid_pin: form.rfid_pin.value.trim() } : {}),

@@ -1,0 +1,175 @@
+{# Rendered straight into #global-search-results (base.html) by the search
+   input's own hx-get - :empty on that container is what actually shows/hides
+   the dropdown (see base.html), so an under-length query must render truly
+   nothing (not even a comment/whitespace, which would still count as content
+   and defeat :empty) rather than an empty "no results" state.
+
+   Categories, in the order they render:
+   - Quick Actions: Checkout/Return/Add Member/Add Asset - same static list
+     and role/feature-flag gating as the Dashboard's own Quick Actions card
+     (search_service.py's _QUICK_ACTIONS). Plain hx-get into #modal-container
+     (or #checkout-modal-container for Checkout specifically), same
+     "beforeend"/"innerHTML" split home.html's own buttons use.
+   - Settings: system.html's own settings_card()s (search_service.py's
+     _SETTINGS) - same hx-get/hx-target pairs, same role gating as each
+     card's section there.
+   - Account: the account-menu's own modals/theme options (search_service.py's
+     _ACCOUNT_ACTIONS) - these <dialog>s already exist in the DOM on every
+     page, so it's a plain showModal()/setThemeMode() call, no hx-get at all.
+   - Pages: jump straight to a nav destination (search_service.py's _PAGES) -
+     plain <a href> navigation instead of an htmx swap, because the
+     sidebar-highlight/breadcrumb elsewhere in the header only update via
+     base.html's own hx-boost nav, which a search-triggered partial swap
+     can't replicate.
+   - Inventory/Members/Staff: a plain hx-get + hx-swap="beforeend" into
+     #modal-container, same convention every other "click a record for full
+     details" spot in this app already uses - clicking one opens that
+     entity's own existing details/profile modal, not a new one built for
+     search.
+
+   closeGlobalSearch() (base.html) just clears/hides the dropdown itself, run
+   alongside each result's own action. `ns.shown` tracks whether any earlier
+   category already rendered, so each category's own header only grows a
+   border-t/margin when it isn't the first thing in the list - simpler than
+   repeating a growing "{% if a or b or c %}" chain at every step. #}
+{%- if query | length >= 2 %}
+{% if not quick_actions and not settings and not account_actions and not pages and not assets and not members and not staff_results %}
+<div class="px-4 py-6 text-sm text-base-content/50 text-center">No matches for &quot;{{ query }}&quot;</div>
+{% else %}
+<div class="py-2">
+  {% set ns = namespace(shown=False) %}
+
+  {% if quick_actions %}
+  <p class="px-3 pt-1 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase">Quick Actions</p>
+  {% for qa in quick_actions %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       hx-get="{{ qa.hx_get }}" hx-target="{{ qa.hx_target }}" hx-swap="{{ qa.hx_swap }}"
+       {% if qa.checkout_guard %}hx-vals="js:{client_id: crypto.randomUUID()}" hx-trigger="click[Checkout.countOk()]" data-quick-action="checkout"{% endif %}
+       onclick="setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </span>
+    <p class="text-sm font-medium truncate">{{ qa.label }}</p>
+  </div>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if settings %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Settings</p>
+  {% for s in settings %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       hx-get="{{ s.hx_get }}" hx-target="{{ s.hx_target }}" hx-swap="{{ s.hx_swap }}"
+       onclick="setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-base-200 text-base-content/60 flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </span>
+    <p class="text-sm font-medium truncate">{{ s.label }}</p>
+  </div>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if account_actions %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Account</p>
+  {% for aa in account_actions %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       onclick="{{ aa.onclick_js }}; setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-base-200 text-base-content/60 flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </span>
+    <p class="text-sm font-medium truncate">{{ aa.label }}</p>
+  </div>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if pages %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Pages</p>
+  {% for p in pages %}
+  <a href="{{ p.href }}" class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors">
+    <span class="w-8 h-8 rounded-lg bg-base-200 text-base-content/60 flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    </span>
+    <p class="text-sm font-medium truncate">{{ p.label }}</p>
+  </a>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if assets %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Inventory</p>
+  {% for a in assets %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       hx-get="/api/v1/assets/{{ a.id }}/details-modal" hx-target="#modal-container" hx-swap="beforeend"
+       onclick="setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-medium truncate">{{ a.name }}</p>
+      <p class="text-xs text-base-content/40 truncate">{{ a.asset_id }}{% if a.barcode_id %} &middot; {{ a.barcode_id }}{% endif %}</p>
+    </div>
+    <span class="px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0
+      {% if a.status == 'available' %}bg-success/15 text-success
+      {% elif a.status == 'borrowed' %}bg-info/15 text-info
+      {% elif a.status == 'maintenance' %}bg-error/15 text-error
+      {% else %}bg-warning/15 text-warning{% endif %}">{{ a.status | capitalize }}</span>
+  </div>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if members %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Members</p>
+  {% for m in members %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       hx-get="/api/v1/members/{{ m.id }}/profile" hx-target="#modal-container" hx-swap="beforeend"
+       onclick="setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-medium truncate">{{ m.full_name }}</p>
+      <p class="text-xs text-base-content/40 truncate">{{ m.member_code }}{% if m.barcode_id %} &middot; {{ m.barcode_id }}{% endif %}</p>
+    </div>
+    {% if m.is_restricted %}
+    <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-error/15 text-error shrink-0">Restricted</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% set ns.shown = True %}
+  {% endif %}
+
+  {% if staff_results %}
+  <p class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wide text-base-content/40 uppercase {% if ns.shown %}border-t border-base-200 mt-1{% endif %}">Staff</p>
+  {% for s in staff_results %}
+  <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
+       role="button" tabindex="0"
+       hx-get="/api/v1/staff/{{ s.id }}/profile" hx-target="#modal-container" hx-swap="beforeend"
+       onclick="setTimeout(closeGlobalSearch, 0)"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+    <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-medium truncate">{{ s.full_name }}</p>
+      <p class="text-xs text-base-content/40 truncate">@{{ s.username }} &middot; {{ s.role | capitalize }}</p>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</div>
+{% endif %}
+{% endif %}

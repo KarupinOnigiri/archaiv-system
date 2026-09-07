@@ -1,15 +1,17 @@
 from database import get_db_connection
 from utils.logger import log_action
 from utils.formatters import full_name
-from utils.constants import SESSION_STALE_MINUTES
+from services.settings_service import get_checkout_session_stale_minutes
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 def cleanup_stale_checkout_sessions():
-    """Releases reserved assets and cancels checkout sessions abandoned past the stale timeout."""
+    """Releases reserved assets and cancels checkout sessions abandoned past the stale timeout
+    (admin-configurable, System > Checkout Session Timeout - see settings_service.py)."""
     conn = get_db_connection()
+    stale_minutes = get_checkout_session_stale_minutes(conn)
 
     stale_sessions = conn.execute(
         """
@@ -20,7 +22,7 @@ def cleanup_stale_checkout_sessions():
         WHERE checkout_sessions.status = 'open'
         AND checkout_sessions.created_at < datetime('now', 'localtime', ?)
         """,
-        (f"-{SESSION_STALE_MINUTES} minutes",),
+        (f"-{stale_minutes} minutes",),
     ).fetchall()
 
     for session in stale_sessions:
@@ -57,7 +59,7 @@ def cleanup_stale_checkout_sessions():
             target_table="checkout_sessions",
             target_id=session_id,
             target_name=session_member_name,
-            details=f"System auto-cancelled abandoned checkout session {session_id} for {session_member_name} after {SESSION_STALE_MINUTES} minutes of inactivity",
+            details=f"System auto-cancelled abandoned checkout session {session_id} for {session_member_name} after {stale_minutes} minutes of inactivity",
         )
 
     conn.close()

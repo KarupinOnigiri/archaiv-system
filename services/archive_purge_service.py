@@ -1,9 +1,9 @@
-"""Auto hard-deletes archived assets/members/staff past archive_purge_days -- NOT reversible.
+"""Auto hard-deletes archived assets/members/staff past archive_purge_days - NOT reversible.
 Runs hourly; each row purges independently, so history-blocked rows just stay archived."""
 
 import logging
 
-# Re-exported from database.py, not stdlib -- see routes/assets.py's import for why.
+# Re-exported from database.py, not stdlib - see routes/assets.py's import for why.
 from database import get_db_connection, sqlite3
 from services.settings_service import get_archive_purge_days
 from utils.formatters import full_name
@@ -19,7 +19,7 @@ def _purge_one_asset(conn, asset_id):
         "SELECT image_path FROM asset_images WHERE asset_id = ?", (asset_id,)
     ).fetchall()
     conn.execute("DELETE FROM asset_images WHERE asset_id = ?", (asset_id,))
-    # Only touches non-open sessions -- an active checkout blocks the purge instead.
+    # Only touches non-open sessions - an active checkout blocks the purge instead.
     conn.execute(
         """
         DELETE FROM checkout_session_items
@@ -33,7 +33,7 @@ def _purge_one_asset(conn, asset_id):
     try:
         conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
     except sqlite3.IntegrityError:
-        # Blocked by history/open session -- roll back, stays archived.
+        # Blocked by history/open session - roll back, stays archived.
         conn.rollback()
         return False
 
@@ -114,7 +114,7 @@ def purge_expired_archived_assets(conn=None):
             target_table="assets",
             target_id=row["id"],
             target_name=row["name"],
-            details=f"Archived asset {row['asset_id']} is past the {purge_days}-day retention window but has transaction history -- left archived instead of purged",
+            details=f"Archived asset {row['asset_id']} is past the {purge_days}-day retention window but has transaction history - left archived instead of purged",
         )
     if purged:
         logger.info(f"Auto-purged {len(purged)} archived asset(s) past the {purge_days}-day retention window.")
@@ -169,7 +169,7 @@ def purge_expired_inactive_staff(conn=None):
             target_table="staff",
             target_id=row["id"],
             target_name=row["username"],
-            details=f"Deactivated staff account {row['username']} is past the {purge_days}-day retention window but has activity history -- left deactivated instead of purged",
+            details=f"Deactivated staff account {row['username']} is past the {purge_days}-day retention window but has activity history - left deactivated instead of purged",
         )
     if purged:
         logger.info(f"Auto-purged {len(purged)} deactivated staff account(s) past the {purge_days}-day retention window.")
@@ -226,7 +226,7 @@ def purge_expired_inactive_members(conn=None):
             target_table="members",
             target_id=row["id"],
             target_name=name,
-            details=f"Deactivated member {name} is past the {purge_days}-day retention window but has transaction history -- left deactivated instead of purged",
+            details=f"Deactivated member {name} is past the {purge_days}-day retention window but has transaction history - left deactivated instead of purged",
         )
     if purged:
         logger.info(f"Auto-purged {len(purged)} deactivated member(s) past the {purge_days}-day retention window.")

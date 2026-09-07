@@ -1,5 +1,5 @@
 <!-- table-fixed + explicit colgroup so columns don't shift width between
-     requests as row content changes length -- reads as the table "jumping"
+     requests as row content changes length - reads as the table "jumping"
      otherwise. -->
 <table class="table table-sm w-full table-fixed" data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
@@ -23,10 +23,11 @@
     {# openAuditLogDetail (audit_log.html) reads its data off this row's
        own dataset, so the modal needs no second request. Separate data-*
        attributes (not one JSON blob) so Jinja's autoescaping covers each
-       value -- details/action can contain arbitrary staff-entered text. #}
+       value - details/action can contain arbitrary staff-entered text. #}
+    {% set staff_display_name = full_name(log.staff_first_name, log.staff_last_name, log.staff_middle_name, log.staff_suffix) or log.staff_username or 'System' %}
     <tr class="border-t border-base-200 hover:bg-base-200/40 cursor-pointer transition-colors"
         data-when="{{ log.created_at | format_date }}"
-        data-staff="{{ log.staff_username or 'System' }}"
+        data-staff="{{ staff_display_name }}"
         data-action="{{ log.action.replace('_', ' ') }}"
         data-target="{% if log.target_name %}{{ log.target_table | humanize }}: {{ log.target_name }}{% elif log.target_table %}{{ log.target_table }}{% if log.target_id %} #{{ log.target_id }}{% endif %}{% else %}-{% endif %}"
         data-details="{{ log.details or '-' }}"
@@ -34,8 +35,10 @@
       <td class="py-2 text-sm whitespace-nowrap truncate">{{ log.created_at | format_date }}</td>
       <!-- staff_id is NULL for actions no human triggered (overdue sweeps,
            stale session cleanup, etc). "System" makes that explicit instead
-           of reading as a missing/broken value. -->
-      <td class="py-2 text-sm truncate">{{ log.staff_username or "System" }}</td>
+           of reading as a missing/broken value. Full name (via the linked
+           members row), not username - easier to recognize at a glance,
+           matches how staff are identified everywhere else in the app. -->
+      <td class="py-2 text-sm truncate">{{ staff_display_name }}</td>
       <td class="py-2 text-sm truncate">
         <span class="px-2 py-0.5 rounded-full bg-base-200 text-xs">{{ log.action.replace('_', ' ') }}</span>
       </td>
@@ -58,7 +61,7 @@
   </tbody>
 </table>
 
-<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+<!-- Pagination footer - same numbered-with-ellipsis pattern as assets/
      members/staff/transactions/notifications. -->
 <div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
 
@@ -74,7 +77,7 @@
             name="limit"
             hx-vals='js:{"limit": event.target.value, "offset": 0}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
-      <option value="25" {% if limit == 25 %}selected{% endif %}>25</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
       <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
       <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
     </select>

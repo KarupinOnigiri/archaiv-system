@@ -22,7 +22,7 @@ def sanitize_export_filename(raw, fallback):
 
 
 def default_export_dir():
-    """<app root>/export -- this is a self-hosted internal tool, not a
+    """<app root>/export - this is a self-hosted internal tool, not a
     shared public host, so exposing/using the app's own folder as the
     default save location is the intended behavior (matches
     routes/assets.py)."""
@@ -31,7 +31,7 @@ def default_export_dir():
 
 def resolve_within_root(raw_path, default_dir):
     """Resolves raw_path to an absolute path guaranteed to stay inside
-    the app root -- a relative path is resolved against the app root; an
+    the app root - a relative path is resolved against the app root; an
     absolute path is only honored if it's already inside the app root.
     Anything that would escape it falls back to default_dir instead.
     Returns (resolved_dir, was_clamped)."""
@@ -47,7 +47,7 @@ def resolve_within_root(raw_path, default_dir):
     try:
         inside_root = os.path.commonpath([resolved, app_root]) == app_root
     except ValueError:
-        # e.g. different drives on Windows -- definitely not inside app_root
+        # e.g. different drives on Windows - definitely not inside app_root
         inside_root = False
 
     if not inside_root:

@@ -140,6 +140,15 @@
   --color-error-content: #380a09;
 }
 
+/* Plain OS-native font stack app-wide, instead of Tailwind's default
+   font-sans (which leads with "ui-sans-serif" and pulls in emoji-font
+   fallbacks) - every theme/mode shares this, so it's set once on body
+   rather than per-theme. The sidebar wordmark ("Archaív") is the one
+   deliberate exception, styled inline with the vendored Archivo font. */
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 /* Hide native browser password icons so only our custom eye toggle shows */
 input[type='password']::-ms-reveal,
 input[type='password']::-ms-clear {

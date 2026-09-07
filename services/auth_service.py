@@ -95,11 +95,29 @@ def login_required(f):
         staff, error = require_session(conn)
         conn.close()
         if error:
-            return error
+            return _auth_failure_response(error)
         g.staff = staff
         return f(*args, **kwargs)
 
     return wrapper
+
+
+def _auth_failure_response(error):
+    """Every full-page route (routes/pages.py) shares this same auth check
+    with every JSON API endpoint (everything else, all mounted under
+    /api/v1) - login_required/roles_required don't know which kind of
+    route they're guarding. A JS fetch()/htmx call needs the raw JSON
+    error back so it can show the session-timeout modal (static/js/ui.js);
+    a full page load hitting the exact same check (session cookie expired,
+    then the browser was pointed straight at /transactions, /assets, etc.)
+    should never render that JSON as a page - send it to /login instead,
+    with `next` so it lands back where it was headed after signing in
+    again. Keyed on the request path rather than headers: every non-page
+    blueprint is registered under /api/v1 (app.py), so this is exact,
+    not a best-effort Accept-header sniff."""
+    if not request.path.startswith("/api/"):
+        return redirect(f"/login?next={quote(request.full_path.rstrip('?'), safe='/?=&')}")
+    return error
 
 
 def feature_required(name, redirect_to_dashboard=True):

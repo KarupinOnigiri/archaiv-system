@@ -2,12 +2,14 @@
   <!-- Copied straight from assets/_add_modal.html (same max-w-5xl, same
        spacing/classes throughout) and adapted for editing: fields
        pre-filled instead of blank, Barcode ID pre-filled with the current
-       value instead of "Auto-generated" (still editable -- e.g. to attach
+       value instead of "Auto-generated" (still editable - e.g. to attach
        a manufacturer tag scanned after the asset was created), Serial Code
-       (not accepted by edit_asset_submit)
-       swapped for Condition/Status alongside Acquired Date/Last
+       is now also editable the same way (used to be locked after creation -
+       a data-entry typo was uncorrectable without deleting and recreating
+       the asset - see the project conversation history for why that got
+       reversed) joined by Condition/Status alongside Acquired Date/Last
        Calibrated, and the image column keeps its existing photo (if any)
-       instead of starting empty. That's one more field than Add's grid,
+       instead of starting empty. That's two more fields than Add's grid,
        so max-h-[95vh] (Add uses 85vh) gives it the extra headroom it
        needs to still lay out without an inner scrollbar. -->
   <div class="modal-box max-w-5xl flex flex-col max-h-[95vh]">
@@ -23,7 +25,7 @@
 
     <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
 
-    <!-- Always rendered, just invisible when empty -- reserves the alert box's space so content doesn't jump. -->
+    <!-- Always rendered, just invisible when empty - reserves the alert box's space so content doesn't jump. -->
     <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
     <form id="edit-asset-form" hx-post="/api/v1/assets/{{ asset.id }}/edit" hx-target="closest .modal" hx-swap="outerHTML"
@@ -35,19 +37,43 @@
         <!-- Left: form fields (3 cols wide) -->
         <div class="col-span-3 bg-base-200/50 rounded-xl p-5 space-y-4">
 
-          <div>
-            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME <span class="text-error">*</span></label>
-            <input type="text" name="name" required value="{{ asset.name }}"
-                   class="input input-bordered w-full mt-1 bg-base-100">
+          <div class="grid grid-cols-4 gap-4">
+            <div class="col-span-3">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME <span class="text-error">*</span></label>
+              <input type="text" name="name" required value="{{ asset.name }}"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">TYPE</label>
+              <select name="asset_type" class="select select-bordered w-full mt-1 bg-base-100" onchange="toggleEditAssetConsumableFields(this.value)"
+                      {% if asset.status in ['borrowed', 'reserved'] %}disabled{% endif %}>
+                <option value="serialized" {% if asset.asset_type == 'serialized' %}selected{% endif %}>Serialized</option>
+                <option value="consumable" {% if asset.asset_type == 'consumable' %}selected{% endif %}>Consumable</option>
+              </select>
+            </div>
           </div>
 
-          <!-- 4-across grid, same as Add -- Serial Code isn't here (not
-               accepted by edit_asset_submit, routes/assets.py -- it's
-               set once at creation and not editable after), but
-               Acquired Date and Last Calibrated are both still here,
-               just joined by Condition/Status. 7 fields instead of Add's
-               6 still wraps to the same two rows (4 + 3), so this isn't
-               any taller than Add despite having one more field. -->
+          <div id="edit-asset-consumable-fields" class="grid grid-cols-4 gap-4 {% if asset.asset_type != 'consumable' %}hidden{% endif %}">
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">QUANTITY <span class="text-error">*</span></label>
+              <input type="number" id="edit-asset-quantity-input" name="quantity" min="0" step="1"
+                     value="{{ asset.quantity if asset.quantity is not none else '' }}"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">REORDER THRESHOLD</label>
+              <input type="number" name="reorder_threshold" min="0" step="1" placeholder="Optional"
+                     value="{{ asset.reorder_threshold if asset.reorder_threshold is not none else '' }}"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+          </div>
+
+          <!-- 4-across grid, same as Add - Serial Code is now a real,
+               editable field here too (see this file's header comment),
+               joined by Condition/Status alongside Acquired Date/Last
+               Calibrated. 8 fields instead of Add's 6 wraps to two full
+               rows (4 + 4), a touch taller than Add but still fits
+               comfortably at this modal's max-h-[95vh]. -->
           <div class="grid grid-cols-4 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
@@ -55,10 +81,8 @@
                      autocomplete="off"
                      class="input input-bordered w-full mt-1 bg-base-100">
             </div>
-            <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>
-              <input type="text" name="rfid_id" value="{{ asset.rfid_id or '' }}" placeholder="e.g. RF-001293"
-                     class="input input-bordered w-full mt-1 bg-base-100">
+            <div id="edit-asset-rfid-field-wrap" {% if asset.asset_type == 'consumable' %}class="hidden"{% endif %}>
+              {% with rfid_value = asset.rfid_id %}{% include "assets/_rfid_tag_field.html" %}{% endwith %}
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">CATEGORY</label>
@@ -87,7 +111,7 @@
               </select>
               {% else %}
               <div class="input input-bordered w-full mt-1 bg-base-200 text-base-content/50 flex items-center text-sm">
-                {{ asset.status | capitalize }} &mdash; locked
+                {{ asset.status | capitalize }} - locked
               </div>
               {% endif %}
             </div>
@@ -96,10 +120,33 @@
               <input type="date" name="acquired_date" value="{{ asset.acquired_date or '' }}"
                      class="input input-bordered w-full mt-1 bg-base-100">
             </div>
+            {% if g.staff.role in ["admin", "in_charge"] %}
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">PURCHASE COST</label>
+              <input type="number" name="purchase_cost" step="0.01" min="0" value="{{ asset.purchase_cost if asset.purchase_cost is not none else '' }}" placeholder="Optional"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Serialized-only: consumables have no per-unit identity, so
+               calibration/maintenance scheduling doesn't apply (asset_type docs). -->
+          <div id="edit-asset-maintenance-fields" class="grid grid-cols-4 gap-4 {% if asset.asset_type == 'consumable' %}hidden{% endif %}">
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">SERIAL CODE</label>
+              <input type="text" name="serial_code" value="{{ asset.serial_code or '' }}" placeholder="e.g. SN-DR14-992"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">LAST CALIBRATED</label>
               <input type="date" name="last_calibrated" value="{{ asset.last_calibrated or '' }}"
                      class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">NEXT MAINTENANCE DUE</label>
+              <input type="date" name="next_maintenance_due" value="{{ asset.next_maintenance_due or '' }}"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+              <p class="text-[11px] text-base-content/50 mt-1">Blank = auto-set from Last Calibrated (or today) + the default interval in System settings.</p>
             </div>
           </div>
 
@@ -221,8 +268,16 @@
 </div>
 
 <script>
+function toggleEditAssetConsumableFields(assetType) {
+  const isConsumable = assetType === 'consumable';
+  document.getElementById('edit-asset-consumable-fields').classList.toggle('hidden', !isConsumable);
+  document.getElementById('edit-asset-quantity-input')?.toggleAttribute('required', isConsumable);
+  document.getElementById('edit-asset-rfid-field-wrap')?.classList.toggle('hidden', isConsumable);
+  document.getElementById('edit-asset-maintenance-fields')?.classList.toggle('hidden', isConsumable);
+}
+
 // Enter submits the form (same as clicking "Save Changes"), from any field
-// except the notes textarea -- Enter there should insert a newline like any
+// except the notes textarea - Enter there should insert a newline like any
 // other multi-line field, not save.
 (function () {
   const form = document.getElementById('edit-asset-form');

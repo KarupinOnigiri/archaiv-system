@@ -1,0 +1,105 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-md">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Alarm Settings</h3>
+        <p class="text-sm text-base-content/50 mt-1">Turning this off mutes the exit-monitoring alarm itself - unauthorized/unknown-tag detections are still recorded in Monitoring either way, they just won't raise the banner or active-alarm state.</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+
+    <div class="bg-base-200/50 rounded-xl p-5">
+      <label class="flex items-center justify-between gap-3">
+        <span class="text-sm font-medium">Exit-monitoring alarm</span>
+        <!-- Same --input-color-driven toggle every other on/off setting in
+             this app uses (Feature Access, Settings & Privacy) - see those
+             templates' own comment for why toggle-primary alone doesn't work. -->
+        <input type="checkbox" id="alarm-enabled-toggle" class="toggle toggle-sm"
+               style="{% if enabled %}--input-color: var(--color-primary);{% endif %}"
+               onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-primary)' : '')"
+               {% if enabled %}checked{% endif %}>
+      </label>
+    </div>
+
+    <div class="modal-action flex justify-end items-center gap-2 mt-6">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+      <button type="button" id="alarm-settings-save-btn" class="btn btn-primary" onclick="openAlarmSettingsPasswordConfirm()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Shown only after Save Changes, so an admin picks the toggle first and
+     only then proves it's them - same split as staff/_feature_flags_modal.html's
+     Save Changes -> password dialog. Submits straight to
+     /api/v1/alarm-settings/update's JSON body ({enabled, current_password}). -->
+<dialog id="alarm-settings-confirm-dialog" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="font-bold text-lg mb-1">Confirm your password</h3>
+    <p class="text-xs text-base-content/50 mb-3">Re-enter your password to apply this change to the exit-monitoring alarm.</p>
+
+    <div id="alarm-settings-confirm-error" class="hidden alert alert-error text-sm mb-3 py-2"></div>
+
+    <!-- Wrapped in its own form so Enter submits it, matching every other
+         password prompt in the app instead of requiring a click on Confirm. -->
+    <form onsubmit="submitAlarmSettingsUpdate(event); return false;">
+      <input type="password" id="alarm-settings-confirm-password" placeholder="Current password"
+             autocomplete="current-password" class="input input-bordered input-sm w-full">
+
+      <div class="modal-action">
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('alarm-settings-confirm-dialog').close()">Cancel</button>
+        <button type="submit" id="alarm-settings-confirm-submit-btn" class="btn btn-primary btn-sm">Confirm</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script>
+function openAlarmSettingsPasswordConfirm() {
+  document.getElementById('alarm-settings-confirm-password').value = '';
+  document.getElementById('alarm-settings-confirm-error').classList.add('hidden');
+  document.getElementById('alarm-settings-confirm-dialog').showModal();
+}
+
+async function submitAlarmSettingsUpdate(event) {
+  if (event) event.preventDefault();
+  const errorEl = document.getElementById('alarm-settings-confirm-error');
+  errorEl.classList.add('hidden');
+
+  const password = document.getElementById('alarm-settings-confirm-password').value;
+  if (!password) {
+    errorEl.textContent = 'Enter your current password to confirm this change';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.getElementById('alarm-settings-confirm-submit-btn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/alarm-settings/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ enabled: document.getElementById('alarm-enabled-toggle').checked, current_password: password }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = result.error || "Settings couldn't be saved";
+      errorEl.classList.remove('hidden');
+      btn.disabled = false;
+      return;
+    }
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Alarm settings updated', type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    errorEl.textContent = "Settings couldn't be saved";
+    errorEl.classList.remove('hidden');
+    btn.disabled = false;
+  }
+}
+</script>

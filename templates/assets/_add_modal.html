@@ -14,7 +14,7 @@
 
     <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
 
-    <!-- Always rendered, just invisible when empty -- reserves the alert box's space so content doesn't jump. -->
+    <!-- Always rendered, just invisible when empty - reserves the alert box's space so content doesn't jump. -->
     <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
     <form id="add-asset-form" hx-post="/api/v1/assets/add" hx-target="#modal-container" hx-swap="innerHTML"
@@ -25,14 +25,37 @@
         <!-- Left: form fields (2 cols wide) -->
         <div class="col-span-3 bg-base-200/50 rounded-xl p-5 space-y-4">
 
-          <div>
-            <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME <span class="text-error">*</span></label>
-            <input type="text" name="name" required placeholder="e.g. Cordless Drill"
-                   class="input input-bordered w-full mt-1 bg-base-100">
+          <div class="grid grid-cols-4 gap-4">
+            <div class="col-span-3">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET NAME <span class="text-error">*</span></label>
+              <input type="text" name="name" required placeholder="e.g. Cordless Drill"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">TYPE</label>
+              <select name="asset_type" id="add-asset-type-select" class="select select-bordered w-full mt-1 bg-base-100" onchange="toggleAddAssetConsumableFields(this.value)">
+                <option value="serialized" selected>Serialized</option>
+                <option value="consumable">Consumable</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Consumable-only: quantity-tracked stock, no per-unit barcode/RFID identity needed. -->
+          <div id="add-asset-consumable-fields" class="hidden grid grid-cols-4 gap-4">
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">QUANTITY <span class="text-error">*</span></label>
+              <input type="number" id="add-asset-quantity-input" name="quantity" min="0" step="1" placeholder="e.g. 50"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">REORDER THRESHOLD</label>
+              <input type="number" name="reorder_threshold" min="0" step="1" placeholder="Optional"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
           </div>
 
           <!-- 4-across grid instead of three 2-col rows fits the six fields in two rows, keeping this scroll-free. -->
-          <div class="grid grid-cols-4 gap-4">
+          <div id="add-asset-serialized-fields" class="grid grid-cols-4 gap-4">
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</label>
               <input type="text" name="barcode_id" placeholder="Scan existing, or leave blank"
@@ -40,10 +63,8 @@
                      class="input input-bordered w-full mt-1 bg-base-100">
               <p class="text-[11px] text-base-content/50 mt-1">Blank = auto-generated to match the asset ID.</p>
             </div>
-            <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>
-              <input type="text" name="rfid_id" placeholder="e.g. RF-001293"
-                     class="input input-bordered w-full mt-1 bg-base-100">
+            <div id="add-asset-rfid-field-wrap">
+              {% include "assets/_rfid_tag_field.html" %}
             </div>
             <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">CATEGORY</label>
@@ -63,17 +84,36 @@
               </div>
             </div>
             <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">ACQUIRED DATE</label>
+              <input type="date" name="acquired_date" class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            {% if g.staff.role in ["admin", "in_charge"] %}
+            <div>
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">PURCHASE COST</label>
+              <input type="number" name="purchase_cost" step="0.01" min="0" placeholder="Optional"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Serialized-only: consumables have no per-unit identity, so
+               calibration/maintenance scheduling doesn't apply to them
+               (asset_service.py's asset_type docs). -->
+          <div id="add-asset-maintenance-fields" class="grid grid-cols-4 gap-4">
+            <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">SERIAL CODE</label>
               <input type="text" name="serial_code" placeholder="e.g. SN-DR14-992"
                      class="input input-bordered w-full mt-1 bg-base-100">
             </div>
             <div>
-              <label class="text-xs font-semibold text-base-content/50 tracking-wide">ACQUIRED DATE</label>
-              <input type="date" name="acquired_date" class="input input-bordered w-full mt-1 bg-base-100">
-            </div>
-            <div>
               <label class="text-xs font-semibold text-base-content/50 tracking-wide">LAST CALIBRATED</label>
               <input type="date" name="last_calibrated" class="input input-bordered w-full mt-1 bg-base-100">
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs font-semibold text-base-content/50 tracking-wide">NEXT MAINTENANCE DUE</label>
+              <input type="date" name="next_maintenance_due" placeholder="Defaults from last calibrated + the System default interval"
+                     class="input input-bordered w-full mt-1 bg-base-100">
+              <p class="text-[11px] text-base-content/50 mt-1">Blank = auto-set from Last Calibrated (or today) + the default interval in System settings.</p>
             </div>
           </div>
 
@@ -176,6 +216,18 @@
 </div>
 
 <script>
+function toggleAddAssetConsumableFields(assetType) {
+  const isConsumable = assetType === 'consumable';
+  document.getElementById('add-asset-consumable-fields').classList.toggle('hidden', !isConsumable);
+  document.getElementById('add-asset-quantity-input')?.toggleAttribute('required', isConsumable);
+  // RFID tag + serial/calibration/maintenance scheduling don't apply to a
+  // consumable - no per-unit identity to tag or service (asset_type docs).
+  // Barcode/category/acquired-date/cost stay visible either way - a
+  // consumable can still carry a shared barcode for the whole stock bin.
+  document.getElementById('add-asset-rfid-field-wrap')?.classList.toggle('hidden', isConsumable);
+  document.getElementById('add-asset-maintenance-fields')?.classList.toggle('hidden', isConsumable);
+}
+
 function handleCategoryChange(select) {
   const row = document.getElementById('new-category-row');
   if (select.value === '__new__') {

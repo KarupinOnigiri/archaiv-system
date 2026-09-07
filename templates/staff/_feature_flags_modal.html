@@ -10,11 +10,11 @@
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
-    <!-- Always rendered, invisible when empty -- reserves layout space so content
+    <!-- Always rendered, invisible when empty - reserves layout space so content
          below doesn't jump when an error appears. -->
     <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
-    <!-- No password field here on purpose -- picking toggles and confirming your
+    <!-- No password field here on purpose - picking toggles and confirming your
          password are two separate steps (see openFeatureFlagsPasswordConfirm
          below); onsubmit holds the actual POST until step two passes. -->
     <form id="feature-flags-form" onsubmit="return openFeatureFlagsPasswordConfirm(event)" class="space-y-3">
@@ -25,10 +25,25 @@
           ("transactions", "Borrow & Return"),
           ("requests", "Approvals"),
           ("reports", "Reports"),
+          ("monitoring", "Monitoring"),
+          ("reservations", "Reservations"),
       ] %}
+      <!-- toggle-primary only colors daisyUI's toggle while :checked, which
+           in practice read as "always gray" since --input-color reverts to
+           its own muted default the instant it's unchecked. Driving
+           --input-color (the CSS variable the toggle's own color actually
+           reads, checked or not - see static/css/output.css's .toggle rule)
+           directly instead keeps it the app's own primary blue while on.
+           Off is left alone (no inline override) rather than forced to any
+           other color - off isn't a failure/danger state, so it just falls
+           back to the toggle's own default muted gray, same as every other
+           toggle in the app (Settings & Privacy's notification toggles,
+           further up this file, use the same on-blue/off-default pattern). -->
       <label class="flex items-center justify-between gap-3 py-1">
         <span class="text-sm">{{ label }}</span>
-        <input type="checkbox" name="flag_{{ name }}" class="toggle toggle-primary toggle-sm"
+        <input type="checkbox" name="flag_{{ name }}" class="toggle toggle-sm"
+               style="{% if feature_flags[name] %}--input-color: var(--color-primary);{% endif %}"
+               onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-primary)' : '')"
                {% if feature_flags[name] %}checked{% endif %}>
       </label>
       {% endfor %}

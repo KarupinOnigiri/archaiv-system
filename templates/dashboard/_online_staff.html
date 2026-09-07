@@ -1,10 +1,10 @@
 <!-- Rendered by both the initial dashboard load (home.html includes this)
      and the htmx poll that keeps it live (hx-trigger="load, every 30s"
-     on the wrapping #dash-online-staff container in home.html) -- same
+     on the wrapping #dash-online-staff container in home.html) - same
      "shared partial, two entry points" pattern as
      dashboard/_top_borrowed_list.html. viewer_role decides both the
      empty-state wording and whether a role badge is worth showing at
-     all -- admin's list can mix admin/in_charge/tool_keeper, and
+     all - admin's list can mix admin/in_charge/tool_keeper, and
      in_charge's list can now mix in_charge/tool_keeper too (see
      routes/staff.py's view_online_staff), so both need the badge to tell
      rows apart; this route is @roles_required("admin", "in_charge") only,
@@ -17,7 +17,7 @@
     {% else %}
     <span class="text-[10px] font-semibold text-primary">{{ row.first_name[0] | upper }}</span>
     {% endif %}
-    <!-- Green "online" dot -- same visual shorthand as chat apps, so this
+    <!-- Green "online" dot - same visual shorthand as chat apps, so this
          reads at a glance without needing to parse the timestamp text. -->
     <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-success border border-base-100"></span>
   </div>

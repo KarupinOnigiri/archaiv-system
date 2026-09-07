@@ -4,23 +4,23 @@
   <meta charset="UTF-8">
   <script>
     try {
-      // Four modes now -- Mixed (dark sidebar/main-shell, light content
-      // card -- this is what "tesda" alone always looked like) is still
+      // Four modes now - Mixed (dark sidebar/main-shell, light content
+      // card - this is what "tesda" alone always looked like) is still
       // the app-wide default, unchanged. Light is the same "tesda" color
       // tokens, but the sidebar stays light too instead of being forced
-      // dark -- toggled by data-sidebar, independent of data-theme, since
+      // dark - toggled by data-sidebar, independent of data-theme, since
       // Mixed and Light share the exact same palette and only differ in
       // whether that one override applies (see the data-sidebar CSS rules
       // further down). Dark is the native dark theme, unchanged. Modern
       // Dark is a distinct 4th theme (data-theme="tesda-modern", see
       // static/css/input.css) with its own deeper, tonal-elevation
-      // surfaces and real shadows -- not a re-skin of Dark. Read this
+      // surfaces and real shadows - not a re-skin of Dark. Read this
       // early, before <body>, so there's no flash of the wrong look on
       // load.
       var staffKey = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
       var savedMode = localStorage.getItem('app-theme:' + staffKey);
       // Back-compat: earlier versions stored the raw data-theme value here
-      // ('tesda' / 'tesda-dark') instead of a mode key -- 'tesda' meant
+      // ('tesda' / 'tesda-dark') instead of a mode key - 'tesda' meant
       // today's Mixed (that's all "tesda" ever looked like before Light
       // became its own true-light-sidebar mode), so map it forward rather
       // than losing an existing saved preference.
@@ -49,7 +49,7 @@
   </script>
   <meta name="csrf-token" content="{{ csrf_token }}">
   {# Same route->label mapping the sidebar uses for its header/active-item
-     label (see the nav_items/ns block further down in <body>) -- kept as
+     label (see the nav_items/ns block further down in <body>) - kept as
      its own small map here rather than hoisting that block up, since this
      only needs the label, not the icon/href nav_items also carries, and
      <title> has to render before that block does. Keep the two in sync if
@@ -71,9 +71,42 @@
     '/setup': 'Setup',
   } %}
   <title>{% if page_titles.get(request.path) %}Archaív - {{ page_titles[request.path] }}{% else %}Archaív{% endif %}</title>
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo-icon-hex.png') }}">
+  <link rel="icon" type="image/png" id="favicon-link" href="{{ url_for('static', filename='images/logo-icon-light.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+  <script>
+    // Same light/dark logo asset pairing as the sidebar wordmark
+    // (.logo-theme-light/.logo-theme-dark further down this file) -
+    // tesda-dark/tesda-modern get the dark-logo asset, everything else
+    // (tesda, i.e. Mixed or Light mode) gets the light-logo asset. Runs
+    // right after the theme-detection script above (which has already set
+    // data-theme on <html> by this point, synchronously) so the tab icon
+    // is correct on first paint, not just after a later JS pass - and is
+    // re-applied live by setFaviconForTheme() in ui.js whenever the Theme
+    // mode dropdown changes it without a reload.
+    (function () {
+      var theme = document.documentElement.getAttribute('data-theme');
+      var isDark = theme === 'tesda-dark' || theme === 'tesda-modern';
+      // "Mixed" (data-theme="tesda") is this app's untouched default, not
+      // itself a dark or light choice the way Dark/Modern Dark/Light are -
+      // so ONLY here, and only when the staff member has never explicitly
+      // picked a Theme mode at all (no localStorage key yet, same variable
+      // the theme-detection script above already read), the tab icon
+      // follows the browser/OS's own light-or-dark preference instead of
+      // always defaulting to the light asset. An explicit choice (Light
+      // included, since picking it is still a deliberate override of the
+      // default) always wins over the OS from here on.
+      if (theme === 'tesda' && typeof savedMode !== 'undefined' && !savedMode) {
+        try {
+          isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch (e) {}
+      }
+      var link = document.getElementById('favicon-link');
+      var lightHref = "{{ url_for('static', filename='images/logo-icon-light.png') }}";
+      var darkHref = "{{ url_for('static', filename='images/logo-icon-dark.png') }}";
+      if (link) link.href = isDark ? darkHref : lightHref;
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ asset_url('css/output.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700&display=swap" rel="stylesheet">
@@ -83,7 +116,7 @@
     width: 4.25rem;
   }
   /* While collapsed, clicking anywhere on the rail expands it (see the
-     sidebar click handler below) -- an ew-resize cursor reads as "this
+     sidebar click handler below) - an ew-resize cursor reads as "this
      affects the sidebar's width" (the same affordance VS Code/Gemini-
      style collapsible rails use), which is a clearer hint than a plain
      pointer for something that isn't a normal link/button. Nav links and
@@ -107,7 +140,7 @@
   }
   /* Collapsed-rail count badges (Notifications/Approvals/Feedback): the
      full pill badge next to each label is itself a .sidebar-label, so it
-     disappears along with the label text under the rule above -- leaving
+     disappears along with the label text under the rule above - leaving
      a bare icon with zero indication anything's waiting, unlike the bell
      in the top header, which always shows its own circle regardless of
      sidebar state. This is the collapsed-only substitute: a small dot
@@ -124,7 +157,7 @@
      than popping in the instant .collapsed comes off mid-width-transition
      (which looked like it was floating over the still-narrow rail), it
      fades in only once the 200ms width transition is ~90% done. Hiding on
-     collapse stays instant -- no reason for it to linger while the rail
+     collapse stays instant - no reason for it to linger while the rail
      shrinks under it. These ID-selector rules override the .sidebar-label
      display:none above (higher specificity) so the button stays in the
      layout (display: flex, matching its own `flex` utility class) and can
@@ -135,10 +168,10 @@
   /* Hover affordance (Gemini-style panel-left-close/-open icon): the
      chevron lives INSIDE the same panel glyph, in its wider right-hand
      section, rather than swapping the whole icon out for a separate
-     floating arrow -- both chevrons are already part of the one <svg>
+     floating arrow - both chevrons are already part of the one <svg>
      markup (see the button below), just opacity:0 until hovered. Only
      one is ever shown at a time, matching which direction the sidebar is
-     about to move on click. Only ever visible while expanded -- the
+     about to move on click. Only ever visible while expanded - the
      button itself is hidden while collapsed (rule below), by design;
      the collapsed rail's own ew-resize cursor is that state's
      equivalent hint instead. aria-expanded is already kept in sync with
@@ -173,7 +206,7 @@
      One fixed left padding, applied unconditionally regardless of
      .collapsed, is what actually makes both problems go away at once:
      avatar left edge = #sidebar-account's own p-3 (12px) + this 8px =
-     20px, avatar center = 20 + half its own 28px width = 34px -- the
+     20px, avatar center = 20 + half its own 28px width = 34px - the
      exact same x the nav icons sit at, in every state, with nothing left
      to recompute (or visibly jump) when toggling. Confirmed live via
      getBoundingClientRect() on a nav link's icon vs #sidebar-avatar,
@@ -182,7 +215,7 @@
     padding-left: 0.5rem;
     padding-right: 0.5rem;
   }
-  /* Vertical half of the same fix -- horizontal alone (rule above) still
+  /* Vertical half of the same fix - horizontal alone (rule above) still
      left the avatar shifting a few px *vertically* on collapse for any
      staff name long enough to wrap onto the name span's 2nd line
      (line-clamp-2, further below): that 2-line text is taller than the
@@ -190,12 +223,12 @@
      row (which only ever shows the bare avatar, always exactly
      avatar-height + padding). #sidebar-account sits at the bottom of a
      flex column with `nav` as the flex-1 item above it, so a shorter
-     collapsed row doesn't just lose height in place -- its top edge
+     collapsed row doesn't just lose height in place - its top edge
      actually moves down to stay pinned against the sidebar's bottom
      edge, taking the centered avatar with it.
      Applied unconditionally (not scoped to .collapsed) so both states
      share the exact same floor instead of the collapsed row being forced
-     to match whatever the expanded one happened to need -- confirmed via
+     to match whatever the expanded one happened to need - confirmed via
      live measurement (getBoundingClientRect on #sidebar-avatar) that
      this is what actually makes the two states pixel-identical, not just
      "usually close" for short names. 3.5rem comfortably covers avatar
@@ -211,7 +244,7 @@
 
   /* Light/dark logo swap. Two <img> tags are always both present in the
      markup (one per theme); which one is visible is decided purely by this
-     attribute selector on <html data-theme>, not JS -- so it's correct on
+     attribute selector on <html data-theme>, not JS - so it's correct on
      the very first paint even when the head script above has already set
      data-theme="tesda-dark" before the stylesheet loads. No flash. */
   .logo-theme-dark {
@@ -228,12 +261,12 @@
 
   /* Colored sidebar in Mixed mode: instead of plain white, the sidebar
      sits on the same dark MD3 surface as the tesda-dark theme's
-     base-100/200/300, while the main content card stays light -- matching
+     base-100/200/300, while the main content card stays light - matching
      the reference "dark chrome, light content" floating-panel layout.
      Overriding the base-* custom properties on just this container means
      every descendant utility that already reads them (bg-base-100,
      text-base-content/70, hover:bg-base-200, border-base-300, ...) picks
-     up the dark surfaces automatically -- no need to touch each class in
+     up the dark surfaces automatically - no need to touch each class in
      the sidebar markup individually.
      Classic Material Design: large areas stay neutral charcoal/graphite
      rather than a saturated brand color, with real saturation reserved for
@@ -252,12 +285,12 @@
     --color-base-content: #e8e8e8;
   }
   /* Light mode: same values "tesda" already carries on <html> (so this
-     LOOKS like it does nothing new) -- but written out explicitly here
+     LOOKS like it does nothing new) - but written out explicitly here
      rather than left to inherit, on purpose. Toggling data-sidebar live
      (clicking the theme switcher, not a fresh page load) moves #sidebar
      from the *directly declared* dark values above to *inherited*
      values if nothing matches here, and Chromium doesn't reliably
-     repaint that transition -- confirmed by testing (a real click
+     repaint that transition - confirmed by testing (a real click
      leaves the sidebar showing its old color until the next full
      navigation). Giving Light its own directly-declared rule, matching
      the pattern Mixed/Dark both already use, keeps every mode's
@@ -270,13 +303,13 @@
     --color-base-300: #e0e0e0;
     --color-base-content: #212121;
   }
-  /* Mixed/Dark modes don't need a sidebar border -- the dark sidebar
+  /* Mixed/Dark modes don't need a sidebar border - the dark sidebar
      already reads as a distinct panel against the light content card
      next to it. Light mode has no such contrast (sidebar, main-shell,
      and content card are all the same white now), so without a line
      here the sidebar has no visible edge at all.
      Same color-mix formula as .border-base-300 (static/css/input.css) --
-     not var(--color-base-300) -- so this line and the content header's
+     not var(--color-base-300) - so this line and the content header's
      own border-b (border-base-300, templates/*.html's "shrink-0 border-b
      border-base-300" header bar) are pixel-identical, not just similar.
      var(--color-base-300) alone resolves to a different, lighter value
@@ -292,7 +325,7 @@
      override of --color-primary is needed here anymore. */
 
   /* The content card itself must stay light even though its parent
-     (#main-shell) is now dark -- so the dark override above is undone
+     (#main-shell) is now dark - so the dark override above is undone
      just for it, the same way it's undone for the account dropdown
      below. */
   html[data-theme="tesda"] #content-card {
@@ -311,7 +344,7 @@
      individual bg-base-100 utility in the page content.
      NOTE: these hex values are a reasonable dark MD3 elevation scale, not
      pulled from the app's real tesda-dark palette (defined in
-     output.css, which isn't available here) -- nudge them to match your
+     output.css, which isn't available here) - nudge them to match your
      actual brand darks if they read slightly off. */
   html[data-theme="tesda-dark"] #sidebar,
   html[data-theme="tesda-dark"] #main-shell {
@@ -326,9 +359,45 @@
     --color-base-content: #e8e8e8;
   }
 
+  /* Non-active sidebar tab text: solid/opaque (var(--color-base-content),
+     no fade at all) is the deliberate default - in plain Light mode that
+     resolves to a real solid black, not a grayed-out approximation of one.
+     Every DARK sidebar surface is the exception, muted here on purpose - a
+     fully opaque near-white reads as too heavy/harsh against a dark surface
+     next to the one actually-active (blue) tab, the same reasoning
+     .sidebar-link-active's own comment gives for using a fixed color
+     instead of a --color-primary remap. That includes Mixed mode's dark
+     sidebar (data-sidebar="dark", still data-theme="tesda" overall) as
+     well as the fully dark themes - the sidebar itself is dark there too,
+     same as Dark/Modern Dark, even though the rest of the page stays
+     light. */
+  .sidebar-link-inactive {
+    color: var(--color-base-content);
+  }
+  html[data-theme="tesda"][data-sidebar="dark"] .sidebar-link-inactive,
+  html[data-theme="tesda-dark"] .sidebar-link-inactive,
+  html[data-theme="tesda-modern"] .sidebar-link-inactive {
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  }
+
+  /* Global search results dropdown - a small fade/slide-in replayed by ui.js
+     on every htmx:afterSwap of #global-search-results (removing then
+     re-adding this class forces the animation to restart even though the
+     element itself never leaves the DOM between searches). Kept as a plain
+     keyframe rather than a Tailwind utility since it's one-off and needs a
+     JS-controlled restart hook (the class name below), not just a static
+     transition. */
+  @keyframes global-search-dropdown-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .global-search-dropdown-in {
+    animation: global-search-dropdown-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   /* The account menu is anchored to the bottom of the (dark) sidebar, but
-     the popup itself should stay a light floating card -- like the
-     notifications popup anchored to the (light) content header -- rather
+     the popup itself should stay a light floating card - like the
+     notifications popup anchored to the (light) content header - rather
      than inheriting the sidebar's dark surface. So the sidebar override
      above is undone just for it. */
   html[data-theme="tesda"] #sidebar .dropdown-content {
@@ -349,13 +418,13 @@
   }
 
   /* ======================================================================
-     "Modern Dark" (tesda-modern) -- its own elevation ramp, separate from
+     "Modern Dark" (tesda-modern) - its own elevation ramp, separate from
      tesda-dark above, one full tier deeper (sidebar is the *backmost*
      MD3 layer here, in front of nothing, so it should read as the
      darkest thing on screen) with the content card, popups, and modals
-     each a further step lighter -- a real 4-tier ramp instead of
+     each a further step lighter - a real 4-tier ramp instead of
      everything competing at similar darkness. The content card also
-     gets a real shadow (Dark's doesn't) -- input.css's matching
+     gets a real shadow (Dark's doesn't) - input.css's matching
      elevation-shadow section covers modals/dropdowns/.sheet-panel for
      this theme, but #content-card is a plain always-visible div, not
      one of those, so it needs its own here.
@@ -391,12 +460,12 @@
   /* Sidebar active nav item: same fixed-hex treatment as the notif tabs
      above, so it stays this blue on the dark chrome instead of following
      --color-primary's dark-mode lighten. Back to a flat, fully-opaque
-     fill -- the 65%-then-33%-opacity experiment made white text hard to
+     fill - the 65%-then-33%-opacity experiment made white text hard to
      read against Light mode's white sidebar (pale blue on white fails
      contrast badly), so full opacity is the deliberate, readable
      baseline across all three sidebar modes (Mixed/Dark/Light), not a
      leftover default. Corner radius is intentionally tighter than the
-     rounded-lg (0.5rem) every .sidebar-link shares -- 30% less
+     rounded-lg (0.5rem) every .sidebar-link shares - 30% less
      (0.5rem * 0.7 = 0.35rem) so the active highlight reads as a
      slightly squarer "bar" than the soft-cornered hover state. */
   .sidebar-link-active {
@@ -405,7 +474,7 @@
     border-radius: 0.35rem;
   }
 
-  /* Stat card hover glow -- shared across every stat-card partial
+  /* Stat card hover glow - shared across every stat-card partial
      (assets/_stat_cards.html, members/_stat_cards.html, staff/
      _stat_cards.html, transactions/_stat_cards.html), defined once
      here since those get htmx-swapped independently of which page
@@ -415,7 +484,7 @@
      justify-between" layout) and fading outward. Color comes from
      --stat-glow, set inline per card via style="--stat-glow: var(--color-X)"
      to match that card's own icon color (e.g. --color-success for an
-     "Active" card) -- see any of the _stat_cards.html files for the
+     "Active" card) - see any of the _stat_cards.html files for the
      actual per-card values. */
   .stat-card-glow {
     position: relative;
@@ -434,7 +503,7 @@
   .stat-card-glow:hover::after {
     opacity: 0.15;
   }
-  /* Same glow, held on rather than only appearing on hover -- applied
+  /* Same glow, held on rather than only appearing on hover - applied
      alongside the ring/border highlight (see each page's own
      updateXStatCardUI()) to whichever stat card represents the currently
      active filter, so a clicked/selected card reads as "the same kind of
@@ -448,7 +517,7 @@
      backgrounds) variant only in the native Dark theme (see the
      .logo-theme-* rules above). Mixed mode's sidebar sits on a dark
      surface too, so it needs that same light-colored logo despite
-     data-theme still being "tesda" -- but only in Mixed
+     data-theme still being "tesda" - but only in Mixed
      ([data-sidebar="dark"]); Light mode's sidebar is an actual light
      background, so it should fall through to the normal light-theme
      logo (the logo-icon-light.png <img>, unaffected by these two
@@ -460,11 +529,11 @@
     display: inline-block;
   }
 
-  /* Checkout modal renders as a floating, right-docked panel -- inset from
+  /* Checkout modal renders as a floating, right-docked panel - inset from
      every free edge (top/right/bottom) with rounded corners and a real
      drop-shadow all the way around, the same "floating sheet" treatment
      _details_modal.html's .sheet-panel uses (inset-y-4 right-4,
-     rounded-2xl, shadow-2xl, border) -- rather than DaisyUI's default
+     rounded-2xl, shadow-2xl, border) - rather than DaisyUI's default
      centered modal-box, and rather than the flush edge-to-edge drawer this
      used to be (margin: 0, border-radius: 0, shadow only on the left
      edge). Staff can still keep working the rest of the page while it's
@@ -501,7 +570,7 @@
   }
   /* Pins the action row to the bottom of the panel instead of leaving it
      stranded right after the form fields with a lot of empty space below
-     it -- the tall side panel has far more vertical room than the
+     it - the tall side panel has far more vertical room than the
      content needs, unlike the old centered, content-height modal-box. */
   dialog.checkout-modal .modal-box > [data-role="main-actions"],
   dialog.checkout-modal .modal-box > [data-role="discard-actions"] {
@@ -561,6 +630,7 @@
     {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
   {% endfor %}
   {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
+  {% if request.path == '/monitoring' %}{% set ns.current_label = "Monitoring" %}{% endif %}
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
   {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
   {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
@@ -570,7 +640,6 @@
     {% set ns.parent_href = "/system" %}
     {% set ns.parent_label = "System" %}
   {% endif %}
-
   <div class="hidden lg:flex h-full">
 
     <!-- SIDEBAR -->
@@ -597,7 +666,7 @@
       </div>
 
 
-      {# One letter per tab, not a 1-9 digit -- admin can see 11 tabs, and
+      {# One letter per tab, not a 1-9 digit - admin can see 11 tabs, and
          plain Alt+letter collides with pages' own local shortcuts (Alt+N,
          Alt+M, etc), so this uses Alt+Shift+letter, read off each link's
          data-shortcut-key by the JS further down. Staff = 'K' not 'S' --
@@ -605,10 +674,26 @@
       {% set SIDEBAR_SHORTCUT_KEYS = {
         'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
         'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
-        'Staff': 'K', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y'
+        'Staff': 'K', 'Monitoring': 'O', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y',
+        'Reservations': 'V'
       } %}
       {% macro tab_tooltip(label) %}{{ label }} (Alt+Shift+{{ SIDEBAR_SHORTCUT_KEYS[label] }}){% endmacro %}
-      <nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3 space-y-1">
+      <!-- Boosted: clicking any link in here (Dashboard, Inventory, Members, ...)
+           fetches the target page in the background and swaps just #main-content
+           (below) instead of a full browser navigation - htmx/ui.js's shared
+           keydown/htmx:configRequest dispatchers exist specifically to make this
+           safe (see ui.js's "BOOSTED NAVIGATION" section for why a naive per-page
+           document.addEventListener() would leak a duplicate listener on every
+           boosted visit). id="sidebar-nav" + hx-swap-oob="true" is this same
+           element re-declaring itself as an out-of-band target: every boosted
+           response's #main-content AND #content-header (title/breadcrumb,
+           notification bell, badge counts) are both real, fully-rendered by the
+           same request - oob lets htmx swap this nav back in from that same
+           response too, so the active-tab highlight and badge counts stay
+           correct without a second request. -->
+      <nav id="sidebar-nav" hx-swap-oob="true"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+           class="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3 space-y-1">
         {% for label, href, icon in nav_items %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
         {% if href != "/assets" or feature_flags.assets %}
@@ -617,8 +702,8 @@
         {% if href != "/requests" or feature_flags.requests %}
         {% if href != "/reports" or feature_flags.reports %}
         <a href="{{ href }}" data-tooltip="{{ tab_tooltip(label) }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS[label] }}" aria-label="{{ label }}"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == href %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == href %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             {% if icon == "grid" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -667,8 +752,8 @@
 
         {% if staff and staff.role == "admin" %}
         <a href="/staff" data-tooltip="{{ tab_tooltip('Staff') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Staff'] }}" aria-label="Staff"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/staff' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/staff' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
           </span>
@@ -676,10 +761,32 @@
         </a>
         {% endif %}
 
+        {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
+        <a href="/monitoring" data-tooltip="{{ tab_tooltip('Monitoring') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Monitoring'] }}" aria-label="Monitoring"
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/monitoring' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 000 7"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M5.5 5.5a9 9 0 000 13"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Monitoring</span>
+        </a>
+        {% endif %}
+
+        {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
+        <a href="/reservations" data-tooltip="{{ tab_tooltip('Reservations') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Reservations'] }}" aria-label="Reservations"
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/reservations' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Reservations</span>
+        </a>
+        {% endif %}
+
         {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
         <a href="/audit-log" data-tooltip="{{ tab_tooltip('Activity Log') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Activity Log'] }}" aria-label="Activity Log"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/audit-log' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/audit-log' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </span>
@@ -689,8 +796,8 @@
 
         {% if staff and staff.role == "admin" %}
         <a href="/feedback" data-tooltip="{{ tab_tooltip('Feedback') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Feedback'] }}" aria-label="Feedback"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path == '/feedback' %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/feedback' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
           <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             {% if open_feedback_count %}
@@ -710,8 +817,8 @@
         <!-- System stays last, the usual Settings-at-the-bottom convention. in_charge sees it too (system.html hides the admin-only cards itself), tool_keeper doesn't. -->
         {% if staff and staff.role in ("admin", "in_charge") %}
         <a href="/system" data-tooltip="{{ tab_tooltip('System') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['System'] }}" aria-label="System"
-           class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                  {% if request.path in ['/system', '/barcodes'] %}sidebar-link-active{% else %}text-base-content/70 hover:bg-base-200{% endif %}">
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path in ['/system', '/barcodes'] %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
           <span class="w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
           </span>
@@ -733,7 +840,7 @@
               {% endif %}
             </div>
             <span class="sidebar-label min-w-0 flex-1 text-left overflow-hidden">
-              <!-- Shows the full name on hover if line-clamp-2 truncates it -- same styled bubble as the rest of the sidebar, not a native title= tooltip. -->
+              <!-- Shows the full name on hover if line-clamp-2 truncates it - same styled bubble as the rest of the sidebar, not a native title= tooltip. -->
               <span class="block text-[13px] font-medium text-base-content leading-tight line-clamp-2" data-tooltip="{{ staff_full_name }}">{{ staff_full_name }}</span>
             </span>
             <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-label w-5 h-5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
@@ -770,7 +877,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
-              <!-- No tooltip -- "Help" is already a visible label right next to the icon, same as every other row in this dropdown. -->
+              <!-- No tooltip - "Help" is already a visible label right next to the icon, same as every other row in this dropdown. -->
               <button type="button" onclick="document.getElementById('help-support-modal').showModal()"
                       class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
@@ -780,7 +887,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
 
-              <!-- Its own row/modal, not buried in the Help & support FAQ -- "?" opens it directly too. -->
+              <!-- Its own row/modal, not buried in the Help & support FAQ - "?" opens it directly too. -->
               <button type="button" onclick="document.getElementById('keyboard-shortcuts-modal').showModal()"
                       class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
                 <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
@@ -824,9 +931,15 @@
       {% endif %}
     </aside>
 
-    <!-- One shared, JS-positioned tooltip bubble for every [data-tooltip] element on the page, not a per-element one -- see the delegated mouseover handler further down. -->
+    <!-- One shared, JS-positioned tooltip bubble for every [data-tooltip] element on the page, not a per-element one - see the delegated mouseover handler further down. -->
+    <!-- max-w-xs + whitespace-normal (rather than a flat nowrap) so a longer
+         tooltip (System Settings' card descriptions, e.g.) wraps into a
+         readable box instead of running off past the edge of the screen;
+         every existing short one-line tooltip elsewhere stays exactly as
+         wide as its own text, well under that cap, so this is a pure
+         superset - nothing currently on one line starts wrapping. -->
     <div id="app-tooltip" role="tooltip"
-         class="fixed hidden bg-base-100 text-base-content text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-lg border border-base-300 whitespace-nowrap pointer-events-none z-[200]"></div>
+         class="fixed hidden bg-base-100 text-base-content text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-lg border border-base-300 whitespace-normal max-w-xs pointer-events-none z-[200]"></div>
 
     <!-- MAIN COLUMN -->
     <div id="main-shell" class="flex-1 flex flex-col h-full min-w-0 pt-2 pr-2 pb-2 bg-base-100">
@@ -835,8 +948,10 @@
       <div id="content-card" class="flex-1 flex flex-col min-h-0 bg-base-100 rounded-[4.8px] shadow-sm overflow-hidden">
 
       {% if staff %}
-      <!-- CONTENT HEADER -->
-      <div id="content-header" class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
+      <!-- CONTENT HEADER - hx-swap-oob="true" so a boosted nav (see #sidebar-nav
+           above) refreshes the title/breadcrumb and notification bell/badge
+           counts from that same response, same reasoning as the sidebar. -->
+      <div id="content-header" hx-swap-oob="true" class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
         <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
@@ -859,12 +974,43 @@
 
         <div class="flex items-center gap-3 shrink-0" style="padding-right: var(--main-scrollbar-gutter, 0px);">
 
+          <!-- Global search - Inventory/Members/Staff (each already role- and
+               feature-flag-gated server-side, see services/search_service.py),
+               separate from every page's own local search box - deliberately
+               NOT styled like the join/bordered-box search inputs every
+               table's own local search uses, so the two are never mistaken
+               for each other. Ctrl/Cmd+/ focuses it from anywhere (ui.js).
+               Results dropdown's visibility is driven entirely by whether
+               #global-search-results is :empty - an under-length query
+               renders nothing into it at all (see _global_search_results.html),
+               so there's no separate JS show/hide state to keep in sync with
+               what the server actually returned. ui.js replays a small
+               fade/slide-in on every htmx:afterSwap of the results themselves. -->
+          <div class="relative" id="global-search-wrap">
+            <label class="flex items-center gap-2 h-9 pl-3.5 pr-2.5 rounded-full bg-base-200/70 border border-transparent text-base-content/50 has-[input:focus]:bg-base-100 has-[input:focus]:border-primary/40 has-[input:focus]:ring-4 has-[input:focus]:ring-primary/10 has-[input:focus]:text-base-content/70 transition-all cursor-text">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input type="search" id="global-search-input" name="q" placeholder="Search"
+                     aria-label="Search inventory, members, and staff"
+                     autocomplete="off"
+                     class="peer bg-transparent border-none outline-none text-sm text-base-content w-56 focus:w-96 transition-[width] duration-200 placeholder:text-base-content/40 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+                     hx-get="/api/v1/search"
+                     hx-trigger="input changed delay:300ms, focus"
+                     hx-target="#global-search-results"
+                     hx-swap="innerHTML"
+                     hx-sync="this:replace"
+                     onkeydown="handleGlobalSearchKeydown(event)">
+              <kbd class="hidden md:inline-flex peer-focus:hidden shrink-0 items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-base-300 bg-base-100 text-[10px] font-medium text-base-content/40">Ctrl+/</kbd>
+            </label>
+            <div id="global-search-results"
+                 class="empty:hidden absolute top-full mt-2.5 right-0 w-96 bg-base-100 rounded-2xl shadow-2xl shadow-base-300/40 ring-1 ring-base-300 max-h-96 overflow-y-auto z-[70]"></div>
+          </div>
+
           <!-- Notifications -->
           <div class="dropdown dropdown-end">
             <label tabindex="0" class="btn btn-ghost btn-circle btn-sm relative" data-tooltip="Notifications">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-base-content/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
               {% if unread_notifications_count %}
-              <!-- Stays blue (bg-primary) unlike the sidebar badges -- the bell has no active-tab highlight to blend into. -->
+              <!-- Stays blue (bg-primary) unlike the sidebar badges - the bell has no active-tab highlight to blend into. -->
               <span class="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 bg-primary text-primary-content text-[10px] font-semibold rounded-full flex items-center justify-center leading-none">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
               {% endif %}
             </label>
@@ -927,7 +1073,7 @@
                     {% endif %}
                     <div class="min-w-0 flex-1">
                       <p class="text-sm {% if not n.is_read %}font-semibold{% else %}text-base-content/80{% endif %} text-base-content leading-snug">{{ n.message }}</p>
-                      <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at }}</p>
+                      <p class="text-xs text-base-content/40 mt-0.5">{{ n.created_at | format_date }}</p>
                     </div>
                     {% if not n.is_read %}
                     <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0"></span>
@@ -965,7 +1111,7 @@
                       aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
             </form>
           </div>
-          <!-- Uses staff_full_name, not full_name(staff.first_name...) -- g.staff is a bare staff row with no joined member columns, so staff.first_name doesn't exist here. -->
+          <!-- Uses staff_full_name, not full_name(staff.first_name...) - g.staff is a bare staff row with no joined member columns, so staff.first_name doesn't exist here. -->
           <p class="text-sm text-base-content/70 mb-4">
             Log out of {{ staff_full_name }}? You'll need to sign in again to continue.
           </p>
@@ -986,7 +1132,7 @@
       <!-- My Account modal -->
       <dialog id="my-account-modal" class="modal">
         <div class="modal-box max-w-md relative">
-          <!-- Absolutely positioned -- this modal has no title/header row
+          <!-- Absolutely positioned - this modal has no title/header row
                to share with (goes straight into the avatar), unlike most
                others. -->
           <form method="dialog" class="absolute top-4 right-4">
@@ -1008,7 +1154,7 @@
                 <span class="text-2xl font-semibold">{{ staff.username[0] | upper }}</span>
                 {% endif %}
               </div>
-              <!-- Upload spinner overlay -- kept separate from the avatar markup so renderAvatars() swapping initials/<img> doesn't clobber it. -->
+              <!-- Upload spinner overlay - kept separate from the avatar markup so renderAvatars() swapping initials/<img> doesn't clobber it. -->
               <div id="account-modal-avatar-spinner" class="hidden absolute inset-0 bg-black/40 rounded-full flex items-center justify-center cursor-wait">
                 <span class="loading loading-spinner loading-sm text-white"></span>
               </div>
@@ -1035,6 +1181,10 @@
               <p class="text-xs font-semibold text-base-content/50 tracking-wide">ROLE</p>
               <span class="badge badge-primary badge-sm capitalize mt-1">{{ staff.role.replace("_", " ") }}</span>
             </div>
+            <div>
+              <p class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</p>
+              <p class="mt-0.5 font-mono">{{ staff.staff_code or "-" }}</p>
+            </div>
             {% if staff_member_type %}
             <div>
               <p class="text-xs font-semibold text-base-content/50 tracking-wide">TYPE</p>
@@ -1057,7 +1207,7 @@
                 {% if staff.created_at is defined and staff.created_at %}
                   Active since {{ staff.created_at | format_date('%b %d, %Y') }}
                 {% else %}
-                  &mdash;
+                  -
                 {% endif %}
               </p>
             </div>
@@ -1097,7 +1247,6 @@
           <div class="flex items-center justify-between gap-3">
             <div>
               <p class="text-sm font-semibold text-base-content">Password</p>
-              <p class="text-xs text-base-content/50 mt-0.5">••••••••</p>
             </div>
             <button type="button"
                     onclick="document.getElementById('my-account-modal').close(); document.getElementById('change-password-modal').showModal()"
@@ -1106,10 +1255,12 @@
             </button>
           </div>
 
-          {% if staff and staff.role == "admin" %}
-          <!-- RFID PIN change is admin-only, matching RFID login itself
-               (routes/auth.py:login_rfid) being admin-only -- no point
-               offering this to a role that can never use it. -->
+          {% if False %}
+          <!-- Dormant, not deleted: RFID + PIN login (routes/auth.py:login_rfid,
+               admin-only) was the login-page flow barcode + PIN below replaced.
+               Its backend (routes, services, this row+modal) is kept intact in
+               case RFID + PIN gets reactivated later - just gated off here so
+               it doesn't show. -->
           <div class="border-t border-base-200 my-3"></div>
 
           <div class="flex items-center justify-between gap-3">
@@ -1125,6 +1276,44 @@
           </div>
           {% endif %}
 
+          <!-- Barcode + PIN login - opt-in, all staff roles (not admin-only
+               like the dormant RFID + PIN section above). Off by default;
+               enabling sets a PIN in the same step. -->
+          <div class="border-t border-base-200 my-3"></div>
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-base-content">Barcode + PIN login</p>
+              <p class="text-xs text-base-content/50 mt-0.5">
+                {% if staff and staff.barcode_pin_enabled %}
+                  Enabled - scan your barcode at login, then enter your PIN.
+                {% else %}
+                  Off by default. Sign in with a barcode scan and a PIN instead of your username.
+                {% endif %}
+              </p>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              {% if staff and staff.barcode_pin_enabled %}
+              <button type="button"
+                      onclick="document.getElementById('my-account-modal').close(); document.getElementById('disable-barcode-pin-modal').showModal()"
+                      class="btn btn-ghost btn-sm text-error">
+                Disable
+              </button>
+              <button type="button"
+                      onclick="document.getElementById('my-account-modal').close(); openBarcodePinModal('change')"
+                      class="btn btn-outline btn-sm">
+                Change PIN
+              </button>
+              {% else %}
+              <button type="button"
+                      onclick="document.getElementById('my-account-modal').close(); openBarcodePinModal('enable')"
+                      class="btn btn-outline btn-sm">
+                Enable
+              </button>
+              {% endif %}
+            </div>
+          </div>
+
           <div class="modal-action">
             <form method="dialog">
               <button class="btn btn-sm">Close</button>
@@ -1136,11 +1325,15 @@
         </form>
       </dialog>
 
-      <!-- Full-size photo view, opened from the account modal's avatar. Stacks on top of it (native <dialog> top-layer) rather than replacing it. -->
+      <!-- Full-size image view, shared by every page (asset photos, staff
+           photos, the account modal's own avatar, etc.) via
+           openPhotoLightbox(src, alt) in ui.js - one dialog instead of each
+           page needing its own copy. Stacks on top of whatever modal opened
+           it (native <dialog> top-layer) rather than replacing it. -->
       <dialog id="photo-lightbox-modal" class="modal">
         <div class="modal-box max-w-lg p-0 overflow-hidden bg-transparent shadow-none relative">
-          <img id="photo-lightbox-img" src="" alt="Profile photo" class="w-full h-auto rounded-2xl">
-          <!-- Dark pill instead of the usual base-100 one -- needs contrast against the photo, not a themed background. -->
+          <img id="photo-lightbox-img" src="" alt="" class="w-full h-auto rounded-2xl">
+          <!-- Dark pill instead of the usual base-100 one - needs contrast against the photo, not a themed background. -->
           <form method="dialog" class="absolute top-3 right-3">
             <button class="btn btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider rounded-md bg-black/50 text-white border border-white/30 hover:bg-black/70 active:scale-95 transition-all"
                     aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
@@ -1151,7 +1344,7 @@
         </form>
       </dialog>
 
-      <!-- Pan/zoom crop step between picking a photo and actually uploading it -- saveCroppedPhoto() bakes the crop to a canvas and hands that blob to the normal upload flow. -->
+      <!-- Pan/zoom crop step between picking a photo and actually uploading it - saveCroppedPhoto() bakes the crop to a canvas and hands that blob to the normal upload flow. -->
       <dialog id="photo-crop-modal" class="modal" onclose="closeCropModal()">
         <div class="modal-box max-w-sm">
           <div class="flex justify-between items-start">
@@ -1200,11 +1393,25 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
       </dialog>
 
-      <!-- Reusable password/PIN field with a show/hide eye toggle, same as login.html -- the toggle button only appears once the field has content. -->
-      {% macro password_toggle_field(field_id, placeholder, extra_attrs='') %}
+      <!-- Reusable password/PIN field with a show/hide eye toggle, same as login.html - the toggle button only appears once the field has content. -->
+      <!-- show_toggle=False (Change Password's own three fields, below) drops
+           the reveal-as-plaintext eye button entirely - this app runs on a
+           shared toolroom workstation, and a password field that can be
+           un-masked with one click is a real shoulder-surfing risk there in
+           a way it isn't on a personal device. Dots stay visible (normal
+           native password masking) either way - an earlier attempt at
+           hiding those too via text-transparent was reverted; what the
+           "don't show it in dots" feedback actually meant was the static
+           "••••••••" placeholder text under My Account's own Password
+           heading (removed separately, further down this file), not this
+           real input field. The RFID/barcode PIN fields keep the toggle
+           (show_toggle defaults True), since those are a separate,
+           lower-stakes credential. -->
+      {% macro password_toggle_field(field_id, placeholder, extra_attrs='', show_toggle=True) %}
       <div class="relative">
         <input type="password" id="{{ field_id }}" placeholder="{{ placeholder }}" {{ extra_attrs | safe }}
-               class="input input-bordered input-sm w-full pr-9" />
+               class="input input-bordered input-sm w-full {% if show_toggle %}pr-9{% endif %}" />
+        {% if show_toggle %}
         <button type="button" id="{{ field_id }}-toggle-btn" onclick="toggleFieldVisibility('{{ field_id }}')"
                 aria-label="Show password" data-tooltip="Show/hide" tabindex="-1"
                 class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content">
@@ -1216,6 +1423,7 @@
             <path d="M3.98 8.223A10.477 10.477 0 001.934 12c1.292 4.338 5.31 7.5 10.066 7.5.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0112 4.5c4.756 0 8.774 3.162 10.065 7.498a10.522 10.522 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
           </svg>
         </button>
+        {% endif %}
       </div>
       {% endmacro %}
 
@@ -1224,7 +1432,7 @@
         <div class="modal-box max-w-sm">
           <div class="flex justify-between items-start">
             <h3 class="font-bold text-lg mb-1">Change password</h3>
-            <!-- Plain close() here, matching native Escape -- the footer's "Back" button is a different action (returns to my-account-modal). -->
+            <!-- Plain close() here, matching native Escape - the footer's "Back" button is a different action (returns to my-account-modal). -->
             <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
                     onclick="document.getElementById('change-password-modal').close()"
                     aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
@@ -1238,9 +1446,9 @@
 
           <form id="change-password-form" onsubmit="return submitChangePassword(event)">
             <div class="space-y-2">
-              {{ password_toggle_field('cp-current', 'Current password', 'autocomplete="current-password"') }}
-              {{ password_toggle_field('cp-new', 'New password (min. 8 characters)', 'autocomplete="new-password"') }}
-              {{ password_toggle_field('cp-confirm', 'Confirm new password', 'autocomplete="new-password"') }}
+              {{ password_toggle_field('cp-current', 'Current password', 'autocomplete="current-password"', show_toggle=False) }}
+              {{ password_toggle_field('cp-new', 'New password (min. 8 characters)', 'autocomplete="new-password"', show_toggle=False) }}
+              {{ password_toggle_field('cp-confirm', 'Confirm new password', 'autocomplete="new-password"', show_toggle=False) }}
             </div>
 
             <div class="modal-action">
@@ -1260,8 +1468,10 @@
         </form>
       </dialog>
 
-      {% if staff and staff.role == "admin" %}
-      <!-- Admin-only, mirrors change-password above -- confirms with current password, not current PIN. -->
+      {% if False %}
+      <!-- Dormant, not deleted - see the "RFID PIN" row above, gated off the
+           same way. Mirrors change-password above - confirms with current
+           password, not current PIN. -->
       <dialog id="change-rfid-pin-modal" class="modal" onclose="resetChangeRfidPinForm()">
         <div class="modal-box max-w-sm">
           <div class="flex justify-between items-start">
@@ -1302,6 +1512,85 @@
       </dialog>
       {% endif %}
 
+      <!-- Enable/change barcode + PIN - one shared modal, mirrors
+           change-rfid-pin-modal above. openBarcodePinModal(mode) swaps the
+           title/button text and submitBarcodePinForm() picks the endpoint;
+           the two flows are otherwise identical (both set rfid_pin_hash). -->
+      <dialog id="barcode-pin-modal" class="modal" onclose="resetBarcodePinForm()">
+        <div class="modal-box max-w-sm">
+          <div class="flex justify-between items-start">
+            <h3 id="barcode-pin-modal-title" class="font-bold text-lg mb-1">Enable barcode + PIN login</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('barcode-pin-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
+          <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
+
+          <!-- Always in the DOM, invisible (not hidden) when empty --
+               reserves its layout space so the form below doesn't shift
+               when submitBarcodePinForm() fills it in. -->
+          <div id="barcode-pin-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
+
+          <form id="barcode-pin-form" onsubmit="return submitBarcodePinForm(event)">
+            <div class="space-y-2">
+              {{ password_toggle_field('bp-current-password', 'Current password', 'autocomplete="current-password"') }}
+              {{ password_toggle_field('bp-new-pin', 'New PIN (exactly 6 digits)', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
+              {{ password_toggle_field('bp-confirm-pin', 'Confirm new PIN', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
+            </div>
+
+            <div class="modal-action">
+              <button type="button"
+                      onclick="document.getElementById('barcode-pin-modal').close(); document.getElementById('my-account-modal').showModal()"
+                      class="btn btn-sm">
+                Back
+              </button>
+              <button type="submit" id="barcode-pin-submit-btn" class="btn btn-primary btn-sm">
+                Enable
+              </button>
+            </div>
+          </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
+      <!-- Disable barcode + PIN - password-only confirm, same reasoning as
+           the modal comment in routes/staff.py:disable_barcode_pin_login_submit. -->
+      <dialog id="disable-barcode-pin-modal" class="modal" onclose="resetDisableBarcodePinForm()">
+        <div class="modal-box max-w-sm">
+          <div class="flex justify-between items-start">
+            <h3 class="font-bold text-lg mb-1">Disable barcode + PIN login</h3>
+            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+                    onclick="document.getElementById('disable-barcode-pin-modal').close()"
+                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+          </div>
+          <p class="text-xs text-base-content/50 mb-4">Your PIN stays saved - re-enabling later won't require setting a new one.</p>
+
+          <div id="disable-barcode-pin-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
+
+          <form id="disable-barcode-pin-form" onsubmit="return submitDisableBarcodePin(event)">
+            <div class="space-y-2">
+              {{ password_toggle_field('dbp-current-password', 'Current password', 'autocomplete="current-password"') }}
+            </div>
+
+            <div class="modal-action">
+              <button type="button"
+                      onclick="document.getElementById('disable-barcode-pin-modal').close(); document.getElementById('my-account-modal').showModal()"
+                      class="btn btn-sm">
+                Back
+              </button>
+              <button type="submit" id="disable-barcode-pin-submit-btn" class="btn btn-error btn-sm">
+                Disable
+              </button>
+            </div>
+          </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+
       <!-- Display & accessibility modal -->
       <dialog id="display-accessibility-modal" class="modal">
         <div class="modal-box max-w-sm">
@@ -1314,7 +1603,7 @@
           <p class="text-xs text-base-content/50 mb-4">These preferences are saved to this account and this browser.</p>
 
           <div class="space-y-0.5">
-            <!-- toggleInlineDropdown() moves each panel to a fixed-position child of <body> on first open (same trick as #app-tooltip) -- keeping it absolute in place still grew the modal-box's scroll height. -->
+            <!-- toggleInlineDropdown() moves each panel to a fixed-position child of <body> on first open (same trick as #app-tooltip) - keeping it absolute in place still grew the modal-box's scroll height. -->
             <button type="button" id="theme-mode-toggle-btn" onclick="toggleInlineDropdown('theme-mode-menu', 'theme-mode-chevron')"
                     class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 text-left transition-colors">
               <span class="bg-base-200 rounded-full w-9 h-9 flex items-center justify-center shrink-0">
@@ -1390,7 +1679,7 @@
         </form>
       </dialog>
 
-      <!-- Settings & privacy modal -- per-user notification display prefs
+      <!-- Settings & privacy modal - per-user notification display prefs
            (routes/staff.py: update_own_notification_prefs). Distinct from
            the admin-only due-soon threshold gear in the notifications
            dropdown above: these three toggles don't change when an alert
@@ -1412,9 +1701,19 @@
                 <span class="block text-sm font-medium text-base-content">Due-soon reminders</span>
                 <span class="block text-xs text-base-content/50">A loan you're tracking is nearing its due date</span>
               </span>
-              <input type="checkbox" id="notify-due-soon-toggle" class="toggle toggle-sm toggle-primary"
+              <!-- Colored to reflect actual on/off state (primary blue
+                   while on, the toggle's own default muted gray while off)
+                   rather than daisyUI's toggle-primary, which only colors
+                   the toggle while :checked - off fell back to that same
+                   muted gray either way regardless of the class, reading
+                   as "always gray". Same --input-color technique as
+                   Feature Access's toggles (templates/staff/
+                   _feature_flags_modal.html) for why this needs driving
+                   directly instead of a toggle-{color} class. -->
+              <input type="checkbox" id="notify-due-soon-toggle" class="toggle toggle-sm"
+                     style="{% if staff.notify_due_soon %}--input-color: var(--color-primary);{% endif %}"
                      {% if staff.notify_due_soon %}checked{% endif %}
-                     onchange="updateNotificationPref('notify_due_soon', this.checked)">
+                     onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-primary)' : ''); updateNotificationPref('notify_due_soon', this.checked)">
             </label>
 
             <label class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 cursor-pointer transition-colors">
@@ -1422,9 +1721,10 @@
                 <span class="block text-sm font-medium text-base-content">Overdue alerts</span>
                 <span class="block text-xs text-base-content/50">A loan has passed its due date</span>
               </span>
-              <input type="checkbox" id="notify-overdue-toggle" class="toggle toggle-sm toggle-primary"
+              <input type="checkbox" id="notify-overdue-toggle" class="toggle toggle-sm"
+                     style="{% if staff.notify_overdue %}--input-color: var(--color-primary);{% endif %}"
                      {% if staff.notify_overdue %}checked{% endif %}
-                     onchange="updateNotificationPref('notify_overdue', this.checked)">
+                     onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-primary)' : ''); updateNotificationPref('notify_overdue', this.checked)">
             </label>
 
             <label class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-base-200 cursor-pointer transition-colors">
@@ -1432,12 +1732,13 @@
                 <span class="block text-sm font-medium text-base-content">Unrestriction requests</span>
                 <span class="block text-xs text-base-content/50">Filed, approved, or denied requests you can act on or filed yourself</span>
               </span>
-              <input type="checkbox" id="notify-requests-toggle" class="toggle toggle-sm toggle-primary"
+              <input type="checkbox" id="notify-requests-toggle" class="toggle toggle-sm"
+                     style="{% if staff.notify_requests %}--input-color: var(--color-primary);{% endif %}"
                      {% if staff.notify_requests %}checked{% endif %}
-                     onchange="updateNotificationPref('notify_requests', this.checked)">
+                     onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-primary)' : ''); updateNotificationPref('notify_requests', this.checked)">
             </label>
 
-            <!-- Personal toast duration, drives TOAST_DEFAULT_DURATION_MS below -- changing it needs a reload to take effect. -->
+            <!-- Personal toast duration, drives TOAST_DEFAULT_DURATION_MS below - changing it needs a reload to take effect. -->
             <div class="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl">
               <span class="flex-1">
                 <span class="block text-sm font-medium text-base-content">Toast display duration</span>
@@ -1504,7 +1805,7 @@
 
           <div class="modal-action items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-2">
-              <!-- Opens the full manual as a modal, not a /help page -- closing it leaves you right where you were. -->
+              <!-- Opens the full manual as a modal, not a /help page - closing it leaves you right where you were. -->
               <button type="button" class="btn btn-outline btn-sm gap-1.5"
                       onclick="document.getElementById('help-support-modal').close(); document.getElementById('full-help-modal').showModal();">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
@@ -1546,7 +1847,7 @@
                       onclick="document.getElementById('full-help-modal').close(); document.getElementById('give-feedback-modal').showModal();">
                 Report a problem
               </button>
-              <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+              <!-- ESC pill, not an X icon - see assets/_details_modal.html's
                    header close button for the full reasoning. Native
                    <dialog> Escape-to-close already applies here regardless
                    (this is a real <dialog>, unlike the div.modal ones that
@@ -1571,7 +1872,7 @@
       {% endif %}
 
       <!-- Keyboard shortcuts modal, opened via the account menu or "?" from anywhere. Two-column card grid with live search instead of one long scrolling list, so finding one shortcut doesn't mean scrolling past everyone else's page first. -->
-      {# Staff is 'K', not 'S' -- Alt+Shift+S is already Microsoft Edge's
+      {# Staff is 'K', not 'S' - Alt+Shift+S is already Microsoft Edge's
          own Web Capture shortcut (and Snipping Tool's, system-wide on
          Windows), so the browser/OS ate that combo before it ever reached
          this page's keydown listener. Picked a letter with no known
@@ -1579,7 +1880,8 @@
       {% set SIDEBAR_SHORTCUT_KEYS = {
         'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
         'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
-        'Staff': 'K', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y'
+        'Staff': 'K', 'Monitoring': 'O', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y',
+        'Reservations': 'V'
       } %}
       {% macro cat_icon(name) %}
         {% if name == 'everywhere' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
@@ -1595,6 +1897,8 @@
         {% elif name == 'feedback' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         {% elif name == 'system' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         {% elif name == 'barcode' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 4v16M7 4v16M11 4v10M15 4v16M19 4v10M21 4v16" stroke-linecap="round"/></svg>
+        {% elif name == 'monitor' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 000 7"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M5.5 5.5a9 9 0 000 13"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>
+        {% elif name == 'calendar' %}<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
         {% endif %}
       {% endmacro %}
       {% macro shortcut_category(title, icon) %}
@@ -1628,7 +1932,7 @@
                     aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
           </div>
 
-          <!-- Live filter -- matches against a row's own description/keys
+          <!-- Live filter - matches against a row's own description/keys
                text, OR (if it matches) shows every row in a whole
                category whose title matches, e.g. typing "inventory" shows
                the entire Inventory card rather than nothing. -->
@@ -1652,20 +1956,26 @@
                 {% if tab_label != 'Borrow & Return' or feature_flags.transactions %}
                 {% if tab_label != 'Approvals' or feature_flags.requests %}
                 {% if tab_label != 'Reports' or feature_flags.reports %}
-                {{ srow('Jump to sidebar &middot; ' + tab_label, ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS[tab_label]]) }}
+                {{ srow('Jump to sidebar · ' + tab_label, ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS[tab_label]]) }}
                 {% endif %}{% endif %}{% endif %}{% endif %}{% endif %}{% endif %}
               {% endfor %}
               {% if staff and staff.role == "admin" %}
-                {{ srow('Jump to sidebar &middot; Staff', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Staff']]) }}
+                {{ srow('Jump to sidebar · Staff', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Staff']]) }}
+              {% endif %}
+              {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
+                {{ srow('Jump to sidebar · Monitoring', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Monitoring']]) }}
+              {% endif %}
+              {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
+                {{ srow('Jump to sidebar · Reservations', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Reservations']]) }}
               {% endif %}
               {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] %}
-                {{ srow('Jump to sidebar &middot; Activity Log', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Activity Log']]) }}
+                {{ srow('Jump to sidebar · Activity Log', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Activity Log']]) }}
               {% endif %}
               {% if staff and staff.role == "admin" %}
-                {{ srow('Jump to sidebar &middot; Feedback', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Feedback']]) }}
+                {{ srow('Jump to sidebar · Feedback', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['Feedback']]) }}
               {% endif %}
               {% if staff and staff.role in ("admin", "in_charge") %}
-                {{ srow('Jump to sidebar &middot; System', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['System']]) }}
+                {{ srow('Jump to sidebar · System', ['Alt+Shift+' + SIDEBAR_SHORTCUT_KEYS['System']]) }}
               {% endif %}
             {% endcall %}
 
@@ -1689,6 +1999,11 @@
               {{ srow('Import CSV', ['Alt+I']) }}
               {{ srow('Export data', ['Alt+E']) }}
               {{ srow('Clear all filters', ['Esc']) }}
+              {{ srow('In an item\'s Details: Edit / Delete / Restore', ['E', 'D', 'R']) }}
+              {{ srow('In an item\'s Details: Mark/Resolve Maintenance / Adjust Stock / Mark Calibrated', ['M', 'S', 'C']) }}
+              {% if feature_flags.reservations %}
+              {{ srow('In an item\'s Details: Reserve for Later', ['V']) }}
+              {% endif %}
             {% endcall %}
 
             {% call shortcut_category('Members', 'users') %}
@@ -1700,6 +2015,7 @@
               {{ srow('Add new member', ['Alt+N']) }}
               {{ srow('Manage departments', ['Alt+M']) }}
               {{ srow('Clear all filters', ['Esc']) }}
+              {{ srow('In a member\'s Profile: Edit / Deactivate-Reactivate / Restrict', ['E', 'D', 'R']) }}
             {% endcall %}
 
             {% call shortcut_category('Borrow & Return', 'swap') %}
@@ -1739,6 +2055,27 @@
               {{ srow('Previous / next page', ['←', '→']) }}
               {{ srow('Add new staff', ['Alt+N']) }}
               {{ srow('Clear all filters', ['Esc']) }}
+              {{ srow('In a staff member\'s Profile: Edit / Lock-Unlock / Reset Password', ['E', 'L', 'P']) }}
+              {{ srow('In a staff member\'s Profile: Deactivate-Reactivate / Reassign Usage', ['D', 'U']) }}
+            {% endcall %}
+            {% endif %}
+
+            {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
+            {% call shortcut_category('Monitoring', 'monitor') %}
+              {{ srow('Focus search', ['/']) }}
+              {{ srow('Switch to Log tab', ['L']) }}
+              {{ srow('Switch to Trends tab', ['T']) }}
+              {{ srow('Clear all filters', ['Esc']) }}
+            {% endcall %}
+            {% endif %}
+
+            {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
+            {% call shortcut_category('Reservations', 'calendar') %}
+              {{ srow('Filter: Scheduled / Fulfilled / Cancelled / Expired / All', ['1', '2', '3', '4', '5']) }}
+              {% if staff.role in ["admin", "in_charge"] %}
+              {{ srow('Toggle "Only mine"', ['`']) }}
+              {% endif %}
+              {{ srow('Reset to default view (Scheduled)', ['Esc']) }}
             {% endcall %}
             {% endif %}
 
@@ -1774,7 +2111,7 @@
             No shortcuts match &quot;<span id="shortcuts-no-results-query"></span>&quot;
           </p>
 
-          <!-- Not hidden, just not shouted about -- an actually-rendered
+          <!-- Not hidden, just not shouted about - an actually-rendered
                credit line (unlike a view-source-only HTML comment) tucked
                into the one corner of the app someone only reaches by
                opening this modal in the first place, then reading all the
@@ -1792,7 +2129,7 @@
       </dialog>
       <script>
         // Filters both individual rows and whole categories live as you
-        // type -- a row stays visible if its own text matches OR its
+        // type - a row stays visible if its own text matches OR its
         // parent category's title matches (so "inventory" surfaces the
         // whole Inventory card, not just a row that happens to contain
         // that word). A category card hides itself once none of its rows
@@ -1823,8 +2160,8 @@
         }
 
         // Resets the filter on every close (not just on open) so
-        // reopening the modal later -- via "?", the account menu, or the
-        // Help modal's own link into it -- never starts back up mid-filter
+        // reopening the modal later - via "?", the account menu, or the
+        // Help modal's own link into it - never starts back up mid-filter
         // from whatever was typed last time.
         document.getElementById('keyboard-shortcuts-modal')?.addEventListener('close', function () {
           const input = document.getElementById('shortcuts-search-input');
@@ -1899,8 +2236,13 @@
       </dialog>
       {% endif %}
 
-      <!-- PAGE CONTENT -->
-      <main class="flex-1 overflow-y-auto" style="scrollbar-gutter: stable;">
+      <!-- PAGE CONTENT - the boosted swap's primary target (see #sidebar-nav's
+           hx-target/hx-select above). Everything a page's own script block at
+           the bottom of the content block below touches lives inside here, so
+           it's destroyed and freshly recreated on every boosted nav - exactly
+           what "re-run this page's init code" needs, see ui.js's dispatcher
+           comment ("BOOSTED NAVIGATION"). -->
+      <main id="main-content" class="flex-1 overflow-y-auto" style="scrollbar-gutter: stable;">
         {% block content %}{% endblock %}
       </main>
 
@@ -1927,12 +2269,12 @@
   <!-- Stack of minimized checkout docks, filled via hx-swap-oob from _checkout_modal.html. body.checkout-panel-open shifts it left while a checkout panel is open so the two don't overlap. -->
   <div id="checkout-docks-tray" class="fixed bottom-4 right-4 z-40 flex flex-col-reverse gap-2 items-end pointer-events-none"></div>
 
-  <!-- Shared "close this checkout?" confirm dialog for the minimized docks -- one instance, not a native window.confirm(). -->
+  <!-- Shared "close this checkout?" confirm dialog for the minimized docks - one instance, not a native window.confirm(). -->
   <dialog id="checkout-close-confirm-modal" class="modal">
     <div class="modal-box max-w-sm">
       <div class="flex justify-between items-start mb-2">
         <h3 class="font-bold text-lg">Close checkout?</h3>
-        <!-- cancelCloseConfirm(), same as "Keep it" -- dismissing this should default to NOT closing the checkout. -->
+        <!-- cancelCloseConfirm(), same as "Keep it" - dismissing this should default to NOT closing the checkout. -->
         <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
                 onclick="Checkout.cancelCloseConfirm()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
       </div>
@@ -1960,19 +2302,57 @@
       </div>
     </div>
   </dialog>
+
+  {% if feature_flags.monitoring %}
+  <!-- RFID exit-monitoring alarm - polled from every logged-in page (not
+       just Monitoring itself), so an unauthorized/unknown-tag detection
+       anywhere in the app gets this same full-screen interrupt. Full detail
+       here since the viewer's already authenticated; templates/login.html
+       has its own generic-only version of this same idea for someone not
+       yet logged in - see that file's comment for why it's deliberately
+       less detailed. static/js/ui.js's pollGlobalAlarm() drives this;
+       initGlobalAlarmPolling() below only starts it when this block
+       actually rendered (i.e. the feature's on). -->
+  <dialog id="global-alarm-modal" class="modal">
+    <div class="modal-box max-w-md border-2 border-error">
+      <div class="flex flex-col items-center text-center gap-3 py-2">
+        <div class="w-16 h-16 rounded-full bg-error/15 flex items-center justify-center animate-pulse">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        </div>
+        <h3 class="font-bold text-xl text-error">Alarm active at the monitored exit</h3>
+        <p id="global-alarm-detail" class="text-sm text-base-content/70"></p>
+        <p class="text-xs text-base-content/50">Clears only with the Admin's Master Key Card tap at the tool room.</p>
+      </div>
+      <div class="modal-action justify-center">
+        <button type="button" class="btn btn-sm" onclick="dismissGlobalAlarmModal()">Dismiss</button>
+        <a href="/monitoring" class="btn btn-error btn-sm">View Monitoring</a>
+      </div>
+    </div>
+  </dialog>
+  {% endif %}
   {% endif %}
 
 <script>
   // Server-rendered per-request values static/js/ui.js needs but can't
-  // template itself (it's a static file) -- see that file's header
+  // template itself (it's a static file) - see that file's header
   // comment for why these two live here instead of there.
   window.APP_CONFIG = {
     staffUsername: {{ (staff.username if staff else '') | tojson }},
     staffKey: {{ (staff.username if staff is defined and staff else 'guest') | tojson }},
     toastDurationMs: {{ (staff.toast_duration_seconds if staff else 4) * 1000 }},
+    // Gates ui.js's global RFID-alarm poll - only on when Monitoring itself
+    // is (staff is always in _VIEW_ROLES when this is true, see
+    // routes/monitoring.py - every staff role can see it). The ternary
+    // (not `staff and feature_flags.monitoring | tojson` directly) matters:
+    // `staff` is Jinja's Undefined - not False - on login.html (that
+    // route never passes a staff= var at all), and Undefined blows up
+    // tojson even though it's falsy enough for `and`/`if` to short-circuit
+    // on it correctly.
+    monitoringAlarmPollEnabled: {{ (true if (staff and feature_flags.monitoring) else false) | tojson }},
   };
 </script>
-<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/offline_queue.js') }}"></script>
+<script src="{{ asset_url('js/ui.js') }}"></script>
 
 <!-- Made by Artcin/Karupin/artkaru -->
 </body>

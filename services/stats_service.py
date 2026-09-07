@@ -83,7 +83,7 @@ def most_borrowed_assets(conn, limit, offset, date_filter, date_params):
 
     rows = conn.execute(
         f"""
-        SELECT assets.id, assets.asset_id, assets.name, categories.name AS category,
+        SELECT assets.id, assets.asset_id, assets.barcode_id, assets.name, categories.name AS category,
                COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
@@ -114,7 +114,7 @@ def least_borrowed_assets(conn, limit, offset, date_filter, date_params):
 
     rows = conn.execute(
         f"""
-        SELECT assets.id, assets.asset_id, assets.name, categories.name AS category,
+        SELECT assets.id, assets.asset_id, assets.barcode_id, assets.name, categories.name AS category,
                COUNT(transactions.id) AS borrow_count
         FROM assets
         LEFT JOIN transactions ON transactions.asset_id = assets.id {join_filter}
@@ -178,7 +178,7 @@ def most_borrowed_categories(conn, limit, offset, date_filter, date_params):
 def _loan_duration_group(group_by):
     """Shared group-by SQL fragments for loan_duration() and the export section."""
     if group_by == "asset":
-        return "assets.id AS group_id, assets.asset_id, assets.name", "assets.id", "assets.id"
+        return "assets.id AS group_id, assets.asset_id, assets.barcode_id, assets.name", "assets.id", "assets.id"
     return (
         "COALESCE(categories.name, 'Uncategorized') AS category",
         "category",
@@ -335,7 +335,7 @@ def overdue_frequency(conn, limit, offset, date_filter, date_params):
 
 def _condition_changes_group(group_by):
     if group_by == "asset":
-        return "assets.id AS group_id, assets.asset_id, assets.name", "assets.id", "assets.id"
+        return "assets.id AS group_id, assets.asset_id, assets.barcode_id, assets.name", "assets.id", "assets.id"
     return (
         "COALESCE(categories.name, 'Uncategorized') AS category",
         "category",
@@ -521,9 +521,16 @@ def staff_activity(conn, since, until):
             GROUP BY staff_id
         ) al ON al.staff_id = staff.id
         LEFT JOIN (
-            SELECT staff_id, AVG((julianday(completed_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
-            FROM checkout_sessions
-            WHERE status = 'completed' AND staff_id IS NOT NULL AND completed_at IS NOT NULL {session_clause}
+            -- Login session length (sessions.created_at -> last_active_at), not
+            -- the checkout-cart's own "session" (that's checkouts_processed
+            -- above) - was previously computed off checkout_sessions, which is
+            -- a completely different, much sparser table (only ever has rows
+            -- for staff who've processed a full checkout) and left this
+            -- column blank for most staff. sessions has a row per login for
+            -- every staff member, so this is populated far more reliably.
+            SELECT staff_id, AVG((julianday(last_active_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
+            FROM sessions
+            WHERE staff_id IS NOT NULL {session_clause}
             GROUP BY staff_id
         ) cs ON cs.staff_id = staff.id
         WHERE staff.is_active = 1
@@ -568,7 +575,7 @@ def my_checkouts(conn, staff_id, limit, offset, date_filter, date_params):
     ).fetchone()["cnt"]
     rows = conn.execute(
         f"""
-        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+        SELECT transactions.id, assets.asset_id, assets.barcode_id, assets.name AS asset_name,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                transactions.time_out, transactions.status
         FROM transactions
@@ -589,6 +596,7 @@ def my_checkouts(conn, staff_id, limit, offset, date_filter, date_params):
             {
                 "id": r["id"],
                 "asset_id": r["asset_id"],
+                "barcode_id": r["barcode_id"],
                 "asset_name": r["asset_name"],
                 "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
                 "time_out": r["time_out"],
@@ -612,7 +620,7 @@ def my_returns(conn, staff_id, limit, offset, date_filter, date_params):
     ).fetchone()["cnt"]
     rows = conn.execute(
         f"""
-        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+        SELECT transactions.id, assets.asset_id, assets.barcode_id, assets.name AS asset_name,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                transactions.time_in, transactions.condition_in
         FROM transactions
@@ -633,6 +641,7 @@ def my_returns(conn, staff_id, limit, offset, date_filter, date_params):
             {
                 "id": r["id"],
                 "asset_id": r["asset_id"],
+                "barcode_id": r["barcode_id"],
                 "asset_name": r["asset_name"],
                 "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
                 "time_in": r["time_in"],
@@ -661,7 +670,7 @@ def my_overdue_handled(conn, staff_id, limit, offset, date_filter, date_params):
     ).fetchone()["cnt"]
     rows = conn.execute(
         f"""
-        SELECT transactions.id, assets.asset_id, assets.name AS asset_name,
+        SELECT transactions.id, assets.asset_id, assets.barcode_id, assets.name AS asset_name,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                transactions.due_date, transactions.time_in, transactions.status
         FROM transactions
@@ -682,6 +691,7 @@ def my_overdue_handled(conn, staff_id, limit, offset, date_filter, date_params):
             {
                 "id": r["id"],
                 "asset_id": r["asset_id"],
+                "barcode_id": r["barcode_id"],
                 "asset_name": r["asset_name"],
                 "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
                 "due_date": r["due_date"],
@@ -717,7 +727,7 @@ def _write_sheet(wb, title, headers, rows_as_lists):
     ws.freeze_panes = "A2"
 
 
-# -- Per-widget (headers, rows_as_lists) builders --------------------------
+# - Per-widget (headers, rows_as_lists) builders --------------------------
 # Same shape as the on-screen report card, returned plain for export_stats() to format.
 
 
@@ -753,7 +763,7 @@ def _section_summary(conn, ctx):
 def _section_most_borrowed_assets(conn, ctx):
     rows = conn.execute(
         f"""
-        SELECT assets.asset_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
+        SELECT assets.asset_id, assets.barcode_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
         FROM transactions
         JOIN assets ON transactions.asset_id = assets.id
         LEFT JOIN categories ON assets.category_id = categories.id
@@ -764,8 +774,8 @@ def _section_most_borrowed_assets(conn, ctx):
     ).fetchall()
     return (
         "Most Borrowed Assets",
-        ["Asset Code", "Name", "Category", "Borrows"],
-        [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
+        ["Asset Code", "Barcode", "Name", "Category", "Borrows"],
+        [[r["asset_id"], r["barcode_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
     )
 
 
@@ -792,7 +802,7 @@ def _section_least_borrowed_assets(conn, ctx):
     join_filter = f"AND {ctx['date_filter']}" if ctx["date_filter"] else ""
     rows = conn.execute(
         f"""
-        SELECT assets.asset_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
+        SELECT assets.asset_id, assets.barcode_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
         FROM assets
         LEFT JOIN transactions ON transactions.asset_id = assets.id {join_filter}
         LEFT JOIN categories ON assets.category_id = categories.id
@@ -803,8 +813,8 @@ def _section_least_borrowed_assets(conn, ctx):
     ).fetchall()
     return (
         "Least Borrowed Assets",
-        ["Asset Code", "Name", "Category", "Borrows"],
-        [[r["asset_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
+        ["Asset Code", "Barcode", "Name", "Category", "Borrows"],
+        [[r["asset_id"], r["barcode_id"], r["name"], r["category"] or "Uncategorized", r["borrow_count"]] for r in rows],
     )
 
 
@@ -813,8 +823,8 @@ def _section_avg_loan_duration(conn, ctx):
     group_by = ctx["loan_group_by"]
     ld_where = ["transactions.status = 'returned'", "transactions.time_in IS NOT NULL"] + ([date_filter] if date_filter else [])
     if group_by == "asset":
-        select_group, group_clause = "assets.asset_id, assets.name", "assets.id"
-        headers = ["Asset Code", "Name", "Avg Hours"]
+        select_group, group_clause = "assets.asset_id, assets.barcode_id, assets.name", "assets.id"
+        headers = ["Asset Code", "Barcode", "Name", "Avg Hours"]
     else:
         select_group, group_clause = "COALESCE(categories.name, 'Uncategorized') AS category", "category"
         headers = ["Category", "Avg Hours"]
@@ -833,7 +843,7 @@ def _section_avg_loan_duration(conn, ctx):
     return (
         "Avg Loan Duration",
         headers,
-        [([r["asset_id"], r["name"], r["avg_loan_hours"]] if group_by == "asset"
+        [([r["asset_id"], r["barcode_id"], r["name"], r["avg_loan_hours"]] if group_by == "asset"
           else [r["category"], r["avg_loan_hours"]]) for r in rows],
     )
 
@@ -890,8 +900,8 @@ def _section_condition_changes(conn, ctx):
     cc_where = ["transactions.status = 'returned'", "transactions.condition_in IS NOT NULL"] + ([date_filter] if date_filter else [])
     out_rank, in_rank = condition_rank_case("transactions.condition_out"), condition_rank_case("transactions.condition_in")
     if group_by == "asset":
-        select_group, group_clause = "assets.asset_id, assets.name", "assets.id"
-        headers = ["Asset Code", "Name", "Completed Returns", "Worsened"]
+        select_group, group_clause = "assets.asset_id, assets.barcode_id, assets.name", "assets.id"
+        headers = ["Asset Code", "Barcode", "Name", "Completed Returns", "Worsened"]
     else:
         select_group, group_clause = "COALESCE(categories.name, 'Uncategorized') AS category", "category"
         headers = ["Category", "Completed Returns", "Worsened"]
@@ -910,7 +920,7 @@ def _section_condition_changes(conn, ctx):
     return (
         "Condition Changes",
         headers,
-        [([r["asset_id"], r["name"], r["completed_returns"], r["worsened_count"]] if group_by == "asset"
+        [([r["asset_id"], r["barcode_id"], r["name"], r["completed_returns"], r["worsened_count"]] if group_by == "asset"
           else [r["category"], r["completed_returns"], r["worsened_count"]]) for r in rows],
     )
 
@@ -947,9 +957,11 @@ def _section_staff_activity(conn, ctx):
             GROUP BY staff_id
         ) al ON al.staff_id = staff.id
         LEFT JOIN (
-            SELECT staff_id, AVG((julianday(completed_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
-            FROM checkout_sessions
-            WHERE status = 'completed' AND staff_id IS NOT NULL AND completed_at IS NOT NULL {session_clause}
+            -- See stats_service.staff_activity's identical join for why this
+            -- reads sessions (login duration), not checkout_sessions.
+            SELECT staff_id, AVG((julianday(last_active_at) - julianday(created_at)) * 24 * 60) AS avg_minutes
+            FROM sessions
+            WHERE staff_id IS NOT NULL {session_clause}
             GROUP BY staff_id
         ) cs ON cs.staff_id = staff.id
         WHERE staff.is_active = 1
@@ -971,7 +983,7 @@ def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
     def builder(conn, ctx):
         rows = conn.execute(
             f"""
-            SELECT assets.asset_id, assets.name AS asset_name,
+            SELECT assets.asset_id, assets.barcode_id, assets.name AS asset_name,
                    members.first_name, members.last_name, members.middle_name, members.suffix,
                    transactions.{date_col} AS date_col, transactions.{extra_col} AS extra_col
             FROM transactions
@@ -985,8 +997,8 @@ def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
         ).fetchall()
         return (
             title,
-            ["Asset Code", "Asset Name", "Member", date_col.replace("_", " ").title(), extra_header],
-            [[r["asset_id"], r["asset_name"],
+            ["Asset Code", "Barcode", "Asset Name", "Member", date_col.replace("_", " ").title(), extra_header],
+            [[r["asset_id"], r["barcode_id"], r["asset_name"],
               full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
               r["date_col"], r["extra_col"]] for r in rows],
         )
@@ -994,8 +1006,168 @@ def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
     return builder
 
 
+def asset_valuation_table(conn, limit, offset):
+    """Paginated live-view backing GET /stats/assets/valuation - export's
+    _section_asset_valuation covers the same data for the download."""
+    total_count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND purchase_cost IS NOT NULL"
+    ).fetchone()["cnt"]
+
+    rows = conn.execute(
+        """
+        SELECT assets.id, assets.asset_id, assets.barcode_id, assets.name, categories.name AS category,
+               assets.status, assets.purchase_cost
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        WHERE assets.deleted_at IS NULL AND assets.purchase_cost IS NOT NULL
+        ORDER BY assets.purchase_cost DESC
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
+
+    return {
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "summary": asset_valuation_summary(conn),
+        "results": [dict(row) for row in rows],
+    }
+
+
+def asset_valuation_summary(conn):
+    """Point-in-time snapshot (not date-ranged like stats_summary - there's no
+    meaningful "value acquired between X and Y" without an acquisition-cost
+    ledger, just current book value of what's on hand right now). Returns
+    None if no asset has a purchase_cost set yet, so callers can skip
+    rendering the section rather than showing a misleading $0."""
+    row = conn.execute(
+        """
+        SELECT
+            SUM(purchase_cost) AS total_value,
+            SUM(CASE WHEN status = 'borrowed' THEN purchase_cost ELSE 0 END) AS value_checked_out,
+            SUM(CASE WHEN status = 'maintenance' THEN purchase_cost ELSE 0 END) AS value_in_maintenance,
+            COUNT(CASE WHEN purchase_cost IS NOT NULL THEN 1 END) AS priced_count
+        FROM assets
+        WHERE deleted_at IS NULL
+        """
+    ).fetchone()
+    if not row["priced_count"]:
+        return None
+    return {
+        "total_value": row["total_value"] or 0,
+        "value_checked_out": row["value_checked_out"] or 0,
+        "value_in_maintenance": row["value_in_maintenance"] or 0,
+        "priced_count": row["priced_count"],
+    }
+
+
+def _section_asset_valuation(conn, ctx):
+    rows = conn.execute(
+        """
+        SELECT assets.asset_id, assets.barcode_id, assets.name, COALESCE(categories.name, 'Uncategorized') AS category,
+               assets.status, assets.purchase_cost
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        WHERE assets.deleted_at IS NULL AND assets.purchase_cost IS NOT NULL
+        ORDER BY assets.purchase_cost DESC
+        LIMIT ?
+        """,
+        (EXPORT_ROW_LIMIT,),
+    ).fetchall()
+    return (
+        "Asset Valuation",
+        ["Asset Code", "Barcode", "Name", "Category", "Status", "Purchase Cost"],
+        [[r["asset_id"], r["barcode_id"], r["name"], r["category"], r["status"], r["purchase_cost"]] for r in rows],
+    )
+
+
+def maintenance_schedule_table(conn, limit, offset):
+    """Paginated live-view backing GET /stats/assets/maintenance-schedule -
+    export's _section_maintenance_schedule covers the same data for the download."""
+    where_sql = (
+        "WHERE assets.deleted_at IS NULL AND assets.status != 'maintenance'"
+        " AND (assets.next_maintenance_due IS NOT NULL OR assets.maintenance_interval_checkouts IS NOT NULL)"
+    )
+    total_count = conn.execute(f"SELECT COUNT(*) AS cnt FROM assets {where_sql}").fetchone()["cnt"]
+    rows = conn.execute(
+        f"""
+        SELECT assets.id, assets.asset_id, assets.barcode_id, assets.name, categories.name AS category,
+               assets.next_maintenance_due, assets.maintenance_interval_checkouts,
+               assets.checkouts_since_maintenance
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        {where_sql}
+        ORDER BY assets.next_maintenance_due IS NULL, assets.next_maintenance_due, assets.name
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
+    return {
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "results": [dict(row) for row in rows],
+    }
+
+
+def _section_maintenance_schedule(conn, ctx):
+    """Same due-detection as services/asset_service.py's
+    get_maintenance_due_assets, kept as a standalone query here (not
+    reusing that function directly) since the export path shapes rows as
+    the (title, headers, rows_as_lists) tuple every other section returns,
+    not the list-of-dicts get_maintenance_due_assets returns for the
+    dashboard/live-view."""
+    rows = conn.execute(
+        """
+        SELECT assets.asset_id, assets.barcode_id, assets.name, COALESCE(categories.name, 'Uncategorized') AS category,
+               assets.next_maintenance_due, assets.maintenance_interval_checkouts,
+               assets.checkouts_since_maintenance
+        FROM assets
+        LEFT JOIN categories ON assets.category_id = categories.id
+        WHERE assets.deleted_at IS NULL AND assets.status != 'maintenance'
+          AND (assets.next_maintenance_due IS NOT NULL OR assets.maintenance_interval_checkouts IS NOT NULL)
+        ORDER BY assets.next_maintenance_due IS NULL, assets.next_maintenance_due, assets.name
+        LIMIT ?
+        """,
+        (EXPORT_ROW_LIMIT,),
+    ).fetchall()
+    return (
+        "Maintenance Schedule",
+        ["Asset Code", "Barcode", "Name", "Category", "Next Due", "Checkouts Since Service", "Interval"],
+        [
+            [r["asset_id"], r["barcode_id"], r["name"], r["category"], r["next_maintenance_due"] or "-",
+             r["checkouts_since_maintenance"], r["maintenance_interval_checkouts"] or "-"]
+            for r in rows
+        ],
+    )
+
+
+def _section_monitoring_activity(conn, ctx):
+    """Exportable version of reports.html's Monitoring Activity widget -
+    reuses monitoring_stats_service.get_summary (the same metrics the Reports
+    live-preview widget shows), scoped to the same since/until as the rest
+    of the export. ctx's plain since/until strings satisfy get_summary's
+    `.get("since")`/`.get("until")` the same way a real request.args would -
+    it never needs classification/q, so their absence here is fine."""
+    from services import monitoring_stats_service
+
+    args = {"since": ctx.get("since"), "until": ctx.get("until")}
+    metrics, error = monitoring_stats_service.get_summary(conn, args)
+    if error:
+        metrics = []
+    return (
+        "Monitoring Activity",
+        ["Metric", "Value"],
+        [[m["label"], m["value"]] for m in metrics],
+    )
+
+
 SECTION_BUILDERS = {
     "summary": _section_summary,
+    "asset_valuation": _section_asset_valuation,
+    "maintenance_schedule": _section_maintenance_schedule,
+    "monitoring_activity": _section_monitoring_activity,
     "most_borrowed_assets": _section_most_borrowed_assets,
     "most_borrowed_categories": _section_most_borrowed_categories,
     "least_borrowed_assets": _section_least_borrowed_assets,

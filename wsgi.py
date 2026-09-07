@@ -1,4 +1,4 @@
-"""Production entry point -- serves the Flask app through Waitress instead of the dev server.
+"""Production entry point - serves the Flask app through Waitress instead of the dev server.
 
 Usage:
     python wsgi.py

@@ -1,6 +1,6 @@
 {# Rendered by GET /api/v1/checkout-sessions/active-banner.
    Returns one row per checkout session the current staff user has
-   in-progress (started, not yet completed or cancelled) -- there can be
+   in-progress (started, not yet completed or cancelled) - there can be
    more than one, e.g. if a session was minimized and a second one
    started before the first was finished. Renders nothing if there are
    none. Re-fetched on page load and whenever transactions-refreshed
@@ -17,7 +17,7 @@
     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-info shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
     <span class="truncate">
       <span class="font-medium">Checkout in progress</span>
-      &mdash; {{ session.member_barcode }}
+      - {{ session.member_barcode }}
       &middot; {{ session.cart_items|length }} item{{ '' if session.cart_items|length == 1 else 's' }} scanned
     </span>
   </div>

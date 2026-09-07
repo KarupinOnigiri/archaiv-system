@@ -6,7 +6,7 @@
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
     <p class="text-sm text-base-content/70 mb-4">
-      Admin accounts can't be deactivated directly -- this asks other eligible staff to review and approve deactivating
+      Admin accounts can't be deactivated directly - this asks other eligible staff to review and approve deactivating
       <strong>{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</strong>'s account.
     </p>
 
@@ -37,7 +37,7 @@
 
 <script>
 // Same fetch+CSRF+inline-error shape as staff/_delete_modal.html's
-// submitDeleteStaffForm -- a styled modal error instead of a toast, so
+// submitDeleteStaffForm - a styled modal error instead of a toast, so
 // e.g. "a pending request already exists" (a 409 that can still happen
 // here despite the already_pending guard above, if two admins open this
 // form at nearly the same moment) reads as a form validation problem,

@@ -1,0 +1,23 @@
+<!-- Shared RFID TAG field, included from both _add_modal.html and
+     _edit_modal.html so they don't drift apart. Pass `rfid_value` (the
+     current asset.rfid_id, or omit/blank for Add) from the including
+     template.
+
+     Plain manual entry - staff paste in whatever ID they wrote/verified via
+     the vendor's own RFIDDemo.exe tool, run separately on whoever's machine
+     has the reader/writer plugged in. This app used to have its own
+     in-browser RFID Tools page (System -> RFID Tag Writer, Web Serial-based)
+     plus a "Scan RFID" button on the Inventory page for looking an asset up
+     by a tag it's already wearing - both were removed after extensive
+     testing showed the reader/writer's CDC/serial interface doesn't
+     actually work with this hardware's firmware (see the project
+     conversation history for the full troubleshooting). RFIDDemo.exe
+     still works fine over USB_HID for writing/verifying tags directly; this
+     field is just where the resulting ID gets typed in afterward. The
+     exact-match barcode search (routes/assets.py's asset_by_barcode) still
+     works if the tag's ID was also saved as the asset's barcode_id. -->
+<div>
+  <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID TAG</label>
+  <input type="text" name="rfid_id" value="{{ rfid_value or '' }}" placeholder="e.g. E2003411B802011383258566"
+         class="input input-bordered w-full mt-1 bg-base-100 font-mono text-sm">
+</div>

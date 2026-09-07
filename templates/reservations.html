@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Reservations</h1>
+    </div>
+  </div>
+
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <select id="reservations-status-filter" name="status" class="select select-bordered select-sm w-40"
+              hx-get="/api/v1/reservations" hx-trigger="change" hx-target="#reservations-table-container" hx-swap="innerHTML"
+              hx-include="#reservations-mine-filter"
+              hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+        <option value="scheduled" {% if status == 'scheduled' %}selected{% endif %}>Scheduled</option>
+        <option value="fulfilled" {% if status == 'fulfilled' %}selected{% endif %}>Fulfilled</option>
+        <option value="cancelled" {% if status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+        <option value="expired" {% if status == 'expired' %}selected{% endif %}>Expired</option>
+        <option value="" {% if status == '' %}selected{% endif %}>All</option>
+      </select>
+      {% if staff.role in ["admin", "in_charge"] %}
+      <label class="label cursor-pointer gap-2">
+        <input type="checkbox" id="reservations-mine-filter" name="mine" class="checkbox checkbox-sm" value="1" {% if mine %}checked{% endif %}
+               hx-get="/api/v1/reservations" hx-trigger="change" hx-target="#reservations-table-container" hx-swap="innerHTML"
+               hx-include="#reservations-status-filter"
+               hx-vals='{"limit": {{ limit }}, "offset": 0}'>
+        <span class="label-text text-sm">Only mine</span>
+      </label>
+      {% endif %}
+    </div>
+
+    <div id="reservations-table-container"
+         hx-get="/api/v1/reservations"
+         hx-trigger="load"
+         hx-target="#reservations-table-container"
+         hx-swap="innerHTML"
+         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }}, "status": "{{ status }}", "mine": "{{ '1' if mine else '' }}"}'>
+    </div>
+  </div>
+</div>
+
+<!-- Target for asset Details modals opened from a row in the table below
+     (hx-target="#modal-container", hx-swap="beforeend") - without this the
+     link just silently no-ops since there was nowhere for the swap to land. -->
+<div id="modal-container"></div>
+
+<script>
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  return !!(container && container.querySelector(':scope > .modal'));
+}
+
+// Same single-slot pageKeydownHandler pattern as Inventory/Members/etc (see
+// static/js/ui.js) - this page had none until now, so Reservations was
+// silently missing from every keyboard-driven workflow.
+window.pageKeydownHandler = function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (isTypingTarget(e.target) || isModalOpen()) return;
+
+  // 1-5 - jump to the matching status filter option, same ordering as the
+  // dropdown itself (Scheduled / Fulfilled / Cancelled / Expired / All).
+  const statusByKey = { '1': 'scheduled', '2': 'fulfilled', '3': 'cancelled', '4': 'expired', '5': '' };
+  if (Object.prototype.hasOwnProperty.call(statusByKey, e.key)) {
+    e.preventDefault();
+    const select = document.getElementById('reservations-status-filter');
+    select.value = statusByKey[e.key];
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  // ` - toggle "Only mine" (admin/in_charge only - the checkbox simply
+  // isn't in the DOM for other roles, same guard as Inventory's `.
+  if (e.key === '`') {
+    const toggle = document.getElementById('reservations-mine-filter');
+    if (!toggle) return;
+    e.preventDefault();
+    toggle.checked = !toggle.checked;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  // Esc - back to the default view (Scheduled, mine off), same "reset to
+  // default" role Esc plays on every other filtered list page.
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    const select = document.getElementById('reservations-status-filter');
+    const toggle = document.getElementById('reservations-mine-filter');
+    select.value = 'scheduled';
+    if (toggle) toggle.checked = false;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+};
+</script>
+{% endblock %}

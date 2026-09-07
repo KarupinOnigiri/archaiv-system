@@ -2,7 +2,7 @@ from utils.logger import log_action
 from services.seed_service import seed_initial_admin
 from utils.formatters import full_name
 
-# Any active in_charge/tool_keeper can vote now -- other admins can't.
+# Any active in_charge/tool_keeper can vote now - other admins can't.
 ELIGIBLE_REVIEWER_ROLES = ("in_charge", "tool_keeper")
 
 
@@ -60,7 +60,7 @@ def requirements_met(request_row, conn):
 
 def finalize_admin_deactivation(request_row, actor_staff_id, conn):
     """Deactivates the target admin. Only called from the requester-triggered /finalize route.
-    Refuses if the target is the last active admin -- a hard system invariant."""
+    Refuses if the target is the last active admin - a hard system invariant."""
     if not requirements_met(request_row, conn):
         return False, "The required approvals haven't been reached yet"
 
@@ -90,7 +90,7 @@ def finalize_admin_deactivation(request_row, actor_staff_id, conn):
     ).fetchone()["cnt"]
 
     if remaining_admins == 0:
-        return False, f"Can't deactivate {target_label} -- they're the last active admin account"
+        return False, f"Can't deactivate {target_label} - they're the last active admin account"
 
     conn.execute(
         "UPDATE staff SET is_active = 0, assigned_start = NULL, assigned_end = NULL, deactivated_at = datetime('now', 'localtime') WHERE id = ?",

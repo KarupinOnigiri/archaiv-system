@@ -5,7 +5,7 @@ Shared by routes/stats.py, report_layout_service.py, and templates/reports.html.
 ADMIN_IN_CHARGE = ("admin", "in_charge")
 
 WIDGETS = [
-    # admin/in_charge only -- these are system-wide totals, not scoped to one staff member.
+    # admin/in_charge only - these are system-wide totals, not scoped to one staff member.
     {
         "id": "summary",
         "title": "At-a-glance summary",
@@ -59,6 +59,30 @@ WIDGETS = [
         "title": "Staff Activity",
         "type": "table",
         "roles": ("admin",),
+    },
+    # Financial data - excluded from tool_keeper, same reasoning as staff_activity.
+    {
+        "id": "asset_valuation",
+        "title": "Asset Valuation",
+        "type": "table",
+        "roles": ADMIN_IN_CHARGE,
+    },
+    {
+        "id": "maintenance_schedule",
+        "title": "Maintenance Schedule",
+        "type": "table",
+        "roles": ADMIN_IN_CHARGE,
+    },
+    # Summary of the RFID exit-monitoring log for the report's date range -
+    # the detailed/interactive version lives on Monitoring's own Trends tab,
+    # this is a printable/exportable summary alongside the rest of Reports.
+    # Hidden (routes/stats.py's _feature_disabled_widget_ids) whenever the
+    # "monitoring" feature itself is off, on top of this normal role gate.
+    {
+        "id": "monitoring_activity",
+        "title": "Monitoring Activity",
+        "type": "table",
+        "roles": ADMIN_IN_CHARGE,
     },
     # Tool Keeper sees only these three, each scoped to their own activity.
     {

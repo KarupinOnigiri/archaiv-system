@@ -230,6 +230,18 @@ def list_available_assets_for_checkout():
     return jsonify(result)
 
 
+@transactions_bp.route("/checkout-sessions/available-members")
+@login_required
+def list_available_members_for_checkout():
+    """Backs the "Show available members" flyout in checkout Step 1; `code` is barcode_id."""
+    conn = get_db_connection()
+    try:
+        result = transaction_service.list_available_members_for_checkout(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
 @transactions_bp.route("/checkout-sessions/<int:id>/items/add", methods=["POST"])
 @login_required
 @limiter.limit("60 per minute")
@@ -242,11 +254,14 @@ def add_item_to_session(id):
     if not asset_code:
         return jsonify({"error": "Missing required field: asset_code"}), 400
     rfid_code = data.get("rfid_code") or None
+    # Only meaningful for a consumable asset - ignored otherwise, see
+    # transaction_service.add_item_to_checkout_session's docstring.
+    quantity = data.get("quantity", 1)
 
     conn = get_db_connection()
     try:
         result, error = transaction_service.add_item_to_checkout_session(
-            conn, id, g.staff["id"], asset_code, rfid_code
+            conn, id, g.staff["id"], asset_code, rfid_code, quantity
         )
     finally:
         conn.close()
@@ -262,9 +277,20 @@ def add_item_to_session(id):
 @login_required
 @limiter.limit("60 per minute")
 def remove_item_from_session(id, item_id):
+    # Consumable-only quantity stepper's "-" button; absent/blank means
+    # "remove the whole line" (a serialized item's only option), same as
+    # before this existed - see remove_item_from_checkout_session's docstring.
+    decrement_by = request.args.get("decrement_by") or (request.get_json(silent=True) or {}).get("decrement_by")
+    try:
+        decrement_by = int(decrement_by) if decrement_by is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "decrement_by must be a whole number"}), 400
+
     conn = get_db_connection()
     try:
-        result, error = transaction_service.remove_item_from_checkout_session(conn, id, item_id, g.staff["id"])
+        result, error = transaction_service.remove_item_from_checkout_session(
+            conn, id, item_id, g.staff["id"], decrement_by
+        )
     finally:
         conn.close()
 
@@ -334,6 +360,18 @@ def return_asset():
     return jsonify(result), 200
 
 
+@transactions_bp.route("/transactions/members-with-loans")
+@login_required
+def members_with_open_loans():
+    """Backs the Return Items modal's "Show members with loans" flyout."""
+    conn = get_db_connection()
+    try:
+        result = transaction_service.list_members_with_open_loans(conn)
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
 @transactions_bp.route("/transactions/member-open-loans")
 @login_required
 def member_open_loans():
@@ -356,7 +394,7 @@ def member_open_loans():
 @transactions_bp.route("/transactions/return-scan-form")
 @login_required
 def return_scan_form():
-    """Renders the scan-return modal shell -- no DB work here, modal
+    """Renders the scan-return modal shell - no DB work here, modal
     drives itself client-side, same shape as checkout_start_form() above."""
     return render_template("transactions/_return_scan_modal.html")
 
@@ -385,7 +423,7 @@ def return_scan_lookup():
 @transactions_bp.route("/transactions/<int:id>/return-confirm")
 @login_required
 def return_confirm(id):
-    """Opens the row-action return modal. Read-only lookup -- the actual
+    """Opens the row-action return modal. Read-only lookup - the actual
     mutation happens in return_transaction_by_id() below, on submit."""
     conn = get_db_connection()
     try:
@@ -517,7 +555,7 @@ def batch_return_transactions():
 @transactions_bp.route("/transactions/<int:id>/renew-form")
 @login_required
 def renew_form(id):
-    """Opens the extend-due-date modal -- read-only lookup, same split as
+    """Opens the extend-due-date modal - read-only lookup, same split as
     return_confirm()/return_transaction_by_id()."""
     conn = get_db_connection()
     try:
@@ -577,7 +615,7 @@ def list_open_checkout_sessions():
 @transactions_bp.route("/checkout-sessions/<int:id>/checkout", methods=["POST"])
 @login_required
 def checkout_session(id):
-    """The actual commit point -- nothing lands in `transactions` until
+    """The actual commit point - nothing lands in `transactions` until
     this runs; everything scanned before it is just a reservation."""
     data, error = get_json_or_error()
     if error:

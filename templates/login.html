@@ -13,11 +13,12 @@
   <div class="relative min-h-full flex items-center justify-center p-4">
 
   <!-- The three steps (username, password, RFID PIN) are normal-flow
-       siblings, not absolutely positioned -- the card sizes itself to
+       siblings, not absolutely positioned - the card sizes itself to
        whichever step is showing instead of reserving height for the tallest. -->
   <div class="w-full max-w-sm bg-base-100 rounded-xl shadow-xl shadow-primary/10 relative overflow-hidden">
 
     <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" novalidate>
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
 
     <!-- Step 1: username/barcode -->
     <div id="username-step" class="p-8 flex flex-col">
@@ -52,7 +53,7 @@
             placeholder="Username or Barcode ID"
             class="grow bg-transparent border-none outline-none focus:outline-none"
           >
-          <!-- Only shown once an RFID lookup is actually in flight -- 150ms show-delay
+          <!-- Only shown once an RFID lookup is actually in flight - 150ms show-delay
                (same convention as base.html's tooltip) so it doesn't flicker on for fast lookups. -->
           <span id="username-lookup-spinner" class="loading loading-spinner loading-xs text-base-content/30 hidden shrink-0"></span>
         </label>
@@ -68,13 +69,13 @@
         Forgot your password? <span class="text-secondary font-medium">Contact your administrator</span>
       </p>
 
-      <!-- type="button", not submit -- no password yet, so this can't submit the form. -->
+      <!-- type="button", not submit - no password yet, so this can't submit the form. -->
       <button type="button" onclick="continueFromUsername()" class="btn btn-primary w-full rounded-[18px] mt-5 py-3 h-auto text-base shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 hover:brightness-110 active:scale-[0.98] transition-all">
         Continue
       </button>
     </div>
 
-    <!-- Step 2: password -- back button, identity readout (avatar + name from
+    <!-- Step 2: password - back button, identity readout (avatar + name from
          a real /api/v1/username-lookup call), then the password field.
          continueFromUsername() already confirmed the account is real before
          this step ever shows. -->
@@ -86,7 +87,7 @@
       </button>
 
       <div class="flex-1 flex flex-col items-center justify-center">
-        <!-- Real photo when on file, initials fallback otherwise -- same pattern as
+        <!-- Real photo when on file, initials fallback otherwise - same pattern as
              the RFID PIN view and every profile modal (staff/members _profile_modal.html). -->
         <div class="bg-primary text-primary-content rounded-full w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden mb-3">
           <img id="password-step-avatar-img" src="" alt="" class="hidden w-full h-full object-cover">
@@ -151,15 +152,23 @@
 
     </form>
 
-    <!-- RFID PIN entry -- admin-only (routes/auth.py:login_rfid enforces this
-         server-side too). No button to get here: the username field is
-         autofocused, so tapping a card just types its ID there and fires Enter
-         like any other scanner shortcut in this app. The keydown handler below
-         checks that value against /api/v1/rfid-lookup and swaps to this view
-         only if it's a recognized admin card; anything else falls through to
-         a normal form submit. -->
-    <div id="rfid-pin-view" class="hidden p-8 flex flex-col">
-      <button type="button" onclick="cancelRfidLogin()"
+    <!-- Barcode + PIN entry - opt-in per staff member (Account Settings; see
+         staff.barcode_pin_enabled), enforced server-side too
+         (routes/auth.py:login_barcode_pin). No button to get here: the
+         username field is autofocused, so scanning a barcode just types its
+         ID there and fires Enter like any other scanner shortcut in this
+         app. The keydown handler below checks that value against
+         /api/v1/barcode-pin-lookup and swaps to this view only if it
+         matches staff who've turned this on; anything else falls through to
+         a normal form submit.
+
+         This view/its IDs used to be RFID-card-specific (rfid-pin-*) --
+         RFID + PIN login itself is still there server-side
+         (routes/auth.py:login_rfid), just not linked from this page
+         anymore now that barcode + PIN is the active flow; see the project
+         conversation history for why it's being kept, not deleted. -->
+    <div id="barcode-pin-view" class="hidden p-8 flex flex-col">
+      <button type="button" onclick="cancelBarcodePinLogin()"
               class="group self-start flex items-center gap-1 text-sm text-base-content/50 rounded-full pl-1.5 pr-3 py-1 -ml-1.5 -mt-1 mb-2 transition-colors hover:text-base-content hover:bg-base-200 active:scale-95">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
         Not you?
@@ -167,34 +176,35 @@
 
       <div class="flex-1 flex flex-col items-center justify-center gap-1">
         <!-- Same avatar sizing as the password step above, for consistency. -->
-        <div id="rfid-pin-avatar" class="bg-primary text-primary-content rounded-full w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden mb-3">
-          <img id="rfid-pin-avatar-img" src="" alt="" class="hidden w-full h-full object-cover">
-          <span id="rfid-pin-avatar-fallback" class="text-3xl font-semibold"></span>
+        <div id="barcode-pin-avatar" class="bg-primary text-primary-content rounded-full w-24 h-24 flex items-center justify-center shrink-0 overflow-hidden mb-3">
+          <img id="barcode-pin-avatar-img" src="" alt="" class="hidden w-full h-full object-cover">
+          <span id="barcode-pin-avatar-fallback" class="text-3xl font-semibold"></span>
         </div>
 
-        <!-- Role is hardcoded "Administrator" -- login_rfid only ever resolves admin cards. -->
+        <!-- No hardcoded role here (unlike the old RFID-only version) --
+             login_barcode_pin resolves any role that's opted in. -->
         <p class="text-center text-sm text-base-content/60 mb-5 px-4">
-          Signing in <span id="rfid-pin-name" class="font-semibold text-base-content">&nbsp;</span> as Administrator
+          Signing in as <span id="barcode-pin-name" class="font-semibold text-base-content">&nbsp;</span>
         </p>
 
-        <!-- Dot indicators + numeric keypad, mobile-wallet style -- meant to be
+        <!-- Dot indicators + numeric keypad, mobile-wallet style - meant to be
              entered fast at a shared terminal, not typed like a password. -->
-        <div id="rfid-pin-dots" class="flex items-center gap-3 mb-2">
+        <div id="barcode-pin-dots" class="flex items-center gap-3 mb-2">
           {% for i in range(6) %}
-          <span id="rfid-pin-dot-{{ i }}" class="w-3 h-3 rounded-full bg-base-300 transition-colors"></span>
+          <span id="barcode-pin-dot-{{ i }}" class="w-3 h-3 rounded-full bg-base-300 transition-colors"></span>
           {% endfor %}
         </div>
 
-        <!-- invisible not hidden -- reserves the h-8 slot so the keypad below never shifts. -->
-        <div id="rfid-pin-error" class="invisible flex items-start gap-1.5 text-error text-xs h-8 items-center">
+        <!-- invisible not hidden - reserves the h-8 slot so the keypad below never shifts. -->
+        <div id="barcode-pin-error" class="invisible flex items-start gap-1.5 text-error text-xs h-8 items-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 002 0V6zm-1 8a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z" clip-rule="evenodd"/>
           </svg>
-          <span id="rfid-pin-error-text"></span>
+          <span id="barcode-pin-error-text"></span>
         </div>
       </div>
 
-      <div id="rfid-pin-pad" class="grid grid-cols-3 gap-3 place-items-center">
+      <div id="barcode-pin-pad" class="grid grid-cols-3 gap-3 place-items-center">
         {% for d in [1, 2, 3, 4, 5, 6, 7, 8, 9] %}
         <button type="button" onclick="pinDigit({{ d }})"
                 class="w-14 h-14 rounded-full bg-base-200 hover:bg-base-300 active:scale-95 text-xl font-medium text-base-content transition-all">{{ d }}</button>
@@ -215,7 +225,7 @@
 </div>
 
 <!-- Shown when GET /api/v1/setup/seed-notice returns a pending temp-admin
-     notice -- i.e. no real admin exists yet and the app just (re)seeded a
+     notice - i.e. no real admin exists yet and the app just (re)seeded a
      one-time setup account. Used to only be logged to the terminal/
      toolroom.log, easy to miss on a headless/kiosk deployment; this pops
      it up right where whoever's setting the system up is already looking. -->
@@ -236,15 +246,42 @@
   </div>
 </div>
 
+{% if feature_flags.monitoring %}
+<!-- RFID exit-monitoring alarm, generic-only version for someone not yet
+     logged in (templates/base.html has the full-detail one shown on every
+     already-authenticated page). Deliberately doesn't repeat the
+     classification/raw tag/timestamp a logged-in viewer gets from the same
+     /api/v1/monitoring/alarm-status endpoint - see that route's docstring
+     (routes/monitoring.py) for why: enough to grab attention and prompt
+     someone to log in and look, without broadcasting incident specifics to
+     anyone who merely reaches this screen. No "View Monitoring" link here
+     either, for the same reason - that page requires being logged in. -->
+<div id="login-alarm-modal" class="modal">
+  <div class="modal-box max-w-sm border-2 border-error">
+    <div class="flex flex-col items-center text-center gap-3 py-2">
+      <div class="w-14 h-14 rounded-full bg-error/15 flex items-center justify-center animate-pulse">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      </div>
+      <h3 class="font-bold text-lg text-error">Alarm active at the monitored exit</h3>
+      <p id="login-alarm-detail" class="text-sm text-base-content/70"></p>
+      <p class="text-xs text-base-content/50">Log in for details. Clears only with the Admin's Master Key Card tap.</p>
+    </div>
+    <div class="modal-action justify-center">
+      <button type="button" class="btn btn-sm" onclick="dismissLoginAlarmModal()">Dismiss</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <style>
-/* Brief shake on a wrong PIN -- same purpose as the dots clearing, just
+/* Brief shake on a wrong PIN - same purpose as the dots clearing, just
    a more immediate "that didn't work" cue than the error text alone. */
-@keyframes rfid-pin-shake {
+@keyframes barcode-pin-shake {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-6px); }
   40%, 80% { transform: translateX(6px); }
 }
-.rfid-pin-shake { animation: rfid-pin-shake 0.35s ease-in-out; }
+.barcode-pin-shake { animation: barcode-pin-shake 0.35s ease-in-out; }
 </style>
 
 <script>
@@ -252,11 +289,29 @@ if (window.location.search.includes('error=')) {
   history.replaceState(null, '', '/login');
 }
 
-// Pops the temp-admin credentials up as a modal instead of leaving them
-// only in the terminal/toolroom.log (services/seed_service.py,
-// routes/setup.py's GET /setup/seed-notice). Empty {} response (setup
-// already completed, or never needed) means nothing renders.
+// A true fresh install (brand-new database, no staff at all) has no temp
+// admin to log in as - send it straight to /setup instead of showing an
+// empty login form. A live system recovering from losing its last real
+// admin (services/seed_service.py) still uses the temp-admin credentials
+// modal below, since that path intentionally requires actually logging in.
 (async function() {
+  try {
+    const res = await fetch('/api/v1/setup/status');
+    if (!res.ok) return;
+    const status = await res.json();
+    if (status && status.fresh_install) {
+      window.location.href = '/setup';
+      return;
+    }
+  } catch (err) {
+    // No connectivity to check - fall through to the normal login form,
+    // same as any other best-effort UI enhancement on this page.
+  }
+
+  // Pops the temp-admin credentials up as a modal instead of leaving them
+  // only in the terminal/toolroom.log (services/seed_service.py,
+  // routes/setup.py's GET /setup/seed-notice). Empty {} response (setup
+  // already completed, or never needed) means nothing renders.
   try {
     const res = await fetch('/api/v1/setup/seed-notice');
     if (!res.ok) return;
@@ -266,8 +321,7 @@ if (window.location.search.includes('error=')) {
     document.getElementById('seed-notice-password').textContent = notice.password;
     document.getElementById('seed-notice-modal').classList.add('modal-open');
   } catch (err) {
-    // No connectivity to check -- fall through silently, same as any other
-    // best-effort UI enhancement on this page.
+    // Same as above - best-effort only.
   }
 })();
 
@@ -345,7 +399,7 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
 // Both steps live inside the one #login-form the whole time; only visibility
 // toggles here, so whichever step last held a value keeps it when you switch back.
 
-// Populates step 2's avatar + name readout -- shared by continueFromUsername and
+// Populates step 2's avatar + name readout - shared by continueFromUsername and
 // the failed-login DOMContentLoaded handler below. photoPath may be null (falls
 // back to initials), same pattern the RFID PIN view uses.
 function setPasswordStepIdentity(name, photoPath) {
@@ -365,18 +419,18 @@ function setPasswordStepIdentity(name, photoPath) {
 
 function showPasswordStep() {
   document.getElementById('username-step').classList.add('hidden');
-  document.getElementById('rfid-pin-view').classList.add('hidden');
+  document.getElementById('barcode-pin-view').classList.add('hidden');
   document.getElementById('password-step').classList.remove('hidden');
   document.getElementById('password-field').focus();
 }
 
 function showUsernameStep() {
   document.getElementById('password-step').classList.add('hidden');
-  document.getElementById('rfid-pin-view').classList.add('hidden');
+  document.getElementById('barcode-pin-view').classList.add('hidden');
   document.getElementById('username-step').classList.remove('hidden');
   const usernameField = document.getElementById('username-field');
   usernameField.focus();
-  // Actually clear the password (not just hide it) -- shouldn't leave a
+  // Actually clear the password (not just hide it) - shouldn't leave a
   // half-typed password sitting around for whoever's next at a shared terminal.
   const passwordField = document.getElementById('password-field');
   passwordField.value = '';
@@ -387,7 +441,7 @@ function showUsernameStep() {
   document.getElementById('toggle-password-btn').classList.add('hidden');
   document.getElementById('password-empty-msg').classList.add('hidden');
 
-  // Clear the server-rendered login error too -- otherwise going "Not you?" and
+  // Clear the server-rendered login error too - otherwise going "Not you?" and
   // back into step 2 for a different account would still show the stale error.
   const loginError = document.getElementById('password-login-error');
   document.getElementById('password-login-error-text').textContent = '';
@@ -405,7 +459,7 @@ function showUsernameStep() {
   document.getElementById('password-field-label').classList.remove('outline', 'outline-2', 'outline-error');
 }
 
-// Existence check (routes/auth.py's username_lookup) -- {found, rateLimited, data}
+// Existence check (routes/auth.py's username_lookup) - {found, rateLimited, data}
 // shape lets the caller tell "no such account" apart from "lookup itself failed".
 async function tryUsernameLookup(identifier) {
   const res = await fetch('/api/v1/username-lookup', {
@@ -437,10 +491,10 @@ async function continueFromUsername() {
   try {
     lookup = await tryUsernameLookup(value);
   } catch (err) {
-    // Network hiccup -- can't confirm the account exists, so stay on step 1.
+    // Network hiccup - can't confirm the account exists, so stay on step 1.
     hideLookupSpinner();
     username.classList.add('input-error');
-    usernameMsg.textContent = "Couldn't check that right now -- check your connection and try again.";
+    usernameMsg.textContent = "Couldn't check that right now - check your connection and try again.";
     usernameMsg.classList.remove('hidden');
     usernameMsg.classList.add('flex');
     return;
@@ -450,7 +504,7 @@ async function continueFromUsername() {
   if (!lookup.found) {
     username.classList.add('input-error');
     usernameMsg.textContent = lookup.rateLimited
-      ? 'Too many attempts -- wait a moment and try again.'
+      ? 'Too many attempts - wait a moment and try again.'
       : "We couldn't find an account with that username or barcode ID.";
     usernameMsg.classList.remove('hidden');
     usernameMsg.classList.add('flex');
@@ -463,7 +517,7 @@ async function continueFromUsername() {
 
 // A failed-login reload (routes/auth.py redirects here with ?error=...&username=...)
 // jumps straight to step 2 instead of making someone retype a username that
-// wasn't the problem -- re-looks-up the name/photo, falling back to raw text if that hiccups.
+// wasn't the problem - re-looks-up the name/photo, falling back to raw text if that hiccups.
 document.addEventListener('DOMContentLoaded', async function () {
   const hasError = {{ 'true' if error else 'false' }};
   if (!hasError) return;
@@ -480,20 +534,21 @@ document.addEventListener('DOMContentLoaded', async function () {
   showPasswordStep();
 });
 
-// RFID card detection -- see the rfid-pin-view comment above. Enter always
-// preventDefault()s first so this can check against /api/v1/rfid-lookup before
-// deciding: show the PIN pad, or fall through to a normal submit.
-async function tryRfidLookup(rfidId) {
-  const res = await fetch('/api/v1/rfid-lookup', {
+// Barcode scan detection - see the barcode-pin-view comment above. Enter
+// always preventDefault()s first so this can check against
+// /api/v1/barcode-pin-lookup before deciding: show the PIN pad, or fall
+// through to a normal submit.
+async function tryBarcodePinLookup(barcodeId) {
+  const res = await fetch('/api/v1/barcode-pin-lookup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rfid_id: rfidId }),
+    body: JSON.stringify({ barcode_id: barcodeId }),
   });
   if (res.ok) return { found: true, data: await res.json() };
   return { found: false, rateLimited: res.status === 429 };
 }
 
-// Delayed-show spinner -- 150ms delay so it doesn't flicker for fast lookups.
+// Delayed-show spinner - 150ms delay so it doesn't flicker for fast lookups.
 const LOOKUP_SPINNER_DELAY_MS = 150;
 let lookupSpinnerTimer = null;
 function showLookupSpinnerDelayed() {
@@ -507,16 +562,16 @@ function hideLookupSpinner() {
   document.getElementById('username-lookup-spinner').classList.add('hidden');
 }
 
-let rfidLookupDebounceTimer = null;
+let barcodePinLookupDebounceTimer = null;
 // Tracks when the current run of typed characters started, so the debounced
-// fallback below can tell a card-reader burst apart from normal human typing.
-let rfidBurstStartedAt = null;
-let rfidBurstStartedLen = 0;
+// fallback below can tell a scanner burst apart from normal human typing.
+let barcodeBurstStartedAt = null;
+let barcodeBurstStartedLen = 0;
 
 document.getElementById('username-field').addEventListener('keydown', async function (e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  clearTimeout(rfidLookupDebounceTimer);
+  clearTimeout(barcodePinLookupDebounceTimer);
 
   const scanned = this.value.trim();
   const usernameMsg = document.getElementById('username-empty-msg');
@@ -529,84 +584,84 @@ document.getElementById('username-field').addEventListener('keydown', async func
   let lookup = { found: false, rateLimited: false };
   showLookupSpinnerDelayed();
   try {
-    lookup = await tryRfidLookup(scanned);
+    lookup = await tryBarcodePinLookup(scanned);
   } catch (err) {
-    // Network hiccup -- treat like "not a card", fall through to a normal step-2 transition.
+    // Network hiccup - treat like "not a barcode", fall through to a normal step-2 transition.
   } finally {
     hideLookupSpinner();
   }
   if (lookup.found) {
     this.value = '';
-    showRfidPinView(scanned, lookup.data.name, lookup.data.photo_path);
+    showBarcodePinView(scanned, lookup.data.name, lookup.data.photo_path);
     return;
   }
   if (lookup.rateLimited) {
     // Surfaced explicitly so it doesn't look like "wrong username" when it's really "try again later".
-    usernameMsg.textContent = 'Too many attempts -- wait a moment and try again.';
+    usernameMsg.textContent = 'Too many attempts - wait a moment and try again.';
     usernameMsg.classList.remove('hidden');
     usernameMsg.classList.add('flex');
     return;
   }
-  // Not a recognized card -- the common case, a plain username/barcode typed by hand.
+  // Not a recognized enrolled barcode - the common case, a plain username/barcode typed by hand.
   continueFromUsername();
 });
 
-// Fallback for RFID readers that don't send a trailing Enter -- most do (Enter
+// Fallback for scanners that don't send a trailing Enter - most do (Enter
 // above is the primary path), this just covers the ones that don't.
 //
-// Gated on typing speed, not just debounce time: a card scan pastes chars in
-// well under 40ms each, way faster than any human typist. Without the speed
-// check, normal typing pauses (between words, thinking) would fire lookups
-// constantly and burn through the rate limit, breaking real scans too.
+// Gated on typing speed, not just debounce time: a barcode scan pastes chars
+// in well under 40ms each, way faster than any human typist. Without the
+// speed check, normal typing pauses (between words, thinking) would fire
+// lookups constantly and burn through the rate limit, breaking real scans too.
 document.getElementById('username-field').addEventListener('input', function () {
-  clearTimeout(rfidLookupDebounceTimer);
+  clearTimeout(barcodePinLookupDebounceTimer);
   const field = this;
   const value = field.value;
 
   const now = Date.now();
-  if (rfidBurstStartedAt === null || value.length <= rfidBurstStartedLen) {
-    rfidBurstStartedAt = now;
-    rfidBurstStartedLen = value.length;
+  if (barcodeBurstStartedAt === null || value.length <= barcodeBurstStartedLen) {
+    barcodeBurstStartedAt = now;
+    barcodeBurstStartedLen = value.length;
   }
 
   const trimmed = value.trim();
   if (trimmed.length < 4) return;
 
-  rfidLookupDebounceTimer = setTimeout(async function () {
-    if (!document.getElementById('rfid-pin-view').classList.contains('hidden')) return;
+  barcodePinLookupDebounceTimer = setTimeout(async function () {
+    if (!document.getElementById('barcode-pin-view').classList.contains('hidden')) return;
 
-    const charsTyped = value.length - rfidBurstStartedLen;
-    const elapsedMs = Date.now() - rfidBurstStartedAt;
+    const charsTyped = value.length - barcodeBurstStartedLen;
+    const elapsedMs = Date.now() - barcodeBurstStartedAt;
     const looksLikeAScan = charsTyped > 0 && (elapsedMs / charsTyped) < 40;
     if (!looksLikeAScan) return;
 
     let lookup;
     try {
-      lookup = await tryRfidLookup(trimmed);
+      lookup = await tryBarcodePinLookup(trimmed);
     } catch (err) {
       return;
     }
-    // Only act if the field still holds the exact value that matched -- a
+    // Only act if the field still holds the exact value that matched - a
     // stale/late response shouldn't yank focus into the PIN pad mid-typing.
     if (lookup.found && field.value.trim() === trimmed) {
       field.value = '';
-      showRfidPinView(trimmed, lookup.data.name, lookup.data.photo_path);
+      showBarcodePinView(trimmed, lookup.data.name, lookup.data.photo_path);
     }
   }, 250);
 });
 
-let rfidPendingId = null;
-let rfidPinBuffer = '';
+let barcodePendingId = null;
+let barcodePinBuffer = '';
 
-function showRfidPinView(cardId, name, photoPath) {
-  rfidPendingId = cardId;
-  rfidPinBuffer = '';
+function showBarcodePinView(barcodeId, name, photoPath) {
+  barcodePendingId = barcodeId;
+  barcodePinBuffer = '';
   updatePinDots();
-  hideRfidPinError();
+  hideBarcodePinError();
 
-  document.getElementById('rfid-pin-name').textContent = name;
-  const img = document.getElementById('rfid-pin-avatar-img');
-  const fallback = document.getElementById('rfid-pin-avatar-fallback');
+  document.getElementById('barcode-pin-name').textContent = name;
+  const img = document.getElementById('barcode-pin-avatar-img');
+  const fallback = document.getElementById('barcode-pin-avatar-fallback');
   if (photoPath) {
     img.src = '/static/' + photoPath;
     img.classList.remove('hidden');
@@ -617,20 +672,20 @@ function showRfidPinView(cardId, name, photoPath) {
     fallback.classList.remove('hidden');
   }
 
-  // Either step can be showing when a card scan happens, not just step 1 --
+  // Either step can be showing when a scan happens, not just step 1 --
   // hide both. Plain `hidden` (not `invisible`) so the card still shrinks to fit.
   document.getElementById('username-step').classList.add('hidden');
   document.getElementById('password-step').classList.add('hidden');
-  document.getElementById('rfid-pin-view').classList.remove('hidden');
+  document.getElementById('barcode-pin-view').classList.remove('hidden');
 }
 
-function cancelRfidLogin() {
-  clearTimeout(rfidLookupDebounceTimer);
-  rfidPendingId = null;
-  rfidPinBuffer = '';
+function cancelBarcodePinLogin() {
+  clearTimeout(barcodePinLookupDebounceTimer);
+  barcodePendingId = null;
+  barcodePinBuffer = '';
   updatePinDots();
-  hideRfidPinError();
-  document.getElementById('rfid-pin-view').classList.add('hidden');
+  hideBarcodePinError();
+  document.getElementById('barcode-pin-view').classList.add('hidden');
   // showUsernameStep() already handles un-hiding/re-hiding the other steps.
   showUsernameStep();
   const usernameField = document.getElementById('username-field');
@@ -640,81 +695,81 @@ function cancelRfidLogin() {
 
 function updatePinDots() {
   for (let i = 0; i < 6; i++) {
-    const dot = document.getElementById('rfid-pin-dot-' + i);
-    const filled = i < rfidPinBuffer.length;
+    const dot = document.getElementById('barcode-pin-dot-' + i);
+    const filled = i < barcodePinBuffer.length;
     dot.classList.toggle('bg-primary', filled);
     dot.classList.toggle('bg-base-300', !filled);
   }
 }
 
-function showRfidPinError(msg) {
-  document.getElementById('rfid-pin-error-text').textContent = msg;
-  document.getElementById('rfid-pin-error').classList.remove('invisible');
+function showBarcodePinError(msg) {
+  document.getElementById('barcode-pin-error-text').textContent = msg;
+  document.getElementById('barcode-pin-error').classList.remove('invisible');
 }
 
-function hideRfidPinError() {
-  document.getElementById('rfid-pin-error').classList.add('invisible');
+function hideBarcodePinError() {
+  document.getElementById('barcode-pin-error').classList.add('invisible');
 }
 
 function pinDigit(d) {
-  if (rfidPinBuffer.length >= 6) return;
-  rfidPinBuffer += String(d);
+  if (barcodePinBuffer.length >= 6) return;
+  barcodePinBuffer += String(d);
   updatePinDots();
-  if (rfidPinBuffer.length === 6) submitRfidPin();
+  if (barcodePinBuffer.length === 6) submitBarcodePin();
 }
 
 function pinBackspace() {
-  if (!rfidPinBuffer) return;
-  rfidPinBuffer = rfidPinBuffer.slice(0, -1);
+  if (!barcodePinBuffer) return;
+  barcodePinBuffer = barcodePinBuffer.slice(0, -1);
   updatePinDots();
 }
 
-// Auto-submits on the 6th digit, no separate button -- same as a wallet app's PIN pad.
-async function submitRfidPin() {
-  hideRfidPinError();
-  const pad = document.getElementById('rfid-pin-pad');
+// Auto-submits on the 6th digit, no separate button - same as a wallet app's PIN pad.
+async function submitBarcodePin() {
+  hideBarcodePinError();
+  const pad = document.getElementById('barcode-pin-pad');
   pad.classList.add('pointer-events-none', 'opacity-50');
 
   try {
-    const res = await fetch('/api/v1/login-rfid', {
+    const res = await fetch('/api/v1/login-barcode-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rfid_id: rfidPendingId, pin: rfidPinBuffer }),
+      body: JSON.stringify({ barcode_id: barcodePendingId, pin: barcodePinBuffer }),
     });
     const result = await res.json();
 
     if (!res.ok) {
-      showRfidPinError(result.error || 'Sign-in failed');
-      rfidPinBuffer = '';
+      showBarcodePinError(result.error || 'Sign-in failed');
+      barcodePinBuffer = '';
       updatePinDots();
-      const dots = document.getElementById('rfid-pin-dots');
-      dots.classList.remove('rfid-pin-shake');
+      const dots = document.getElementById('barcode-pin-dots');
+      dots.classList.remove('barcode-pin-shake');
       void dots.offsetWidth;
-      dots.classList.add('rfid-pin-shake');
+      dots.classList.add('barcode-pin-shake');
       return;
     }
 
     window.location.href = '/';
   } catch (err) {
-    showRfidPinError('Sign-in failed');
-    rfidPinBuffer = '';
+    showBarcodePinError('Sign-in failed');
+    barcodePinBuffer = '';
     updatePinDots();
   } finally {
     pad.classList.remove('pointer-events-none', 'opacity-50');
   }
 }
 
-// Lets a keyboard (or numpad-emulating reader) drive the PIN pad too, scoped
+// Lets a keyboard (or numpad-emulating scanner) drive the PIN pad too, scoped
 // to only fire while the PIN view is showing.
 document.addEventListener('keydown', function (e) {
-  const view = document.getElementById('rfid-pin-view');
+  const view = document.getElementById('barcode-pin-view');
   if (view.classList.contains('hidden')) return;
   if (e.key >= '0' && e.key <= '9') {
     pinDigit(e.key);
   } else if (e.key === 'Backspace') {
     pinBackspace();
   } else if (e.key === 'Escape') {
-    cancelRfidLogin();
+    cancelBarcodePinLogin();
   }
 });
 
@@ -725,5 +780,57 @@ document.getElementById('password-field').addEventListener('keydown', function (
     showUsernameStep();
   }
 });
+
+{% if feature_flags.monitoring %}
+// Generic-only alarm poll - see the #login-alarm-modal markup comment
+// above for why this is deliberately less detailed than the logged-in
+// version (static/js/ui.js's pollGlobalAlarm). Same episode-based
+// dismiss-doesn't-mean-forever behavior: Dismiss hides it for the rest of
+// this active stretch, but it comes back on the next poll if a NEW alarm
+// starts after this one clears.
+let loginAlarmWasActive = false;
+let loginAlarmDismissedForThisEpisode = false;
+
+function dismissLoginAlarmModal() {
+  loginAlarmDismissedForThisEpisode = true;
+  document.getElementById('login-alarm-modal')?.classList.remove('modal-open');
+}
+
+async function pollLoginAlarm() {
+  const modal = document.getElementById('login-alarm-modal');
+  if (!modal) return;
+
+  try {
+    const res = await fetch('/api/v1/monitoring/alarm-status');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.active) {
+      if (!loginAlarmWasActive) loginAlarmDismissedForThisEpisode = false;
+      loginAlarmWasActive = true;
+
+      const detailEl = document.getElementById('login-alarm-detail');
+      if (detailEl) {
+        detailEl.textContent = data.asset_name
+          ? `${data.asset_name} (${data.asset_barcode || '?'}) was detected leaving the tool room.`
+          : 'An unregistered tag was detected leaving the tool room.';
+      }
+
+      if (!modal.classList.contains('modal-open') && !loginAlarmDismissedForThisEpisode) {
+        modal.classList.add('modal-open');
+      }
+    } else {
+      loginAlarmWasActive = false;
+      loginAlarmDismissedForThisEpisode = false;
+      modal.classList.remove('modal-open');
+    }
+  } catch (err) {
+    // Network hiccup - next poll tries again.
+  }
+}
+
+pollLoginAlarm();
+setInterval(pollLoginAlarm, 5000);
+{% endif %}
 </script>
 {% endblock %}

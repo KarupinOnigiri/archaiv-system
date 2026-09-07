@@ -11,7 +11,7 @@
     </div>
 
     <!-- Always rendered (not just when there is an error), invisible (not
-         removed) when empty -- reserves the alert box's layout space so
+         removed) when empty - reserves the alert box's layout space so
          content below never jumps when an error appears. -->
     <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 
@@ -27,7 +27,7 @@
                value="{{ default_loan_days }}"
                class="input input-bordered input-sm w-full mt-1">
         <p class="text-xs text-base-content/40 mt-1">
-          Used only when a checkout's due date is left blank -- the checkout form's own date picker always wins if staff pick one.
+          Used only when a checkout's due date is left blank - the checkout form's own date picker always wins if staff pick one.
         </p>
       </div>
 

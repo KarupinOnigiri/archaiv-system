@@ -26,10 +26,10 @@
       </button>
     </div>
 
-    <!-- Toolbar: refresh + search + select-all + count -- same style as every
+    <!-- Toolbar: refresh + search + select-all + count - same style as every
          other table's toolbar, even though this list is a static once-per-load snapshot. -->
     <div class="flex flex-wrap items-center gap-3 shrink-0">
-      <!-- Reloads the page -- simplest way to get a fresh snapshot of currently-present assets/members. -->
+      <!-- Reloads the page - simplest way to get a fresh snapshot of currently-present assets/members. -->
       <button type="button" id="refresh-barcodes-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh barcode list" onclick="window.location.reload()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
@@ -62,7 +62,7 @@
       </button>
     </div>
 
-    <!-- Assets table -- same styling as Inventory's table, but a plain (not
+    <!-- Assets table - same styling as Inventory's table, but a plain (not
          htmx-driven) table since this whole list is static once the page loads. -->
     <div id="barcode-list-assets" class="flex-1 min-h-0 border border-base-300 rounded-lg overflow-y-auto">
       <table class="table w-full table-fixed">
@@ -104,7 +104,7 @@
       </table>
     </div>
 
-    <!-- Members table -- same as above, mirroring templates/members/_table.html -->
+    <!-- Members table - same as above, mirroring templates/members/_table.html -->
     <div id="barcode-list-members" class="hidden flex-1 min-h-0 border border-base-300 rounded-lg overflow-y-auto">
       <table class="table w-full table-fixed">
         <colgroup>
@@ -149,20 +149,20 @@
   </div>
 </div>
 
-<!-- Label preview modal -- wider than usual since this can hold hundreds of
+<!-- Label preview modal - wider than usual since this can hold hundreds of
      label cards; the grid scrolls on its own instead of growing the modal. -->
 <dialog id="barcode-preview-modal" class="modal">
   <!-- Fixed height so switching Label Size (or the item count) never resizes the modal. -->
   <div class="modal-box max-w-6xl w-11/12 h-[85vh] flex flex-col">
     <div class="flex items-center justify-between mb-1 shrink-0">
       <h3 class="font-bold text-lg">Label preview</h3>
-      <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+      <!-- ESC pill, not an X icon - see assets/_details_modal.html's
            header close button for the full reasoning. -->
       <button type="button" onclick="document.getElementById('barcode-preview-modal').close()"
               class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
               aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
-    <!-- Barcode format -- shown once (every label uses the same symbology). -->
+    <!-- Barcode format - shown once (every label uses the same symbology). -->
     <p class="text-xs text-base-content/60 mb-0.5 shrink-0">
       Format: <span id="barcode-preview-format" class="font-medium"></span>
     </p>
@@ -175,9 +175,9 @@
     <div id="barcode-label-sheet" class="grid grid-cols-4 gap-3 flex-1 min-h-0 content-start overflow-y-auto pr-1 pb-1"></div>
 
     <div class="modal-action items-center shrink-0">
-      <!-- Label size -- Small fits 5 labels per row in the PDF, Regular
+      <!-- Label size - Small fits 5 labels per row in the PDF, Regular
            4, Large 3 (see LABEL_SIZE_PRESETS below). Only affects the
-           downloaded PDF (fixed physical mm dimensions there) -- the
+           downloaded PDF (fixed physical mm dimensions there) - the
            preview grid above stays the same fixed on-screen size no
            matter which is picked, so this button group is the only
            thing that shows which one is actually selected right now.
@@ -185,7 +185,7 @@
            Category" groups (templates/reports.html). -->
       <div class="flex items-center gap-2 mr-auto">
         <span class="text-xs font-semibold text-base-content/50 tracking-wide">LABEL SIZE</span>
-        <!-- btn-primary (not btn-active) marks the selected size -- a
+        <!-- btn-primary (not btn-active) marks the selected size - a
              solid color fill actually reads as "selected" at a glance;
              btn-active alone falls back to a barely-there gray tint
              here (no --btn-color set on a plain .btn), which is why the
@@ -206,13 +206,13 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- PDF preview -- shows the exact document (via blob URL iframe) before
+<!-- PDF preview - shows the exact document (via blob URL iframe) before
      downloading. "Download PDF" saves this same already-built document, no re-render. -->
 <dialog id="barcode-pdf-preview-modal" class="modal">
   <div class="modal-box max-w-4xl w-11/12 h-[85vh] flex flex-col">
     <div class="flex items-center justify-between mb-2 shrink-0">
-      <h3 class="font-bold text-lg">PDF preview -- <span id="barcode-pdf-preview-size-label" class="font-normal text-base-content/60"></span></h3>
-      <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+      <h3 class="font-bold text-lg">PDF preview - <span id="barcode-pdf-preview-size-label" class="font-normal text-base-content/60"></span></h3>
+      <!-- ESC pill, not an X icon - see assets/_details_modal.html's
            header close button for the full reasoning. -->
       <button type="button" onclick="BarcodeLabels.closePdfPreview()"
               class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
@@ -238,7 +238,7 @@
     text-align: center;
     gap: 0.15rem;
     background: #fff;
-    /* Fixed white/black regardless of app theme -- it's a preview of a printed
+    /* Fixed white/black regardless of app theme - it's a preview of a printed
        label, not themed UI chrome; --color-base-content would be unreadable in dark mode. */
     color: #000;
   }
@@ -247,9 +247,9 @@
 <script src="{{ url_for('static', filename='js/jsbarcode.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/jspdf.umd.min.js') }}"></script>
 <script>
-// Barcode Labels page -- selection view (server-rendered assets+members list) and
+// Barcode Labels page - selection view (server-rendered assets+members list) and
 // a preview modal (JsBarcode-rendered labels, jsPDF for the download), all client-side.
-const BarcodeLabels = (function () {
+var BarcodeLabels = (function () {
   let activeTab = 'assets';
 
   // Single source of truth for the symbology, read by both the preview grid and the PDF.
@@ -265,12 +265,12 @@ const BarcodeLabels = (function () {
   const LABEL_SIZE_TEXT = { small: 'Small', regular: 'Regular', large: 'Large' };
   let selectedLabelSize = 'regular';
 
-  // Set once by previewPdf(), read by confirmDownload() -- downloads the exact
+  // Set once by previewPdf(), read by confirmDownload() - downloads the exact
   // document that was previewed rather than rebuilding a fresh one.
   let pdfPreviewDoc = null;
   let pdfPreviewUrl = null;
 
-  // Only updates the highlighted button + label text -- the preview grid itself
+  // Only updates the highlighted button + label text - the preview grid itself
   // deliberately doesn't re-render (scaling it per-size used to break Small's
   // layout and resize the modal on every pick). "Preview PDF" is the accurate view.
   function setLabelSize(size) {
@@ -316,6 +316,12 @@ const BarcodeLabels = (function () {
     document.getElementById('barcode-search-wrap').classList.toggle('ring-2', active);
     document.getElementById('barcode-search-wrap').classList.toggle('ring-primary/40', active);
     document.getElementById('barcode-search-clear-btn').classList.toggle('hidden', !active);
+    // The clear button is the join's real last child even while hidden (CSS
+    // :last-child doesn't care about display:none), so it - not the input -
+    // keeps the join's rounded right corner whenever it's hidden, leaving
+    // the input's own right edge square. Give the input that same corner
+    // back itself whenever the clear button isn't there to own it.
+    document.getElementById('barcode-search').classList.toggle('rounded-r-(--radius-field)', !active);
   }
 
   function clearSearch() {
@@ -365,7 +371,7 @@ const BarcodeLabels = (function () {
     });
   }
 
-  // Fire-and-forget audit log write -- never let a failed log call block the real action.
+  // Fire-and-forget audit log write - never let a failed log call block the real action.
   function logBarcodeAction(endpoint, extra) {
     const items = collectSelectedItems();
     if (items.length === 0) return;
@@ -388,7 +394,7 @@ const BarcodeLabels = (function () {
     syncSelectAllState();
   }
 
-  // Fixed-size preview grid -- deliberately doesn't scale with selectedLabelSize
+  // Fixed-size preview grid - deliberately doesn't scale with selectedLabelSize
   // (see setLabelSize's comment above). This is a fixed reference, not a to-scale render.
   function buildLabelSheet() {
     const selected = selectedCheckboxes();
@@ -588,7 +594,7 @@ function isModalOpen() {
   return !!document.querySelector('#barcode-preview-modal[open], #barcode-pdf-preview-modal[open]');
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   if (!e.altKey && e.key === '/') {
@@ -613,14 +619,14 @@ document.addEventListener('keydown', function (e) {
     btn.click();
   }
 
-  // Alt+B -- back to System, this page's one entry point (no sidebar tab of its own).
+  // Alt+B - back to System, this page's one entry point (no sidebar tab of its own).
   if (e.altKey && (e.key === 'b' || e.key === 'B')) {
     if (isTypingTarget(e.target) || isModalOpen()) return;
     e.preventDefault();
     window.location.href = '/system';
   }
 
-  // Escape -- with no modal open, clear the search box and blur focus.
+  // Escape - with no modal open, clear the search box and blur focus.
   if (e.key === 'Escape') {
     if (isModalOpen()) return;
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -630,10 +636,8 @@ document.addEventListener('keydown', function (e) {
       BarcodeLabels.clearSearch();
     }
   }
-});
+};
 
-document.addEventListener('DOMContentLoaded', function () {
-  BarcodeLabels.updateFilterUI();
-});
+setTimeout(function () { BarcodeLabels.updateFilterUI(); }, 0);
 </script>
 {% endblock %}

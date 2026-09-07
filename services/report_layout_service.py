@@ -4,7 +4,7 @@ from services.report_widgets import widget_ids_for_role, is_widget_allowed
 
 
 def get_report_layout(staff_id, role):
-    """Merges the saved layout with the role's widgets -- drops stale ids, appends new ones."""
+    """Merges the saved layout with the role's widgets - drops stale ids, appends new ones."""
     default_ids = widget_ids_for_role(role)
 
     conn = get_db_connection()

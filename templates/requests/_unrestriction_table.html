@@ -16,7 +16,15 @@
   </thead>
   <tbody>
     {% for req in requests_list %}
-    <tr class="border-t border-base-200">
+    <!-- Click the row for the full-detail modal, same convention as
+         Borrow & Return/Activity Log's own tables - excluded from the
+         cells' own member/staff profile links and review action buttons,
+         which stay clickable in place. -->
+    <tr class="border-t border-base-200 hover:bg-base-200/40 cursor-pointer transition-colors"
+        hx-get="/api/v1/unrestriction-requests/{{ req.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="beforeend"
+        hx-trigger="click[!target.closest('a,button')]">
       <td class="py-2 text-sm">
         <a class="link link-hover font-medium" hx-get="/api/v1/members/{{ req.member_id }}/profile" hx-target="#modal-container" hx-swap="beforeend">
           {{ full_name(req.first_name, req.last_name, req.middle_name, req.suffix) }}
@@ -49,7 +57,7 @@
         {% if req.reviewed_by_username %}
         @{{ req.reviewed_by_username }}{% if req.review_notes %}: {{ req.review_notes }}{% endif %}
         {% else %}
-        &mdash;
+        -
         {% endif %}
       </td>
       <td class="py-2 text-right">
@@ -66,7 +74,7 @@
           <button type="button" class="btn btn-ghost btn-xs" onclick="cancelUnrestrictionRequest({{ req.id }}, this)">Cancel</button>
           {% endif %}
         {% else %}
-        <span class="text-base-content/30 text-xs">&mdash;</span>
+        <span class="text-base-content/30 text-xs">-</span>
         {% endif %}
       </td>
     </tr>
@@ -116,7 +124,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
 
-    <!-- Numbered pages, capped to a handful of buttons via ellipsis -- same
+    <!-- Numbered pages, capped to a handful of buttons via ellipsis - same
          pattern as every other table in the app (assets/members/staff/
          transactions/audit_log/notifications). -->
     <nav aria-label="Pagination" class="flex items-center gap-1">
@@ -164,7 +172,7 @@
 </div>
 
 <script>
-// renderWaitingBadges is defined in requests.html -- computed client-side
+// renderWaitingBadges is defined in requests.html - computed client-side
 // from each row's data-created-at attribute above so it stays accurate
 // without a server round-trip. Called here since this whole partial (this
 // script included) re-runs on every htmx swap of this container.

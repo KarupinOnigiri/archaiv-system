@@ -10,13 +10,24 @@
   </thead>
   <tbody>
     {% for tx in transactions %}
-    <tr class="border-t border-base-200">
+    <!-- Same "click a row for full details" convention as Borrow & Return's
+         own table (transactions/_table.html) - reuses that exact modal/
+         endpoint rather than building a second one. hx-swap="beforeend"
+         (not "innerHTML") appends it on top of #modal-container's current
+         contents instead of replacing them, since this row is already
+         nested inside the Borrow History modal, itself stacked on top of
+         the member profile modal - swapping innerHTML here would wipe out
+         both of those. -->
+    <tr class="border-t border-base-200 hover:bg-base-200/60 cursor-pointer transition-colors"
+        hx-get="/api/v1/transactions/{{ tx.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="beforeend">
       <td class="py-2">
         <div class="font-medium">{{ tx.asset_name }}</div>
         <div class="text-xs text-base-content/40">{{ tx.asset_code }}</div>
       </td>
-      <td class="py-2 text-xs text-base-content/60">{{ tx.time_out }}</td>
-      <td class="py-2 text-xs text-base-content/60">{{ tx.time_in or "-" }}</td>
+      <td class="py-2 text-xs text-base-content/60">{{ tx.time_out | format_date }}</td>
+      <td class="py-2 text-xs text-base-content/60">{{ tx.time_in | format_date if tx.time_in else "-" }}</td>
       <td class="py-2">
         {% if tx.status == "borrowed" %}
         <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-info/15 text-info">borrowed</span>
@@ -34,7 +45,7 @@
 <p class="text-center py-8 text-sm text-base-content/40">No borrow history yet.</p>
 {% endif %}
 
-<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+<!-- Pagination footer - same numbered-with-ellipsis pattern as assets/
      members/staff/transactions/notifications/audit-log. -->
 <div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
 

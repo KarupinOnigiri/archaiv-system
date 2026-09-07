@@ -1,0 +1,43 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Release Reservation</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+
+    {% if hold %}
+    <p class="text-sm text-base-content/70 mb-2">
+      <strong>{{ asset.name }}</strong> ({{ asset.asset_id }}) is sitting in an
+      in-progress checkout that was never cancelled or completed --
+      typically because whoever started it logged out or lost their
+      session before finishing.
+    </p>
+    <div class="bg-warning/10 rounded-lg p-3 mb-3 text-sm">
+      <p><span class="text-base-content/50">Held for member:</span> <strong>{{ full_name(hold.first_name, hold.last_name, hold.middle_name, hold.suffix) }}</strong></p>
+      <p class="mt-1"><span class="text-base-content/50">Started by:</span> <strong>{{ hold.staff_username or "Unknown staff" }}</strong></p>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      This removes it from that cart and sets it back to <strong>available</strong>.
+      It won't affect anything else already in that checkout.
+    </p>
+    {% else %}
+    <p class="text-sm text-base-content/70 mb-4">
+      Put <strong>{{ asset.name }}</strong> ({{ asset.asset_id }}) back into circulation.
+      Its status will be set to <strong>available</strong>.
+    </p>
+    {% endif %}
+
+    <!-- Always rendered (not just when there is an error) so its reserved space
+         doesn't appear/disappear and shift the form below it - min-h-5
+         matches a single line of text-sm content. -->
+    <p class="text-error text-sm mb-3 min-h-5">{{ error or '' }}</p>
+
+    <form hx-post="/api/v1/assets/{{ asset.id }}/release-reservation" hx-target="closest .modal" hx-swap="outerHTML">
+      <div class="modal-action mt-0">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" class="btn btn-warning">Release Reservation</button>
+      </div>
+    </form>
+  </div>
+</div>

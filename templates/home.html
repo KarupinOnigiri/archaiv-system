@@ -1,23 +1,39 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Built to fit one screen with no page-level scroll -- only the individual
-     list widgets scroll internally if they overflow. -->
-<div class="h-full min-h-0 flex flex-col gap-4 pt-6 pr-[1.875rem] pb-6 pl-6">
+<!-- Used to be built to fit one screen with no page-level scroll; now scrolls
+     like every other tab (same plain-div-in-<main> convention as
+     assets.html/monitoring.html) since keeping it to one screen meant no
+     room for widgets beyond the bare minimum (e.g. Monitoring, below). The
+     main grid's own cards still cap their height and scroll internally
+     rather than stretching the whole page into one giant list. -->
+<div class="flex flex-col gap-6 pt-6 pr-[1.875rem] pb-6 pl-6">
 
-  <!-- Greeting strip -->
-  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl border border-base-300 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4">
+  <!-- Greeting strip - solid #1565c0 (the app's own --color-primary, same
+       blue as Add New Item/the sidebar's active-tab highlight) in every
+       theme; a lighter tint was tried here before but only actually looked
+       right against a light page background - in a dark theme a
+       mixed-toward-white pastel card floating in an otherwise all-dark UI
+       stood out badly instead of blending in. Text is a fixed white in
+       every theme (not var(--color-primary-content) - that happens to
+       already be white in all three themes today, but this card wants
+       white specifically, not "whatever the theme's contrast token
+       resolves to" if a theme ever changed it). -->
+  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl px-6 py-4 bg-primary">
     <div class="min-w-0">
-      <h2 id="dash-greeting" class="text-xl font-bold truncate">Welcome back</h2>
-      <p class="text-sm text-base-content/50 mt-0.5">Here's what's happening across the toolroom today.</p>
+      <h2 id="dash-greeting" class="text-xl font-bold truncate text-white">Welcome back</h2>
+      <p class="text-sm text-white/70 mt-0.5">Here's what's happening across the toolroom today.</p>
     </div>
     <div class="text-right shrink-0">
-      <p id="dash-clock" class="text-2xl font-bold tabular-nums leading-none"></p>
-      <p id="dash-date" class="text-xs text-base-content/50 mt-1"></p>
+      <p id="dash-clock" class="text-2xl font-bold tabular-nums leading-none text-white"></p>
+      <p id="dash-date" class="text-xs text-white/70 mt-1"></p>
     </div>
   </div>
 
-  <!-- KPI row -->
-  <div class="shrink-0 grid grid-cols-6 gap-4">
+  <!-- KPI row - 3 columns (2 rows) below 2xl (1536px) rather than a flat 6,
+       since 6 equal columns at the app's supported minimum width (lg, 1024px)
+       and even at a typical 1366/1440px laptop width squeezed every label
+       into an unreadable "BORROWED N...", "TOTAL MEMBE..." truncation. -->
+  <div class="shrink-0 grid grid-cols-3 2xl:grid-cols-6 gap-5">
 
     <a href="/assets" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-primary/30 stat-card-glow" style="--stat-glow: var(--color-primary)">
       <div class="min-w-0">
@@ -85,7 +101,7 @@
     </a>
     {% else %}
     <!-- tool_keeper: can't approve/deny anything, so their own pending_approvals_count
-         would just mean "requests I filed" -- restricted-member visibility is more useful. -->
+         would just mean "requests I filed" - restricted-member visibility is more useful. -->
     <a href="/members?is_restricted=1" class="bg-base-100 rounded-xl border border-base-300 p-4 flex items-start justify-between transition-all hover:shadow-md hover:border-warning/30 stat-card-glow" style="--stat-glow: var(--color-warning)">
       <div class="min-w-0">
         <p class="text-xs font-semibold text-base-content/50 tracking-wide truncate">RESTRICTED</p>
@@ -99,15 +115,34 @@
 
   </div>
 
-  <!-- Main grid -->
-  <div class="flex-1 min-h-0 grid grid-cols-12 gap-4">
+  <!-- Main grid - a fixed row height (h-[40rem], generous but not viewport-locked)
+       so all 3 columns end at the same place instead of drifting to whatever
+       height their own cards happen to add up to. Each column is a flex column
+       that fills that height, with its last/list card set to flex-1 min-h-0 so
+       it (not the row) absorbs any leftover space and scrolls internally if its
+       own content still runs longer. Same idea as the pre-redesign layout, just
+       no longer pinned to 100% of the viewport.
 
-    <!-- Recent Activity + Currently Online -->
-    <div class="col-span-5 min-h-0 flex flex-col gap-4">
+       Each column repeats the row's own h-[40rem] directly (not h-full) -
+       an implicit "auto" grid row track sizes itself from its tallest
+       child's CONTENT-based intrinsic height first, and only then do
+       align-items:stretch children fill that track; a child's own h-full
+       (100%) resolves against that (potentially content-inflated) track,
+       not against the grid container's own explicit height, so it can end
+       up taller than the 640px the container itself is actually clipped
+       to - the three columns' cards visibly ran on past the row below
+       them until this was a literal shared fixed height instead. 640px
+       (not the original 480px) specifically because the third column now
+       stacks FOUR panels (Quick Actions + Due Soon + Maintenance Due +
+       Upcoming Reservations, the latter two added after this height was
+       first picked) - at 480px each flex-1 list panel had barely 100px to
+       work with, reading as cramped/overlapping even with a real gap-4
+       between them. -->
+  <div class="grid grid-cols-12 gap-5 h-[40rem]">
 
-      <!-- flex-[2] (vs. Currently Online's flex-1) -- Recent Activity is the
-           primary widget and keeps most of the column's height. -->
-      <div class="flex-[2] min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+    <!-- Recent Activity -->
+    <div class="col-span-5 h-[40rem]">
+      <div class="h-full bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-3">
           <h3 class="font-semibold text-sm">Recent Activity</h3>
           <a href="/transactions" class="text-xs text-primary font-medium hover:underline">View all</a>
@@ -147,34 +182,14 @@
           {% endif %}
         </div>
       </div>
-
-      {% if staff.role in ("admin", "in_charge") %}
-      <!-- Currently Online -- admin sees every staff member; in_charge's view is
-           scoped server-side to tool_keeper only. Polled every 30s via htmx, the
-           one live (not snapshot) widget on this dashboard. tool_keeper doesn't get this card. -->
-      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
-        <div class="flex items-center justify-between shrink-0 mb-2">
-          <h3 class="font-semibold text-sm">Currently Online</h3>
-        </div>
-        <div id="dash-online-staff" class="flex-1 min-h-0 overflow-y-auto space-y-0.5"
-             hx-get="/api/v1/staff/online"
-             hx-trigger="load, every 30s"
-             hx-swap="innerHTML">
-          <div class="h-full flex items-center justify-center">
-            <span class="loading loading-spinner loading-sm text-primary"></span>
-          </div>
-        </div>
-      </div>
-      {% endif %}
-
     </div>
 
     <!-- Asset status + Top borrowed -->
-    <div class="col-span-4 min-h-0 flex flex-col gap-4">
+    <div class="col-span-4 h-[40rem] flex flex-col gap-5">
 
-      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+      <div class="shrink-0 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
         <h3 class="font-semibold text-sm shrink-0 mb-2">Asset Status</h3>
-        <div class="flex-1 min-h-0 flex items-center gap-4">
+        <div class="flex items-center gap-4">
           <div class="w-28 h-28 shrink-0 relative">
             <canvas id="dash-status-chart"></canvas>
           </div>
@@ -199,7 +214,7 @@
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-2 gap-2">
           <h3 class="font-semibold text-sm">Top Borrowed</h3>
           {% if feature_flags.transactions %}
@@ -230,10 +245,10 @@
 
     </div>
 
-    <!-- Quick actions + notifications -->
-    <div class="col-span-3 min-h-0 flex flex-col gap-4">
+    <!-- Quick actions + Due Soon -->
+    <div class="col-span-3 h-[40rem] flex flex-col gap-5">
 
-      <div class="shrink-0 bg-base-100 rounded-xl border border-base-300 p-5">
+      <div class="shrink-0 bg-base-100 rounded-xl border border-base-300 p-6">
         <h3 class="font-semibold text-sm mb-3">Quick Actions</h3>
         <div class="grid grid-cols-2 gap-2">
           {% if feature_flags.transactions %}
@@ -290,9 +305,9 @@
         </div>
       </div>
 
-      <!-- Due Soon -- not just the notification bell repeated: this frames the
+      <!-- Due Soon - not just the notification bell repeated: this frames the
            same signal as an actionable to-do list (what's about to go overdue, and who has it). -->
-      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col">
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
         <div class="flex items-center justify-between shrink-0 mb-2">
           <h3 class="font-semibold text-sm">Due Soon</h3>
           <a href="/transactions" class="text-xs text-primary font-medium hover:underline">View all</a>
@@ -321,9 +336,144 @@
         </div>
       </div>
 
+      <!-- Maintenance Due - proactive schedule (date or usage-interval based),
+           on top of the reactive "Needs Attention" status already visible in
+           the stat cards above. -->
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
+        <div class="flex items-center justify-between shrink-0 mb-2">
+          <h3 class="font-semibold text-sm">Maintenance Due</h3>
+          <a href="/assets?maintenance_due=1" class="text-xs text-primary font-medium hover:underline">View all</a>
+        </div>
+        <div class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
+          {% if not feature_flags.assets %}
+          <div class="h-full flex items-center justify-center text-sm text-base-content/40 text-center px-4">
+            Inventory is currently disabled.
+          </div>
+          {% else %}
+          {% for a in dash_maintenance_due %}
+          <a href="/assets?q={{ a.asset_id }}"
+             class="flex items-start gap-2 py-1.5 px-1 rounded-lg hover:bg-base-200/60 transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-warning"></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-medium leading-snug truncate">{{ a.name }} &middot; {{ a.asset_id }}</p>
+              <p class="text-xs text-warning mt-0.5">
+                {% if a.next_maintenance_due %}Due {{ a.next_maintenance_due }}{% else %}{{ a.checkouts_since_maintenance }}/{{ a.maintenance_interval_checkouts }} checkouts{% endif %}
+              </p>
+            </div>
+          </a>
+          {% else %}
+          <div class="h-full flex items-center justify-center text-sm text-base-content/50">
+            Nothing due for maintenance.
+          </div>
+          {% endfor %}
+          {% endif %}
+        </div>
+      </div>
+
+      {% if feature_flags.reservations %}
+      <!-- Upcoming Reservations - advisory only, see services/reservation_service.py's module docstring. -->
+      <div class="flex-1 min-h-0 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
+        <div class="flex items-center justify-between shrink-0 mb-2">
+          <h3 class="font-semibold text-sm">Upcoming Reservations</h3>
+          <a href="/reservations" class="text-xs text-primary font-medium hover:underline">View all</a>
+        </div>
+        <div class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
+          {% for r in dash_upcoming_reservations %}
+          <a href="/assets?q={{ r.asset_name }}"
+             class="flex items-start gap-2 py-1.5 px-1 rounded-lg hover:bg-base-200/60 transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-info"></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-medium leading-snug truncate">{{ r.asset_name }} &middot; {{ r.member_name }}</p>
+              <p class="text-xs text-info mt-0.5">{{ r.start_at | format_date }}</p>
+            </div>
+          </a>
+          {% else %}
+          <div class="h-full flex items-center justify-center text-sm text-base-content/50">
+            No upcoming reservations.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
     </div>
 
   </div>
+
+  {% set show_online = staff.role in ("admin", "in_charge") %}
+  {% set show_monitoring = staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
+  {% if show_online or show_monitoring %}
+  <!-- Currently Online + Monitoring - a second, equal-height row rather than
+       stacking both under Recent Activity (that made column 1 far taller than
+       the other two, and the row above needs to stay in sync across all 3
+       columns). Whichever one is missing (role/feature-gated) lets the other
+       take the full row instead of leaving a blank half. -->
+  <div class="grid grid-cols-2 gap-5 h-64">
+    {% if show_online %}
+    <!-- Currently Online - admin sees every staff member; in_charge's view is
+         scoped server-side to tool_keeper only. Polled every 30s via htmx, the
+         one live (not snapshot) widget on this dashboard. tool_keeper doesn't get this card. -->
+    <div class="{% if not show_monitoring %}col-span-2{% endif %} h-64 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
+      <div class="flex items-center justify-between shrink-0 mb-2">
+        <h3 class="font-semibold text-sm">Currently Online</h3>
+      </div>
+      <div id="dash-online-staff" class="flex-1 min-h-0 overflow-y-auto space-y-0.5"
+           hx-get="/api/v1/staff/online"
+           hx-trigger="load, every 30s"
+           hx-swap="innerHTML">
+        <div class="h-full flex items-center justify-center">
+          <span class="loading loading-spinner loading-sm text-primary"></span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if show_monitoring %}
+    <!-- Monitoring - live alarm status + a glance feed of the day's tag
+         detections, mirroring the Monitoring tab itself. New card added
+         alongside the Monitoring feature/sidebar tab. -->
+    <div class="{% if not show_online %}col-span-2{% endif %} h-64 bg-base-100 rounded-xl border border-base-300 p-6 flex flex-col">
+      <div class="flex items-center justify-between shrink-0 mb-2">
+        <h3 class="font-semibold text-sm">Monitoring</h3>
+        <a href="/monitoring" class="text-xs text-primary font-medium hover:underline">View all</a>
+      </div>
+      {% if dash_alarm_status.active %}
+      <div class="shrink-0 mb-3 flex items-center gap-2 rounded-lg bg-error/10 text-error px-3 py-2 text-xs font-semibold">
+        <span class="w-2 h-2 rounded-full bg-error animate-pulse shrink-0"></span>
+        Alarm active - {{ dash_alarm_status.active_count }} unresolved detection{{ '' if dash_alarm_status.active_count == 1 else 's' }}
+      </div>
+      {% else %}
+      <div class="shrink-0 mb-3 flex items-center gap-2 rounded-lg bg-success/10 text-success px-3 py-2 text-xs font-semibold">
+        <span class="w-2 h-2 rounded-full bg-success shrink-0"></span>
+        No active alarms
+      </div>
+      {% endif %}
+      <div class="flex-1 min-h-0 overflow-y-auto space-y-1">
+        {% for ev in dash_recent_rfid_events %}
+        <a href="/monitoring" class="flex items-center gap-3 py-1.5 px-1.5 rounded-lg hover:bg-base-200/60 transition-colors">
+          {% if ev.classification == 'authorized' %}
+          <span class="w-1.5 h-1.5 rounded-full shrink-0 bg-success"></span>
+          {% elif ev.classification == 'unauthorized' %}
+          <span class="w-1.5 h-1.5 rounded-full shrink-0 bg-error"></span>
+          {% else %}
+          <span class="w-1.5 h-1.5 rounded-full shrink-0 bg-warning"></span>
+          {% endif %}
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-medium truncate">{{ ev.asset_name or 'Unrecognized tag' }}</p>
+            <p class="text-xs text-base-content/40 dash-relative-time" data-timestamp="{{ ev.detected_at }}">{{ ev.detected_at }}</p>
+          </div>
+        </a>
+        {% else %}
+        <div class="h-full flex items-center justify-center text-sm text-base-content/50">
+          No detections yet.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
 </div>
 
 <div id="modal-container"></div>
@@ -373,7 +523,7 @@ dashRefreshRelativeTimes();
 setInterval(dashRefreshRelativeTimes, 60000);
 
 // # # # "Due in ..." countdowns for the Due Soon panel --------------------
-// Mirrors dashRelativeTime but counts forward -- every row is guaranteed still
+// Mirrors dashRelativeTime but counts forward - every row is guaranteed still
 // in the future by dashboard_service.py's query, so no need to handle past timestamps.
 function dashDueIn(sqliteTimestamp) {
   const iso = sqliteTimestamp.replace(' ', 'T');
@@ -412,17 +562,26 @@ function dashRenderStatusChart() {
     {{ dash_assets_reserved }},
     {{ dash_assets_maintenance }},
   ];
-  const colors = [
-    dashThemeColor('--color-success'),
-    dashThemeColor('--color-info'),
-    dashThemeColor('--color-warning'),
-    dashThemeColor('--color-error'),
-  ];
+  // Chart.js draws literally nothing for a doughnut whose slices all add up
+  // to 0 (no proportion to divide a ring into) - not a bug, but it reads as
+  // "the chart is broken" since the canvas is just blank with no ring at
+  // all. A single full-circle "empty" slice in a neutral color keeps the
+  // ring itself always visible, same as the legend numbers already do.
+  const total = data.reduce((sum, n) => sum + n, 0);
+  const chartData = total === 0 ? [1] : data;
+  const colors = total === 0
+    ? [dashThemeColor('--color-base-300')]
+    : [
+        dashThemeColor('--color-success'),
+        dashThemeColor('--color-info'),
+        dashThemeColor('--color-warning'),
+        dashThemeColor('--color-error'),
+      ];
   window.__dashStatusChart = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: ['Available', 'Borrowed', 'Reserved', 'Maintenance'],
-      datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+      labels: total === 0 ? ['No assets yet'] : ['Available', 'Borrowed', 'Reserved', 'Maintenance'],
+      datasets: [{ data: chartData, backgroundColor: colors, borderWidth: 0 }],
     },
     options: {
       responsive: true,
@@ -435,7 +594,7 @@ function dashRenderStatusChart() {
 dashRenderStatusChart();
 
 // Chart colors are read once at creation time (not watched live), so
-// redraw when the theme toggles -- same pattern reports.html uses for
+// redraw when the theme toggles - same pattern reports.html uses for
 // its own charts.
 new MutationObserver(function (mutations) {
   for (const m of mutations) {
@@ -457,7 +616,7 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal, :scope > dialog[open]'));
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (!e.altKey || isTypingTarget(e.target) || isModalOpen()) return;
 
   const key = e.key.toLowerCase();
@@ -473,6 +632,6 @@ document.addEventListener('keydown', function (e) {
   if (!btn) return;
   e.preventDefault();
   btn.click();
-});
+};
 </script>
 {% endblock %}

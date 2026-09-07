@@ -32,8 +32,8 @@
     <col style="width: 16%">
     <col style="width: 12%">
     <col style="width: 12%">
-    <col style="width: 13%">
-    <col style="width: 12%">
+    <col style="width: 15%">
+    <col style="width: 10%">
     <col style="width: 5rem">
   </colgroup>
   <thead>
@@ -79,7 +79,7 @@
       <td class="py-2 text-sm {% if txn.is_overdue %}text-error font-medium{% else %}text-base-content/60{% endif %}">
         {{ txn.due_date | format_date if txn.due_date else "-" }}
       </td>
-      <td class="py-2 text-sm text-base-content/60">
+      <td class="py-2 text-sm text-base-content/60 whitespace-nowrap">
         {{ txn.time_in | format_date if txn.time_in else "-" }}
         {% if txn.returned_by_username %}
         <div class="text-xs text-base-content/40 mt-0.5 truncate">by {{ txn.returned_by_username }}</div>

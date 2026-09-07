@@ -6,7 +6,7 @@
         <h3 class="font-bold text-xl">Restriction History</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</p>
       </div>
-      <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+      <!-- ESC pill, not an X icon - see assets/_details_modal.html's
            close button for the full reasoning. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
@@ -32,7 +32,7 @@
       </div>
     </div>
 
-    <!-- Just removes itself -- appended with hx-swap="beforeend" (see
+    <!-- Just removes itself - appended with hx-swap="beforeend" (see
          "View Full History" in _profile_modal.html), so the profile panel
          is still sitting there underneath once this closes. -->
     <div class="modal-action mt-6 shrink-0">

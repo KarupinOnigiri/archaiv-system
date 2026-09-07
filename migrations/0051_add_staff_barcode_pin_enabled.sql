@@ -1,0 +1,13 @@
+-- 0051_add_staff_barcode_pin_enabled.sql
+-- Barcode + PIN login (System > ... no, Account Settings > "Barcode + PIN
+-- login"): opt-in, off by default -- staff sign in with username+password
+-- until they explicitly turn this on. Deliberately does NOT add a new PIN
+-- column: it reuses staff.rfid_pin_hash (0030_add_staff_rfid_pin.sql)
+-- unchanged, since it's the same PIN either way, just a different scanned
+-- identifier (barcode vs RFID card) that gets asked for it. RFID+PIN login
+-- itself stays exactly as it was (still admin-only, still wired to
+-- routes/auth.py's login_rfid/rfid_lookup) -- this is reserved for a
+-- possible future design, not removed, just not linked from the login page
+-- UI anymore now that barcode+PIN is the active flow. See services/staff_service.py's
+-- enable_barcode_pin_login/disable_barcode_pin_login/change_own_barcode_pin.
+ALTER TABLE staff ADD COLUMN barcode_pin_enabled INTEGER NOT NULL DEFAULT 0;

@@ -52,6 +52,9 @@ from services.settings_service import (
     get_auto_backup_enabled,
     get_auto_backup_interval_hours,
     get_archive_purge_days,
+    get_alarm_enabled,
+    get_staff_code_prefix,
+    BARCODE_PREFIX_PATTERN,
 )
 from utils.formatters import full_name
 from utils.logger import log_action
@@ -82,7 +85,7 @@ _ASSIGNED_END_FORMATS = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S")
 REQUIRED_STAFF_CSV_COLUMNS = ("member_identifier", "username", "password", "role")
 OPTIONAL_STAFF_CSV_COLUMNS = ("assigned_start", "assigned_end")
 
-# Excludes password_hash, locked_until, failed_login_attempts -- security-internal, no business in a spreadsheet.
+# Excludes password_hash, locked_until, failed_login_attempts - security-internal, no business in a spreadsheet.
 STAFF_EXPORT_COLUMNS = (
     "staff_code",
     "username",
@@ -353,7 +356,7 @@ def get_staff_profile(conn, staff_id):
         (staff_id,),
     ).fetchone()
 
-    # Same idea as member_profile's pending_unrestriction_request -- surfaces a pending deactivation request on the profile itself.
+    # Same idea as member_profile's pending_unrestriction_request - surfaces a pending deactivation request on the profile itself.
     pending_deactivation_request = None
     if staff_member is not None and staff_member["role"] == "admin" and staff_member["is_active"]:
         pending_deactivation_request = conn.execute(
@@ -459,9 +462,12 @@ def get_audit_log_context(conn, args, staff):
 
     logs = conn.execute(
         f"""
-        SELECT audit_log.*, staff.username AS staff_username
+        SELECT audit_log.*, staff.username AS staff_username,
+               members.first_name AS staff_first_name, members.last_name AS staff_last_name,
+               members.middle_name AS staff_middle_name, members.suffix AS staff_suffix
         FROM audit_log
         LEFT JOIN staff ON audit_log.staff_id = staff.id
+        LEFT JOIN members ON staff.member_id = members.id
         {where_clause}
         ORDER BY audit_log.created_at DESC
         LIMIT ? OFFSET ?
@@ -557,7 +563,7 @@ def create_staff(conn, data, staff_id):
             ),
         )
         new_staff_id = cursor.lastrowid
-        generated_code = f"STF{new_staff_id:05d}"
+        generated_code = f"{get_staff_code_prefix(conn)}{new_staff_id:05d}"
         conn.execute("UPDATE staff SET staff_code = ? WHERE id = ?", (generated_code, new_staff_id))
         conn.commit()
     except sqlite3.IntegrityError as e:
@@ -732,6 +738,95 @@ def change_own_rfid_pin(conn, staff, new_pin, current_token):
         details=f"Staff {staff['username']} changed their own RFID PIN",
     )
     return {"message": "RFID PIN changed successfully"}
+
+
+# # # BARCODE + PIN LOGIN (self-service, any staff role) --------------------
+#
+# Reuses staff.rfid_pin_hash unchanged - see 0051_add_staff_barcode_pin_enabled.sql's
+# own comment for why this deliberately isn't a separate PIN column. The
+# actual login-time lookup lives in services/login_service.py
+# (find_staff_for_barcode_pin_lookup/find_staff_for_barcode_pin_login);
+# these three are just the Account Settings-side enable/disable/change flow.
+
+
+def enable_barcode_pin_login(conn, staff, new_pin, current_token):
+    """First-time enable: sets the PIN and flips barcode_pin_enabled on in
+    one action, same as change_own_rfid_pin otherwise (same session-kill,
+    same hashing). Called with a PIN staff typed just now, not one already
+    on file - unlike change_own_rfid_pin's caller, there's nothing to
+    overwrite versus create here, but the DB write is identical either way."""
+    new_hash = generate_password_hash(new_pin)
+    try:
+        conn.execute(
+            "UPDATE staff SET rfid_pin_hash = ?, barcode_pin_enabled = 1 WHERE id = ?",
+            (new_hash, staff["id"]),
+        )
+        conn.execute(
+            "DELETE FROM sessions WHERE staff_id = ? AND token != ?", (staff["id"], current_token)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    log_action(
+        staff_id=staff["id"],
+        action="enabled_barcode_pin_login",
+        target_table="staff",
+        target_id=staff["id"],
+        target_name=staff["username"],
+        details=f"Staff {staff['username']} enabled barcode + PIN login",
+    )
+    return {"message": "Barcode + PIN login enabled"}
+
+
+def disable_barcode_pin_login(conn, staff):
+    """Flips barcode_pin_enabled off without touching rfid_pin_hash - the
+    PIN itself is left in place (not cleared) so re-enabling later, or a
+    future RFID+PIN re-activation, doesn't need it set again from scratch.
+    No session-kill here (unlike change_own_rfid_pin/enable_barcode_pin_login):
+    disabling this doesn't invalidate anything the PIN itself could still be
+    used for, since login_barcode_pin() checks barcode_pin_enabled on every
+    attempt, not just at PIN-set time."""
+    conn.execute("UPDATE staff SET barcode_pin_enabled = 0 WHERE id = ?", (staff["id"],))
+    conn.commit()
+
+    log_action(
+        staff_id=staff["id"],
+        action="disabled_barcode_pin_login",
+        target_table="staff",
+        target_id=staff["id"],
+        target_name=staff["username"],
+        details=f"Staff {staff['username']} disabled barcode + PIN login",
+    )
+    return {"message": "Barcode + PIN login disabled"}
+
+
+def change_own_barcode_pin(conn, staff, new_pin, current_token):
+    """Self-service PIN change once barcode + PIN login is already enabled --
+    identical write to change_own_rfid_pin (same shared column), just its
+    own audit-log action name/message so the two flows stay distinguishable
+    in the activity log."""
+    new_hash = generate_password_hash(new_pin)
+    try:
+        conn.execute("UPDATE staff SET rfid_pin_hash = ? WHERE id = ?", (new_hash, staff["id"]))
+        conn.execute(
+            "DELETE FROM sessions WHERE staff_id = ? AND token != ?", (staff["id"], current_token)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    log_action(
+        staff_id=staff["id"],
+        action="changed_own_barcode_pin",
+        target_table="staff",
+        target_id=staff["id"],
+        target_name=staff["username"],
+        details=f"Staff {staff['username']} changed their own barcode + PIN login PIN",
+    )
+    return {"message": "PIN changed successfully"}
 
 
 # # # NOTIFICATION PREFERENCES --------------------------------------------
@@ -1111,7 +1206,7 @@ def reactivate_staff(conn, staff_id, acting_staff_id, reason):
         target_table="staff",
         target_id=staff_id,
         target_name=staff["username"],
-        details=f"Reactivated staff account: {staff['username']} -- reason: {reason}",
+        details=f"Reactivated staff account: {staff['username']} - reason: {reason}",
     )
 
     return {"message": "Staff reactivated successfully"}, None
@@ -1304,7 +1399,7 @@ def request_admin_deactivation(conn, target_staff_id, acting_staff, reason):
         return None, _no_ctx(
             {
                 "error": "No eligible reviewers currently exist to process this request",
-                "reason": "Deactivating this admin requires at least 1 active in_charge account plus at least 1 more in_charge or tool_keeper account -- none are currently available.",
+                "reason": "Deactivating this admin requires at least 1 active in_charge account plus at least 1 more in_charge or tool_keeper account - none are currently available.",
             },
             409,
         )
@@ -1382,7 +1477,7 @@ def approve_admin_deactivation(conn, request_id, acting_staff, reason):
         conn.rollback()
         return None, _no_ctx({"error": "You have already reviewed this request"}, 400)
 
-    # req has no join, so target_username isn't on it -- look it up separately.
+    # req has no join, so target_username isn't on it - look it up separately.
     target_staff_row = conn.execute("SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)).fetchone()
     log_action(
         staff_id=acting_staff["id"],
@@ -1434,7 +1529,7 @@ def deny_admin_deactivation(conn, request_id, acting_staff, denial_reason):
     if not is_requester and not denial_reason:
         return None, _no_ctx({"error": "A reason is required to deny this request"}, 400)
 
-    # Looked up before the request resolves -- req has no target_username column of its own.
+    # Looked up before the request resolves - req has no target_username column of its own.
     target_staff_row = conn.execute("SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)).fetchone()
 
     if is_requester:
@@ -1755,7 +1850,7 @@ def _import_staff_rows(reader, header_map, conn, acting_staff_id, created, error
                 ),
             )
             new_id = cursor.lastrowid
-            conn.execute("UPDATE staff SET staff_code = ? WHERE id = ?", (f"STF{new_id:05d}", new_id))
+            conn.execute("UPDATE staff SET staff_code = ? WHERE id = ?", (f"{get_staff_code_prefix(conn)}{new_id:05d}", new_id))
             conn.execute("RELEASE row_import")
             created.append({"row": row_num, "id": new_id, "username": username})
         except sqlite3.IntegrityError as e:
@@ -1845,7 +1940,7 @@ def save_export_copy(file_bytes, save_dir, filename):
 
 # # # SYSTEM SETTINGS (session/security/notification/loan/damage thresholds) --
 # All six follow the same shape: parse int field(s), validate range, write to
-# app_settings, log_action. Returns (result_dict, error_msg) -- error_msg is a
+# app_settings, log_action. Returns (result_dict, error_msg) - error_msg is a
 # plain string the route either jsonifies (400) or re-renders its own modal with.
 
 
@@ -1957,6 +2052,87 @@ def update_loan_duration(conn, data, acting_staff_id):
     return {"message": "Loan duration updated successfully", "default_loan_days": default_loan_days}, None
 
 
+def update_checkout_session_settings(conn, data, acting_staff_id):
+    """How long an in-progress checkout cart can sit untouched before it's
+    auto-cancelled and its reserved assets released - was a hardcoded
+    20-minute constant (utils/constants.py), now an admin/in_charge-editable
+    app_settings row like every other operational knob on this page."""
+    try:
+        stale_minutes = int(data.get("checkout_session_stale_minutes"))
+    except (TypeError, ValueError):
+        return None, "Checkout session timeout must be a whole number of minutes"
+    if not (1 <= stale_minutes <= 1440):
+        return None, "Checkout session timeout must be between 1 and 1440 minutes (24 hours)"
+
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'checkout_session_stale_minutes'", (str(stale_minutes),)
+    )
+    conn.commit()
+
+    log_action(
+        staff_id=acting_staff_id,
+        action="updated_checkout_session_settings",
+        target_table="app_settings",
+        details=f"Set checkout_session_stale_minutes={stale_minutes}",
+    )
+
+    return {
+        "message": "Checkout session timeout updated successfully",
+        "checkout_session_stale_minutes": stale_minutes,
+    }, None
+
+
+# # # MAINTENANCE SCHEDULING (admin/in_charge-editable defaults) --------------
+
+
+def update_maintenance_settings(conn, data, acting_staff_id):
+    """Two independent operational defaults for preventive maintenance
+    scheduling (migrations 0055/0059) - previously seeded once and never
+    exposed to an admin/in_charge account to actually change:
+    - default_maintenance_interval_days: how far out a newly-created (or
+      re-serviced) serialized asset's next_maintenance_due auto-computes to
+      when staff don't set one explicitly - services/asset_service.py's
+      _default_next_maintenance_due.
+    - maintenance_reminder_lead_days: how many days ahead of a due date (or
+      how close to a usage-interval trigger) counts as "due soon" for the
+      dashboard card and the scheduled notification sweep -
+      services/maintenance_service.py's sweep_maintenance_due."""
+    try:
+        interval_days = int(data.get("default_maintenance_interval_days"))
+    except (TypeError, ValueError):
+        return None, "Default maintenance interval must be a whole number of days"
+    if not (1 <= interval_days <= 3650):
+        return None, "Default maintenance interval must be between 1 and 3650 days (10 years)"
+
+    try:
+        lead_days = int(data.get("maintenance_reminder_lead_days"))
+    except (TypeError, ValueError):
+        return None, "Maintenance reminder lead time must be a whole number of days"
+    if not (0 <= lead_days <= 365):
+        return None, "Maintenance reminder lead time must be between 0 and 365 days"
+
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'default_maintenance_interval_days'", (str(interval_days),)
+    )
+    conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = 'maintenance_reminder_lead_days'", (str(lead_days),)
+    )
+    conn.commit()
+
+    log_action(
+        staff_id=acting_staff_id,
+        action="updated_maintenance_settings",
+        target_table="app_settings",
+        details=f"Set default_maintenance_interval_days={interval_days}, maintenance_reminder_lead_days={lead_days}",
+    )
+
+    return {
+        "message": "Maintenance settings updated successfully",
+        "default_maintenance_interval_days": interval_days,
+        "maintenance_reminder_lead_days": lead_days,
+    }, None
+
+
 def update_damage_restriction(conn, data, acting_staff_id):
     try:
         threshold = int(data.get("damage_restriction_threshold"))
@@ -1999,13 +2175,156 @@ def update_feature_flags(conn, new_values, acting_staff_id):
             target_table="app_settings",
             target_name=label,
             details=(
-                f"{label} was turned on -- its tab/routes are visible and usable again for everyone"
+                f"{label} was turned on - its tab/routes are visible and usable again for everyone"
                 if enabled
-                else f"{label} was turned off -- its nav link is hidden and its routes/actions are blocked for everyone"
+                else f"{label} was turned off - its nav link is hidden and its routes/actions are blocked for everyone"
             ),
         )
 
     return {"message": "Feature access updated", "feature_flags": new_values}
+
+
+# # # ALARM SETTINGS ---------------------------------------------------------
+
+
+def update_alarm_settings(conn, data, acting_staff_id):
+    """Mutes/unmutes the RFID exit-monitoring alarm itself - independent of the
+    "monitoring" feature flag, which gates the whole tab/pipeline instead. See
+    services/monitoring_service.py's record_rfid_event for what this actually
+    changes (nothing stops being logged/classified either way)."""
+    enabled = bool(data.get("enabled"))
+    conn.execute("UPDATE app_settings SET value = ? WHERE key = 'alarm_enabled'", ("1" if enabled else "0",))
+    conn.commit()
+
+    log_action(
+        staff_id=acting_staff_id,
+        action="enabled_alarm" if enabled else "disabled_alarm",
+        target_table="app_settings",
+        details=(
+            "RFID exit-monitoring alarm turned on"
+            if enabled
+            else "RFID exit-monitoring alarm turned off - detections are still logged, but won't raise the banner/active-alarm state"
+        ),
+    )
+
+    return {"message": "Alarm settings updated", "enabled": enabled}, None
+
+
+# # # BARCODE ID PREFIXES -----------------------------------------------------
+
+
+_PREFIX_SETTINGS = {
+    "asset_id_prefix": "Asset ID prefix",
+    "member_code_prefix": "Member code prefix",
+    "staff_code_prefix": "Staff code prefix",
+}
+
+
+def update_barcode_prefixes(conn, data, acting_staff_id, force_regenerate=False):
+    """By default, changes only affect codes generated from this point on -
+    existing asset_id/member_code/staff_code values (and the barcode_ids
+    that default to them) keep whatever prefix they already had. See
+    settings_service.py's get_asset_id_prefix/get_member_code_prefix/
+    get_staff_code_prefix and their callers in asset_service.py/
+    member_service.py/staff_service.py/setup_service.py.
+
+    force_regenerate=True additionally rewrites every existing record's own
+    code (see _force_regenerate_prefixed_codes) - opt-in and password-gated
+    at the route layer, since it's the one part of this action that isn't
+    trivially reversible (old printed barcode labels stop scanning to the
+    right record)."""
+    prefixes = {key: (data.get(key) or "").strip().upper() for key in _PREFIX_SETTINGS}
+
+    for key, value in prefixes.items():
+        if not re.match(BARCODE_PREFIX_PATTERN, value):
+            return None, f"{_PREFIX_SETTINGS[key]} must be 2-6 characters: uppercase letters, numbers, or - _ . #"
+
+    for key, value in prefixes.items():
+        conn.execute("UPDATE app_settings SET value = ? WHERE key = ?", (value, key))
+    conn.commit()
+
+    log_action(
+        staff_id=acting_staff_id,
+        action="updated_barcode_prefixes",
+        target_table="app_settings",
+        details=(
+            f"Set asset_id_prefix={prefixes['asset_id_prefix']}, member_code_prefix={prefixes['member_code_prefix']}, "
+            f"staff_code_prefix={prefixes['staff_code_prefix']}"
+            + (
+                " - only affects codes generated from now on, not existing records"
+                if not force_regenerate
+                else " - also regenerating every existing record's code (see next log entry)"
+            )
+        ),
+    )
+
+    regenerated = None
+    if force_regenerate:
+        regenerated = _force_regenerate_prefixed_codes(conn, prefixes, acting_staff_id)
+
+    result = {"message": "Barcode ID prefixes updated", **prefixes}
+    if regenerated is not None:
+        result["regenerated"] = regenerated
+    return result, None
+
+
+def _force_regenerate_prefixed_codes(conn, prefixes, acting_staff_id):
+    """Rewrites every asset/member/staff row's own generated code (asset_id/
+    member_code/staff_code) to use the prefix just saved, keeping each row's
+    existing numeric id suffix (same `{prefix}{id:05d}` shape used at
+    creation - see create_asset/create_member/create_staff). A row's
+    barcode_id is only carried along if it currently equals that row's own
+    code (i.e. it was never customized to something else, per
+    normalize_barcode_id's convention) - a manually-set/scanned custom
+    barcode is left untouched either way.
+
+    Best-effort per table: a row that would collide with something else
+    (astronomically unlikely - new codes are id-derived and ids are unique,
+    but a hand-entered custom barcode could theoretically already equal one)
+    is skipped and counted, not allowed to abort the whole batch."""
+    counts = {}
+
+    for table, code_col, prefix_key in (
+        ("assets", "asset_id", "asset_id_prefix"),
+        ("members", "member_code", "member_code_prefix"),
+        ("staff", "staff_code", "staff_code_prefix"),
+    ):
+        new_prefix = prefixes[prefix_key]
+        has_barcode_col = table in ("assets", "members")
+        rows = conn.execute(f"SELECT id, {code_col}{', barcode_id' if has_barcode_col else ''} FROM {table}").fetchall()
+
+        updated = 0
+        for row in rows:
+            new_code = f"{new_prefix}{row['id']:05d}"
+            if row[code_col] == new_code:
+                continue  # already matches - nothing to do, don't touch barcode_id either
+            try:
+                if has_barcode_col:
+                    new_barcode = new_code if row["barcode_id"] == row[code_col] else row["barcode_id"]
+                    conn.execute(
+                        f"UPDATE {table} SET {code_col} = ?, barcode_id = ? WHERE id = ?",
+                        (new_code, new_barcode, row["id"]),
+                    )
+                else:
+                    conn.execute(f"UPDATE {table} SET {code_col} = ? WHERE id = ?", (new_code, row["id"]))
+                updated += 1
+            except sqlite3.IntegrityError as e:
+                logger.error(f"IntegrityError regenerating {table}.{code_col} for id={row['id']}: {e}")
+
+        conn.commit()
+        counts[table] = updated
+
+    log_action(
+        staff_id=acting_staff_id,
+        action="force_regenerated_prefixed_codes",
+        target_table="app_settings",
+        details=(
+            f"Regenerated existing codes to new prefixes: {counts['assets']} asset(s), "
+            f"{counts['members']} member(s), {counts['staff']} staff record(s)"
+        ),
+    )
+
+    return counts
 
 
 # # # BARCODE LABEL ACTIVITY LOGGING ---------------------------------------
@@ -2050,6 +2369,22 @@ def log_barcode_download(items, size, acting_staff_id):
         staff_id=acting_staff_id,
         action="downloaded_barcode_labels",
         details=f"Downloaded a {size} PDF for {_describe_barcode_selection(asset_items, member_items)}",
+    )
+
+
+_BARCODE_COUNT_RE = re.compile(r"(\d+) (?:asset|member)\(s\)")
+
+
+def get_barcode_labels_printed_count(conn):
+    """Total individual labels ever downloaded (System page's Hardware card summary) -
+    sums the asset(s)/member(s) counts out of every downloaded_barcode_labels audit_log
+    entry's own details string (log_barcode_download above) rather than tracking a
+    separate counter, since the audit log already has the numbers a download recorded."""
+    rows = conn.execute(
+        "SELECT details FROM audit_log WHERE action = 'downloaded_barcode_labels'"
+    ).fetchall()
+    return sum(
+        int(n) for row in rows for n in _BARCODE_COUNT_RE.findall(row["details"] or "")
     )
 
 
@@ -2149,7 +2484,7 @@ def trigger_manual_backup(acting_staff_id):
     """Manual backup; runs unconditionally regardless of the enabled toggle or schedule interval."""
     ok = run_backup_now()
     if not ok:
-        return None, "Backup failed -- check the server log for details."
+        return None, "Backup failed - check the server log for details."
 
     log_action(
         staff_id=acting_staff_id,
@@ -2231,7 +2566,7 @@ def run_archive_purge(conn, acting_staff_id):
     """Manual purge; runs the same three passes as the scheduled job, but only if a retention window is set."""
     purge_days = get_archive_purge_days(conn)
     if purge_days <= 0:
-        return None, "Set a retention window before purging -- it's currently set to None."
+        return None, "Set a retention window before purging - it's currently set to None."
 
     purged_assets = purge_expired_archived_assets()
     purged_staff = purge_expired_inactive_staff()
@@ -2242,7 +2577,7 @@ def run_archive_purge(conn, acting_staff_id):
         action="ran_manual_archive_purge",
         target_table="assets",
         details=(
-            "Triggered an on-demand archive purge from the System page -- "
+            "Triggered an on-demand archive purge from the System page - "
             f"{purged_assets} asset(s), {purged_members} member(s), {purged_staff} staff account(s) permanently deleted"
         ),
     )

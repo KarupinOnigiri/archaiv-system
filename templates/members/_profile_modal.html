@@ -11,12 +11,39 @@
     }
   </style>
   <script>
-    document.addEventListener('keydown', function escClose(e) {
-      if (e.key === 'Escape') {
-        const modal = document.querySelector('.fixed.inset-0.z-50');
-        if (modal) modal.remove();
-        document.removeEventListener('keydown', escClose);
+    // Escape-to-close is handled by the single shared, topmost-only
+    // handler in ui.js (scoped to #modal-container's direct children) -
+    // see assets/_details_modal.html's comment for why this used to have
+    // its own buggy document-level escClose here and why that was removed.
+
+    // E dit / D eactivate-Reactivate / R estrict-Lift-Request - see
+    // assets/_details_modal.html's identical pattern for the full
+    // reasoning (mnemonic letters, self-cleaning once the modal closes,
+    // and standing down without unregistering whenever a later modal has
+    // been appended on top of this one).
+    document.addEventListener('keydown', function profileShortcuts(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const modal = document.querySelector('.fixed.inset-0.z-50');
+      if (!modal) {
+        document.removeEventListener('keydown', profileShortcuts);
+        return;
       }
+      if (modal.parentElement && modal.parentElement.lastElementChild !== modal) return;
+      const target = e.target;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+      if (isTyping) return;
+
+      const idByKey = {
+        e: 'member-profile-edit-btn',
+        d: 'member-profile-deactivate-btn',
+        r: 'member-profile-restrict-btn',
+      };
+      const btnId = idByKey[e.key.toLowerCase()];
+      if (!btnId) return;
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      e.preventDefault();
+      btn.click();
     });
   </script>
 
@@ -30,7 +57,7 @@
         <h3 class="font-bold text-lg leading-snug">{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ member.member_code }} &middot; {{ member.barcode_id }}</p>
       </div>
-      <!-- ESC pill, not an X icon -- see assets/_details_modal.html's
+      <!-- ESC pill, not an X icon - see assets/_details_modal.html's
            close button for the full reasoning. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
               onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
@@ -53,7 +80,7 @@
           {% if pending_unrestriction_request %}
           <div class="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-warning/20">
             <p class="text-xs text-warning/80">
-              Unrestriction already requested by @{{ pending_unrestriction_request.requested_by_username }} on {{ pending_unrestriction_request.created_at | format_date('%b %d, %Y') }} -- awaiting review.
+              Unrestriction already requested by @{{ pending_unrestriction_request.requested_by_username }} on {{ pending_unrestriction_request.created_at | format_date('%b %d, %Y') }} - awaiting review.
             </p>
             <a href="/requests" class="btn btn-xs btn-warning btn-outline shrink-0">View</a>
           </div>
@@ -83,13 +110,13 @@
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Member since</span>
-              <span class="text-sm font-medium text-right">{{ member.created_at }}</span>
+              <span class="text-sm font-medium text-right">{{ member.created_at | format_date }}</span>
             </div>
           </div>
         </div>
 
         <!-- Tabs: Borrow History / Restriction History. This is the one
-             section allowed to grow/scroll -- tab bar stays put (shrink-0),
+             section allowed to grow/scroll - tab bar stays put (shrink-0),
              only the visible panel's own result list scrolls. -->
         <div class="mt-5 flex-1 flex flex-col min-h-0">
           <div role="tablist" class="tabs tabs-boxed w-fit shrink-0">
@@ -180,25 +207,23 @@
 
     <!-- Footer actions -->
     <div class="flex justify-end gap-2 p-5 border-t border-base-300 shrink-0">
-      <button type="button" class="btn" onclick="this.closest('.fixed').remove()">Cancel</button>
-
       {% if member.is_active %}
         {% if can_restrict and not member.is_restricted %}
-        <button type="button" class="btn btn-outline btn-warning"
+        <button type="button" id="member-profile-restrict-btn" class="btn btn-outline btn-warning" data-tooltip="Restrict (R)"
                 hx-get="/api/v1/members/{{ member.id }}/restrict-form?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
           Restrict
         </button>
         {% elif can_manage and member.is_restricted %}
-        <button type="button" class="btn btn-outline btn-success"
+        <button type="button" id="member-profile-restrict-btn" class="btn btn-outline btn-success" data-tooltip="Lift Restriction (R)"
                 hx-get="/api/v1/members/{{ member.id }}/unrestrict-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
           Lift Restriction
         </button>
         {% elif g.staff.role == "tool_keeper" and member.is_restricted and not pending_unrestriction_request %}
-        <button type="button" class="btn btn-outline btn-warning"
+        <button type="button" id="member-profile-restrict-btn" class="btn btn-outline btn-warning" data-tooltip="Request Unrestriction (R)"
                 hx-get="/api/v1/members/{{ member.id }}/request-unrestriction-form"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -206,7 +231,7 @@
         </button>
         {% endif %}
         {% if can_manage %}
-        <button type="button" class="btn btn-error btn-outline"
+        <button type="button" id="member-profile-deactivate-btn" class="btn btn-error btn-outline" data-tooltip="Deactivate (D)"
                 hx-get="/api/v1/members/{{ member.id }}/delete-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -214,7 +239,7 @@
         </button>
         {% endif %}
       {% elif can_manage %}
-        <button type="button" class="btn btn-outline btn-success"
+        <button type="button" id="member-profile-deactivate-btn" class="btn btn-outline btn-success" data-tooltip="Reactivate (D)"
                 hx-get="/api/v1/members/{{ member.id }}/reactivate-confirm?return_to=profile"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -223,7 +248,7 @@
       {% endif %}
 
       {% if can_manage %}
-      <button type="button" class="btn btn-primary w-20"
+      <button type="button" id="member-profile-edit-btn" class="btn btn-primary w-20" data-tooltip="Edit (E)"
               hx-get="/api/v1/members/{{ member.id }}/edit-form?return_to=profile"
               hx-target="#modal-container"
               hx-swap="beforeend">
@@ -242,7 +267,7 @@
   const historyTab = document.getElementById('profile-tab-history');
   const restrictionsTab = document.getElementById('profile-tab-restrictions');
   // Toggles the whole wrap (list + "View Full History" link) as one unit,
-  // not just the scrollable list -- see the wrap's own comment above.
+  // not just the scrollable list - see the wrap's own comment above.
   const historyPanelWrap = document.getElementById('profile-history-panel-wrap');
   const historyPanel = document.getElementById('profile-history-panel');
   // Same whole-wrap toggle as history above.
@@ -292,8 +317,8 @@
               <div class="font-medium">${escapeHtml(tx.asset_name)}</div>
               <div class="text-xs text-base-content/40">${escapeHtml(tx.asset_code)}</div>
             </td>
-            <td class="py-2 text-xs text-base-content/60">${escapeHtml(tx.time_out)}</td>
-            <td class="py-2 text-xs text-base-content/60">${tx.time_in ? escapeHtml(tx.time_in) : '-'}</td>
+            <td class="py-2 text-xs text-base-content/60">${escapeHtml(formatDateTime12h(tx.time_out))}</td>
+            <td class="py-2 text-xs text-base-content/60">${tx.time_in ? escapeHtml(formatDateTime12h(tx.time_in)) : '-'}</td>
             <td class="py-2">${txStatusBadge(tx.status)}</td>
           </tr>`;
       }).join('');
@@ -314,7 +339,7 @@
       historyPanel.innerHTML = '<p class="text-center py-8 text-sm text-error">Couldn\'t load borrow history.</p>';
     });
 
-  // Inline teaser depth for both tabs -- the profile modal only ever
+  // Inline teaser depth for both tabs - the profile modal only ever
   // shows the 3 most recent of anything; the rest is one click away via
   // each tab's own "View Full History" link/button.
   const PROFILE_TEASER_LIMIT = 3;
@@ -330,7 +355,7 @@
         return;
       }
 
-      // Footer only shows once there's something to view -- unlike borrow
+      // Footer only shows once there's something to view - unlike borrow
       // history's link (unconditional there since it's properly paginated),
       // this one's a flat teaser/full split, see _restriction_history_modal.html.
       document.getElementById('profile-restrictions-footer').classList.remove('hidden');
@@ -346,7 +371,7 @@
             <li class="text-sm border-l-2 border-base-300 pl-3">
               <div class="font-medium capitalize">${escapeHtml((ev.action || '').replace(/_/g, ' '))}</div>
               <div class="text-base-content/60">${escapeHtml(ev.details)}</div>
-              <div class="text-xs text-base-content/40 mt-0.5">${escapeHtml(ev.performed_by || 'system')} &middot; ${escapeHtml(ev.created_at)}</div>
+              <div class="text-xs text-base-content/40 mt-0.5">${escapeHtml(ev.performed_by || 'system')} &middot; ${escapeHtml(formatDateTime12h(ev.created_at))}</div>
             </li>`;
         }).join('');
         html += '</ul>';
@@ -360,7 +385,7 @@
             <li class="text-sm border-l-2 border-base-300 pl-3">
               <div class="font-medium capitalize">${escapeHtml(r.status)}</div>
               <div class="text-base-content/60">${escapeHtml(r.reason)}</div>
-              <div class="text-xs text-base-content/40 mt-0.5">Requested by ${escapeHtml(r.requested_by_username)}${reviewer} &middot; ${escapeHtml(r.created_at)}</div>
+              <div class="text-xs text-base-content/40 mt-0.5">Requested by ${escapeHtml(r.requested_by_username)}${reviewer} &middot; ${escapeHtml(formatDateTime12h(r.created_at))}</div>
             </li>`;
         }).join('');
         html += '</ul>';

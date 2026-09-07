@@ -51,7 +51,7 @@ def run_backup_now():
     try:
         backup_db.backup_database()
     except SystemExit:
-        # backup_database() exits(1) on failure -- catch it so it doesn't kill this thread.
+        # backup_database() exits(1) on failure - catch it so it doesn't kill this thread.
         logger.warning("Database backup failed.")
         return False
 
@@ -64,7 +64,7 @@ def run_backup_now():
 
 
 def run_scheduled_backup():
-    """The APScheduler job -- a no-op unless auto-backup is enabled and its interval has elapsed."""
+    """The APScheduler job - a no-op unless auto-backup is enabled and its interval has elapsed."""
     conn = get_db_connection()
     try:
         if not get_auto_backup_enabled(conn):
@@ -84,5 +84,5 @@ def run_scheduled_backup():
         staff_id=None,
         action="ran_scheduled_backup" if success else "scheduled_backup_failed",
         target_table="app_settings",
-        details="Automatic database backup completed" if success else "Automatic database backup failed -- check the server log",
+        details="Automatic database backup completed" if success else "Automatic database backup failed - check the server log",
     )

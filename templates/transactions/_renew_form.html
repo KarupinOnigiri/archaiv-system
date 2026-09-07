@@ -9,7 +9,7 @@
     </div>
     <p class="text-sm text-base-content/60 mb-4">
       <span class="font-medium text-base-content">{{ transaction.asset_name }}</span>
-      ({{ transaction.asset_code }}) &mdash; borrowed by {{ member_name }}
+      ({{ transaction.asset_code }}) - borrowed by {{ member_name }}
     </p>
 
     <form id="renew-form" class="space-y-4">
@@ -26,7 +26,7 @@
       </div>
     </form>
 
-    <!-- Always in the DOM, invisible (not hidden) when empty -- reserves
+    <!-- Always in the DOM, invisible (not hidden) when empty - reserves
          its layout space so the footer buttons don't shift when this
          fails validation or the request fails. -->
     <div id="renew-form-error" class="text-error text-sm mt-3 min-h-5 invisible"></div>

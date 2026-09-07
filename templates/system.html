@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- h-full + overflow-hidden pins this to <main>'s height, same fixed-viewport
-     approach as home.html -- a future card pushing past that gets clipped rather
-     than reintroducing scroll, acceptable since every card's copy is short. -->
-<div class="h-full overflow-hidden pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+<!-- h-full + overflow-y-auto pins this to <main>'s height but still scrolls
+     once content genuinely exceeds it - the original "cards always fit,
+     never scrolls" assumption (matching home.html's fixed-viewport
+     approach) broke for real once enough admin-only cards accumulated to
+     push past the viewport on shorter screens with nothing to reach it by. -->
+<div class="h-full overflow-y-auto pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
 
   <!-- Page header -->
   <div class="flex flex-wrap items-start justify-between gap-4">
@@ -13,219 +15,453 @@
     </div>
   </div>
 
-  <!-- 4 columns, 5 on xl -- with 9 cards (admin's view), 5-per-row hits 2 rows
-       exactly and fits <main>'s height without a page scroll; revisit this
-       breakpoint if a future card pushes the count past what 5-wide/2-row can hold. -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-
-    {% if staff.role == "admin" %}
-    <!-- Session Settings -- admin-only: security/access-control policy, not
-         operational, so unlike the cards below it doesn't extend to in_charge.
-         routes/staff.py's endpoints enforce this independently too. -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-primary/10 text-primary rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          </span>
-          <h3 class="font-semibold">Session Settings</h3>
-        </div>
-        <p class="text-sm text-base-content/60">How long a staff member can stay idle, and the absolute ceiling on a session's lifetime, before they're automatically signed out.</p>
-      </div>
-      <button type="button" id="system-manage-1-btn" data-tooltip="Manage (1)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/session-settings/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
+  <!-- Live filter - matches a card's own title/description text, same
+       "whole category shows if the category name itself matches" idea as
+       the Keyboard Shortcuts modal's own search (base.html). Same
+       icon-box + input + clear-button "join" convention as Inventory's
+       own search (templates/assets.html) rather than a one-off style. -->
+  <div id="system-search-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
+    <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
     </div>
-
-    <!-- Account Security -- admin-only, see the note above. -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-error/10 text-error rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-          </span>
-          <h3 class="font-semibold">Account Security</h3>
-        </div>
-        <p class="text-sm text-base-content/60">How many failed login attempts trigger a lockout, and how long that lockout lasts.</p>
-      </div>
-      <button type="button" id="system-manage-2-btn" data-tooltip="Manage (2)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/account-security/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-    {% endif %}
-
-    <!-- Loan Limits -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-info/10 text-info rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-          </span>
-          <h3 class="font-semibold">Loan Limits</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Maximum tools a trainee or trainer can have borrowed at once.</p>
-      </div>
-      <button type="button" id="system-manage-3-btn" data-tooltip="Manage (3)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/loan-limits/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    <!-- Notification Settings -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-warning/10 text-warning rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-          </span>
-          <h3 class="font-semibold">Notification Settings</h3>
-        </div>
-        <p class="text-sm text-base-content/60">How many hours before a loan's due date a "due soon" alert fires.</p>
-      </div>
-      <button type="button" id="system-manage-4-btn" data-tooltip="Manage (4)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/notification-settings/manage-form"
-              hx-target="#global-modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    <!-- Loan Duration -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-info/10 text-info rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </span>
-          <h3 class="font-semibold">Loan Duration</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Default due date a checkout gets when staff don't pick one themselves.</p>
-      </div>
-      <button type="button" id="system-manage-5-btn" data-tooltip="Manage (5)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/loan-duration/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    <!-- Damage Restriction -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-error/10 text-error rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-          </span>
-          <h3 class="font-semibold">Damage Restriction</h3>
-        </div>
-        <p class="text-sm text-base-content/60">How many damaged item returns before a member's account is auto-restricted.</p>
-      </div>
-      <button type="button" id="system-manage-6-btn" data-tooltip="Manage (6)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/damage-restriction/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    {% if staff.role == "admin" %}
-    <!-- Feature Access -- admin-only, same access-control category as Session
-         Settings/Account Security above. A master per-tab kill switch (nav link,
-         routes, dashboard widgets all hidden -- see auth_service.py's feature_required).
-         Notifications/Feedback/Staff/Activity Log/System are deliberately not on
-         this list -- they're core admin infrastructure, not optional workflows. -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-secondary/10 text-secondary rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-          </span>
-          <h3 class="font-semibold">Feature Access</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Turn Inventory, Members, Borrow &amp; Return, Approvals, or Reports off for everyone. Requires your password to confirm.</p>
-      </div>
-      <button type="button" id="system-manage-7-btn" data-tooltip="Manage (7)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/feature-flags/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    <!-- Database Backups -- admin-only, same category as the cards above:
-         infrastructure, not operational policy. services/backup_service.py runs
-         the actual job; this is just its controls (routes/staff.py's backup-settings). -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-info/10 text-info rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-          </span>
-          <h3 class="font-semibold">Database Backups</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Automatic scheduled snapshots of the database, plus an on-demand backup and download.</p>
-      </div>
-      <button type="button" id="system-manage-8-btn" data-tooltip="Manage (8)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/backup-settings/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-
-    <!-- Auto-Delete Archived Items -- admin-only, same infrastructure category as
-         Database Backups. Controls the retention window before
-         archive_purge_service.py's job permanently deletes archived items
-         (defaults to "None"/never, see migrations/0041), plus a manual Purge Now. -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-error/10 text-error rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-          </span>
-          <h3 class="font-semibold">Auto-Delete Archived Items</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Permanently deletes archived assets and deactivated members/staff accounts after a retention window you set -- 1 week, 1 month, 6 months, 1 year, a custom number of days, or never.</p>
-      </div>
-      <button type="button" id="system-manage-9-btn" data-tooltip="Manage (9)" class="btn btn-outline btn-sm mt-4 self-start"
-              hx-get="/api/v1/archive-purge-settings/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        Manage
-      </button>
-    </div>
-    {% endif %}
-
-    <!-- Barcode Labels -- a batch utility, not a daily-visit destination, so no
-         sidebar tab. This card is the deliberate one entry point (see barcodes_page). -->
-    <div class="bg-base-100 rounded-xl border border-base-300 p-5 flex flex-col justify-between">
-      <div>
-        <div class="flex items-center gap-3 mb-2">
-          <span class="bg-secondary/10 text-secondary rounded-full w-10 h-10 flex items-center justify-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/><line x1="7" y1="8" x2="7" y2="16"/><line x1="10" y1="8" x2="10" y2="16"/><line x1="13" y1="8" x2="13" y2="16"/><line x1="16" y1="8" x2="16" y2="16"/><line x1="19" y1="8" x2="19" y2="16"/></svg>
-          </span>
-          <h3 class="font-semibold">Barcode Labels</h3>
-        </div>
-        <p class="text-sm text-base-content/60">Pick from currently-present assets and borrowers, then print scannable barcode labels for them.</p>
-      </div>
-      <a href="/barcodes" data-tooltip="Open Barcode Labels (0)" class="btn btn-outline btn-sm mt-4 self-start">
-        Open Barcode Labels
-      </a>
-    </div>
-
+    <input type="search" id="system-search-input" placeholder="Search settings... (/)"
+           aria-label="Search settings"
+           class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+           oninput="filterSystemCards(this.value)" autocomplete="off">
+    <button type="button" id="system-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
+            aria-label="Clear search" data-tooltip="Clear search" onclick="clearSystemSearch()">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+    </button>
   </div>
+
+  {% macro cat_dot(color_class) %}<span class="w-1.5 h-1.5 rounded-full {{ color_class }} inline-block"></span>{% endmacro %}
+
+  {% macro badge_password() %}
+  <span class="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide uppercase bg-warning/10 text-warning px-2 py-0.5 rounded-full">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+    Password
+  </span>
+  {% endmacro %}
+
+  {% macro badge_irreversible() %}
+  <span class="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide uppercase bg-warning/10 text-warning px-2 py-0.5 rounded-full">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+    Irreversible
+  </span>
+  {% endmacro %}
+
+  <!-- One card = one settings modal's launcher. The whole card is the
+       click target (not just a "Manage" button) - hx-get/target/swap live
+       directly on the card div, and htmx's default trigger for a non-form
+       element is "click", so this works identically whether a mouse click
+       lands anywhere on the card or the keyboard-shortcut handler below
+       calls .click() on it by id. role="button" + tabindex + the keydown
+       handler make it keyboard-operable too, since a plain <div> isn't
+       focusable/actionable on its own. -->
+  {% macro settings_card(manage_id, tooltip, icon_svg, icon_classes, title, description, summary, summary_class, hx_get, hx_target='#modal-container', badge=None, danger=False, href=None) %}
+  {% set base_classes = 'system-card group relative bg-base-100 rounded-xl border p-5 flex flex-col justify-between text-left transition-all hover:shadow-md ' + ('border-warning/50 hover:border-warning' if danger else 'border-base-300 hover:border-base-content/20') %}
+  {% set full_tooltip = tooltip ~ ' - ' ~ description %}
+  {% if href %}
+  <a href="{{ href }}" data-tooltip="{{ full_tooltip }}" data-tooltip-rail data-tooltip-show-expanded class="{{ base_classes }} cursor-pointer"
+     data-card-text="{{ (title ~ ' ' ~ description) | lower }}">
+  {% else %}
+  <div {% if manage_id %}id="{{ manage_id }}"{% endif %} data-tooltip="{{ full_tooltip }}" data-tooltip-rail data-tooltip-show-expanded role="button" tabindex="0"
+       class="{{ base_classes }} cursor-pointer"
+       data-card-text="{{ (title ~ ' ' ~ description) | lower }}"
+       hx-get="{{ hx_get }}" hx-target="{{ hx_target }}" hx-swap="innerHTML"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
+  {% endif %}
+    <div>
+      <!-- items-start (not items-center) on both this row and the icon+title
+           group below - a 2-line-wrapped title used to re-center the whole
+           icon+title group, which visibly nudged the icon down/out of line
+           with every other card's icon whenever its own title happened to
+           be short enough to stay on one line. Top-aligning both keeps the
+           icon pinned to the same spot regardless of title length; mt-0.5
+           just nudges the icon down enough to optically center against the
+           title's own first line instead of its literal box top. -->
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div class="flex items-start gap-3 min-w-0">
+          <span class="{{ icon_classes }} rounded-lg w-10 h-10 flex items-center justify-center shrink-0">
+            {{ icon_svg | safe }}
+          </span>
+          <h3 class="font-semibold leading-snug pt-2">{{ title }}</h3>
+        </div>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-base-content/20 group-hover:text-base-content/40 transition-colors shrink-0 mt-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+      {% if badge == 'password' %}
+      <div class="mt-1.5">{{ badge_password() }}</div>
+      {% elif badge == 'irreversible' %}
+      <div class="mt-1.5">{{ badge_irreversible() }}</div>
+      {% endif %}
+    </div>
+    <div class="mt-4 pt-3 border-t border-base-200">
+      <p class="text-sm font-semibold {{ summary_class }}">{{ summary | safe }}</p>
+    </div>
+  {% if href %}</a>{% else %}</div>{% endif %}
+  {% endmacro %}
+
+  <!-- Whole header is the collapse/expand toggle - a button (not just the
+       chevron) for a bigger, easier click target, matching how the rest of
+       this app treats "this whole row/card is the control" (settings_card
+       itself, above). aria-expanded + aria-controls describe the relationship
+       for assistive tech; the actual show/hide is a plain hidden-class toggle
+       on the grid below (see toggleSystemCategory in the page script). -->
+  {% macro category_header(color_class, label, count, grid_id) %}
+  <button type="button" class="system-cat-toggle flex items-center gap-2 mb-3 w-full text-left cursor-pointer"
+          onclick="toggleSystemCategory('{{ grid_id }}', this)" aria-expanded="true" aria-controls="{{ grid_id }}">
+    <!-- The rotate class lives on this wrapping span, not the <svg> itself -
+         Tailwind v4's rotate utilities compile to the standalone CSS `rotate`
+         property, which (unlike `transform: rotate()`) doesn't reliably take
+         effect directly on an SVG element without an explicit transform-box;
+         a plain span rotates correctly everywhere. -->
+    <!-- rotate-0 (an explicit, real angle) rather than no rotate class at
+         all - `rotate`'s initial value is the keyword "none", and toggling
+         straight from "none" to -rotate-90 on an element whose
+         transition-property list includes rotate silently never actually
+         animates/applies in this browser (confirmed: an otherwise-identical
+         fresh element works fine when it starts from a real 0deg instead).
+         Always swapping between two concrete angles sidesteps that. -->
+    <span class="system-cat-chevron w-3.5 h-3.5 text-base-content/40 shrink-0 transition-transform inline-flex rotate-0">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </span>
+    {{ cat_dot(color_class) }}
+    <h2 class="text-xs font-bold tracking-wide text-base-content/70">{{ label }}</h2>
+    <span class="text-xs text-base-content/40">{{ count }}</span>
+  </button>
+  {% endmacro %}
+
+  {% if staff.role == "admin" %}
+  <!-- Security & Access - admin-only: security/access-control policy, not
+       operational, so unlike the categories below it doesn't extend to
+       in_charge. routes/staff.py's endpoints enforce this independently too. -->
+  <section id="system-cat-security" class="system-category" data-category-name="security &amp; access">
+    {{ category_header('bg-primary', 'SECURITY & ACCESS', 3, 'system-cat-security-grid') }}
+    <div id="system-cat-security-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {{ settings_card(
+        manage_id='system-manage-1-btn', tooltip='Session Settings (1)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+        icon_classes='bg-primary/10 text-primary',
+        title='Session Settings',
+        description="How long a staff member can stay idle, and the absolute ceiling on a session's lifetime, before they're automatically signed out.",
+        summary='Idle timeout: ' ~ session_idle_minutes ~ ' min &middot; Max session: ' ~ session_absolute_hours ~ 'h',
+        summary_class='text-primary',
+        hx_get='/api/v1/session-settings/manage-form'
+      ) }}
+      {{ settings_card(
+        manage_id='system-manage-2-btn', tooltip='Account Security (2)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>',
+        icon_classes='bg-primary/10 text-primary',
+        title='Account Security',
+        description='How many failed login attempts trigger a lockout, and how long that lockout lasts.',
+        summary='Lockout: ' ~ max_failed_attempts ~ ' attempts / ' ~ lockout_minutes ~ ' min',
+        summary_class='text-primary',
+        hx_get='/api/v1/account-security/manage-form'
+      ) }}
+      <!-- Independent of feature_flags.monitoring (which gates the whole tab/
+           pipeline) - this only mutes the alarm itself; detections still get
+           classified and logged either way. Admin-only, same reasoning as
+           Feature Access below: it's a security control, not day-to-day
+           operational policy. -->
+      {{ settings_card(
+        manage_id='system-manage-10-btn', tooltip='Alarm Settings (10)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>',
+        icon_classes='bg-primary/10 text-primary',
+        title='Alarm Settings',
+        description="Turn the RFID exit-monitoring alarm itself on or off - detections still get logged in Monitoring either way, this just controls whether they raise the banner/active-alarm state.",
+        summary='Alarm: ' ~ ('On' if alarm_enabled else 'Off'),
+        summary_class='text-primary',
+        hx_get='/api/v1/alarm-settings/manage-form'
+      ) }}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Lending Policy - operational, shown to admin and in_charge alike. -->
+  <section id="system-cat-lending" class="system-category" data-category-name="lending policy">
+    {{ category_header('bg-success', 'LENDING POLICY', 5, 'system-cat-lending-grid') }}
+    <div id="system-cat-lending-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {{ settings_card(
+        manage_id='system-manage-3-btn', tooltip='Loan Limits (3)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>',
+        icon_classes='bg-success/10 text-success',
+        title='Loan Limits',
+        description='Maximum tools a trainee or trainer can have borrowed at once.',
+        summary=(
+          'Max ' ~ loan_limit_trainee ~ ' tools per trainee &amp; trainer' if loan_limit_trainee == loan_limit_trainer
+          else 'Max ' ~ loan_limit_trainee ~ ' (trainee) / ' ~ loan_limit_trainer ~ ' (trainer)'
+        ),
+        summary_class='text-success',
+        hx_get='/api/v1/loan-limits/manage-form'
+      ) }}
+      {{ settings_card(
+        manage_id='system-manage-5-btn', tooltip='Loan Duration (5)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+        icon_classes='bg-success/10 text-success',
+        title='Loan Duration',
+        description="Default due date a checkout gets when staff don't pick one themselves.",
+        summary='Default due date: +' ~ default_loan_days ~ ' days',
+        summary_class='text-success',
+        hx_get='/api/v1/loan-duration/manage-form'
+      ) }}
+      {{ settings_card(
+        tooltip='Checkout Session Timeout',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
+        icon_classes='bg-success/10 text-success',
+        title='Checkout Session Timeout',
+        description="How long an untouched in-progress checkout (docked or just abandoned mid-scan) is kept before it's auto-cancelled and its scanned tools released.",
+        summary='Timeout: ' ~ checkout_session_stale_minutes ~ ' min',
+        summary_class='text-success',
+        hx_get='/api/v1/checkout-session-settings/manage-form'
+      ) }}
+      {{ settings_card(
+        manage_id='system-manage-6-btn', tooltip='Damage Restriction (6)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>',
+        icon_classes='bg-success/10 text-success',
+        title='Damage Restriction',
+        description="How many damaged item returns before a member's account is auto-restricted.",
+        summary='Restrict after ' ~ damage_restriction_threshold ~ ' damage report' ~ ('' if damage_restriction_threshold == 1 else 's'),
+        summary_class='text-success',
+        hx_get='/api/v1/damage-restriction/manage-form'
+      ) }}
+      {{ settings_card(
+        tooltip='Maintenance Settings',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+        icon_classes='bg-success/10 text-success',
+        title='Maintenance Settings',
+        description="Default scheduling interval for preventive maintenance, and how far ahead of due counts as \"due soon.\"",
+        summary='Default: +' ~ default_maintenance_interval_days ~ 'd &middot; Lead: ' ~ maintenance_reminder_lead_days ~ 'd',
+        summary_class='text-success',
+        hx_get='/api/v1/maintenance-settings/manage-form'
+      ) }}
+    </div>
+  </section>
+
+  <!-- Notifications - operational, shown to admin and in_charge alike. -->
+  <section id="system-cat-notifications" class="system-category" data-category-name="notifications">
+    {{ category_header('bg-warning', 'NOTIFICATIONS', 1, 'system-cat-notifications-grid') }}
+    <div id="system-cat-notifications-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {{ settings_card(
+        manage_id='system-manage-4-btn', tooltip='Notification Settings (4)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>',
+        icon_classes='bg-warning/10 text-warning',
+        title='Notification Settings',
+        description='How many hours before a loan\'s due date a "due soon" alert fires.',
+        summary='Due-soon alert: ' ~ due_soon_hours ~ 'h before due',
+        summary_class='text-warning',
+        hx_get='/api/v1/notification-settings/manage-form', hx_target='#global-modal-container'
+      ) }}
+    </div>
+  </section>
+
+  <!-- Hardware - operational, shown to admin and in_charge alike. -->
+  <section id="system-cat-hardware" class="system-category" data-category-name="hardware">
+    {{ category_header('bg-secondary', 'HARDWARE', 1, 'system-cat-hardware-grid') }}
+    <div id="system-cat-hardware-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <!-- Barcode Labels - a batch utility, not a daily-visit destination, so no
+           sidebar tab. This card is the deliberate one entry point (see barcodes_page). -->
+      {{ settings_card(
+        tooltip='Open Barcode Labels (0)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/><line x1="7" y1="8" x2="7" y2="16"/><line x1="10" y1="8" x2="10" y2="16"/><line x1="13" y1="8" x2="13" y2="16"/><line x1="16" y1="8" x2="16" y2="16"/><line x1="19" y1="8" x2="19" y2="16"/></svg>',
+        icon_classes='bg-secondary/10 text-secondary',
+        title='Barcode Labels',
+        description='Pick from currently-present assets and borrowers, then print scannable barcode labels for them.',
+        summary=barcode_labels_printed ~ ' label' ~ ('' if barcode_labels_printed == 1 else 's') ~ ' printed',
+        summary_class='text-secondary',
+        hx_get=None, href='/barcodes'
+      ) }}
+    </div>
+  </section>
+
+  {% if staff.role == "admin" %}
+  <!-- Data & Maintenance - admin-only, same reasoning as Security & Access
+       above: infrastructure controls, not day-to-day policy. -->
+  <section id="system-cat-data" class="system-category" data-category-name="data &amp; maintenance">
+    {{ category_header('bg-base-content', 'DATA & MAINTENANCE', 4, 'system-cat-data-grid') }}
+    <div id="system-cat-data-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <!-- Feature Access - a master per-tab kill switch (nav link, routes,
+           dashboard widgets all hidden - see auth_service.py's
+           feature_required). Notifications/Feedback/Staff/Activity
+           Log/System are deliberately not on this list - they're core admin
+           infrastructure, not optional workflows. -->
+      {{ settings_card(
+        manage_id='system-manage-7-btn', tooltip='Feature Access (7)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+        icon_classes='bg-base-content/10 text-base-content',
+        title='Feature Access',
+        description='Turn Inventory, Members, Borrow & Return, Approvals, Reports, Monitoring, or Reservations off for everyone. Requires your password to confirm.',
+        summary=(enabled_feature_labels | join(', ') ~ ': ON') if enabled_feature_labels else 'All optional features OFF',
+        summary_class='text-base-content',
+        badge='password',
+        hx_get='/api/v1/feature-flags/manage-form'
+      ) }}
+
+      <!-- Database Backups - infrastructure, not operational policy.
+           services/backup_service.py runs the actual job; this is just its
+           controls (routes/staff.py's backup-settings). -->
+      {{ settings_card(
+        manage_id='system-manage-8-btn', tooltip='Database Backups (8)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+        icon_classes='bg-base-content/10 text-base-content',
+        title='Database Backups',
+        description='Automatic scheduled snapshots of the database, plus an on-demand backup and download.',
+        summary=(
+          (('Nightly' if auto_backup_interval_hours == 24 else 'Every ' ~ auto_backup_interval_hours ~ 'h')
+           ~ ' &middot; last backup <span id="system-last-backup" data-timestamp="' ~ last_backup_at ~ '">...</span> ago')
+          if auto_backup_enabled and last_backup_at
+          else ('Automatic backups off' if not auto_backup_enabled else (('Nightly' if auto_backup_interval_hours == 24 else 'Every ' ~ auto_backup_interval_hours ~ 'h') ~ ' &middot; no backup yet'))
+        ),
+        summary_class='text-base-content',
+        hx_get='/api/v1/backup-settings/manage-form'
+      ) }}
+
+      <!-- Auto-Delete Archived Items - controls the retention window before
+           archive_purge_service.py's job permanently deletes archived items
+           (defaults to "None"/never, see migrations/0041), plus a manual
+           Purge Now. Danger-styled (warning border + Irreversible badge +
+           orange summary) regardless of the current retention value, since
+           the action itself is permanent once it fires, not just when a
+           short window happens to be set. -->
+      {{ settings_card(
+        manage_id='system-manage-9-btn', tooltip='Auto-Delete Archived Items (9)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m5 0V4a2 2 0 012-2h0a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+        icon_classes='bg-warning/10 text-warning',
+        title='Auto-Delete Archived Items',
+        description='Permanently deletes archived assets and deactivated members/staff accounts after a retention window you set - 1 week, 1 month, 6 months, 1 year, a custom number of days, or never.',
+        summary='Retention: ' ~ archive_purge_label,
+        summary_class='text-warning',
+        badge='irreversible', danger=True,
+        hx_get='/api/v1/archive-purge-settings/manage-form'
+      ) }}
+
+      <!-- Barcode ID Prefixes - naming-scheme config, not a security control
+           (unlike Feature Access above), so no password confirmation - same
+           reasoning as Loan Limits/Session Settings elsewhere on this page.
+           Only changes codes generated from here on; existing asset_id/
+           member_code/staff_code values are untouched (see
+           services/staff_service.py's update_barcode_prefixes). -->
+      {{ settings_card(
+        manage_id='system-manage-11-btn', tooltip='Barcode ID Prefixes (11)',
+        icon_svg='<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/><line x1="7" y1="8" x2="7" y2="16"/><line x1="10" y1="8" x2="10" y2="16"/><line x1="13" y1="8" x2="13" y2="16"/><line x1="16" y1="8" x2="16" y2="16"/><line x1="19" y1="8" x2="19" y2="16"/></svg>',
+        icon_classes='bg-base-content/10 text-base-content',
+        title='Barcode ID Prefixes',
+        description='The letters at the start of every generated Asset ID, Member Code, and Staff Code (e.g. "AST00001"). Only affects codes generated from now on.',
+        summary='Asset/Member/Staff: ' ~ asset_id_prefix ~ ' / ' ~ member_code_prefix ~ ' / ' ~ staff_code_prefix,
+        summary_class='text-base-content',
+        hx_get='/api/v1/barcode-prefixes/manage-form'
+      ) }}
+    </div>
+  </section>
+  {% endif %}
+
+  <p id="system-no-results" class="hidden text-center text-sm text-base-content/40 py-10">
+    No settings match &quot;<span id="system-no-results-query"></span>&quot;
+  </p>
+
 </div>
 
 <div id="modal-container"></div>
 <script>
+// # # # Live search - mirrors base.html's Keyboard Shortcuts filterShortcuts,
+// same "whole category shows if the category name itself matches" idea. ---
+function filterSystemCards(query) {
+  const q = query.trim().toLowerCase();
+  const wrap = document.getElementById('system-search-wrap');
+  const clearBtn = document.getElementById('system-search-clear-btn');
+  const searchActive = q.length > 0;
+  if (wrap) {
+    wrap.classList.toggle('ring-2', searchActive);
+    wrap.classList.toggle('ring-primary/40', searchActive);
+  }
+  if (clearBtn) clearBtn.classList.toggle('hidden', !searchActive);
+  // The clear button is the join's real last child even while hidden (CSS
+  // :last-child doesn't care about display:none), so it - not the input -
+  // keeps the join's rounded right corner whenever it's hidden, leaving the
+  // input's own right edge square. Give the input that same corner back
+  // itself whenever the clear button isn't there to own it.
+  document.getElementById('system-search-input').classList.toggle('rounded-r-(--radius-field)', !searchActive);
+
+  let anyVisible = false;
+  document.querySelectorAll('.system-category').forEach(function (cat) {
+    const catMatches = !q || (cat.dataset.categoryName || '').includes(q);
+    let catHasVisibleCard = false;
+    cat.querySelectorAll('.system-card').forEach(function (card) {
+      const visible = !q || catMatches || (card.dataset.cardText || '').includes(q);
+      card.classList.toggle('hidden', !visible);
+      if (visible) catHasVisibleCard = true;
+    });
+    cat.classList.toggle('hidden', !catHasVisibleCard);
+    if (catHasVisibleCard) anyVisible = true;
+
+    // A search match shouldn't stay hidden inside a manually-collapsed
+    // category - force that one open for the duration of the search so the
+    // match is actually visible; collapse state is left alone otherwise
+    // (including once the search is cleared again).
+    if (q && catHasVisibleCard) {
+      const toggleBtn = cat.querySelector('.system-cat-toggle');
+      if (toggleBtn) expandSystemCategory(toggleBtn);
+    }
+  });
+  const noResults = document.getElementById('system-no-results');
+  if (noResults) {
+    noResults.classList.toggle('hidden', anyVisible || !q);
+    const queryEl = document.getElementById('system-no-results-query');
+    if (queryEl) queryEl.textContent = query;
+  }
+}
+
+// # # # Collapsible categories - each header button owns one grid (by id,
+// via aria-controls) and just toggles its visibility + rotates its own
+// chevron; state isn't persisted anywhere, so every category starts
+// expanded again on the next page load. ---
+// Always swaps between two concrete rotate classes (rotate-0 <-> -rotate-90)
+// rather than toggling -rotate-90 on/off against the implicit "none"
+// baseline - see the chevron span's own comment above for why that matters.
+function setSystemCategoryChevron(chevron, collapsed) {
+  if (!chevron) return;
+  chevron.classList.toggle('rotate-0', !collapsed);
+  chevron.classList.toggle('-rotate-90', collapsed);
+}
+
+function expandSystemCategory(btn) {
+  const grid = document.getElementById(btn.getAttribute('aria-controls'));
+  if (!grid || !grid.classList.contains('hidden')) return;
+  grid.classList.remove('hidden');
+  btn.setAttribute('aria-expanded', 'true');
+  setSystemCategoryChevron(btn.querySelector('.system-cat-chevron'), false);
+}
+
+function toggleSystemCategory(gridId, btn) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const collapsed = grid.classList.toggle('hidden');
+  btn.setAttribute('aria-expanded', String(!collapsed));
+  setSystemCategoryChevron(btn.querySelector('.system-cat-chevron'), collapsed);
+}
+
+function clearSystemSearch() {
+  const input = document.getElementById('system-search-input');
+  input.value = '';
+  filterSystemCards('');
+  input.focus();
+}
+
+// # # # "last backup ... ago" - computed client-side so it stays accurate
+// without a page reload, same reasoning/format as home.html's dashRelativeTime. ---
+(function () {
+  const el = document.getElementById('system-last-backup');
+  if (!el || !el.dataset.timestamp) return;
+  const then = new Date(el.dataset.timestamp);
+  if (isNaN(then.getTime())) { el.textContent = 'recently'; return; }
+  const diffSec = Math.max(0, Math.round((Date.now() - then.getTime()) / 1000));
+  let label;
+  if (diffSec < 60) label = 'just now';
+  else if (diffSec < 3600) label = Math.round(diffSec / 60) + 'm';
+  else if (diffSec < 86400) label = Math.round(diffSec / 3600) + 'h';
+  else label = Math.round(diffSec / 86400) + 'd';
+  el.textContent = label === 'just now' ? label : label;
+})();
+
 // --- Keyboard shortcuts (System) ---
 // Plain digit keys, safe here since this page has no text input. Each card's
 // number is fixed regardless of role, so it stays learnable even as the visible set varies.
@@ -238,10 +474,25 @@ function isModalOpen() {
   );
 }
 
-document.addEventListener('keydown', function (e) {
-  if (e.altKey || e.ctrlKey || e.metaKey || isModalOpen()) return;
-  const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+window.pageKeydownHandler = function (e) {
+  if (e.ctrlKey || e.metaKey) return;
+
+  // / - focus the search box, same convention as Inventory/Members/Staff/etc.
+  if (!e.altKey && e.key === '/') {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    e.preventDefault();
+    document.getElementById('system-search-input').focus();
+    return;
+  }
+
+  if (e.altKey || isModalOpen()) return;
+  if (isTypingTarget(e.target)) return;
 
   if (e.key >= '1' && e.key <= '9') {
     const btn = document.getElementById(`system-manage-${e.key}-btn`);
@@ -254,6 +505,6 @@ document.addEventListener('keydown', function (e) {
     e.preventDefault();
     window.location.href = '/barcodes';
   }
-});
+};
 </script>
 {% endblock %}

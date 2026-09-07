@@ -164,10 +164,10 @@
 // client-side so it stays accurate between refetches. Pending rows past 3
 // days get flagged in warning color, so a stale request doesn't look as
 // fresh as one filed two minutes ago.
-const REQUEST_AGING_THRESHOLD_DAYS = 3;
+var REQUEST_AGING_THRESHOLD_DAYS = 3;
 
 function formatWaiting(createdAt) {
-  // SQLite's "YYYY-MM-DD HH:MM:SS" is local time -- swap the space for 'T' so
+  // SQLite's "YYYY-MM-DD HH:MM:SS" is local time - swap the space for 'T' so
   // Date doesn't misread it as UTC (matches how the rest of the app renders these).
   const then = new Date(createdAt.replace(' ', 'T'));
   if (isNaN(then.getTime())) return { text: createdAt, days: 0 };
@@ -200,10 +200,10 @@ function renderWaitingBadges() {
 }
 
 // Keeps each tab's little count badge in sync with its table's pending
-// count -- only meaningful while that tab's filter is actually "Pending"
+// count - only meaningful while that tab's filter is actually "Pending"
 // (the common/default case), so it's hidden entirely once someone switches
 // that tab's filter to something else rather than showing a stale number.
-document.addEventListener('htmx:afterSwap', function (evt) {
+window.pageAfterSwapHandler = function (evt) {
   const container = evt.target;
   let badgeId, filterId;
   if (container.id === 'unrestriction-table-container') {
@@ -225,18 +225,18 @@ document.addEventListener('htmx:afterSwap', function (evt) {
   } else {
     badge.classList.add('hidden');
   }
-});
+};
 
 // Endpoint + container lookups shared by every helper below, keyed by
-// panel kind ('unrestriction' / 'deactivation') -- same idea as
+// panel kind ('unrestriction' / 'deactivation') - same idea as
 // REQUESTS_URL_PREFIX_BY_CONTAINER above, just indexed the other way.
-const REQUESTS_PANEL_CONFIG = {
+var REQUESTS_PANEL_CONFIG = {
   unrestriction: { url: '/api/v1/unrestriction-requests', container: 'unrestriction-table-container' },
   deactivation: { url: '/api/v1/admin-deactivation-requests', container: 'deactivation-table-container' },
 };
 
 // Same active-filter ring/clear-button/count-badge pattern as Members'/
-// Assets' filter rows -- "Pending" counts as this filter's default (see
+// Assets' filter rows - "Pending" counts as this filter's default (see
 // requests_page's _panel_status), not blank.
 function updateRequestsFilterUI(kind) {
   const status = document.getElementById(`${kind}-status-filter`);
@@ -293,7 +293,7 @@ function clearAllRequestsFilters(kind) {
 
 // Re-fetches whichever panel's table with whatever filters/page are
 // currently in effect, read straight off that panel's own live controls
-// plus its currently-rendered table's own data-limit/data-offset -- a
+// plus its currently-rendered table's own data-limit/data-offset - a
 // manual refresh shouldn't jump back to page 1 the way changing a filter
 // does.
 function refreshRequestsTable(kind) {
@@ -318,10 +318,10 @@ function refreshRequestsTable(kind) {
   const mine = document.getElementById(`${kind}-mine-filter`);
   if (mine) mine.addEventListener('change', function () { updateRequestsFilterUI(kind); });
 });
-document.addEventListener('DOMContentLoaded', function () {
+setTimeout(function () {
   updateRequestsFilterUI('unrestriction');
   updateRequestsFilterUI('deactivation');
-});
+}, 0);
 
 function switchRequestsTab(tab) {
   document.getElementById('requests-tab-unrestriction').classList.toggle('tab-active', tab === 'unrestriction');
@@ -329,7 +329,7 @@ function switchRequestsTab(tab) {
   document.getElementById('requests-panel-unrestriction').classList.toggle('hidden', tab !== 'unrestriction');
   document.getElementById('requests-panel-deactivation').classList.toggle('hidden', tab !== 'deactivation');
 
-  // Persists which tab is showing into the URL -- routes/pages.py's
+  // Persists which tab is showing into the URL - routes/pages.py's
   // requests_page reads this ?tab= back on load so a bookmarked or
   // refreshed link reopens on the same tab instead of always resetting
   // to Unrestriction.
@@ -345,14 +345,14 @@ function switchRequestsTab(tab) {
 // Keeps each panel's own status/mine/offset in the URL under its own
 // prefix (u_/d_, matching routes/pages.py's requests_page) so both
 // tabs' filter state round-trips independently through one query
-// string -- same htmx:configRequest pattern as every other filtered
+// string - same htmx:configRequest pattern as every other filtered
 // table in the app, just fanned out over two containers instead of one.
-const REQUESTS_URL_PREFIX_BY_CONTAINER = {
+var REQUESTS_URL_PREFIX_BY_CONTAINER = {
   'unrestriction-table-container': 'u',
   'deactivation-table-container': 'd',
 };
 
-document.body.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const prefix = REQUESTS_URL_PREFIX_BY_CONTAINER[evt.detail.target && evt.detail.target.id];
   if (!prefix) return;
   try {
@@ -369,9 +369,9 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
     });
     history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
   } catch (e) {
-    // URL sync is a non-critical enhancement -- never let it break the actual request.
+    // URL sync is a non-critical enhancement - never let it break the actual request.
   }
-});
+};
 
 // Shared POST-and-refresh helper for every approve/deny/cancel action below --
 // mirrors staffAction() on the Staff page (same fetch+CSRF+reload shape). A
@@ -422,7 +422,7 @@ function rowSubjectName(triggerEl) {
   return cell ? cell.innerText.trim() : 'this request';
 }
 
-// Plain yes/no confirm -- used for Approve and Cancel. Same backdrop/box
+// Plain yes/no confirm - used for Approve and Cancel. Same backdrop/box
 // shape as confirmBulkDeactivate() on the Staff/Members pages, just
 // generalized (icon, colors, labels all passed in) since this needs four
 // different flavors of it (approve x2, cancel x2) rather than one.
@@ -465,7 +465,7 @@ function showConfirmDialog({ iconPath, iconClass, title, message, confirmLabel, 
   backdrop.querySelector('#request-confirm-ok-btn').focus();
 }
 
-// Same shape as showConfirmDialog, plus a reason textarea -- used for Deny.
+// Same shape as showConfirmDialog, plus a reason textarea - used for Deny.
 // When reasonRequired is true the confirm button stays disabled until
 // something's typed, rather than letting an empty reason through and
 // having the server reject it after the dialog's already closed.
@@ -523,9 +523,9 @@ function showReasonDialog({ iconPath, iconClass, title, message, placeholder, re
   textarea.focus();
 }
 
-const ICON_CHECK = '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>';
-const ICON_X = '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>';
-const ICON_WARN = '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>';
+var ICON_CHECK = '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>';
+var ICON_X = '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>';
+var ICON_WARN = '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>';
 
 function approveUnrestrictionRequest(id, btn) {
   const name = rowSubjectName(btn);
@@ -543,7 +543,7 @@ function denyUnrestrictionRequest(id, btn) {
   showReasonDialog({
     iconPath: ICON_X, iconClass: 'text-error',
     title: 'Deny unrestriction request?',
-    message: `Explain why ${name}'s restriction should stay in place -- this is shown to the requester.`,
+    message: `Explain why ${name}'s restriction should stay in place - this is shown to the requester.`,
     placeholder: 'Reason for denying (required)',
     reasonRequired: true, confirmLabel: 'Deny', confirmClass: 'btn-error',
     onConfirm: (reason) => requestAction(`/api/v1/unrestriction-requests/${id}/deny`, { review_notes: reason }, 'Request denied'),
@@ -566,7 +566,7 @@ function approveDeactivationRequest(id, btn) {
   showReasonDialog({
     iconPath: ICON_CHECK, iconClass: 'text-success',
     title: 'Approve deactivation request?',
-    message: `Records your approval for deactivating ${name}. This is just your vote -- the requester decides when (or whether) to actually deactivate the account once enough votes are in.`,
+    message: `Records your approval for deactivating ${name}. This is just your vote - the requester decides when (or whether) to actually deactivate the account once enough votes are in.`,
     placeholder: 'Reason for approving (required)',
     reasonRequired: true, confirmLabel: 'Approve', confirmClass: 'btn-success',
     onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/approve`, { reason }, 'Approval recorded'),
@@ -578,7 +578,7 @@ function denyDeactivationRequest(id, btn) {
   showReasonDialog({
     iconPath: ICON_X, iconClass: 'text-error',
     title: 'Deny deactivation request?',
-    message: `Records your denial for deactivating ${name}. This is just your vote -- it doesn't cancel the request by itself, the requester sees it (with your reason) before deciding.`,
+    message: `Records your denial for deactivating ${name}. This is just your vote - it doesn't cancel the request by itself, the requester sees it (with your reason) before deciding.`,
     placeholder: 'Reason for denying (required)',
     reasonRequired: true, confirmLabel: 'Deny', confirmClass: 'btn-error',
     onConfirm: (reason) => requestAction(`/api/v1/admin-deactivation-requests/${id}/deny`, { denial_reason: reason }, 'Denial recorded'),
@@ -630,7 +630,7 @@ function activeRequestsTab() {
   return 'deactivation';
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   // ArrowLeft / ArrowRight - previous / next page, on whichever tab is
@@ -652,7 +652,7 @@ document.addEventListener('keydown', function (e) {
   // Escape - with no modal open, reset the current tab's filters back to
   // their default (status = Pending, "Only mine" off) and blur whatever
   // was focused, same as clicking that tab's own "Clear filters" button
-  // (clearAllRequestsFilters) -- this page has no single filter row
+  // (clearAllRequestsFilters) - this page has no single filter row
   // shared across both tabs the way Assets/Members do, so Escape only
   // ever touches whichever tab is currently visible. When a modal *is*
   // open, the shared Escape handler in base.html closes it instead.
@@ -663,6 +663,6 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllRequestsFilters(activeRequestsTab());
   }
-});
+};
 </script>
 {% endblock %}

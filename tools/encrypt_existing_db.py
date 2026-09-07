@@ -1,11 +1,11 @@
 """One-time migration: encrypts an existing plaintext toolroom.db using SQLCipher's export pattern.
 
-Must run before setting DB_ENCRYPTION_KEY in .env -- otherwise the app can't open the still-plaintext file.
+Must run before setting DB_ENCRYPTION_KEY in .env - otherwise the app can't open the still-plaintext file.
 
 Safety: never touches the live file until export + row-count verification succeed on a copy.
 The original is renamed, not deleted. --verify-only skips the final replace.
 
-Usage (run from anywhere -- it locates the project root itself):
+Usage (run from anywhere - it locates the project root itself):
     python -c "import secrets; print(secrets.token_hex(32))"                   # 1. generate a key
     DB_ENCRYPTION_KEY=<key> python tools/encrypt_existing_db.py --verify-only  # 2. dry run
     DB_ENCRYPTION_KEY=<key> python tools/encrypt_existing_db.py                # 3. actually encrypt (stop the app first)
@@ -17,7 +17,7 @@ import shutil
 import sys
 
 # This script lives in tools/, one level below the project root, but imports
-# database.py from the root -- add the root to sys.path before that import.
+# database.py from the root - add the root to sys.path before that import.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import DB_PATH, harden_backup_file
@@ -27,7 +27,7 @@ try:
 except ImportError:
     print(
         "ERROR: sqlcipher3 isn't installed. It needs libsqlcipher-dev on "
-        "the system first -- see SECURITY.md. Then:\n"
+        "the system first - see SECURITY.md. Then:\n"
         "  pip install -r requirements-encryption.txt"
     )
     sys.exit(1)
@@ -82,7 +82,7 @@ def encrypt_database(verify_only=False):
     if os.path.exists(TMP_ENCRYPTED_PATH):
         os.remove(TMP_ENCRYPTED_PATH)
 
-    # Checkpoints WAL first for a consistent snapshot -- don't run this against a live app.
+    # Checkpoints WAL first for a consistent snapshot - don't run this against a live app.
     src = plain_sqlite3.connect(DB_PATH)
     try:
         src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -94,7 +94,7 @@ def encrypt_database(verify_only=False):
     print(f"  {len(before_counts)} tables, {sum(before_counts.values())} total rows")
 
     print("Exporting to an encrypted copy (this can take a while on a Pi) ...")
-    src = sqlcipher.connect(DB_PATH)  # no key set -- reads the plaintext file as-is
+    src = sqlcipher.connect(DB_PATH)  # no key set - reads the plaintext file as-is
     try:
         src.execute(f"ATTACH DATABASE '{TMP_ENCRYPTED_PATH}' AS encrypted KEY '{key}'")
         src.execute("SELECT sqlcipher_export('encrypted')")
@@ -110,7 +110,7 @@ def encrypt_database(verify_only=False):
     print("Verifying the encrypted copy matches the original ...")
     after_counts = _table_row_counts(sqlcipher.connect, TMP_ENCRYPTED_PATH, key=key)
     if after_counts != before_counts:
-        print("ERROR: row counts don't match after export -- aborting, original untouched.")
+        print("ERROR: row counts don't match after export - aborting, original untouched.")
         print(f"  before: {before_counts}")
         print(f"  after:  {after_counts}")
         os.remove(TMP_ENCRYPTED_PATH)
@@ -125,11 +125,11 @@ def encrypt_database(verify_only=False):
         )
         return
 
-    # Rename, not delete -- keeps this reversible if something looks wrong after restart.
+    # Rename, not delete - keeps this reversible if something looks wrong after restart.
     if os.path.exists(PRE_ENCRYPTION_BACKUP_PATH):
         print(
             f"ERROR: {PRE_ENCRYPTION_BACKUP_PATH} already exists (from a "
-            "previous run?) -- move or remove it first so it isn't overwritten."
+            "previous run?) - move or remove it first so it isn't overwritten."
         )
         os.remove(TMP_ENCRYPTED_PATH)
         sys.exit(1)
@@ -146,7 +146,7 @@ def encrypt_database(verify_only=False):
 
     print(
         f"\nDone. {DB_PATH} is now encrypted.\n"
-        f"The original plaintext file is at {PRE_ENCRYPTION_BACKUP_PATH} -- "
+        f"The original plaintext file is at {PRE_ENCRYPTION_BACKUP_PATH} - "
         "keep it until you've confirmed the app starts and reads data "
         "correctly with DB_ENCRYPTION_KEY set, then delete it yourself "
         "(it's an unencrypted copy of everything, same sensitivity as the "

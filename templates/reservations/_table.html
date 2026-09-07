@@ -1,0 +1,80 @@
+{% set can_cancel_any = staff.role in ["admin", "in_charge"] %}
+
+<table class="table table-sm w-full" data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
+  <thead>
+    <tr class="text-xs text-base-content/50">
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">ASSET</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">MEMBER</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">WINDOW</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">BOOKED BY</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300">STATUS</th>
+      <th class="py-2 text-right sticky top-0 z-10 bg-base-100 border-b border-base-300">ACTIONS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in reservations_list %}
+    <tr class="border-t border-base-200 hover:bg-base-200/40 transition-colors">
+      <td class="py-2 text-sm">
+        <a class="link link-hover font-medium" hx-get="/api/v1/assets/{{ r.asset_id }}/details-modal" hx-target="#modal-container" hx-swap="beforeend">
+          {{ r.asset_name }}
+        </a>
+        <p class="text-xs text-base-content/40">{{ r.asset_code }}</p>
+      </td>
+      <td class="py-2 text-sm">{{ full_name(r.first_name, r.last_name, r.middle_name, r.suffix) }}</td>
+      <td class="py-2 text-sm text-base-content/70">{{ r.start_at | format_date }} &ndash; {{ r.end_at | format_date }}</td>
+      <td class="py-2 text-sm text-base-content/70">@{{ r.staff_username }}</td>
+      <td class="py-2">
+        {% if r.status == "scheduled" %}
+        <span class="px-2 py-0.5 rounded-full bg-info/10 text-info text-xs font-medium">Scheduled</span>
+        {% elif r.status == "fulfilled" %}
+        <span class="px-2 py-0.5 rounded-full bg-success/10 text-success text-xs font-medium">Fulfilled</span>
+        {% elif r.status == "cancelled" %}
+        <span class="px-2 py-0.5 rounded-full bg-base-300 text-base-content/60 text-xs font-medium">Cancelled</span>
+        {% else %}
+        <span class="px-2 py-0.5 rounded-full bg-warning/10 text-warning text-xs font-medium">Expired</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-right">
+        {% if r.status == "scheduled" and (can_cancel_any or r.staff_id == staff.id) %}
+        <button type="button" class="btn btn-ghost btn-xs text-error"
+                onclick="cancelReservationRow({{ r.id }}, this)">
+          Cancel
+        </button>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="py-8 text-center text-sm text-base-content/50">No reservations found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+async function cancelReservationRow(id, btn) {
+  if (!confirm('Cancel this reservation?')) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/v1/reservations/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || "Couldn't cancel that reservation.", 'error');
+      btn.disabled = false;
+      return;
+    }
+    showToast('Reservation cancelled', 'success');
+    htmx.trigger(document.getElementById('reservations-table-container'), 'load');
+    // Inventory's "Booked <date>" badge for this asset should disappear
+    // without a manual refresh, same as every other status-changing
+    // action in the app.
+    document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+  } catch (err) {
+    showToast('Network error - check your connection and try again.', 'error');
+    btn.disabled = false;
+  }
+}
+</script>

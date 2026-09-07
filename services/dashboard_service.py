@@ -1,5 +1,7 @@
 from database import get_db_connection
-from services.settings_service import get_due_soon_hours
+from services import monitoring_service
+from services.asset_service import get_maintenance_due_assets
+from services.settings_service import get_due_soon_hours, get_maintenance_reminder_lead_days, is_feature_enabled
 from utils.formatters import full_name
 
 # Lower-bound SQL per range key; "today"/"yesterday" anchor to start of calendar day.
@@ -106,7 +108,7 @@ def get_dashboard_context(conn=None):
           AND transactions.due_date >= datetime('now', 'localtime')
           AND transactions.due_date <= datetime('now', 'localtime', ?)
         ORDER BY transactions.due_date ASC
-        LIMIT 6
+        LIMIT 10
         """,
         (f"+{due_soon_hours} hours",),
     ).fetchall()
@@ -133,7 +135,7 @@ def get_dashboard_context(conn=None):
     ).fetchone()["cnt"]
 
     # # # Recent activity --------------------------------------------------
-    # One feed of borrow/return events via UNION ALL, capped at 8 -- just a glance feed.
+    # One feed of borrow/return events via UNION ALL, capped at 8 - just a glance feed.
     recent_activity = conn.execute(
         """
         SELECT * FROM (
@@ -159,7 +161,7 @@ def get_dashboard_context(conn=None):
             WHERE transactions.time_in IS NOT NULL
         )
         ORDER BY event_time DESC
-        LIMIT 8
+        LIMIT 12
         """
     ).fetchall()
     recent_activity = [
@@ -177,7 +179,43 @@ def get_dashboard_context(conn=None):
         for row in recent_activity
     ]
 
+    # Maintenance Due Soon list, soonest-first - reuses the same due-detection
+    # logic as get_maintenance_due_assets (date-based or usage-interval-based),
+    # capped like Due Soon above.
+    maintenance_lead_days = get_maintenance_reminder_lead_days(conn)
+    dash_maintenance_due = get_maintenance_due_assets(conn, within_days=maintenance_lead_days)[:10]
+
+    # Off by default (migration 0057) - skip the query entirely when the
+    # feature's off, same reasoning as get_assets_table_context's booked-badge subquery.
+    dash_upcoming_reservations = []
+    if is_feature_enabled("reservations", conn):
+        dash_upcoming_reservations = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT reservations.id, reservations.start_at, reservations.end_at,
+                       assets.name AS asset_name, assets.id AS asset_id,
+                       members.first_name, members.last_name, members.middle_name, members.suffix
+                FROM reservations
+                JOIN assets ON assets.id = reservations.asset_id
+                JOIN members ON members.id = reservations.member_id
+                WHERE reservations.status = 'scheduled' AND reservations.end_at >= datetime('now', 'localtime')
+                ORDER BY reservations.start_at
+                LIMIT 10
+                """
+            ).fetchall()
+        ]
+        for r in dash_upcoming_reservations:
+            r["member_name"] = full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"])
+
     top_borrowed = get_top_borrowed(conn, "30d")
+
+    # # # Monitoring --------------------------------------------------------
+    # Gated in the template by feature_flags.monitoring + role, same as the
+    # sidebar tab - fetched unconditionally here since it's cheap and the
+    # rfid_events table always exists regardless of whether the feature is on.
+    dash_alarm_status = monitoring_service.get_alarm_status(conn)
+    dash_recent_rfid_events = monitoring_service.get_recent_events(conn, limit=5)
 
     if owns_conn:
         conn.close()
@@ -195,7 +233,11 @@ def get_dashboard_context(conn=None):
         "dash_loans_overdue": loan_totals["overdue"] or 0,
         "dash_loans_due_soon": due_soon_count,
         "dash_due_soon": due_soon,
+        "dash_maintenance_due": dash_maintenance_due,
+        "dash_upcoming_reservations": dash_upcoming_reservations,
         "dash_recent_activity": recent_activity,
         "dash_top_borrowed": top_borrowed,
         "range_label": TOP_BORROWED_RANGE_LABELS["30d"],
+        "dash_alarm_status": dash_alarm_status,
+        "dash_recent_rfid_events": dash_recent_rfid_events,
     }

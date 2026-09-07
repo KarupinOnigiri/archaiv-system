@@ -9,7 +9,7 @@
     </div>
     <p class="text-sm text-base-content/60 mb-4">
       <span class="font-medium text-base-content">{{ transaction.asset_name }}</span>
-      ({{ transaction.asset_code }}) &mdash; borrowed by {{ member_name }}
+      ({{ transaction.asset_code }}) - borrowed by {{ member_name }}
     </p>
 
     <form id="return-confirm-form" class="space-y-4">
@@ -36,7 +36,7 @@
       </div>
     </form>
 
-    <!-- Always in the DOM, invisible (not hidden) when empty -- reserves
+    <!-- Always in the DOM, invisible (not hidden) when empty - reserves
          its layout space so the footer buttons don't shift when a
          return fails. -->
     <div id="return-confirm-error" class="text-error text-sm mt-3 min-h-5 invisible"></div>
@@ -88,9 +88,14 @@ async function submitReturnConfirm(transactionId) {
     showToast(data.message || 'Asset returned successfully', 'success');
     // Same event name both #transaction-table-container and
     // #stat-cards-container listen for via hx-trigger="transactions-refreshed
-    // from:body" -- a plain DOM event dispatched here still reaches those
+    // from:body" - a plain DOM event dispatched here still reaches those
     // htmx listeners even though this request wasn't made through htmx.
     document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+    // The returned asset's status (available/maintenance/disposed
+    // depending on condition) just changed too - Inventory shouldn't need
+    // a manual refresh to notice, same as every other status-changing
+    // action in the app.
+    document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
   } catch (err) {
     if (res && res.status === 401) {
       showSessionTimeoutModal();

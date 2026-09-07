@@ -11,7 +11,7 @@
     </p>
 
     <!-- Always rendered (not just when there is an error) so its reserved space
-         doesn't appear/disappear and shift the form below it -- min-h-5
+         doesn't appear/disappear and shift the form below it - min-h-5
          matches a single line of text-sm content. -->
     <p class="text-error text-sm mb-3 min-h-5">{{ error or '' }}</p>
 
@@ -21,12 +21,12 @@
         <label class="label">
           <span class="label-text">Condition</span>
           {% if asset.condition == 'disposed' %}
-          <span class="label-text-alt text-error">Required &mdash; this asset was disposed</span>
+          <span class="label-text-alt text-error">Required - this asset was disposed</span>
           {% endif %}
         </label>
         <select name="condition" class="select select-bordered w-full">
           {% if asset.condition != 'disposed' %}
-          <option value="">&mdash; Keep current ({{ asset.condition | humanize }}) &mdash;</option>
+          <option value="">- Keep current ({{ asset.condition | humanize }}) -</option>
           {% endif %}
           {% for c in ["functional", "inoperable", "for_repair"] %}
           <option value="{{ c }}" {% if asset.condition == c %}selected{% endif %}>{{ c | humanize }}</option>

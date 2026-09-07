@@ -1,0 +1,14 @@
+-- 0059_default_maintenance_interval.sql
+-- Maintenance scheduling was per-asset-only (migration 0055's
+-- maintenance_interval_checkouts / next_maintenance_due, set by hand on
+-- each asset). This adds one global default interval (in days) so:
+-- - a newly-created serialized asset with no explicit next_maintenance_due
+--   gets one auto-computed from its last_calibrated date (or acquired_date,
+--   or today, whichever is available) + this interval - see
+--   services/asset_service.py's _default_next_maintenance_due.
+-- - System settings gets one place to change the default for every future
+--   asset, instead of setting it asset-by-asset.
+-- Existing assets' own next_maintenance_due/maintenance_interval_checkouts
+-- values are untouched - this only fills in a default going forward for
+-- assets that don't already have one.
+INSERT INTO app_settings (key, value) VALUES ('default_maintenance_interval_days', '180');

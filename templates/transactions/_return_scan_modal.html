@@ -7,13 +7,13 @@
    it's closed without confirming.
 
    Step 2 shows EVERY open loan for the member the moment their barcode is
-   entered -- not just whatever gets scanned -- so staff can see the full
+   entered - not just whatever gets scanned - so staff can see the full
    expected list and notice if something's missing, and so a worn/unreadable
    barcode isn't a dead end (the row can just be clicked). Scanning is still
    there as the fast path: it's validated through the same
    _find_open_transaction_for_scan() the single-scan kiosk route uses, and
    on success just checks the matching row instead of adding a separate
-   entry -- there's one list, not a checklist plus a separate cart. #}
+   entry - there's one list, not a checklist plus a separate cart. #}
 <dialog id="return-scan-modal" class="modal" open>
   <div class="modal-box max-w-[33.6rem]">
     <div class="flex justify-between items-start">
@@ -32,10 +32,29 @@
                onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanStart();}">
         <button type="button" id="return-scan-start-btn" class="btn btn-primary btn-sm join-item" onclick="returnScanStart()">Start</button>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs mt-2 gap-1" onclick="returnScanToggleMembersPanel()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        Show members with loans
+      </button>
       <div id="return-scan-member-error" class="text-error text-sm mt-2 hidden"></div>
+
+      <!-- Inline collapsible, not a fixed flyout like the checkout modal's
+           (that one has to escape .modal-box's overflow clipping to sit
+           beside several possible simultaneous dialogs) - this modal is
+           always a single instance, so a simple expand-in-place panel is
+           enough and skips all the bounding-rect positioning math. -->
+      <div id="return-scan-members-panel" class="hidden mt-2 border border-base-300 rounded-lg overflow-hidden">
+        <div class="px-3 pt-2 pb-1 bg-base-100">
+          <input type="text" id="return-scan-members-filter" placeholder="Filter..."
+                 class="input input-bordered input-xs w-full" oninput="returnScanFilterMembersList()">
+        </div>
+        <div id="return-scan-members-loading" class="text-xs text-base-content/50 px-3 py-4 text-center">Loading&hellip;</div>
+        <div id="return-scan-members-error" class="text-error text-xs px-3 py-2 hidden"></div>
+        <ul id="return-scan-members-list" class="max-h-48 overflow-y-auto px-2 py-1.5 space-y-0.5"></ul>
+      </div>
     </div>
 
-    <!-- Step 2: the member's open loans -- click to check, or scan to
+    <!-- Step 2: the member's open loans - click to check, or scan to
          auto-check the matching row -->
     <div id="return-scan-step-cart" class="hidden">
       <div class="flex items-center justify-between mb-2">
@@ -43,24 +62,26 @@
         <span class="text-xs text-base-content/50"><span id="return-scan-count">0</span> selected</span>
       </div>
 
+      <!-- Single scan field doing double duty, same two-step pattern as the
+           checkout cart's asset field (see that template's comment for the
+           full reasoning): the first Enter holds whatever was scanned
+           (barcode or RFID - the backend resolves either) as pending; a
+           second Enter is sent along as an RFID verification tap against
+           that same tool - the actual anti-swap check, since a barcode
+           sticker can be peeled and moved but an embedded RFID tag can't.
+           Skipping (empty second Enter, or the hint's link) checks the item
+           with no RFID check, exactly like scanning barcode-only always has. -->
       <div class="join w-full mb-1">
         <input type="text" id="return-scan-asset-input"
                class="input input-bordered input-sm join-item w-full"
-               placeholder="Scan or type asset barcode..."
+               placeholder="Scan or type asset barcode or RFID tag..."
                onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanAddItem();}">
         <button type="button" class="btn btn-outline btn-sm join-item" onclick="returnScanAddItem()">Scan</button>
       </div>
-      <!-- Optional, separate from the barcode field on purpose -- a value here means an RFID
-           reader (not the barcode scanner) actually sensed this tag, which lets the backend
-           cross-check it against the asset's registered rfid_id and catch a tool that was
-           swapped after a barcode got peeled and moved onto it. Left blank, returns behave
-           exactly as before RFID verification existed. -->
-      <div class="join w-full mb-1">
-        <input type="text" id="return-scan-rfid-input"
-               class="input input-bordered input-sm join-item w-full"
-               placeholder="Scan RFID tag (optional -- verifies it's the real tool)"
-               onkeydown="if(event.key==='Enter'){event.preventDefault();returnScanAddItem();}">
-      </div>
+      <p id="return-scan-pending-verify-hint" class="text-xs text-info mb-2 hidden">
+        Scanned - tap the tool's RFID tag now to verify it's the real one, or
+        <button type="button" class="link link-hover font-medium" onclick="returnScanSkipRfidVerify()">check it in without verifying</button>.
+      </p>
       <div id="return-scan-item-error" class="text-error text-sm mb-2 hidden"></div>
 
       <ul id="return-scan-cart-list" class="space-y-1 max-h-56 overflow-y-auto mb-3"></ul>
@@ -88,13 +109,14 @@
 </dialog>
 
 <script>
-// Lives only for as long as this modal does -- re-declared fresh every
+// Lives only for as long as this modal does - re-declared fresh every
 // time the modal is opened.
 const ReturnScanState = {
   memberBarcode: null,
   loans: [],               // [{transaction_id, asset_name, asset_barcode, due_date}]
   checked: new Set(),       // transaction_ids currently ticked
   conditions: new Map(),    // transaction_id -> condition string
+  pendingAssetCode: null,   // first scan of a barcode-then-RFID pair, awaiting the second - see returnScanAddItem()
 };
 
 const RETURN_SCAN_CONDITIONS = [
@@ -158,24 +180,127 @@ async function returnScanStart() {
   }
 }
 
+// Step 1's "Show members with loans" panel - inline collapsible (see the
+// template comment above the panel markup for why this doesn't need the
+// checkout modal's fixed-position flyout machinery).
+let returnScanMembersLoaded = false;
+
+function returnScanToggleMembersPanel() {
+  const panel = document.getElementById('return-scan-members-panel');
+  const opening = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden');
+  if (opening && !returnScanMembersLoaded) {
+    returnScanLoadMembersWithLoans();
+  }
+}
+
+async function returnScanLoadMembersWithLoans() {
+  const listEl = document.getElementById('return-scan-members-list');
+  const loadingEl = document.getElementById('return-scan-members-loading');
+  const errorEl = document.getElementById('return-scan-members-error');
+  listEl.innerHTML = '';
+  errorEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/v1/transactions/members-with-loans');
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      errorEl.textContent = data.error || "Couldn't load members with loans.";
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    returnScanMembersLoaded = true;
+    const members = data.members || [];
+    members.forEach((member) => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg hover:bg-base-200';
+      btn.dataset.memberCode = member.code;
+      btn.onclick = () => returnScanSelectMember(member.code);
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'block text-sm truncate';
+      nameSpan.textContent = member.name;
+      btn.appendChild(nameSpan);
+
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'block text-xs text-base-content/40 truncate';
+      metaSpan.textContent = `${member.code} · ${member.loan_count} item${member.loan_count === 1 ? '' : 's'} out`;
+      btn.appendChild(metaSpan);
+
+      li.appendChild(btn);
+      listEl.appendChild(li);
+    });
+
+    if (members.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'text-xs text-base-content/50 text-center py-4';
+      empty.textContent = 'No members currently have anything borrowed.';
+      listEl.appendChild(empty);
+    }
+  } catch (err) {
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    errorEl.classList.remove('hidden');
+  } finally {
+    loadingEl.classList.add('hidden');
+  }
+}
+
+function returnScanFilterMembersList() {
+  const q = document.getElementById('return-scan-members-filter').value.trim().toLowerCase();
+  document.querySelectorAll('#return-scan-members-list button[data-member-code]').forEach((btn) => {
+    btn.closest('li').classList.toggle('hidden', !btn.textContent.toLowerCase().includes(q));
+  });
+}
+
+function returnScanSelectMember(memberCode) {
+  document.getElementById('return-scan-member-input').value = memberCode;
+  document.getElementById('return-scan-members-panel').classList.add('hidden');
+  returnScanStart();
+}
+
+// One field, two possible Enters per item - see the template comment above
+// the input for why (preserving the barcode+RFID anti-swap check without
+// needing two visible boxes). First Enter: hold the scanned value as
+// pending, don't look it up yet - there's no way to know whether an RFID
+// follow-up scan is coming. Second Enter (or returnScanSkipRfidVerify()):
+// look up the pending code with whatever's in the field now (possibly
+// nothing) as the RFID cross-check, in the same single lookup call the
+// two-field version always made.
 async function returnScanAddItem() {
   const input = document.getElementById('return-scan-asset-input');
-  const rfidInput = document.getElementById('return-scan-rfid-input');
-  const assetCode = input.value.trim();
-  const rfidCode = rfidInput.value.trim();
+  const value = input.value.trim();
   const errorEl = document.getElementById('return-scan-item-error');
   errorEl.classList.add('hidden');
-  if (!assetCode) return;
 
-  const existing = ReturnScanState.loans.find((loan) => loan.asset_barcode === assetCode);
-  if (existing && ReturnScanState.checked.has(existing.transaction_id)) {
-    errorEl.textContent = `Asset ${assetCode} is already checked.`;
-    errorEl.classList.remove('hidden');
-    clearInputAfterError(input);
-    if (rfidCode) clearInputAfterError(rfidInput);
-    flashReturnScanRow(existing.transaction_id);
+  if (!ReturnScanState.pendingAssetCode) {
+    if (!value) return;
+
+    const existing = ReturnScanState.loans.find((loan) => loan.asset_barcode === value);
+    if (existing && ReturnScanState.checked.has(existing.transaction_id)) {
+      errorEl.textContent = `Asset ${value} is already checked.`;
+      errorEl.classList.remove('hidden');
+      clearInputAfterError(input);
+      flashReturnScanRow(existing.transaction_id);
+      return;
+    }
+
+    ReturnScanState.pendingAssetCode = value;
+    input.value = '';
+    document.getElementById('return-scan-pending-verify-hint').classList.remove('hidden');
+    input.focus();
     return;
   }
+
+  const assetCode = ReturnScanState.pendingAssetCode;
+  const rfidCode = value || null;
+  ReturnScanState.pendingAssetCode = null;
+  document.getElementById('return-scan-pending-verify-hint').classList.add('hidden');
 
   try {
     const params = new URLSearchParams({ asset_code: assetCode, member_barcode: ReturnScanState.memberBarcode });
@@ -188,11 +313,10 @@ async function returnScanAddItem() {
       errorEl.textContent = data.error || `Asset ${assetCode} not found.`;
       errorEl.classList.remove('hidden');
       clearInputAfterError(input);
-      if (rfidCode) clearInputAfterError(rfidInput);
       return;
     }
 
-    // Normally already in the list fetched at returnScanStart() -- this
+    // Normally already in the list fetched at returnScanStart() - this
     // member's open loans and "what a scan can validly resolve to" are
     // the same underlying query. Appending as a fallback only matters if
     // something changed between opening the modal and this scan (e.g. a
@@ -211,7 +335,6 @@ async function returnScanAddItem() {
     }
 
     input.value = '';
-    rfidInput.value = '';
     input.focus();
     renderReturnScanChecklist();
   } catch (err) {
@@ -219,13 +342,18 @@ async function returnScanAddItem() {
     errorEl.textContent = 'Network error - check your connection and try again.';
     errorEl.classList.remove('hidden');
     clearInputAfterError(input);
-    if (rfidCode) clearInputAfterError(rfidInput);
   }
+}
+
+// The pending-verify hint's "check it in without verifying" link - same
+// as pressing Enter on the (now empty) field mid-verification.
+function returnScanSkipRfidVerify() {
+  returnScanAddItem();
 }
 
 // Finds the checklist row for a rescanned-and-already-checked asset and
 // flashes it via the global flashHighlight() (static/js/ui.js, loaded by
-// base.html) -- same helper the checkout cart's already-in-cart rescan uses.
+// base.html) - same helper the checkout cart's already-in-cart rescan uses.
 function flashReturnScanRow(transactionId) {
   const li = document.querySelector(`#return-scan-cart-list [data-transaction-id="${CSS.escape(String(transactionId))}"]`);
   flashHighlight(li);
@@ -349,6 +477,7 @@ async function returnScanComplete() {
     document.getElementById('return-scan-modal').remove();
     showToast(data.message || 'Items returned successfully', 'success');
     document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+    document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
   } catch (err) {
     console.error('returnScanComplete failed:', err, 'response:', res);
     if (res && res.status === 401) {

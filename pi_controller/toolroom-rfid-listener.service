@@ -1,0 +1,24 @@
+[Unit]
+# Example systemd unit for the tool-room controller. Copy to
+# /etc/systemd/system/toolroom-rfid-listener.service on the Pi, adjust the
+# paths/user below to match your install, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now toolroom-rfid-listener
+# Mirrors the main app's own toolroom.service (see wsgi.py's docstring) --
+# runs as a separate unit since it's a separate process.
+Description=Tool-room RFID/alarm headless controller
+After=network.target pcscd.service
+Wants=pcscd.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/toolroom
+ExecStart=/home/pi/toolroom/.venv-pi-controller/bin/python -m pi_controller.rfid_listener
+Restart=on-failure
+RestartSec=5
+# GPIO/USB-HID access needs the pi user in the gpio/input/plugdev groups
+# (raspi-config or `sudo usermod -aG gpio,input,plugdev pi`), not root.
+
+[Install]
+WantedBy=multi-user.target

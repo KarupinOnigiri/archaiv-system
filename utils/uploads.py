@@ -8,20 +8,20 @@ logger = logging.getLogger(__name__)
 ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # matches the add-asset form's upload placeholder
 
-# Served via static/uploads/assets/, same as any other static asset -- no separate route needed.
+# Served via static/uploads/assets/, same as any other static asset - no separate route needed.
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 ASSET_IMAGE_SUBDIR = os.path.join("uploads", "assets")
 ASSET_IMAGE_DIR = os.path.join(STATIC_DIR, ASSET_IMAGE_SUBDIR)
 
-# Own subdir, separate lifecycle from asset images -- avoids filename collisions.
+# Own subdir, separate lifecycle from asset images - avoids filename collisions.
 STAFF_PHOTO_SUBDIR = os.path.join("uploads", "staff")
 STAFF_PHOTO_DIR = os.path.join(STATIC_DIR, STAFF_PHOTO_SUBDIR)
 
-# Own subdir too -- zero-or-more per feedback report, never replaced in place.
+# Own subdir too - zero-or-more per feedback report, never replaced in place.
 FEEDBACK_IMAGE_SUBDIR = os.path.join("uploads", "feedback")
 FEEDBACK_IMAGE_DIR = os.path.join(STATIC_DIR, FEEDBACK_IMAGE_SUBDIR)
 
-# Cap per report on top of the per-file MAX_IMAGE_SIZE_BYTES cap -- more than this is abuse.
+# Cap per report on top of the per-file MAX_IMAGE_SIZE_BYTES cap - more than this is abuse.
 MAX_FEEDBACK_IMAGES = 5
 
 # Downscale caps in px (longest side); nothing here ever displays a photo this large.
@@ -36,7 +36,7 @@ def _save_resized_image(file_storage, absolute_path, ext, max_dimension):
         file_storage.stream.seek(0)
         with Image.open(file_storage.stream) as img:
             img.load()  # decode now, while the stream is still open
-            # JPEG has no alpha channel -- P/RGBA/LA images need flattening first or save fails.
+            # JPEG has no alpha channel - P/RGBA/LA images need flattening first or save fails.
             if ext in ("jpg", "jpeg") and img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
@@ -81,7 +81,7 @@ def validate_image_upload(file_storage):
     try:
         with Image.open(file_storage.stream) as img:
             img.verify()
-    # SyntaxError too -- Pillow's PNG decoder raises it for corrupt chunk data.
+    # SyntaxError too - Pillow's PNG decoder raises it for corrupt chunk data.
     except (UnidentifiedImageError, OSError, SyntaxError):
         return "File is not a valid image"
     finally:

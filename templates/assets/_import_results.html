@@ -101,7 +101,7 @@
   });
 
   // Reuses the existing bulk-delete endpoint (soft-delete/archive) rather than
-  // a dedicated "undo import" route -- an undone import lands in the archived
+  // a dedicated "undo import" route - an undone import lands in the archived
   // view exactly like any other delete, and can be restored from there the
   // same way, so there's no need for separate backend plumbing.
   confirmBtn.addEventListener('click', async function () {

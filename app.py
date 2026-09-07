@@ -3,7 +3,7 @@
 from dotenv import load_dotenv
 import os
 
-# Must run before local imports -- auth.py reads env vars at import time, not request time.
+# Must run before local imports - auth.py reads env vars at import time, not request time.
 root_dir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(root_dir, ".env"))
 
@@ -13,6 +13,7 @@ import logging.handlers
 from flask import Flask, jsonify, render_template, request, g, redirect, url_for
 from werkzeug.exceptions import HTTPException
 from routes.requests import requests_bp
+from routes.reservations import reservations_bp
 from routes.pages import pages_bp
 from routes.assets import assets_bp
 from routes.members import members_bp
@@ -34,6 +35,8 @@ from routes.setup import setup_bp
 from routes.notifications import notifications_bp
 from routes.feedback import feedback_bp, get_open_feedback_count
 from services.loan_service import sweep_overdue_members
+from services.maintenance_service import sweep_maintenance_due
+from services.reservation_service import sweep_expired_reservations
 from services.notification_service import (
     sync_loan_notifications,
     get_notification_bell_context,
@@ -42,6 +45,8 @@ from services.dashboard_service import get_dashboard_context
 from services.backup_service import run_scheduled_backup
 from services.archive_purge_service import run_scheduled_archive_purge
 from routes.dashboard import dashboard_bp
+from routes.monitoring import monitoring_bp
+from routes.search import search_bp
 from datetime import datetime
 
 
@@ -50,7 +55,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
-        # Rotating, not plain -- keeps the log from filling up the Pi's small SD card.
+        # Rotating, not plain - keeps the log from filling up the Pi's small SD card.
         logging.handlers.RotatingFileHandler(
             os.path.join(root_dir, "toolroom.log"),
             maxBytes=5 * 1024 * 1024,
@@ -66,8 +71,14 @@ app.secret_key = os.environ.get("SECRET_KEY")
 # Room for 5 feedback screenshots at the 5MB cap, plus multipart overhead.
 app.config["MAX_CONTENT_LENGTH"] = 26 * 1024 * 1024
 
-# 1hr cache on static files -- balances SD-card re-reads against staleness after a redeploy.
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+# 1hr cache on static files - balances SD-card re-reads against staleness after a
+# redeploy. Skipped under FLASK_DEBUG=1 (local dev): with it on, a browser can sit
+# on a stale cached ui.js/CSS for up to an hour after an edit, silently no-op'ing
+# on a button whose handler only exists in the newer file - confusing to debug
+# since nothing errors, a feature just "doesn't work" until a hard refresh clears
+# the old copy. Real deployments always run with FLASK_DEBUG=0, so this doesn't
+# touch the Pi kiosk's actual caching behavior.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 if os.environ.get("FLASK_DEBUG", "0") == "1" else 3600
 
 if not app.secret_key:
     raise RuntimeError(
@@ -105,7 +116,7 @@ def inject_csrf_token():
         (token,),
     ).fetchone()
 
-    # Skip the notifications query for anonymous requests -- feeds base.html's bell dropdown.
+    # Skip the notifications query for anonymous requests - feeds base.html's bell dropdown.
     notifications, unread_notifications_count = (
         get_notification_bell_context(
             conn, staff_member["staff_id"], staff_member["role"], staff_member
@@ -113,7 +124,7 @@ def inject_csrf_token():
         if session and staff_member
         else ([], 0)
     )
-    # Sidebar "Approvals" badge count -- see get_pending_approvals_count for scoping rules.
+    # Sidebar "Approvals" badge count - see get_pending_approvals_count for scoping rules.
     pending_approvals_count = (
         get_pending_approvals_count(conn, staff_member["staff_id"], staff_member["role"])
         if staff_member
@@ -142,7 +153,7 @@ def inject_csrf_token():
         "unread_notifications_count": unread_notifications_count,
         "pending_approvals_count": pending_approvals_count,
         "open_feedback_count": open_feedback_count,
-        # For the "My Account" modal -- comes from the linked member record, not the staff table.
+        # For the "My Account" modal - comes from the linked member record, not the staff table.
         "staff_member_type": staff_member["member_type"] if staff_member else "",
         "staff_batch": staff_member["batch"] if staff_member else None,
         "staff_department_name": staff_member["department_name"] if staff_member else "",
@@ -162,6 +173,7 @@ app.jinja_env.globals["PERMANENT_ASSIGNED_END"] = PERMANENT_ASSIGNED_END
 limiter.init_app(app)
 
 app.register_blueprint(requests_bp, url_prefix="/api/v1")
+app.register_blueprint(reservations_bp, url_prefix="/api/v1")
 app.register_blueprint(assets_bp, url_prefix="/api/v1")
 app.register_blueprint(members_bp, url_prefix="/api/v1")
 app.register_blueprint(staff_bp, url_prefix="/api/v1")
@@ -172,6 +184,8 @@ app.register_blueprint(setup_bp, url_prefix="/api/v1")
 app.register_blueprint(notifications_bp, url_prefix="/api/v1")
 app.register_blueprint(feedback_bp, url_prefix="/api/v1")
 app.register_blueprint(dashboard_bp, url_prefix="/api/v1")
+app.register_blueprint(monitoring_bp, url_prefix="/api/v1")
+app.register_blueprint(search_bp, url_prefix="/api/v1")
 app.register_blueprint(pages_bp)
 
 
@@ -212,13 +226,16 @@ scheduler.add_job(cleanup_stale_checkout_sessions, "interval", minutes=5)
 scheduler.add_job(cleanup_expired_sessions, "interval", minutes=30)
 scheduler.add_job(sweep_overdue_members, "interval", minutes=15)
 scheduler.add_job(sync_loan_notifications, "interval", minutes=15)
+# Hourly is plenty - maintenance due-dates are day-granularity, not minute.
+scheduler.add_job(sweep_maintenance_due, "interval", hours=1)
+scheduler.add_job(sweep_expired_reservations, "interval", minutes=30)
 # Polls every 30 min; the function itself decides whether a backup is actually due.
 scheduler.add_job(run_scheduled_backup, "interval", minutes=30)
-# Hourly is fine -- retention windows are day-granularity, not minute.
+# Hourly is fine - retention windows are day-granularity, not minute.
 scheduler.add_job(run_scheduled_archive_purge, "interval", hours=1)
 
 debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
-# Set by tests/conftest.py -- a background scheduler thread polling a
+# Set by tests/conftest.py - a background scheduler thread polling a
 # throwaway test database on an interval has nothing useful to do and just
 # risks firing mid-test against a DB file that's already been torn down.
 testing_mode = os.environ.get("TOOLROOM_TESTING") == "1"
@@ -232,7 +249,7 @@ if not testing_mode and (not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") =
 
 @app.route("/")
 def home():
-    """The dashboard (templates/home.html) -- counts, recent activity, top-borrowed
+    """The dashboard (templates/home.html) - counts, recent activity, top-borrowed
     assets, quick actions. Query layer lives in services/dashboard_service.py."""
     conn = get_db_connection()
     staff, error = require_session(conn)
@@ -251,7 +268,7 @@ def home():
 @app.route("/health")
 @limiter.exempt
 def health():
-    """Confirms the app is up and can reach the DB. No auth needed -- meant for a watchdog script."""
+    """Confirms the app is up and can reach the DB. No auth needed - meant for a watchdog script."""
     try:
         conn = get_db_connection()
         conn.execute("SELECT 1")
@@ -282,6 +299,27 @@ def format_date(value, format="%b %d, %Y %I:%M %p"):
 app.jinja_env.filters["format_date"] = format_date
 # Also expose as a global, for calling it directly instead of via the | filter.
 app.jinja_env.globals["format_date"] = format_date
+
+
+def asset_url(filename):
+    """Cache-busted static URL: appends ?v=<mtime> so a real deployment's
+    1-hour SEND_FILE_MAX_AGE_DEFAULT (above) doesn't leave a browser sitting
+    on a stale cached output.css/ui.js for up to an hour after every
+    redeploy - the query string changes the moment the file's mtime does,
+    forcing a fresh fetch, while an unchanged file still gets the full
+    cache lifetime. Local dev (FLASK_DEBUG=1) doesn't need this (that mode
+    already disables the cache entirely, see SEND_FILE_MAX_AGE_DEFAULT's
+    own comment), but it's harmless there too - just an unused query string.
+    Falls back to a plain, unversioned URL if the file can't be stat'd
+    (e.g. a bad filename) rather than raising and breaking the whole page."""
+    try:
+        mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+    except OSError:
+        return url_for("static", filename=filename)
+    return url_for("static", filename=filename) + f"?v={mtime}"
+
+
+app.jinja_env.globals["asset_url"] = asset_url
 
 # Turns a snake_case DB value into a display label, e.g. 'for_repair' -> 'For Repair'.
 app.jinja_env.filters["humanize"] = humanize_label

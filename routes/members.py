@@ -597,7 +597,7 @@ def borrow_history_modal(id):
 @members_bp.route("/members/<int:id>/borrow-history-modal/table")
 @login_required
 def borrow_history_modal_table(id):
-    """htmx partial backing borrow_history_modal -- same query as get_member_transactions
+    """htmx partial backing borrow_history_modal - same query as get_member_transactions
     but actually paginated instead of a fixed limit=3."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:

@@ -17,51 +17,60 @@ from services.loan_service import (
     check_and_lift_restriction_if_resolved,
     check_and_restrict_damaged_returns,
 )
-from utils.constants import SESSION_STALE_MINUTES
+from services.settings_service import get_checkout_session_stale_minutes, is_feature_enabled
+from services.reservation_service import get_upcoming_reservations_for_asset
 from utils.formatters import full_name
 from utils.logger import log_action
-from utils.validators import validate_date_string
+from utils.validators import validate_date_string, decimal_scan_hex_suffix
 
-# Fallback only -- real default lives in app_settings (settings_service.get_default_loan_days)
+# Fallback only - real default lives in app_settings (settings_service.get_default_loan_days)
 DEFAULT_LOAN_DAYS = 2
-# Fallback only -- real caps live in the loan_limits table (see get_max_concurrent_loans below)
+# Fallback only - real caps live in the loan_limits table (see get_max_concurrent_loans below)
 MAX_CONCURRENT_LOANS = 10
 MAX_AVAILABLE_ASSETS_LISTED = 300
+MAX_AVAILABLE_MEMBERS_LISTED = 300
 MAX_BATCH_RETURN_SIZE = 50
 
 
-def _verify_rfid_scan(asset, rfid_code):
-    """Cross-checks a physically-scanned RFID tag against the asset's registered
-    rfid_id -- the actual anti-swap check (barcode alone only proves a barcode
-    was read, and barcode stickers can be peeled and moved to a different tool).
+def _verify_second_scan(asset, verify_code):
+    """Cross-checks the second (confirmatory) scan against the asset - the
+    actual anti-swap check (a barcode sticker alone only proves *a* barcode
+    was read, and a sticker can be peeled and moved to a different tool).
+    Accepts a match against the asset's RFID tag, its barcode, or its own
+    asset ID code: not every asset has an RFID tag registered yet, and
+    staff re-presenting any of the three is still deliberate proof they
+    have the actual tool in hand, not just re-typing the same value from
+    memory - so this isn't RFID-only despite the field name in the API
+    payload (rfid_code, kept for backward compatibility).
 
-    Optional by design: `rfid_code` is None whenever staff scan by barcode alone,
-    which must keep working unchanged for assets that aren't RFID-tagged yet.
-    Only returns an error when staff *did* scan an RFID and it doesn't check out.
+    Optional by design: `verify_code` is None whenever staff add by a single
+    scan with no follow-up verification, which must keep working unchanged.
+    Only returns an error when staff *did* scan/enter something and it
+    doesn't match any of the asset's identifiers.
     """
-    if not rfid_code:
+    if not verify_code:
         return None
-    if not asset["rfid_id"]:
-        return (
-            jsonify(
-                {
-                    "error": f"Asset {asset['barcode_id']} has no RFID tag on file - can't verify by RFID.",
-                    "code": "rfid_not_on_file",
-                }
-            ),
-            400,
-        )
-    if rfid_code.strip().upper() != asset["rfid_id"].upper():
-        return (
-            jsonify(
-                {
-                    "error": "RFID tag doesn't match this asset - it may not be the tool that was borrowed.",
-                    "code": "rfid_mismatch",
-                }
-            ),
-            409,
-        )
-    return None
+    code = verify_code.strip().upper()
+    candidates = {v.upper() for v in (asset["rfid_id"], asset["barcode_id"], asset["asset_id"]) if v}
+    if code in candidates:
+        return None
+    # Some readers set to type scans as keyboard input only type the decimal
+    # value of an EPC's last 3 bytes, not the full hex ID - see
+    # decimal_scan_hex_suffix()'s docstring.
+    hex_suffix = decimal_scan_hex_suffix(code)
+    if hex_suffix and asset["rfid_id"] and asset["rfid_id"].upper().endswith(hex_suffix):
+        return None
+    return (
+        jsonify(
+            {
+                "error": "That doesn't match this asset's barcode, ID, or RFID tag - it may not be the tool that was borrowed.",
+                "code": "verification_mismatch",
+            }
+        ),
+        409,
+    )
+
+
 VALID_RETURN_CONDITIONS = ("functional", "inoperable", "for_repair", "disposed")
 
 
@@ -104,7 +113,7 @@ def get_active_checkout_session(session_id, member_id, conn):
     last_activity_at = datetime.strptime(
         session["last_activity_at"] or session["created_at"], "%Y-%m-%d %H:%M:%S"
     )
-    if datetime.now() - last_activity_at > timedelta(minutes=SESSION_STALE_MINUTES):
+    if datetime.now() - last_activity_at > timedelta(minutes=get_checkout_session_stale_minutes(conn)):
         # lazily close it so it stops showing up as "open"
         conn.execute(
             "UPDATE checkout_sessions SET status = 'cancelled', completed_at = datetime('now', 'localtime') WHERE id = ? AND status = 'open'",
@@ -139,12 +148,13 @@ def load_open_sessions_for_staff(staff_id, conn):
         (staff_id,),
     ).fetchall()
 
+    stale_minutes = get_checkout_session_stale_minutes(conn)
     results = []
     for session in sessions:
         last_activity_at = datetime.strptime(
             session["last_activity_at"] or session["created_at"], "%Y-%m-%d %H:%M:%S"
         )
-        if datetime.now() - last_activity_at > timedelta(minutes=SESSION_STALE_MINUTES):
+        if datetime.now() - last_activity_at > timedelta(minutes=stale_minutes):
             conn.execute(
                 "UPDATE checkout_sessions SET status = 'cancelled', completed_at = datetime('now', 'localtime') WHERE id = ? AND status = 'open'",
                 (session["id"],),
@@ -154,7 +164,7 @@ def load_open_sessions_for_staff(staff_id, conn):
 
         items = conn.execute(
             """
-            SELECT checkout_session_items.id AS id, assets.name AS asset_name
+            SELECT checkout_session_items.id AS id, checkout_session_items.asset_id AS asset_id, assets.name AS asset_name, assets.barcode_id AS barcode_id
             FROM checkout_session_items
             JOIN assets ON checkout_session_items.asset_id = assets.id
             WHERE checkout_session_items.checkout_session_id = ?
@@ -163,7 +173,28 @@ def load_open_sessions_for_staff(staff_id, conn):
             (session["id"],),
         ).fetchall()
 
-        results.append({**dict(session), "cart_items": [dict(row) for row in items]})
+        # Same advisory heads-up as add_item_to_checkout_session's
+        # reservation_notice, recomputed here so it still shows up for an
+        # item that was already in the cart before this session got
+        # minimized/resumed - not just the moment it's first scanned.
+        cart_items = [dict(row) for row in items]
+        if cart_items and is_feature_enabled("reservations", conn):
+            for cart_item in cart_items:
+                upcoming = get_upcoming_reservations_for_asset(conn, cart_item["asset_id"], limit=1)
+                if upcoming:
+                    r = upcoming[0]
+                    cart_item["reservation_notice"] = {
+                        "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+                        "start_at": r["start_at"],
+                        "end_at": r["end_at"],
+                    }
+                else:
+                    cart_item["reservation_notice"] = None
+        else:
+            for cart_item in cart_items:
+                cart_item["reservation_notice"] = None
+
+        results.append({**dict(session), "cart_items": cart_items})
 
     return results
 
@@ -443,6 +474,36 @@ def get_transaction_details(conn, transaction_id):
 
     if transaction is None:
         return None, (jsonify({"error": "Transaction not found"}), 404)
+
+    transaction = dict(transaction)
+    # Late-at-return: due_date always reflects the CURRENT (possibly renewed)
+    # due date, so comparing it against time_in already accounts for any
+    # extension - correctly answers "was this returned after whatever its
+    # due date was at the time", not just its original one.
+    transaction["was_returned_late"] = bool(
+        transaction["status"] == "returned"
+        and transaction["time_in"]
+        and transaction["due_date"]
+        and transaction["time_in"] > transaction["due_date"]
+    )
+
+    # Renewal trail - services/transaction_service.py's own renew_loan logs
+    # one 'renewed_loan' audit_log row per extension (see routes/transactions.py's
+    # renew-form submit), each with the acting staff_id and an
+    # already-human-readable "Due date extended from X to Y" details string.
+    renewals = conn.execute(
+        """
+        SELECT audit_log.details, audit_log.created_at, staff.username AS staff_username
+        FROM audit_log
+        LEFT JOIN staff ON audit_log.staff_id = staff.id
+        WHERE audit_log.action = 'renewed_loan'
+          AND audit_log.target_table = 'transactions' AND audit_log.target_id = ?
+        ORDER BY audit_log.created_at ASC
+        """,
+        (transaction_id,),
+    ).fetchall()
+    transaction["renewals"] = [dict(r) for r in renewals]
+
     return transaction, None
 
 
@@ -528,13 +589,20 @@ def start_checkout_session(conn, member_barcode, member_id, staff_id):
 
 
 def list_available_assets_for_checkout(conn):
-    """Backs the "Show available assets" flyout; `code` is barcode_id, capped, category included."""
+    """Backs the "Show available assets" flyout; `code` is barcode_id, capped, category included.
+    A consumable is "available" whenever it has stock, regardless of its
+    (always-'available') status column - see asset_service.py's asset_type docs."""
     assets = conn.execute(
         """
-        SELECT assets.barcode_id AS code, assets.name, categories.name AS category
+        SELECT assets.barcode_id AS code, assets.name, categories.name AS category,
+               assets.asset_type, assets.quantity
         FROM assets
         LEFT JOIN categories ON assets.category_id = categories.id
-        WHERE assets.status = 'available' AND assets.deleted_at IS NULL
+        WHERE assets.deleted_at IS NULL
+          AND (
+              (assets.asset_type = 'consumable' AND assets.quantity > 0)
+              OR (assets.asset_type != 'consumable' AND assets.status = 'available')
+          )
         ORDER BY assets.name
         LIMIT ?
         """,
@@ -543,10 +611,51 @@ def list_available_assets_for_checkout(conn):
     return {"assets": [dict(row) for row in assets]}
 
 
-def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_code=None):
+def list_available_members_for_checkout(conn):
+    """Backs the "Show available members" flyout in checkout Step 1 - mirrors
+    list_available_assets_for_checkout above. Lists every active member,
+    restricted or not - restricted ones (overdue or damaged-return holds,
+    same rule start_checkout_session enforces) are included but flagged via
+    `restricted`/`restriction_reason` so the UI can show them greyed out with
+    a reason instead of just hiding them, which otherwise looked like a
+    member had vanished from the roster."""
+    members = conn.execute(
+        """
+        SELECT members.barcode_id AS code,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.is_restricted, members.restriction_reason,
+               departments.name AS department
+        FROM members
+        LEFT JOIN departments ON members.department_id = departments.id
+        WHERE members.is_active = 1
+        ORDER BY members.is_restricted, members.last_name, members.first_name
+        LIMIT ?
+        """,
+        (MAX_AVAILABLE_MEMBERS_LISTED,),
+    ).fetchall()
+    return {
+        "members": [
+            {
+                "code": row["code"],
+                "name": full_name(row["first_name"], row["last_name"], row["middle_name"], row["suffix"]),
+                "department": row["department"],
+                "restricted": bool(row["is_restricted"]),
+                "restriction_reason": row["restriction_reason"],
+            }
+            for row in members
+        ]
+    }
+
+
+def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_code=None, quantity=1):
     """Scans one asset into the cart; claims it atomically (available -> reserved) before inserting the row.
-    rfid_code is optional -- when staff also scan the asset's RFID tag (a second, distinct scan from the
-    barcode), it's cross-checked against the asset's registered rfid_id. See _verify_rfid_scan()."""
+    rfid_code is optional - when staff also do a second, confirmatory scan (RFID tag, the barcode again,
+    or the asset ID), it's cross-checked against the asset's identifiers. See _verify_second_scan().
+
+    `quantity` only means something for a consumable asset (services/asset_service.py's
+    asset_type) - ignored for a serialized one, which is always exactly one
+    unit. See the branch below for why consumables skip the status CAS
+    entirely."""
     session_probe = conn.execute(
         "SELECT member_id, staff_id FROM checkout_sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -562,28 +671,47 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
     if error:
         return None, error
 
+    # Some readers set to type scans as keyboard input only type the decimal
+    # value of an EPC's last 3 bytes, not the full hex ID - see
+    # decimal_scan_hex_suffix()'s docstring. That extra LIKE branch is a
+    # harmless no-op when asset_code isn't a plausible decimal scan.
     asset = conn.execute(
-        "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
-        (asset_code, asset_code),
+        """
+        SELECT * FROM assets
+        WHERE (
+            UPPER(barcode_id) = UPPER(?)
+            OR UPPER(rfid_id) = UPPER(?)
+            OR UPPER(rfid_id) LIKE '%' || ?
+        ) AND deleted_at IS NULL
+        """,
+        (asset_code, asset_code, decimal_scan_hex_suffix(asset_code)),
     ).fetchone()
 
     if asset is None:
-        return None, (jsonify({"error": f"Asset {asset_code} not found", "code": "not_found"}), 404)
+        return None, (jsonify({"error": "No asset found for that code", "code": "not_found"}), 404)
 
-    rfid_error = _verify_rfid_scan(asset, rfid_code)
+    rfid_error = _verify_second_scan(asset, rfid_code)
     if rfid_error:
         return None, rfid_error
 
     already_in_cart = conn.execute(
-        "SELECT id FROM checkout_session_items WHERE checkout_session_id = ? AND asset_id = ?",
+        "SELECT id, quantity FROM checkout_session_items WHERE checkout_session_id = ? AND asset_id = ?",
         (session_id, asset["id"]),
     ).fetchone()
+
+    if asset["asset_type"] == "consumable":
+        return _add_consumable_to_checkout_session(conn, session_id, staff_id, asset, already_in_cart, quantity)
 
     if already_in_cart is not None:
         return None, (
             jsonify(
                 {
-                    "error": f"Asset {asset_code} is already in the cart",
+                    # Never the raw scanned code (barcode or RFID tag) here -
+                    # staff scanned SOMETHING to get this far, showing it back
+                    # verbatim is redundant at best and a stray RFID/barcode
+                    # string is meaningless to read at a glance; the asset's
+                    # actual name is what staff recognize.
+                    "error": f"{asset['name']} is already in the cart",
                     "code": "already_in_cart",
                     "item_id": already_in_cart["id"],
                 }
@@ -595,7 +723,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
         return None, (
             jsonify(
                 {
-                    "error": f"Asset {asset_code} is not available (current status: {asset['status']})",
+                    "error": f"{asset['name']} is not available (current status: {asset['status']})",
                     "code": "not_available",
                 }
             ),
@@ -610,7 +738,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
         if claim.rowcount == 0:
             conn.rollback()
             return None, (
-                jsonify({"error": f"Asset {asset_code} was just claimed by another session - try again", "code": "not_available"}),
+                jsonify({"error": f"{asset['name']} was just claimed by another session - try again", "code": "not_available"}),
                 409,
             )
 
@@ -627,7 +755,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
     except sqlite3.IntegrityError:
         conn.rollback()
         return None, (
-            jsonify({"error": f"Asset {asset_code} is already in the cart", "code": "already_in_cart"}),
+            jsonify({"error": f"{asset['name']} is already in the cart", "code": "already_in_cart"}),
             409,
         )
     except Exception:
@@ -643,15 +771,114 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
         details=f"Added asset {asset['asset_id']} to checkout session {session_id}",
     )
 
+    # Advisory only (reservations never block a checkout - see
+    # reservation_service.py's module docstring), so this is purely a
+    # heads-up for the scanning staff member: the soonest upcoming
+    # 'scheduled' booking on this asset, if any, so they can use their own
+    # judgment (give it back on time, check with the other member, etc.)
+    # instead of finding out only when that booking's own time arrives.
+    # Skipped entirely when the feature's off - see routes/transactions.py's
+    # equivalent gate on the reservations blueprint itself.
+    reservation_notice = None
+    if is_feature_enabled("reservations", conn):
+        upcoming = get_upcoming_reservations_for_asset(conn, asset["id"], limit=1)
+        if upcoming:
+            r = upcoming[0]
+            reservation_notice = {
+                "member_name": full_name(r["first_name"], r["last_name"], r["middle_name"], r["suffix"]),
+                "start_at": r["start_at"],
+                "end_at": r["end_at"],
+            }
+
     return {
         "message": "Item added to cart",
         "item_id": item_id,
         "asset_id": asset["id"],
         "asset_name": asset["name"],
+        "barcode_id": asset["barcode_id"],
+        "asset_type": "serialized",
+        "quantity": 1,
+        "reservation_notice": reservation_notice,
     }, None
 
 
-def remove_item_from_checkout_session(conn, session_id, item_id, staff_id):
+def _add_consumable_to_checkout_session(conn, session_id, staff_id, asset, existing_item, quantity):
+    """A consumable never claims assets.status (it stays 'available' always -
+    quantity tracks what's left, not a single-unit reservation). Re-scanning
+    an already-in-cart consumable adds to its cart quantity instead of
+    erroring "already in cart", since that's the obviously-intended action
+    for "take some more of these." Stock itself isn't decremented until
+    finish_checkout_session actually commits - this is a soft check against
+    current on-hand quantity, not an atomic hold, so two concurrent sessions
+    can both pass this check and only one succeeds at commit time (the
+    guarded UPDATE there is what actually prevents overselling)."""
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        quantity = 0
+    if quantity < 1:
+        return None, (jsonify({"error": "quantity must be at least 1"}), 400)
+
+    already_requested = existing_item["quantity"] if existing_item else 0
+    if quantity + already_requested > (asset["quantity"] or 0):
+        return None, (
+            jsonify(
+                {
+                    "error": f"Only {asset['quantity']} unit(s) of {asset['name']} in stock",
+                    "code": "not_available",
+                }
+            ),
+            409,
+        )
+
+    try:
+        if existing_item is not None:
+            conn.execute(
+                "UPDATE checkout_session_items SET quantity = quantity + ? WHERE id = ?",
+                (quantity, existing_item["id"]),
+            )
+            item_id = existing_item["id"]
+        else:
+            cursor = conn.execute(
+                "INSERT INTO checkout_session_items (checkout_session_id, asset_id, quantity) VALUES (?, ?, ?)",
+                (session_id, asset["id"], quantity),
+            )
+            item_id = cursor.lastrowid
+        conn.execute(
+            "UPDATE checkout_sessions SET last_activity_at = datetime('now', 'localtime') WHERE id = ?",
+            (session_id,),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    log_action(
+        staff_id=staff_id,
+        action="added_item_to_checkout_session",
+        target_table="checkout_session_items",
+        target_id=item_id,
+        target_name=f"{asset['asset_id']} - {asset['name']}",
+        details=f"Added {quantity} unit(s) of {asset['asset_id']} to checkout session {session_id}",
+    )
+
+    return {
+        "message": "Item added to cart",
+        "item_id": item_id,
+        "asset_id": asset["id"],
+        "asset_name": asset["name"],
+        "barcode_id": asset["barcode_id"],
+        "asset_type": "consumable",
+        "quantity": quantity + already_requested,
+    }, None
+
+
+def remove_item_from_checkout_session(conn, session_id, item_id, staff_id, decrement_by=None):
+    """decrement_by is consumable-only (the cart quantity stepper's "-" button)
+    - reduces the line's quantity instead of removing it outright, unless
+    that would take it to zero or below, in which case it's removed just
+    like a serialized item would be. None (the default) always removes the
+    whole line, same as before this existed."""
     item = conn.execute(
         "SELECT * FROM checkout_session_items WHERE id = ? AND checkout_session_id = ?",
         (item_id, session_id),
@@ -676,8 +903,16 @@ def remove_item_from_checkout_session(conn, session_id, item_id, staff_id):
         "SELECT asset_id, name FROM assets WHERE id = ?", (item["asset_id"],)
     ).fetchone()
 
+    partial = decrement_by is not None and 0 < decrement_by < item["quantity"]
+
     try:
-        conn.execute("DELETE FROM checkout_session_items WHERE id = ?", (item_id,))
+        if partial:
+            conn.execute(
+                "UPDATE checkout_session_items SET quantity = quantity - ? WHERE id = ?",
+                (decrement_by, item_id),
+            )
+        else:
+            conn.execute("DELETE FROM checkout_session_items WHERE id = ?", (item_id,))
         conn.execute(
             "UPDATE assets SET status = 'available' WHERE id = ? AND status = 'reserved'",
             (item["asset_id"],),
@@ -697,10 +932,114 @@ def remove_item_from_checkout_session(conn, session_id, item_id, staff_id):
         target_table="checkout_session_items",
         target_id=item_id,
         target_name=f"{asset['asset_id']} - {asset['name']}" if asset else None,
-        details=f"Removed asset from checkout session {session_id}",
+        details=(
+            f"Reduced quantity by {decrement_by} for asset in checkout session {session_id}"
+            if partial
+            else f"Removed asset from checkout session {session_id}"
+        ),
     )
 
+    if partial:
+        new_quantity = conn.execute(
+            "SELECT quantity FROM checkout_session_items WHERE id = ?", (item_id,)
+        ).fetchone()["quantity"]
+        return {"message": "Quantity updated", "removed": False, "quantity": new_quantity}, None
+
     return {"message": "Item removed from cart"}, None
+
+
+def get_reserved_asset_hold(conn, asset_id):
+    """Backs the admin-only "release reservation" confirm modal (Assets page).
+    Looks up who's actually holding a 'reserved' asset - which member's cart
+    it's sitting in, and which staff member started that checkout - so the
+    admin sees what they're about to bypass before confirming, not just the
+    asset's status."""
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    if asset is None:
+        return None, ({"error": "Asset not found"}, 404, {})
+
+    if asset["status"] != "reserved":
+        return None, ({"error": "This asset is not currently reserved"}, 409, {"asset": asset})
+
+    hold = conn.execute(
+        """
+        SELECT checkout_session_items.id AS item_id, checkout_sessions.id AS session_id,
+               checkout_sessions.staff_id, staff.username AS staff_username,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM checkout_session_items
+        JOIN checkout_sessions ON checkout_sessions.id = checkout_session_items.checkout_session_id
+        JOIN members ON members.id = checkout_sessions.member_id
+        LEFT JOIN staff ON staff.id = checkout_sessions.staff_id
+        WHERE checkout_session_items.asset_id = ? AND checkout_sessions.status = 'open'
+        """,
+        (asset_id,),
+    ).fetchone()
+
+    return {"asset": asset, "hold": hold}, None
+
+
+def release_reserved_asset(conn, asset_id, staff_id):
+    """Admin-only bypass for an asset stuck 'reserved' because whoever was
+    checking it out logged out (or the tab/device died) without cancelling
+    or completing that checkout - normally this clears itself after the
+    admin-configurable checkout_session_stale_minutes window (System >
+    Checkout Session Timeout; services/checkout_service.py's scheduled
+    sweep), but an admin shouldn't have to wait out that timer to get a
+    tool back into circulation. Unlike remove_item_from_checkout_session, this deliberately
+    skips require_session_owner - bypassing someone else's abandoned cart is
+    the entire point."""
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    if asset is None:
+        return None, ({"error": "Asset not found"}, 404, {})
+
+    if asset["status"] != "reserved":
+        return None, ({"error": "This asset is not currently reserved"}, 409, {"asset": asset})
+
+    item = conn.execute(
+        """
+        SELECT checkout_session_items.id AS item_id, checkout_sessions.id AS session_id,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM checkout_session_items
+        JOIN checkout_sessions ON checkout_sessions.id = checkout_session_items.checkout_session_id
+        JOIN members ON members.id = checkout_sessions.member_id
+        WHERE checkout_session_items.asset_id = ? AND checkout_sessions.status = 'open'
+        """,
+        (asset_id,),
+    ).fetchone()
+
+    if item is None:
+        # Reserved with no open cart item behind it shouldn't happen, but
+        # don't leave the asset stuck if it does - just clear the status.
+        conn.execute("UPDATE assets SET status = 'available' WHERE id = ? AND status = 'reserved'", (asset_id,))
+        conn.commit()
+        return {"message": "Reservation cleared"}, None
+
+    holder_name = full_name(item["first_name"], item["last_name"], item["middle_name"], item["suffix"])
+
+    try:
+        conn.execute("DELETE FROM checkout_session_items WHERE id = ?", (item["item_id"],))
+        conn.execute(
+            "UPDATE assets SET status = 'available' WHERE id = ? AND status = 'reserved'",
+            (asset_id,),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    log_action(
+        staff_id=staff_id,
+        action="admin_released_reserved_asset",
+        target_table="assets",
+        target_id=asset_id,
+        target_name=f"{asset['asset_id']} - {asset['name']}",
+        details=(
+            f"Admin bypassed reservation on {asset['asset_id']} - was held in "
+            f"{holder_name}'s in-progress checkout (session {item['session_id']})"
+        ),
+    )
+
+    return {"message": "Reservation released - asset is available again", "asset_id_code": asset["asset_id"]}, None
 
 
 def get_checkout_session_detail(conn, session_id, staff_id):
@@ -758,7 +1097,7 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
     )
 
     if is_disposed:
-        # disposed is terminal -- soft-delete now instead of parking it in 'maintenance'
+        # disposed is terminal - soft-delete now instead of parking it in 'maintenance'
         conn.execute(
             "UPDATE assets SET status = ?, condition = ?, deleted_at = datetime('now', 'localtime') WHERE id = ?",
             (new_status, final_condition, asset["id"]),
@@ -783,17 +1122,29 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
 
 def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=None):
     """Validates an asset/member barcode pair for a scan return; pure lookup, no mutation.
-    rfid_code is optional -- when staff also scan the returned tool's RFID tag, it's cross-checked
-    against the asset's registered rfid_id, so a barcode peeled off the original tool and stuck on a
-    substitute can't sail through just because the barcode matches. See _verify_rfid_scan()."""
+    rfid_code is optional - when staff also do a second, confirmatory scan of the returned tool
+    (RFID tag, the barcode again, or the asset ID), it's cross-checked against the asset's
+    identifiers, so a barcode peeled off the original tool and stuck on a substitute can't sail
+    through just because the barcode matches. See _verify_second_scan()."""
+    # Some readers set to type scans as keyboard input only type the decimal
+    # value of an EPC's last 3 bytes, not the full hex ID - see
+    # decimal_scan_hex_suffix()'s docstring. That extra LIKE branch is a
+    # harmless no-op when asset_code isn't a plausible decimal scan.
     asset = conn.execute(
-        "SELECT * FROM assets WHERE (UPPER(barcode_id) = UPPER(?) OR UPPER(rfid_id) = UPPER(?)) AND deleted_at IS NULL",
-        (asset_code, asset_code),
+        """
+        SELECT * FROM assets
+        WHERE (
+            UPPER(barcode_id) = UPPER(?)
+            OR UPPER(rfid_id) = UPPER(?)
+            OR UPPER(rfid_id) LIKE '%' || ?
+        ) AND deleted_at IS NULL
+        """,
+        (asset_code, asset_code, decimal_scan_hex_suffix(asset_code)),
     ).fetchone()
     if asset is None:
-        return None, None, None, (jsonify({"error": f"Asset {asset_code} not found", "code": "not_found"}), 404)
+        return None, None, None, (jsonify({"error": "No asset found for that code", "code": "not_found"}), 404)
 
-    rfid_error = _verify_rfid_scan(asset, rfid_code)
+    rfid_error = _verify_second_scan(asset, rfid_code)
     if rfid_error:
         return None, None, None, rfid_error
 
@@ -803,7 +1154,10 @@ def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=
     ).fetchone()
     if transaction is None:
         return None, None, None, (
-            jsonify({"error": f"Asset {asset_code} has no open borrow transaction", "code": "not_available"}),
+            # Never the raw scanned code (barcode or RFID tag) - see the
+            # matching comment on the checkout-side "already in the cart"
+            # error for why.
+            jsonify({"error": f"{asset['name']} has no open borrow transaction", "code": "not_available"}),
             400,
         )
 
@@ -870,6 +1224,37 @@ def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_i
     }, None
 
 
+def list_members_with_open_loans(conn):
+    """Backs the "Show members with loans" flyout in the Return Items modal --
+    same idea as list_available_members_for_checkout, but for the opposite
+    direction: only members who currently have something borrowed are worth
+    browsing here, since picking one only makes sense if there's something
+    of theirs to return."""
+    members = conn.execute(
+        """
+        SELECT members.barcode_id AS code,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               COUNT(transactions.id) AS loan_count
+        FROM members
+        JOIN transactions ON transactions.member_id = members.id AND transactions.status = 'borrowed'
+        GROUP BY members.id
+        ORDER BY members.last_name, members.first_name
+        LIMIT ?
+        """,
+        (MAX_AVAILABLE_MEMBERS_LISTED,),
+    ).fetchall()
+    return {
+        "members": [
+            {
+                "code": row["code"],
+                "name": full_name(row["first_name"], row["last_name"], row["middle_name"], row["suffix"]),
+                "loan_count": row["loan_count"],
+            }
+            for row in members
+        ]
+    }
+
+
 def get_member_open_loans(conn, member_barcode):
     """Lists what a member has borrowed; zero loans is a normal 200 with an empty list, not an error."""
     member = conn.execute(
@@ -915,7 +1300,7 @@ def lookup_return_scan(conn, asset_code, member_barcode, rfid_code=None):
 
 
 def get_return_confirm_transaction(conn, transaction_id):
-    """Opens the row-action return modal. Read-only lookup -- the actual
+    """Opens the row-action return modal. Read-only lookup - the actual
     mutation happens in return_transaction_by_id() below, on submit."""
     transaction = conn.execute(
         """
@@ -1025,7 +1410,7 @@ def batch_return(conn, items, return_remarks, staff_id):
 
 
 def get_renewable_transaction(conn, transaction_id):
-    """Opens the extend-due-date modal -- read-only lookup, same split as
+    """Opens the extend-due-date modal - read-only lookup, same split as
     get_return_confirm_transaction()/return_transaction_by_id()."""
     transaction = conn.execute(
         """
@@ -1107,7 +1492,7 @@ def list_open_checkout_sessions(conn):
 
 
 def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_days):
-    """The actual commit point -- nothing lands in `transactions` until
+    """The actual commit point - nothing lands in `transactions` until
     this runs; everything scanned before it is just a reservation."""
     if due_date is None:
         due_date = (datetime.now() + timedelta(days=default_loan_days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -1129,7 +1514,7 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
 
     member = conn.execute("SELECT * FROM members WHERE id = ?", (session["member_id"],)).fetchone()
 
-    # re-check eligibility at commit time, not just cart-creation -- status may have changed while scanning
+    # re-check eligibility at commit time, not just cart-creation - status may have changed while scanning
     if check_and_restrict_overdue_member(member["id"], conn):
         return None, (
             jsonify(
@@ -1168,17 +1553,26 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
             400,
         )
 
+    # Consumables are consumed on the spot (see the loop below), never
+    # 'borrowed' - they shouldn't count against the member's concurrent-loan
+    # cap, only the serialized items actually going out on loan do.
+    borrowable_item_count = sum(
+        1 for item in items
+        if conn.execute("SELECT asset_type FROM assets WHERE id = ?", (item["asset_id"],)).fetchone()["asset_type"]
+        != "consumable"
+    )
+
     max_loans = get_max_concurrent_loans(member["member_type"], conn)
-    if current_loan_count + len(items) > max_loans:
+    if current_loan_count + borrowable_item_count > max_loans:
         return None, (
             jsonify(
                 {
                     "error": (
-                        f"This checkout would put the member at {current_loan_count + len(items)} "
+                        f"This checkout would put the member at {current_loan_count + borrowable_item_count} "
                         f"concurrent loans, exceeding the maximum of {max_loans}"
                     ),
                     "current_loans": current_loan_count,
-                    "cart_size": len(items),
+                    "cart_size": borrowable_item_count,
                 }
             ),
             403,
@@ -1188,12 +1582,55 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
         for item in items:
             asset = conn.execute("SELECT * FROM assets WHERE id = ?", (item["asset_id"],)).fetchone()
 
+            if asset["asset_type"] == "consumable":
+                # No borrowed/reserved lifecycle for a consumable - decrement
+                # stock directly (guarded the same way the serialized CAS
+                # below guards status) and log it as an already-'returned'
+                # transaction (nothing to return - it's consumed on
+                # checkout), which keeps it out of the borrowed/overdue
+                # sweeps for free without needing a new transactions.status
+                # value. See services/asset_service.py's asset_type docs.
+                claim = conn.execute(
+                    "UPDATE assets SET quantity = quantity - ? WHERE id = ? AND asset_type = 'consumable' AND quantity >= ?",
+                    (item["quantity"], item["asset_id"], item["quantity"]),
+                )
+                if claim.rowcount == 0:
+                    raise ValueError(f"asset {item['asset_id']} does not have {item['quantity']} unit(s) in stock")
+
+                conn.execute(
+                    """
+                    INSERT INTO transactions
+                        (checkout_session_id, asset_id, member_id, borrowed_by_staff_id, returned_by_staff_id,
+                         due_date, condition_out, condition_in, time_in, status)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, datetime('now', 'localtime'), 'returned')
+                    """,
+                    (
+                        session_id,
+                        item["asset_id"],
+                        member["id"],
+                        staff_id,
+                        staff_id,
+                        asset["condition"],
+                        asset["condition"],
+                    ),
+                )
+                continue
+
             claim = conn.execute(
                 "UPDATE assets SET status = 'borrowed' WHERE id = ? AND status = 'reserved'",
                 (item["asset_id"],),
             )
             if claim.rowcount == 0:
                 raise ValueError(f"asset {item['asset_id']} was not in reserved state")
+
+            # Feeds the usage-based maintenance trigger (services/
+            # asset_service.py's get_maintenance_due_assets) - resets to 0
+            # whenever resolve_maintenance runs, so this only counts
+            # checkouts since the asset was last serviced.
+            conn.execute(
+                "UPDATE assets SET checkouts_since_maintenance = checkouts_since_maintenance + 1 WHERE id = ?",
+                (item["asset_id"],),
+            )
 
             conn.execute(
                 """

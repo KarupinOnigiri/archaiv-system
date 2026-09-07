@@ -58,7 +58,7 @@
       </div>
       {% else %}
       <div class="h-full flex items-center justify-center">
-        <p class="text-sm text-base-content/40">No departments yet &mdash; add one below.</p>
+        <p class="text-sm text-base-content/40">No departments yet - add one below.</p>
       </div>
       {% endfor %}
     </div>
@@ -93,7 +93,7 @@
   const announcer = document.getElementById('dept-reorder-announcer');
   const orderStatus = document.getElementById('dept-order-status');
 
-  // Use showModal() rather than a static `open` attribute -- it's what
+  // Use showModal() rather than a static `open` attribute - it's what
   // actually gives this dialog focus trapping, a real ::backdrop (so the
   // click-outside-to-close <form method="dialog"> below actually works),
   // and native Escape-to-close. A plain `open` attribute provides none of
@@ -104,14 +104,14 @@
     dialogEl.setAttribute('open', '');
   }
 
-  // Whatever closes the dialog -- the Close button, clicking the backdrop,
-  // or pressing Escape -- should also remove it from the DOM. Previously
+  // Whatever closes the dialog - the Close button, clicking the backdrop,
+  // or pressing Escape - should also remove it from the DOM. Previously
   // only the Close button's onclick did this, so an Escape-key close left
   // a hidden orphan <dialog> behind.
   dialogEl.addEventListener('close', function () {
     dialogEl.remove();
   });
-  // querySelectorAll (not querySelector) -- both the header's ESC pill and
+  // querySelectorAll (not querySelector) - both the header's ESC pill and
   // the footer's Close button carry this same attribute now.
   document.querySelectorAll('[data-close-departments-modal]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -124,10 +124,10 @@
   });
 
   // Notifies the rest of the page (currently just the department filter
-  // dropdown -- see its hx-trigger="departments-changed from:body" in
+  // dropdown - see its hx-trigger="departments-changed from:body" in
   // members.html) that department data changed, so it can refetch itself
   // via htmx. Fired the moment an add or reorder-save actually succeeds,
-  // not deferred until the modal closes -- so a dropdown left open in
+  // not deferred until the modal closes - so a dropdown left open in
   // another tab, or just visible behind the modal, updates live instead
   // of requiring a full page reload.
   function notifyDepartmentsChanged() {
@@ -229,12 +229,12 @@
         // modal fresh from the server. That guarantees the new row has its
         // real id and sits in whatever order the backend actually put it in.
         //
-        // The dialog itself is never touched here -- only the *contents* of
+        // The dialog itself is never touched here - only the *contents* of
         // #department-list are replaced, by parsing the fetched HTML and
         // pulling out just that element. Swapping the whole modal (or even
         // the whole #modal-container) forces the <dialog> to be torn down
         // and rebuilt, which replays its open animation/backdrop from
-        // scratch -- that's the flicker. Updating just the rows means the
+        // scratch - that's the flicker. Updating just the rows means the
         // dialog stays mounted and open the entire time; only the list
         // content changes underneath it.
         showToast(`Department "${name}" added`, 'success');
@@ -308,7 +308,7 @@
           <button type="button" id="dept-delete-confirm-btn" class="btn btn-error btn-sm">Delete</button>
         </div>
       </div>`;
-    // See the matching comment in confirmDiscardOrder above -- appending to
+    // See the matching comment in confirmDiscardOrder above - appending to
     // the dialog itself keeps this in the same top-layer stacking context
     // instead of being hidden behind the dialog's own backdrop.
     dialogEl.appendChild(backdrop);
@@ -335,7 +335,7 @@
   // ---- Reorder -------------------------------------------------------------
   // Reordering is staged locally (drag or arrow clicks just rearrange the
   // DOM) and only sent to the server when the person explicitly clicks
-  // "Save Order" -- no request fires just from picking something up and
+  // "Save Order" - no request fires just from picking something up and
   // dropping it back where it started, and nothing is persisted without
   // an explicit confirmation step.
   const saveOrderBtn = document.getElementById('save-order-btn');
@@ -375,7 +375,7 @@
           try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* not JSON */ }
           if (!res.ok) {
             // Surfacing the real status + server message here instead of a
-            // generic "couldn't save" -- swallowing it made this
+            // generic "couldn't save" - swallowing it made this
             // impossible to diagnose. Check the browser console for this
             // log if the toast message alone isn't enough to tell what's
             // wrong (e.g. a 403 means a permissions/CSRF problem, a 400
@@ -405,7 +405,7 @@
   });
 
   // Guard against accidentally losing a staged (unsaved) reorder when the
-  // modal is closed -- via the Close button, clicking the backdrop, or
+  // modal is closed - via the Close button, clicking the backdrop, or
   // pressing Escape. The dialog's native "cancel" event fires for both
   // Escape and the backdrop <form method="dialog"> before the dialog
   // actually closes, so a single listener here covers every close path
@@ -426,7 +426,7 @@
     // showModal() renders in the browser's "top layer", which sits above
     // every ordinary element on the page regardless of z-index. A prompt
     // appended to document.body while the dialog is still open would be
-    // stuck behind the dialog's own backdrop -- invisible, but still
+    // stuck behind the dialog's own backdrop - invisible, but still
     // dimming the screen, which is exactly the "close just darkens the
     // background" symptom. Living inside the dialog's own subtree puts it
     // in that same top layer, on top of the dialog's backdrop and content.
@@ -616,7 +616,7 @@
   refreshMoveButtons();
 
   // ---- Sort A→Z / Z→A ----------------------------------------------------
-  // Alphabetizes the list client-side only -- like drag/arrow reordering,
+  // Alphabetizes the list client-side only - like drag/arrow reordering,
   // this just stages a new order in the DOM. Nothing is persisted until
   // "Save Order" is clicked, so a mis-click here is a no-op you can undo
   // by just not saving (or by closing the modal, which now asks first

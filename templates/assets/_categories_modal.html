@@ -61,7 +61,7 @@
       </div>
       {% else %}
       <div class="h-full flex items-center justify-center">
-        <p class="text-sm text-base-content/40">No categories yet &mdash; add one below.</p>
+        <p class="text-sm text-base-content/40">No categories yet - add one below.</p>
       </div>
       {% endfor %}
     </div>
@@ -130,7 +130,7 @@
 
   // ---------------------------------------------------------------------
   // Add / rename: fetch -> pending-toast -> full reload, same shape as
-  // every other modal in the app -- the reload re-populates the category
+  // every other modal in the app - the reload re-populates the category
   // dropdown and add/edit forms with whatever changed. Returns false on
   // failure so the caller can re-enable its own inputs.
   async function submitCategory(url, body, successMessage) {
@@ -288,7 +288,7 @@
           <button type="button" id="cat-delete-confirm-btn" class="btn btn-error btn-sm">Delete</button>
         </div>
       </div>`;
-    // See the matching comment in confirmDiscardOrder above -- appending to
+    // See the matching comment in confirmDiscardOrder above - appending to
     // the dialog itself keeps this in the same top-layer stacking context
     // instead of being hidden behind the dialog's own backdrop.
     dialogEl.appendChild(backdrop);
@@ -315,7 +315,7 @@
   // ---- Reorder -------------------------------------------------------------
   // Reordering is staged locally (drag or arrow clicks just rearrange the
   // DOM) and only sent to the server when the person explicitly clicks
-  // "Save Order" -- no request fires just from picking something up and
+  // "Save Order" - no request fires just from picking something up and
   // dropping it back where it started, and nothing is persisted without
   // an explicit confirmation step.
   const saveOrderBtn = document.getElementById('save-order-btn');
@@ -355,7 +355,7 @@
           try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* not JSON */ }
           if (!res.ok) {
             // Log the real status/message instead of a generic "couldn't
-            // save" -- check the console if the toast isn't enough to tell
+            // save" - check the console if the toast isn't enough to tell
             // what's wrong (403 = permissions/CSRF, 400 = bad payload, 500 = server-side).
             console.error('Reorder failed:', res.status, text);
             const serverMessage = parsed && parsed.error ? parsed.error : null;
@@ -395,7 +395,7 @@
           <button type="button" id="discard-order-confirm-btn" class="btn btn-error btn-sm">Discard</button>
         </div>
       </div>`;
-    // Appended inside the <dialog>, not document.body -- showModal() renders
+    // Appended inside the <dialog>, not document.body - showModal() renders
     // in the browser's top layer, so anything appended to body while it's
     // open gets stuck invisible behind its backdrop instead of showing on top.
     dialogEl.appendChild(backdrop);
@@ -584,7 +584,7 @@
   refreshMoveButtons();
 
   // ---- Sort A→Z / Z→A ----------------------------------------------------
-  // Client-side only, same as drag/arrow reordering -- stages a new order
+  // Client-side only, same as drag/arrow reordering - stages a new order
   // that's only persisted once "Save Order" is clicked. Clicking again
   // reverses direction; the label always names what the *next* click will do.
   const sortAzBtn = document.getElementById('sort-az-btn');

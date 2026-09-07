@@ -103,6 +103,22 @@ def list_unrestriction_requests():
     )
 
 
+@requests_bp.route("/unrestriction-requests/<int:id>/details-modal")
+@login_required
+def unrestriction_request_details_modal(id):
+    """Row-click detail popup for the Approvals table - full_name/full request
+    context in one small modal instead of the table's own truncated cells."""
+    conn = get_db_connection()
+    try:
+        req, error = unrestriction_service.get_unrestriction_request_detail(conn, id, g.staff)
+    finally:
+        conn.close()
+
+    if error:
+        return error
+    return render_template("requests/_unrestriction_details_modal.html", req=req)
+
+
 # # # REVIEW (admin/in_charge only) ---------------------------------------
 
 

@@ -1,0 +1,173 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-md">
+
+    <div class="flex justify-between items-start mb-5">
+      <div>
+        <h3 class="font-bold text-xl">Barcode ID Prefixes</h3>
+        <p class="text-sm text-base-content/50 mt-1">The letters at the start of every generated Asset ID, Member Code, and Staff Code (e.g. "AST00001"). Changing one only affects codes generated from now on - existing records keep whatever prefix they already have.</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+
+    <!-- Always rendered, invisible when empty - reserves layout space so content
+         below doesn't jump when an error appears. -->
+    <div id="barcode-prefixes-error" class="alert alert-error text-sm mb-4 py-2 invisible"></div>
+
+    <div class="bg-base-200/50 rounded-xl p-5 space-y-4">
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">ASSET ID PREFIX</label>
+        <div class="flex items-center gap-2 mt-1">
+          <input type="text" id="asset-id-prefix-input" value="{{ asset_id_prefix }}" maxlength="6"
+                 class="input input-bordered input-sm w-28 uppercase" style="text-transform: uppercase;">
+          <span class="text-sm text-base-content/40 font-mono">{{ asset_id_prefix }}00001</span>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">MEMBER CODE PREFIX</label>
+        <div class="flex items-center gap-2 mt-1">
+          <input type="text" id="member-code-prefix-input" value="{{ member_code_prefix }}" maxlength="6"
+                 class="input input-bordered input-sm w-28 uppercase" style="text-transform: uppercase;">
+          <span class="text-sm text-base-content/40 font-mono">{{ member_code_prefix }}00001</span>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-base-content/50 tracking-wide">STAFF CODE PREFIX</label>
+        <div class="flex items-center gap-2 mt-1">
+          <input type="text" id="staff-code-prefix-input" value="{{ staff_code_prefix }}" maxlength="6"
+                 class="input input-bordered input-sm w-28 uppercase" style="text-transform: uppercase;">
+          <span class="text-sm text-base-content/40 font-mono">{{ staff_code_prefix }}00001</span>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/40 pt-1 border-t border-base-300">2-6 characters: letters, numbers, or - _ . # (no spaces).</p>
+    </div>
+
+    <!-- Off by default - saving a prefix only affects codes generated from
+         now on (existing records keep theirs) unless this is checked, which
+         instead goes back and rewrites every existing, non-deleted record's
+         asset_id/member_code/staff_code (and barcode_id, where it still
+         matches the old generated code) to the new prefix - see
+         services/staff_service.py's force_regenerate_prefixed_codes. -->
+    <div class="bg-warning/10 rounded-xl p-4 mt-4">
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" id="barcode-prefixes-force-regenerate" class="checkbox checkbox-sm checkbox-warning mt-0.5">
+        <span class="text-sm">
+          <span class="font-medium">Also update existing codes</span>
+          <span class="block text-xs text-base-content/60 mt-0.5">
+            Rewrites every current asset/member/staff code (and any barcode still matching its old code) to use the new prefix.
+            New physical barcode labels will need to be printed and re-applied for anything already tagged - existing printed
+            stickers won't scan to the new code. You'll be asked to confirm your password before this runs.
+          </span>
+        </span>
+      </label>
+    </div>
+
+    <div class="modal-action flex justify-end items-center gap-2 mt-6">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+      <button type="button" id="barcode-prefixes-save-btn" class="btn btn-primary" onclick="saveBarcodePrefixes()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Live-updates each field's own "ASTxxxxx"-style preview as you type, purely
+// cosmetic - the real validation only happens server-side on Save.
+document.querySelectorAll('#asset-id-prefix-input, #member-code-prefix-input, #staff-code-prefix-input').forEach(function (input) {
+  input.addEventListener('input', function () {
+    this.value = this.value.toUpperCase();
+    const preview = this.parentElement.querySelector('span');
+    if (preview) preview.textContent = (this.value || '???') + '00001';
+  });
+});
+
+function saveBarcodePrefixes() {
+  const errorBox = document.getElementById('barcode-prefixes-error');
+  errorBox.classList.add('invisible');
+
+  const forceRegenerate = document.getElementById('barcode-prefixes-force-regenerate').checked;
+  // Only rewriting existing codes is destructive/irreversible enough to need
+  // a password re-check - a plain "new codes only" prefix change (the
+  // default) still just requires the Manage Barcode Prefixes permission
+  // that got someone into this modal in the first place.
+  if (forceRegenerate) {
+    openBarcodePrefixesPasswordConfirm();
+    return;
+  }
+  submitBarcodePrefixes(null);
+}
+
+// Separate confirm dialog (stacked on top of this one, same pattern as
+// every other "type your password to confirm" flow in this app) rather
+// than an inline field that lived inside the checkbox's own warning box -
+// keeps the destructive confirmation as a deliberate extra step instead of
+// something that can be filled in ahead of time and forgotten about.
+function openBarcodePrefixesPasswordConfirm() {
+  const wrap = document.createElement('div');
+  wrap.className = 'modal modal-open';
+  wrap.id = 'barcode-prefixes-password-modal';
+  wrap.innerHTML = `
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-lg">Confirm your password</h3>
+      <p class="text-sm text-base-content/60 mt-1">Rewriting existing asset/member/staff codes can't be undone. Enter your password to continue.</p>
+      <div id="barcode-prefixes-password-error" class="alert alert-error text-sm mt-3 py-2 invisible"></div>
+      <input type="password" id="barcode-prefixes-password-input" placeholder="Current password" autocomplete="current-password"
+             class="input input-bordered input-sm w-full mt-3">
+      <div class="modal-action flex justify-end items-center gap-2 mt-5">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('barcode-prefixes-password-modal').remove()">Cancel</button>
+        <button type="button" id="barcode-prefixes-password-confirm-btn" class="btn btn-warning" onclick="confirmBarcodePrefixesPassword()">Confirm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  document.getElementById('barcode-prefixes-password-input').focus();
+}
+
+async function confirmBarcodePrefixesPassword() {
+  const password = document.getElementById('barcode-prefixes-password-input').value;
+  const errorBox = document.getElementById('barcode-prefixes-password-error');
+  if (!password) {
+    errorBox.textContent = 'Enter your password to confirm';
+    errorBox.classList.remove('invisible');
+    return;
+  }
+  document.getElementById('barcode-prefixes-password-modal').remove();
+  submitBarcodePrefixes(password);
+}
+
+async function submitBarcodePrefixes(password) {
+  const errorBox = document.getElementById('barcode-prefixes-error');
+  errorBox.classList.add('invisible');
+
+  const btn = document.getElementById('barcode-prefixes-save-btn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/barcode-prefixes/update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({
+        asset_id_prefix: document.getElementById('asset-id-prefix-input').value,
+        member_code_prefix: document.getElementById('member-code-prefix-input').value,
+        staff_code_prefix: document.getElementById('staff-code-prefix-input').value,
+        force_regenerate: document.getElementById('barcode-prefixes-force-regenerate').checked,
+        current_password: password,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      errorBox.textContent = result.error || "Settings couldn't be saved";
+      errorBox.classList.remove('invisible');
+      return;
+    }
+    sessionStorage.setItem('pending-toast', JSON.stringify({ message: 'Barcode ID prefixes updated', type: 'success' }));
+    window.location.reload();
+  } catch (err) {
+    errorBox.textContent = "Settings couldn't be saved";
+    errorBox.classList.remove('invisible');
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>

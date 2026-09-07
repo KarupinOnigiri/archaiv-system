@@ -1,0 +1,13 @@
+python-dotenv==1.2.2
+requests==2.32.3
+gpiozero==2.0.1
+pyscard==2.2.2
+
+# evdev wraps Linux's /dev/input/event* kernel interface -- there's no
+# Windows equivalent, and the package doesn't even build there. Only needed
+# for the antenna's USB transport (hid_tag_reader.py); the network transport
+# (net_tag_reader.py) and the Master Key Card reader (master_key_reader.py,
+# via pyscard, which IS cross-platform) don't need it at all. This marker
+# means `pip install -r requirements.txt` succeeds on Windows by simply
+# skipping it -- see pi_controller/README.md's "Running on Windows" section.
+evdev==1.7.1; sys_platform == "linux"

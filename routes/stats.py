@@ -4,7 +4,7 @@ from services.auth_service import roles_required
 from services.settings_service import is_feature_enabled, get_feature_label
 from services.report_widgets import WIDGETS, widgets_for_role
 from services.report_layout_service import get_report_layout, save_report_layout, reset_report_layout
-from services import stats_service
+from services import stats_service, monitoring_stats_service
 from utils.validators import validate_date_string, parse_pagination_params
 from extensions import limiter
 
@@ -61,6 +61,66 @@ def least_borrowed_assets():
         conn.close()
 
     return jsonify(result)
+
+
+@stats_bp.route("/stats/assets/valuation")
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def asset_valuation():
+    """Current book value snapshot - not date-ranged, see asset_valuation_summary's docstring."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    conn = get_db_connection()
+    try:
+        result = stats_service.asset_valuation_table(conn, limit, offset)
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+@stats_bp.route("/stats/assets/maintenance-schedule")
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def maintenance_schedule():
+    """Upcoming/overdue preventive maintenance - not date-ranged, same
+    current-state-snapshot reasoning as asset_valuation above."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        return error
+
+    conn = get_db_connection()
+    try:
+        result = stats_service.maintenance_schedule_table(conn, limit, offset)
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+@stats_bp.route("/stats/monitoring-summary")
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def monitoring_summary():
+    """Reports' "Monitoring Activity" widget - a compact metric-list version
+    of Monitoring's own Trends tab, date-ranged the same way (since/until,
+    reusing Reports' own date filter). 403s if the monitoring feature itself
+    is off, same as the widget being absent from /stats/layout in that case
+    - see get_layout/export_stats' filtering below."""
+    if not is_feature_enabled("monitoring"):
+        return jsonify({"error": f"{get_feature_label('monitoring')} is currently disabled"}), 403
+
+    conn = get_db_connection()
+    try:
+        results, error = monitoring_stats_service.get_summary(conn, request.args)
+        if error:
+            return error
+    finally:
+        conn.close()
+
+    return jsonify({"results": results})
 
 
 @stats_bp.route("/stats/categories/most-borrowed")
@@ -309,15 +369,29 @@ def my_overdue_handled():
 # # # LAYOUT (customizable/draggable widget order + visibility) -----------
 
 
+def _feature_disabled_widget_ids():
+    """Widget ids to hide regardless of role, because the feature they
+    summarize is currently off - monitoring_activity is meaningless (and
+    its own endpoint 403s) with monitoring disabled, same as the widget
+    catalog has no per-widget feature-flag field of its own to check this
+    generically yet."""
+    hidden = set()
+    if not is_feature_enabled("monitoring"):
+        hidden.add("monitoring_activity")
+    return hidden
+
+
 @stats_bp.route("/stats/layout")
 @roles_required("admin", "in_charge", "tool_keeper")
 def get_layout():
+    hidden_ids = _feature_disabled_widget_ids()
     return jsonify(
         {
-            "layout": get_report_layout(g.staff["id"], g.staff["role"]),
+            "layout": [entry for entry in get_report_layout(g.staff["id"], g.staff["role"]) if entry["widget_id"] not in hidden_ids],
             "widgets": [
                 {"id": w["id"], "title": w["title"], "type": w["type"]}
                 for w in widgets_for_role(g.staff["role"])
+                if w["id"] not in hidden_ids
             ],
         }
     )
@@ -349,7 +423,7 @@ def post_layout_reset():
 def export_stats():
     """Exports chosen report sections as xlsx/csv; a tampered `sections` id is silently dropped, not a 403."""
     role = g.staff["role"]
-    allowed_ids = {w["id"] for w in widgets_for_role(role)}
+    allowed_ids = {w["id"] for w in widgets_for_role(role)} - _feature_disabled_widget_ids()
 
     requested = request.args.get("sections")
     if requested:

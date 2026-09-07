@@ -20,7 +20,7 @@
 
 <script>
 // Same fetch+CSRF+reload shape as submitDeleteStaffForm in _delete_modal.html
-// -- POST /api/v1/staff/<id>/unlock reads no body, so a plain fetch is enough.
+// - POST /api/v1/staff/<id>/unlock reads no body, so a plain fetch is enough.
 async function submitUnlockStaffForm(id) {
   const errorBox = document.getElementById('unlock-staff-error');
   errorBox.classList.add('hidden');

@@ -1,5 +1,5 @@
 """Query-building and mutation logic for routes/requests.py (member unrestriction
-requests -- the tool_keeper-files, admin/in_charge-reviews approval flow).
+requests - the tool_keeper-files, admin/in_charge-reviews approval flow).
 
 Same convention as the other *_service modules: functions take an already-open
 `conn` and return `(data, error)`, where `error` is `None` on success or a ready
@@ -195,6 +195,36 @@ def get_unrestriction_requests_context(conn, args, limit, offset, staff):
         "status_filter": status_filter or "",
         "requests_list": rows,
     }, None
+
+
+def get_unrestriction_request_detail(conn, request_id, staff):
+    """Single-row version of the same join get_unrestriction_requests_context
+    uses, for the Approvals table's own "click a row for full details" modal.
+    tool_keeper can only open their own filed requests - same visibility rule
+    list_unrestriction_requests already applies to the whole list."""
+    row = conn.execute(
+        """
+        SELECT unrestriction_requests.*,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.restriction_reason AS member_restriction_reason,
+               members.restriction_source AS member_restriction_source,
+               requester.username AS requested_by_username,
+               reviewer.username AS reviewed_by_username
+        FROM unrestriction_requests
+        JOIN members ON unrestriction_requests.member_id = members.id
+        JOIN staff AS requester ON unrestriction_requests.requested_by_staff_id = requester.id
+        LEFT JOIN staff AS reviewer ON unrestriction_requests.reviewed_by_staff_id = reviewer.id
+        WHERE unrestriction_requests.id = ?
+        """,
+        (request_id,),
+    ).fetchone()
+
+    if row is None:
+        return None, (jsonify({"error": "Unrestriction request not found"}), 404)
+    if staff["role"] not in ("admin", "in_charge") and row["requested_by_staff_id"] != staff["id"]:
+        return None, (jsonify({"error": "You can only view your own requests"}), 403)
+
+    return row, None
 
 
 def approve_unrestriction_request(conn, request_id, review_notes, staff):

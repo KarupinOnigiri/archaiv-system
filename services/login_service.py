@@ -1,12 +1,12 @@
 """Login/session-establishment logic for routes/auth.py (username+password,
 RFID+PIN, and logout). Every function here takes an already-open `conn` (except
 start_session, which needs a fresh one since the caller's conn is often already
-closed by the time a session is minted) and returns plain data -- never a Flask
-response -- so routes/auth.py keeps full control of how errors get echoed back
+closed by the time a session is minted) and returns plain data - never a Flask
+response - so routes/auth.py keeps full control of how errors get echoed back
 (JSON vs. redirect-with-query-string), which is security/UX-sensitive here.
 
 Convention: `(data, error)` where `error` is `None` on success or a plain
-`(payload_dict, status)` tuple on failure -- not jsonify'd, since the route needs
+`(payload_dict, status)` tuple on failure - not jsonify'd, since the route needs
 the raw dict either way (JSON body or to extract `error` for a redirect).
 """
 
@@ -22,6 +22,7 @@ from services.settings_service import (
     INDEFINITE_LOCK_UNTIL,
 )
 from utils.logger import log_action
+from utils.validators import decimal_scan_hex_suffix
 
 
 def check_existing_session_conflict(conn, token):
@@ -51,7 +52,7 @@ def check_existing_session_conflict(conn, token):
             "current_username": current_staff["username"] if current_staff else None,
         }
 
-    # stale cookie (expired/timed out) -- just clean it up, not a real block
+    # stale cookie (expired/timed out) - just clean it up, not a real block
     conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
     conn.commit()
     return False, None
@@ -95,14 +96,18 @@ def find_staff_for_login(conn, username, barcode_id):
 
 
 def find_admin_for_rfid_login(conn, rfid_id):
+    # Some readers set to type scans as keyboard input only type the decimal
+    # value of an EPC's last 3 bytes, not the full hex ID - see
+    # decimal_scan_hex_suffix()'s docstring. That extra LIKE branch is a
+    # harmless no-op when rfid_id isn't a plausible decimal scan.
     return conn.execute(
         """
         SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
         FROM staff
         JOIN members ON staff.member_id = members.id
-        WHERE UPPER(staff.rfid_id) = UPPER(?) AND staff.role = 'admin'
+        WHERE (UPPER(staff.rfid_id) = UPPER(?) OR UPPER(staff.rfid_id) LIKE '%' || ?) AND staff.role = 'admin'
         """,
-        (rfid_id,),
+        (rfid_id, decimal_scan_hex_suffix(rfid_id)),
     ).fetchone()
 
 
@@ -114,9 +119,41 @@ def find_admin_for_rfid_lookup(conn, rfid_id):
                members.first_name, members.last_name, members.middle_name, members.suffix
         FROM staff
         JOIN members ON staff.member_id = members.id
-        WHERE UPPER(staff.rfid_id) = UPPER(?) AND staff.role = 'admin'
+        WHERE (UPPER(staff.rfid_id) = UPPER(?) OR UPPER(staff.rfid_id) LIKE '%' || ?) AND staff.role = 'admin'
         """,
-        (rfid_id,),
+        (rfid_id, decimal_scan_hex_suffix(rfid_id)),
+    ).fetchone()
+
+
+def find_staff_for_barcode_pin_login(conn, barcode_id):
+    """Same shape as find_admin_for_rfid_login, but by barcode_id (which
+    lives on the linked members row, not staff) and open to every role --
+    login_barcode_pin() is the general opt-in flow this app now actually
+    uses at the login page; find_admin_for_rfid_login above stays reserved
+    for a possible future RFID+PIN re-activation, untouched."""
+    return conn.execute(
+        """
+        SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE UPPER(members.barcode_id) = UPPER(?)
+        """,
+        (barcode_id,),
+    ).fetchone()
+
+
+def find_staff_for_barcode_pin_lookup(conn, barcode_id):
+    """Identifies whose barcode was scanned before the PIN, same generic
+    response as login_barcode_pin - mirrors find_admin_for_rfid_lookup."""
+    return conn.execute(
+        """
+        SELECT staff.id, staff.is_active, staff.rfid_pin_hash, staff.barcode_pin_enabled, staff.photo_path,
+               members.first_name, members.last_name, members.middle_name, members.suffix
+        FROM staff
+        JOIN members ON staff.member_id = members.id
+        WHERE UPPER(members.barcode_id) = UPPER(?)
+        """,
+        (barcode_id,),
     ).fetchone()
 
 
@@ -205,7 +242,7 @@ def record_failed_attempt(conn, staff, attempt_kind):
 
 
 def reset_lockout_tracking(conn, staff_id):
-    """Correct password/PIN -- reset lockout tracking."""
+    """Correct password/PIN - reset lockout tracking."""
     conn.execute("UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?", (staff_id,))
     conn.commit()
 

@@ -2,7 +2,7 @@ import json
 import secrets
 import logging
 
-# Re-exported from database.py, not stdlib -- see routes/assets.py's import for why.
+# Re-exported from database.py, not stdlib - see routes/assets.py's import for why.
 from database import get_db_connection, sqlite3
 from utils.logger import log_action
 from werkzeug.security import generate_password_hash
@@ -64,7 +64,7 @@ def _create_temp_admin(conn):
     """Creates a temp admin (member + staff row, role='admin') with a random password."""
     department_id = _get_or_create_department_id(conn, TEMP_ADMIN_DEPARTMENT)
 
-    # Unique per reseed -- a previous temp admin's barcode_id is already taken.
+    # Unique per reseed - a previous temp admin's barcode_id is already taken.
     barcode_id = f"SETUP{secrets.token_hex(4).upper()}"
     password = secrets.token_urlsafe(12)
     hashed_password = generate_password_hash(password)
@@ -131,8 +131,17 @@ def _regenerate_temp_admin_password(conn, staff_row):
 
 
 def seed_initial_admin():
-    """Ensures the system always has a way in, without a fixed default username/password.
-    No-op if an active admin exists; otherwise (re)seeds a temp admin and logs its credentials."""
+    """Ensures a LIVE system always has a way back in after losing its last real
+    admin, without a fixed default username/password. No-op if an active admin
+    exists.
+
+    Deliberately does NOT seed a temp admin for a true fresh install (staff
+    table completely empty) - that case is handled by routes/setup.py serving
+    an unauthenticated "create the first admin" form directly instead (see
+    services/setup_service.py's is_fresh_install/complete_setup). A temp
+    admin with a server-logged password only makes sense once the system is
+    actually in use and has something worth protecting from an open LAN
+    enrollment endpoint; a brand-new, never-configured database doesn't."""
     conn = get_db_connection()
 
     active_admin = conn.execute(
@@ -140,6 +149,11 @@ def seed_initial_admin():
     ).fetchone()
 
     if active_admin:
+        conn.close()
+        return
+
+    staff_count = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
+    if staff_count == 0:
         conn.close()
         return
 

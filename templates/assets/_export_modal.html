@@ -37,7 +37,7 @@
         <p id="export-fields-error" class="hidden text-error text-xs mt-1.5">Select at least one field.</p>
       </div>
 
-      <!-- Filename + Format side by side -- stacked rows on their own
+      <!-- Filename + Format side by side - stacked rows on their own
            each only needed half this width, so putting them in one row
            is what let the modal fit without its own vertical scrollbar. -->
       <div class="grid grid-cols-2 gap-4 mt-4">
@@ -185,7 +185,7 @@ async function handleExportSubmit(event) {
       try {
         const data = await response.json();
         if (data.error) message = data.error;
-      } catch (e) { /* response wasn't JSON -- keep default message */ }
+      } catch (e) { /* response wasn't JSON - keep default message */ }
       showExportError(message);
       btn.disabled = false;
       btn.innerHTML = originalLabel;

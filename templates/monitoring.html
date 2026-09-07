@@ -1,0 +1,694 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="pt-6 pr-[1.875rem] pb-6 pl-6 space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold">Monitoring</h1>
+    </div>
+    <!-- Log/Trends toggle - no shared tab component exists elsewhere in the
+         app yet, so this is a plain two-button join like the classification/
+         date-quick-filter joins above rather than a new pattern. -->
+    <div class="join rounded-lg">
+      <button type="button" id="monitoring-view-log-btn" class="join-item btn btn-sm btn-primary" onclick="setMonitoringView('log')" data-tooltip="Log (L)" aria-pressed="true">Log</button>
+      <button type="button" id="monitoring-view-trends-btn" class="join-item btn btn-sm btn-outline" onclick="setMonitoringView('trends')" data-tooltip="Trends (T)" aria-pressed="false">Trends</button>
+    </div>
+  </div>
+
+  <!-- space-y-6 here specifically (not just relying on the outer wrapper's
+       own space-y-6 above) - that one only spaces its own DIRECT children
+       apart (header / this div / #monitoring-trends-view), and this div is
+       itself just one of those three, wrapping the alarm banner/stat
+       cards/table as ITS OWN children. Without a spacing class of its own
+       those three sat flush against each other with no gap at all,
+       unlike every other page's section stack. -->
+  <div id="monitoring-log-view" class="space-y-6">
+
+  <!-- Alarm banner - the one auto-polling widget in the app; see the
+       partial's own comment for why. -->
+  <div id="alarm-banner"
+       hx-get="/api/v1/monitoring/alarm-banner"
+       hx-trigger="load, every 3s"
+       hx-swap="innerHTML">
+  </div>
+
+  <!-- Stat cards - each one is itself a classification filter button, see
+       monitoring/_stat_cards.html. -->
+  <div id="monitoring-stat-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+       hx-get="/api/v1/monitoring/stat-cards"
+       hx-trigger="monitoring-refreshed from:body"
+       hx-swap="innerHTML">
+    {% include "monitoring/_stat_cards.html" %}
+  </div>
+
+  <!-- Toolbar + table -->
+  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+
+    <div class="relative mb-5">
+      <div id="filter-row" class="flex flex-wrap items-center gap-3">
+
+        <button type="button" id="refresh-monitoring-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list" aria-label="Refresh monitoring log" onclick="refreshMonitoringTable()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+
+        <div id="monitoring-search-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
+          <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          </div>
+          <input type="search" id="monitoring-search" name="q" placeholder="Search asset, barcode, or borrower... (/)"
+                 aria-label="Search by asset, asset barcode, borrower name, or borrower barcode"
+                 class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
+                 value="{{ q }}"
+                 hx-get="/api/v1/monitoring/table"
+                 hx-trigger="keyup changed delay:400ms, search"
+                 hx-target="#monitoring-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+          <button type="button" id="monitoring-search-clear-btn" class="join-item hidden flex items-center px-2 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content"
+                  aria-label="Clear search" data-tooltip="Clear search" onclick="clearMonitoringSearch()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div id="monitoring-classification-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Classification">
+          <button type="button" id="monitoring-classification-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="filterByClassification('')" aria-label="Clear classification filter" data-tooltip="Clear classification filter" {% if not classification %}disabled{% endif %}>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          </button>
+          <select id="monitoring-classification-filter" name="classification"
+                  aria-label="Filter by classification"
+                  class="select select-bordered select-sm join-item w-44"
+                  hx-get="/api/v1/monitoring/table"
+                  hx-trigger="change"
+                  hx-target="#monitoring-table-container"
+                  hx-swap="innerHTML"
+                  hx-indicator="#table-spinner"
+                  hx-include="#monitoring-search, #monitoring-since-filter, #monitoring-until-filter"
+                  hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+            <option value="" {% if not classification %}selected{% endif %}>All classifications</option>
+            <option value="authorized" {% if classification == "authorized" %}selected{% endif %}>Authorized</option>
+            <option value="unauthorized" {% if classification == "unauthorized" %}selected{% endif %}>Unauthorized</option>
+            <option value="unknown_tag" {% if classification == "unknown_tag" %}selected{% endif %}>Unknown tag</option>
+          </select>
+        </div>
+
+        <div id="monitoring-date-filters" class="join rounded-lg transition-shadow" data-tooltip="Detected date range">
+          <button type="button" id="monitoring-date-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="applyMonitoringDateFilter('all')" aria-label="Clear date range filter" data-tooltip="Clear date range filter">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </button>
+          <input type="date" id="monitoring-since-filter" name="since"
+                 aria-label="Detected from date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ since }}"
+                 data-tooltip="From"
+                 hx-get="/api/v1/monitoring/table"
+                 hx-trigger="change"
+                 hx-target="#monitoring-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-until-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+          <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+          <input type="date" id="monitoring-until-filter" name="until"
+                 aria-label="Detected to date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="{{ until }}"
+                 data-tooltip="To"
+                 hx-get="/api/v1/monitoring/table"
+                 hx-trigger="change"
+                 hx-target="#monitoring-table-container"
+                 hx-swap="innerHTML"
+                 hx-indicator="#table-spinner"
+                 hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter"
+                 hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+        </div>
+
+        <!-- Quick date presets. Today is the implicit default (see
+             routes/pages.py's monitoring_page) - these just make the other
+             common ranges one click instead of picking dates by hand. -->
+        <!-- Same plain-bordered join-item convention as the search/classification/
+             date boxes to its left, rather than daisyUI's own .btn chrome
+             (heavier border weight, different radius/font) - btn-outline stood
+             out as a visibly different size/weight next to its neighbors. -->
+        <div id="monitoring-date-quick-filters" class="join rounded-lg" data-tooltip="Quick date filter">
+          <button type="button" id="monitoring-date-quick-today-btn" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
+                  onclick="applyMonitoringDateFilter('today')" data-tooltip="Today's events">
+            Today
+          </button>
+          <button type="button" id="monitoring-date-quick-yesterday-btn" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
+                  onclick="applyMonitoringDateFilter('yesterday')" data-tooltip="Yesterday's events">
+            Yesterday
+          </button>
+          <button type="button" id="monitoring-date-quick-all-btn" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
+                  onclick="applyMonitoringDateFilter('all')" data-tooltip="Every event on record">
+            All time
+          </button>
+        </div>
+
+        <button type="button" id="clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative" onclick="clearAllMonitoringFilters()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
+
+        <span id="table-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
+      </div>
+    </div>
+
+    <div id="monitoring-table-container"
+         hx-get="/api/v1/monitoring/table"
+         hx-trigger="load"
+         hx-target="#monitoring-table-container"
+         hx-swap="innerHTML"
+         hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+         hx-vals='{"limit": {{ limit }}, "offset": {{ offset }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
+    </div>
+  </div>
+
+  </div><!-- #monitoring-log-view -->
+
+  <!-- Trends: historical aggregation, hidden until toggled - see
+       monitoring_stats_service.py's module docstring for what this can't
+       show yet (per-exit-gate breakdown, true false-positive flagging).
+       Same visual language as Reports (templates/reports.html): a KPI row
+       of gradient/icon "kpi-card" tiles, then each chart in its own
+       bordered widget card with an icon-badge header + refresh action,
+       rather than everything nested inside one big outer card. -->
+  <div id="monitoring-trends-view" class="hidden space-y-6">
+
+    <div class="flex items-center justify-between">
+      <p class="text-xs text-base-content/50">Uses the same date range as the Log tab's filters.</p>
+      <button type="button" id="monitoring-trends-refresh-btn" class="btn btn-ghost btn-sm btn-circle" data-tooltip="Refresh trends" aria-label="Refresh trends" onclick="fetchMonitoringTrends()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+
+    <!-- Alarm response-time KPIs - same kpi-card shape as reports.html's
+         "At-a-glance summary" row (gradient tint, icon badge, hover shadow). -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALARMS CLEARED</p>
+          <p id="trend-response-count" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">AVG RESPONSE</p>
+          <p id="trend-response-avg" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-info/30 to-info/5 ring-1 ring-info/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEDIAN RESPONSE</p>
+          <p id="trend-response-median" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-success/30 to-success/5 ring-1 ring-success/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">P90 RESPONSE</p>
+          <p id="trend-response-p90" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-warning/30 to-warning/5 ring-1 ring-warning/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts - each its own widget card, same shape as reports.html's
+         chart/table widgets (icon badge + title in the header, no export
+         button here since these aren't part of the report export catalog). -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center gap-2.5 mb-3">
+          <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+          </span>
+          <h3 class="font-semibold">Daily Volume by Classification</h3>
+        </div>
+        <div style="height: 220px"><canvas id="trend-daily-volume-canvas"></canvas></div>
+      </div>
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center gap-2.5 mb-3">
+          <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </span>
+          <h3 class="font-semibold">Time of Day</h3>
+        </div>
+        <div style="height: 220px"><canvas id="trend-hourly-canvas"></canvas></div>
+      </div>
+      <div class="lg:col-span-2 bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center gap-2.5 mb-3">
+          <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+          </span>
+          <h3 class="font-semibold">Unknown-Tag Rate</h3>
+          <span class="text-xs font-normal text-base-content/50">(false-positive proxy - see tooltip)</span>
+        </div>
+        <div style="height: 200px"><canvas id="trend-unknown-rate-canvas"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+
+<style>
+.htmx-indicator { opacity: 0; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>
+
+<script>
+function filterByClassification(value) {
+  const select = document.getElementById('monitoring-classification-filter');
+  select.value = value;
+  if (window.htmx) {
+    htmx.trigger(select, 'change');
+  } else {
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // Same "don't wait on the table's own htmx:afterSwap round-trip" fix as
+  // applyMonitoringDateFilter above - updates the stat-card ring highlight
+  // the instant a card's clicked instead of leaving it to catch up later.
+  syncMonitoringFilterUi();
+}
+
+function clearMonitoringSearch() {
+  const input = document.getElementById('monitoring-search');
+  if (!input.value) return;
+  input.value = '';
+  input.dispatchEvent(new Event('search', { bubbles: true }));
+}
+
+// Replaces daisyUI's .btn-active (meaningless now that these are plain
+// join-items, not .btn) with the same primary-highlight look the other
+// active filter joins already use.
+function setDateQuickBtnActive(btn, active) {
+  btn.classList.toggle('bg-primary', active);
+  btn.classList.toggle('border-primary', active);
+  btn.classList.toggle('text-primary-content', active);
+  btn.classList.toggle('hover:bg-primary', active);
+  btn.classList.toggle('hover:text-primary-content', active);
+  btn.classList.toggle('text-base-content/70', !active);
+}
+
+// Sets since/until to a preset range and fires the change event so this
+// behaves exactly like picking the dates by hand. 'all' clears both --
+// same pattern as transactions.html's applyDateQuickFilter, extended with
+// 'all' since Monitoring defaults to today (routes/pages.py) rather
+// than showing everything by default.
+function applyMonitoringDateFilter(which) {
+  const since = document.getElementById('monitoring-since-filter');
+  const until = document.getElementById('monitoring-until-filter');
+  const toIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+  if (which === 'all') {
+    since.value = '';
+    until.value = '';
+  } else if (which === 'today') {
+    since.value = until.value = toIso(new Date());
+  } else if (which === 'yesterday') {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    since.value = until.value = toIso(d);
+  }
+  since.dispatchEvent(new Event('change', { bubbles: true }));
+  // Updates the quick-filter button highlight immediately, synchronously -
+  // not relying solely on the table's own htmx:afterSwap round-trip
+  // (window.pageAfterSwapHandler -> syncMonitoringFilterUi) to eventually
+  // get around to it once the request completes. That round-trip is what
+  // this used to depend on exclusively, and a real click was visibly
+  // leaving the previous button (e.g. "Today") highlighted after switching
+  // to "All time" - the fields themselves cleared correctly (the request
+  // that came back did use the new blank range), just not this highlight.
+  // Calling it here too makes the highlight correct the instant you click,
+  // regardless of that other path's timing; syncMonitoringFilterUi is
+  // idempotent, so afterSwap re-running it later is a harmless no-op.
+  syncMonitoringFilterUi();
+}
+
+// Re-fetches the table with whatever filters/sort/page are currently in
+// effect - unlike changing a filter, a manual refresh shouldn't jump back
+// to page 1. Also nudges the stat cards and alarm banner so a manual
+// refresh catches up fully, not just the table.
+function refreshMonitoringTable() {
+  const table = document.querySelector('#monitoring-table-container table');
+  const params = getMonitoringFilterParams();
+  params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
+  params.set('offset', (table && table.dataset.offset) || '{{ offset }}');
+  params.set('sort_by', (table && table.dataset.sortBy) || '{{ sort_by }}');
+  params.set('sort_dir', (table && table.dataset.sortDir) || '{{ sort_dir }}');
+  htmx.ajax('GET', '/api/v1/monitoring/table', {
+    target: '#monitoring-table-container',
+    swap: 'innerHTML',
+    values: Object.fromEntries(params)
+  });
+  document.body.dispatchEvent(new Event('monitoring-refreshed'));
+}
+
+function getMonitoringFilterParams() {
+  const q = document.getElementById('monitoring-search').value.trim();
+  const classification = document.getElementById('monitoring-classification-filter').value;
+  const since = document.getElementById('monitoring-since-filter').value;
+  const until = document.getElementById('monitoring-until-filter').value;
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (classification) params.set('classification', classification);
+  if (since) params.set('since', since);
+  if (until) params.set('until', until);
+  return params;
+}
+
+function clearAllMonitoringFilters() {
+  document.getElementById('monitoring-search').value = '';
+  document.getElementById('monitoring-classification-filter').value = '';
+  document.getElementById('monitoring-since-filter').value = '';
+  document.getElementById('monitoring-until-filter').value = '';
+  refreshMonitoringTable();
+}
+
+// Keeps the stat cards' ring/border highlight in sync with the active
+// classification - same STAT_CARD_ACCENTS/data-* pattern as transactions.html
+// and assets.html. "Events Today" (data-classification="") is the default/
+// all-classifications view, so it's the one highlighted out of the box.
+var MONITORING_STAT_CARD_ACCENTS = {
+  '': 'ring-primary/40 border-primary/40',
+  'authorized': 'ring-success/40 border-success/40',
+  'unauthorized': 'ring-error/40 border-error/40',
+  'unknown_tag': 'ring-warning/40 border-warning/40',
+};
+
+function updateMonitoringStatCardUI(currentClassification) {
+  document.querySelectorAll('#monitoring-stat-cards [data-classification]').forEach(function (card) {
+    const isActive = card.dataset.classification === currentClassification;
+    const accentClasses = MONITORING_STAT_CARD_ACCENTS[card.dataset.classification].split(' ');
+    card.classList.toggle('ring-2', isActive);
+    card.classList.toggle('shadow-md', isActive);
+    card.classList.toggle('stat-card-active', isActive);
+    accentClasses.forEach(function (cls) { card.classList.toggle(cls, isActive); });
+  });
+}
+
+// Keeps the search clear button, date-clear button, quick-date-button
+// highlight, stat cards, and the overall "N filters active" badge in sync
+// with the filter controls above - checked after every table refresh
+// (whatever triggered it) rather than wired to each control individually.
+function syncMonitoringFilterUi() {
+  const q = document.getElementById('monitoring-search').value;
+  const classification = document.getElementById('monitoring-classification-filter').value;
+  const since = document.getElementById('monitoring-since-filter').value;
+  const until = document.getElementById('monitoring-until-filter').value;
+
+  document.getElementById('monitoring-search-clear-btn').classList.toggle('hidden', !q);
+  // The clear button is the join's real last child even while hidden (CSS
+  // :last-child doesn't care about display:none), so it - not the input -
+  // keeps the join's rounded right corner whenever it's hidden, leaving the
+  // input's own right edge square. Give the input that same corner back
+  // itself whenever the clear button isn't there to own it.
+  document.getElementById('monitoring-search').classList.toggle('rounded-r-(--radius-field)', !q);
+  document.getElementById('monitoring-date-clear-btn').disabled = !since && !until;
+
+  // Highlights whichever quick-filter button matches the current range
+  // exactly (same approach as transactions.html) - Today is the implicit
+  // default (routes/pages.py's monitoring_page), so it lights up on first
+  // load without needing a click.
+  const toIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const todayIso = toIso(new Date());
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayIso = toIso(yesterdayDate);
+  const singleDay = since !== '' && since === until;
+
+  setDateQuickBtnActive(document.getElementById('monitoring-date-quick-today-btn'), singleDay && since === todayIso);
+  setDateQuickBtnActive(document.getElementById('monitoring-date-quick-yesterday-btn'), singleDay && since === yesterdayIso);
+  setDateQuickBtnActive(document.getElementById('monitoring-date-quick-all-btn'), since === '' && until === '');
+
+  let activeCount = 0;
+  if (q) activeCount++;
+  if (classification) activeCount++;
+  // The default today-range doesn't count as an "active" (clearable) filter --
+  // it's the implicit starting view, not something the staff member set.
+  const isDefaultTodayRange = singleDay && since === todayIso;
+  if ((since || until) && !isDefaultTodayRange) activeCount++;
+
+  const clearBtn = document.getElementById('clear-filters-btn');
+  clearBtn.classList.toggle('hidden', activeCount === 0);
+  document.getElementById('clear-filters-count').textContent = String(activeCount);
+
+  const classificationActive = classification !== '';
+  const wrap = document.getElementById('monitoring-classification-filter-wrap');
+  wrap.classList.toggle('ring-2', classificationActive);
+  wrap.classList.toggle('ring-primary/40', classificationActive);
+  document.getElementById('monitoring-classification-clear-btn').disabled = !classificationActive;
+
+  updateMonitoringStatCardUI(classification);
+}
+
+window.pageAfterSwapHandler = function (evt) {
+  if (evt.target && evt.target.id === 'monitoring-table-container') {
+    syncMonitoringFilterUi();
+  }
+};
+
+document.body.addEventListener('monitoring-refreshed', syncMonitoringFilterUi);
+setTimeout(syncMonitoringFilterUi, 0);
+
+// "/" focuses search, same convention as Inventory/Members/Borrow & Return.
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+// This page has no htmx-loaded page-local modal of its own (no
+// #modal-container), just whatever base.html's shared account/session
+// modals put in #global-modal-container - same two-container check as
+// system.html, which is in the same boat.
+function isModalOpen() {
+  const container = document.getElementById('modal-container');
+  const globalContainer = document.getElementById('global-modal-container');
+  return !!(
+    (container && container.querySelector(':scope > .modal, :scope > dialog[open]')) ||
+    (globalContainer && globalContainer.querySelector(':scope > .modal, :scope > dialog[open]'))
+  );
+}
+
+// # # # TRENDS -----------------------------------------------------------
+
+var MONITORING_TRENDS_CHARTS = {}; // canvas id -> Chart instance
+
+function monitoringThemeColor(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+function destroyMonitoringChart(canvasId) {
+  if (MONITORING_TRENDS_CHARTS[canvasId]) {
+    MONITORING_TRENDS_CHARTS[canvasId].destroy();
+    delete MONITORING_TRENDS_CHARTS[canvasId];
+  }
+}
+
+// btn-active alone read as nearly identical to a resting .btn in this
+// theme (same background/text color - see the join's other active-state
+// pairs, e.g. the date quick-filters below, which all use an explicit
+// btn-primary/btn-outline swap instead), so the active tab is filled
+// solid primary and the inactive one is a plain outline - unmistakable
+// at a glance, not just a very-slightly-different resting shade.
+function setMonitoringView(view) {
+  const isTrends = view === 'trends';
+  document.getElementById('monitoring-log-view').classList.toggle('hidden', isTrends);
+  document.getElementById('monitoring-trends-view').classList.toggle('hidden', !isTrends);
+  const logBtn = document.getElementById('monitoring-view-log-btn');
+  const trendsBtn = document.getElementById('monitoring-view-trends-btn');
+  logBtn.classList.toggle('btn-primary', !isTrends);
+  logBtn.classList.toggle('btn-outline', isTrends);
+  trendsBtn.classList.toggle('btn-primary', isTrends);
+  trendsBtn.classList.toggle('btn-outline', !isTrends);
+  logBtn.setAttribute('aria-pressed', String(!isTrends));
+  trendsBtn.setAttribute('aria-pressed', String(isTrends));
+  if (isTrends) fetchMonitoringTrends();
+}
+
+function formatSeconds(s) {
+  if (s === null || s === undefined) return '-';
+  if (s < 60) return Math.round(s) + 's';
+  return Math.round(s / 60) + 'm ' + Math.round(s % 60) + 's';
+}
+
+async function fetchMonitoringTrends() {
+  const params = getMonitoringFilterParams();
+  params.delete('q'); // trends aggregate over classification/date only, not free-text search
+  try {
+    const res = await fetch('/api/v1/monitoring/trends?' + params.toString());
+    if (res.status === 401) { showSessionTimeoutModal(); return; }
+    if (!res.ok) return;
+    const data = await res.json();
+    renderDailyVolumeChart(data.daily_volume);
+    renderHourlyChart(data.hourly_distribution);
+    renderUnknownRateChart(data.unknown_tag_rate);
+    renderResponseKpis(data.alarm_response);
+  } catch (err) {
+    // Trends is a supplementary view - a network hiccup here shouldn't
+    // block the Log tab, which has its own error handling.
+  }
+}
+
+function renderResponseKpis(response) {
+  document.getElementById('trend-response-count').textContent = response.count;
+  document.getElementById('trend-response-avg').textContent = formatSeconds(response.avg_seconds);
+  document.getElementById('trend-response-median').textContent = formatSeconds(response.median_seconds);
+  document.getElementById('trend-response-p90').textContent = formatSeconds(response.p90_seconds);
+}
+
+function renderDailyVolumeChart(rows) {
+  const canvasId = 'trend-daily-volume-canvas';
+  destroyMonitoringChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  const days = [...new Set(rows.map((r) => r.day))].sort();
+  const byClass = { authorized: {}, unauthorized: {}, unknown_tag: {} };
+  rows.forEach((r) => { if (byClass[r.classification]) byClass[r.classification][r.day] = r.event_count; });
+  const textColor = monitoringThemeColor('--color-base-content');
+  const gridColor = monitoringThemeColor('--color-base-300');
+
+  MONITORING_TRENDS_CHARTS[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: days,
+      datasets: [
+        { label: 'Authorized', data: days.map((d) => byClass.authorized[d] || 0), backgroundColor: monitoringThemeColor('--color-success'), stack: 's' },
+        { label: 'Unauthorized', data: days.map((d) => byClass.unauthorized[d] || 0), backgroundColor: monitoringThemeColor('--color-error'), stack: 's' },
+        { label: 'Unknown tag', data: days.map((d) => byClass.unknown_tag[d] || 0), backgroundColor: monitoringThemeColor('--color-warning'), stack: 's' },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, ticks: { color: textColor }, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0, color: textColor }, grid: { color: gridColor } },
+      },
+      plugins: { legend: { position: 'bottom', labels: { color: textColor } } },
+    },
+  });
+}
+
+function renderHourlyChart(rows) {
+  const canvasId = 'trend-hourly-canvas';
+  destroyMonitoringChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  const textColor = monitoringThemeColor('--color-base-content');
+  const gridColor = monitoringThemeColor('--color-base-300');
+
+  MONITORING_TRENDS_CHARTS[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: rows.map((r) => r.hour + ':00'),
+      datasets: [{ data: rows.map((r) => r.event_count), backgroundColor: monitoringThemeColor('--color-primary'), borderRadius: 4, maxBarThickness: 18 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: textColor }, grid: { color: gridColor } },
+      },
+    },
+  });
+}
+
+function renderUnknownRateChart(rows) {
+  const canvasId = 'trend-unknown-rate-canvas';
+  destroyMonitoringChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  const textColor = monitoringThemeColor('--color-base-content');
+  const gridColor = monitoringThemeColor('--color-base-300');
+
+  MONITORING_TRENDS_CHARTS[canvasId] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: rows.map((r) => r.day),
+      datasets: [{
+        label: 'Unknown-tag rate (%)',
+        data: rows.map((r) => r.unknown_rate),
+        borderColor: monitoringThemeColor('--color-warning'),
+        backgroundColor: monitoringThemeColor('--color-warning'),
+        tension: 0.3,
+        pointRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ctx.parsed.y + '% (' + rows[ctx.dataIndex].unknown_count + '/' + rows[ctx.dataIndex].total_count + ' events)' } },
+      },
+      scales: {
+        x: { ticks: { color: textColor }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: textColor, callback: (v) => v + '%' }, grid: { color: gridColor } },
+      },
+    },
+  });
+}
+
+// Re-render trend charts on theme toggle, same reasoning as reports.html's
+// equivalent observer - Chart.js reads colors once at creation time.
+new MutationObserver(function () {
+  if (document.getElementById('monitoring-trends-view').classList.contains('hidden')) return;
+  fetchMonitoringTrends();
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+window.pageKeydownHandler = function (e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  if (e.key === '/') {
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    document.getElementById('monitoring-search').focus();
+    return;
+  }
+
+  // L/T switch the Log/Trends tabs, mnemonic letters matching the button
+  // labels - same convention as Staff's 1/2/3/4 status filters (a plain
+  // letter/digit shortcut, no modifier, since this only fires when nothing
+  // is focused for typing).
+  if (e.key === 'l' || e.key === 'L') {
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    setMonitoringView('log');
+    return;
+  }
+  if (e.key === 't' || e.key === 'T') {
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    setMonitoringView('trends');
+    return;
+  }
+
+  // Escape - with no modal open, reset every filter, same as clicking
+  // "Clear filters" (the button's own tooltip already promised "(Esc)" --
+  // this just makes that true). A modal open lets base.html's handler
+  // close it instead.
+  if (e.key === 'Escape') {
+    if (isModalOpen()) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    clearAllMonitoringFilters();
+  }
+};
+</script>
+{% endblock %}

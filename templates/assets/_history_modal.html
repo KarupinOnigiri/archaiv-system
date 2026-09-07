@@ -8,7 +8,7 @@
         <h3 class="font-bold text-xl">Borrow History</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ asset.name }} &middot; {{ asset.asset_id }}</p>
       </div>
-      <!-- ESC pill not an X icon -- see assets/_details_modal.html's close button for why. -->
+      <!-- ESC pill not an X icon - see assets/_details_modal.html's close button for why. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
         ESC
@@ -18,7 +18,20 @@
     {% if history %}
     <div class="space-y-3 flex-1 overflow-y-auto min-h-0 pr-1">
       {% for h in history %}
-      <div class="border border-base-300 rounded-lg p-3">
+      <!-- Click a record for the full-detail modal - reuses Borrow &
+           Return's own transaction-details modal/endpoint (transactions/
+           _details_modal.html) rather than building a second one, same
+           convention as Members' own Borrow History table. hx-swap=
+           "beforeend" (not "innerHTML") appends it on top of
+           #modal-container's current contents instead of replacing them,
+           since this card is already nested inside this history modal,
+           itself stacked on top of the asset details modal underneath. -->
+      <div class="border border-base-300 rounded-lg p-3 cursor-pointer hover:bg-base-200/60 hover:border-base-content/20 transition-colors"
+           role="button" tabindex="0"
+           hx-get="/api/v1/transactions/{{ h.id }}/details-modal"
+           hx-target="#modal-container"
+           hx-swap="beforeend"
+           onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
         <div class="flex justify-between items-center mb-2">
           <p class="font-medium text-sm">{{ full_name(h.first_name, h.last_name, h.middle_name, h.suffix) }}</p>
           <span class="px-2.5 py-1 rounded-full text-xs font-medium
@@ -27,9 +40,9 @@
           </span>
         </div>
         <div class="grid grid-cols-3 gap-2 text-xs text-base-content/60 mb-2">
-          <div><span class="text-base-content/40">Out</span><br>{{ h.time_out }}</div>
-          <div><span class="text-base-content/40">Due</span><br>{{ h.due_date or "-" }}</div>
-          <div><span class="text-base-content/40">In</span><br>{{ h.time_in or "-" }}</div>
+          <div><span class="text-base-content/40">Out</span><br>{{ h.time_out | format_date }}</div>
+          <div><span class="text-base-content/40">Due</span><br>{{ h.due_date | format_date if h.due_date else "-" }}</div>
+          <div><span class="text-base-content/40">In</span><br>{{ h.time_in | format_date if h.time_in else "-" }}</div>
         </div>
         <div class="text-xs text-base-content/60">
           Condition: {{ h.condition_out | humanize if h.condition_out else "-" }}{% if h.condition_in %} &rarr; {{ h.condition_in | humanize }}{% endif %}
@@ -112,7 +125,7 @@
     <p class="text-base-content/50 py-8 text-center text-sm shrink-0">No borrow history yet for this asset.</p>
     {% endif %}
 
-    <!-- Just removes itself -- stacked on top of assets/_details_modal.html (hx-swap="beforeend"), which stays underneath. -->
+    <!-- Just removes itself - stacked on top of assets/_details_modal.html (hx-swap="beforeend"), which stays underneath. -->
     <div class="modal-action mt-6 shrink-0">
       <button type="button" class="btn btn-primary" onclick="this.closest('.modal').remove()">
         Close

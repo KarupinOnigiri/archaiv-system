@@ -18,8 +18,12 @@ def _parse_date(value):
 
 
 def validate_date_string(value, field_name):
-    """Format-only check. Used by assets/staff routes where 'in the past' is fine."""
-    if value is None:
+    """Format-only check. Used by assets/staff routes where 'in the past' is fine.
+    A blank string (an emptied date input, submitted as "" rather than omitted
+    entirely) is treated the same as a missing field, not an invalid one -
+    callers that actually require the field check that separately (e.g.
+    reservations' own presence check before calling this)."""
+    if value is None or value == "":
         return None
     if _parse_date(value) is None:
         return (
@@ -65,7 +69,7 @@ RFID_PIN_LENGTH = 6
 
 
 def validate_rfid_pin(pin):
-    """Exactly 6 digits -- fast to type at a card reader, still a real second factor
+    """Exactly 6 digits - fast to type at a card reader, still a real second factor
     (hashed like a password, see routes/staff.py and routes/auth.py:login_rfid)."""
     if not pin or not pin.isdigit() or len(pin) != RFID_PIN_LENGTH:
         return (
@@ -135,7 +139,7 @@ def normalize_barcode_id(raw_value):
     """Trims/validates a staff-supplied barcode_id (e.g. scanned off an existing ID card).
 
     Returns (normalized_value_or_None, error_message_or_None). A None normalized
-    value (blank/omitted input) means "no barcode supplied -- caller should
+    value (blank/omitted input) means "no barcode supplied - caller should
     auto-generate one", not an error. Framework-agnostic on purpose so both
     Flask routes and services can wrap the error message in their own response
     shape (services use plain {"error": ...} dicts, not jsonify).
@@ -176,3 +180,32 @@ def validate_lookup_id(conn, table, id_value, field_name, required=False):
             400,
         )
     return None
+
+
+def decimal_scan_hex_suffix(code):
+    """Some UHF readers, when set to type scans as keyboard input (USB_HID),
+    don't type the full hex EPC - they type the DECIMAL value of just the
+    EPC's last 3 bytes (6 hex characters), access-control-Wiegand style.
+    Confirmed against a real tag: EPC ...ABCDE12345 (ends in hex E12345)
+    scanned as the decimal digits "14754629", and int("14754629") ==
+    0xE12345 exactly - see the project conversation history for the
+    reasoning/derivation.
+
+    Returns that hex suffix (uppercase, zero-padded to 6 characters) so a
+    caller can ALSO match a scanned code against it, or None if `code`
+    isn't a plausible decimal scan (empty, has non-digit characters, or
+    too large to be 3 bytes) - callers can bind this straight into an
+    `OR UPPER(x) LIKE '%' || ?` clause unconditionally, since SQLite
+    string-concatenating NULL with anything yields NULL, making that
+    OR-branch harmlessly false rather than needing a separate query.
+
+    A real hex EPC (e.g. "E2003411...") never reaches here since it
+    contains A-F letters and isdigit() correctly rejects it - this only
+    ever fires for something that's ALL digits, i.e. plausibly one of
+    these decimal-truncated scans in the first place."""
+    if not code or not code.isdigit():
+        return None
+    value = int(code)
+    if value > 0xFFFFFF:  # doesn't fit in 3 bytes/24 bits
+        return None
+    return format(value, "06X")

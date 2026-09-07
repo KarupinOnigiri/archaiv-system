@@ -6,7 +6,7 @@
     <div class="flex items-center justify-between p-5 border-b border-base-300 shrink-0">
       <div>
         <h3 class="font-bold text-lg">
-          Reviews &mdash; {{ full_name(target_member.first_name, target_member.last_name, target_member.middle_name, target_member.suffix) if target_member else "this request" }}
+          Reviews - {{ full_name(target_member.first_name, target_member.last_name, target_member.middle_name, target_member.suffix) if target_member else "this request" }}
         </h3>
         <p class="text-xs text-base-content/50 mt-0.5">
           {{ approve_count }}/{{ req.required_approvals }} approved ({{ in_charge_count }}/{{ req.required_in_charge }} in_charge)

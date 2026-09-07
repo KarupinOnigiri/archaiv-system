@@ -5,9 +5,35 @@
 //
 // Reads per-request/per-user values (current username, toast duration
 // preference) from window.APP_CONFIG, which base.html sets via a small
-// inline <script> block immediately before this file loads -- those
+// inline <script> block immediately before this file loads - those
 // values are server-rendered per request, so they can't live in this
 // static file directly.
+
+// Shared 12-hour/AM-PM formatter for the handful of places that build a
+// datetime string via JS template literals instead of Jinja (which has its
+// own app.py format_date filter, "%b %d, %Y %I:%M %p" by default - already
+// 12-hour, used wherever a template renders one server-side). This is that
+// same convention for JS-rendered rows (report tables, member/staff profile
+// activity lists, the checkout cart's reservation notice) - every displayed
+// clock time in the app should read the same way, never bare 24-hour.
+// Accepts the "YYYY-MM-DD HH:MM:SS" (or "YYYY-MM-DDTHH:MM:SS") shape SQLite/
+// the API always sends; a date-only "YYYY-MM-DD" (no time component, e.g.
+// last_calibrated) passes through unchanged since there's no clock time to
+// convert. Falls back to the raw input on anything unparseable.
+function formatDateTime12h(raw, opts) {
+  if (!raw) return raw;
+  const dateOnly = opts && opts.dateOnly;
+  const match = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return raw;
+  const [, y, mo, d, h, mi] = match;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dateStr = `${months[parseInt(mo, 10) - 1]} ${parseInt(d, 10)}, ${y}`;
+  if (h === undefined || dateOnly) return dateStr;
+  const hourNum = parseInt(h, 10);
+  const period = hourNum >= 12 ? 'PM' : 'AM';
+  const hour12 = hourNum % 12 === 0 ? 12 : hourNum % 12;
+  return `${dateStr} ${hour12}:${mi} ${period}`;
+}
 
 (function() {
   const sidebar = document.getElementById('sidebar');
@@ -37,10 +63,10 @@
 
   // Asymmetric on purpose: collapsing is a deliberate action (only the
   // dedicated toggle button does it), but expanding blank rail space is
-  // easy -- while collapsed, clicking empty space (or the toggle button
+  // easy - while collapsed, clicking empty space (or the toggle button
   // itself) expands it back. Nav links and the account avatar/dropdown
   // are excluded in BOTH states, though, so using a tab or opening the
-  // account menu is always just that -- collapse/expand stays entirely
+  // account menu is always just that - collapse/expand stays entirely
   // the user's own choice via the toggle button or blank space, never a
   // side effect of navigating around while collapsed.
   sidebar.addEventListener('click', function(e) {
@@ -58,10 +84,10 @@
     }
   });
 
-  // Ctrl+E (Cmd+E on Mac) -- collapse/expand the sidebar, same toggle as
+  // Ctrl+E (Cmd+E on Mac) - collapse/expand the sidebar, same toggle as
   // clicking #sidebar-toggle. Chosen over a bare single key (the pattern
   // most pages here use for their own local shortcuts, e.g. Staff's "`")
-  // because this one is global -- it needs to work from every page
+  // because this one is global - it needs to work from every page
   // without colliding with whatever bare keys that page's own listener
   // already claims. preventDefault() stops it from also hitting whatever
   // the browser itself binds Ctrl/Cmd+E to (varies by browser; usually
@@ -76,7 +102,28 @@
     setCollapsed(!sidebar.classList.contains('collapsed'));
   });
 
-  // Alt+Shift+<letter> -- jump straight to a sidebar tab. One mnemonic
+  // Ctrl+/ (Cmd+/ on Mac) - focus the global search bar (content header).
+  // NOT Ctrl+K: several browsers/extensions already claim that combo for
+  // their own address-bar or command-palette search, which silently ate
+  // the keystroke before this page ever saw it. Ctrl+/ is a long-standing,
+  // widely-used "focus search" convention (Gmail, Facebook, Trello, ...)
+  // that isn't reserved by browser chrome. Global for the same reason
+  // Ctrl+E above is: it has to work from every page, not just ones without
+  // their own local shortcuts already claiming a bare key. Deliberately NOT
+  // blocked while already typing in another field (unlike Ctrl+E) - the
+  // whole point is jumping to global search
+  // from wherever you are, mid-task in a page's own search box included;
+  // a strong, unlikely-to-collide modifier combo like this is exactly the
+  // case worth allowing through. Re-focusing an input that's already
+  // focused (global search itself) is a harmless no-op either way.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' && e.code !== 'Slash') return;
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    e.preventDefault();
+    document.getElementById('global-search-input')?.focus();
+  });
+
+  // Alt+Shift+<letter> - jump straight to a sidebar tab. One mnemonic
   // letter per tab (see SIDEBAR_SHORTCUT_KEYS in base.html's nav markup),
   // read off each rendered link's data-shortcut-key rather than a
   // hardcoded route list, so it automatically matches whichever tabs are
@@ -85,7 +132,7 @@
   // letters instead of being capped at digits 1-9: plain Alt+<letter> is
   // already claimed per-page all over the app (Alt+N "new checkout",
   // Alt+M "manage categories", Alt+A "add asset"/"mark all read", Alt+R
-  // "return items", Alt+G "generate labels", etc.) -- adding Shift into
+  // "return items", Alt+G "generate labels", etc.) - adding Shift into
   // the combo means this global shortcut can never collide with any of
   // those local ones, and isn't limited to 9 tabs the way a bare-digit
   // scheme would be.
@@ -101,6 +148,82 @@
     if (!link) return;
     e.preventDefault();
     window.location.href = link.getAttribute('href');
+  });
+
+  // # # # BOOSTED NAVIGATION -------------------------------------------------
+  // base.html's #sidebar-nav carries hx-boost="true" hx-target="#main-content"
+  // hx-select="#main-content" - clicking a sidebar link now fetches the page
+  // in the background and swaps only #main-content instead of a full browser
+  // navigation, so ui.js/htmx/chart.min.js/jspdf.umd.min.js etc. are parsed
+  // and executed exactly once per session instead of on every single click.
+  //
+  // The catch: every page template's own <script> block sits inside
+  // #main-content and still does things like
+  //   document.addEventListener('keydown', function (e) { ... })
+  //   document.body.addEventListener('htmx:configRequest', function (e) { ... })
+  //   document.addEventListener('DOMContentLoaded', function () { ... })
+  // Under a hard page load those only ever run once. Under boosting, htmx
+  // evaluates a swapped-in <script> tag EVERY time #main-content is replaced
+  // - so a page visited twice would call document.addEventListener('keydown',
+  // ...) twice, and both copies fire forever after (the first one never got
+  // torn down; #main-content being destroyed doesn't unregister a listener
+  // that was attached to `document`, not to the element itself). Multiply
+  // that by every boosted visit and every page gets more duplicate keyboard
+  // shortcuts and more duplicate configRequest handlers each time, silently.
+  //
+  // Fix: pages that need this now assign a single-slot global instead of
+  // calling addEventListener directly --
+  //   window.pageKeydownHandler = function (e) { ... };
+  //   window.pageConfigRequestHandler = function (e) { ... };
+  //   window.pageAfterSwapHandler = function (e) { ... };
+  // - and ui.js (which lives outside #main-content and is only ever loaded
+  // once, boosted or not) owns the ONE real listener of each kind below,
+  // forwarding to whichever handler is currently registered. The slot is
+  // cleared right before a boosted swap replaces #main-content, so a page
+  // that doesn't reassign it on its next visit doesn't leave the previous
+  // page's handler running by accident.
+  //
+  // Only initialize to null if the slot is still untouched (=== undefined),
+  // NOT unconditionally - base.html's #block content (where every page's
+  // own inline <script> lives, setting these) renders BEFORE this
+  // <script src="ui.js"> tag, so on every hard/full page load that page
+  // script has already run and set the real handler by the time this line
+  // executes. Unconditionally resetting to null here silently discarded
+  // that on every hard load - only a later htmx-boosted navigation (which
+  // re-runs the swapped-in page script without this file re-executing)
+  // ever actually worked, so a plain page load, refresh, or fresh login
+  // left every page-local shortcut (this file's own '?' handled
+  // separately below, but Escape/'/'/number-key filters/etc., anything
+  // registered via pageKeydownHandler) silently dead until the first
+  // sidebar click.
+  if (typeof window.pageKeydownHandler === 'undefined') window.pageKeydownHandler = null;
+  if (typeof window.pageConfigRequestHandler === 'undefined') window.pageConfigRequestHandler = null;
+  if (typeof window.pageAfterSwapHandler === 'undefined') window.pageAfterSwapHandler = null;
+
+  document.addEventListener('keydown', function (e) {
+    if (typeof window.pageKeydownHandler === 'function') {
+      window.pageKeydownHandler(e);
+    }
+  });
+
+  document.body.addEventListener('htmx:configRequest', function (e) {
+    if (typeof window.pageConfigRequestHandler === 'function') {
+      window.pageConfigRequestHandler(e);
+    }
+  });
+
+  document.body.addEventListener('htmx:afterSwap', function (e) {
+    if (typeof window.pageAfterSwapHandler === 'function') {
+      window.pageAfterSwapHandler(e);
+    }
+  });
+
+  document.body.addEventListener('htmx:beforeSwap', function (e) {
+    if (e.detail && e.detail.target && e.detail.target.id === 'main-content') {
+      window.pageKeydownHandler = null;
+      window.pageConfigRequestHandler = null;
+      window.pageAfterSwapHandler = null;
+    }
   });
 
   // One shared #app-tooltip bubble for every [data-tooltip] element, delegated on document
@@ -138,14 +261,14 @@
       tooltipEl.classList.remove('hidden');
       const rect = el.getBoundingClientRect();
       // Non-rail tooltips normally go below-center (toolbar buttons, filter
-      // toggles -- plenty of room under them). The account row's name span
+      // toggles - plenty of room under them). The account row's name span
       // (line 728 below) is the one non-rail tooltip that sits right at the
       // bottom of the viewport (sidebar-account is the last thing in the
-      // sidebar) -- "below" there pushed the bubble half off-screen, so it
+      // sidebar) - "below" there pushed the bubble half off-screen, so it
       // read as cut off/not shown. Rather than special-case that one
       // element, flip to the same right-of-element placement rail tooltips
       // already use whenever there isn't roughly a tooltip's height of room
-      // below -- works for this element today and for anything else that
+      // below - works for this element today and for anything else that
       // ever ends up hugging the bottom edge later.
       const TOOLTIP_EST_HEIGHT = 36;
       if (isRail || rect.bottom + TOOLTIP_EST_HEIGHT > window.innerHeight) {
@@ -178,7 +301,7 @@
   toggleBtn.addEventListener('click', hideTooltip);
 })();
 
-// Full Help modal (#full-help-modal) -- TOC click + scroll-spy. Lives
+// Full Help modal (#full-help-modal) - TOC click + scroll-spy. Lives
 // inside a <dialog>, not the page itself, so a plain <a href="#id"> can't
 // be left to the browser's native anchor-jump: that scrolls (and
 // URL-hashes) the outer window, not #full-help-scroll, which is the
@@ -187,7 +310,7 @@
 //
 // The active-link highlight (which section you're "on" while scrolling)
 // is driven by a plain 'scroll' listener + getBoundingClientRect() checks
-// on every section, NOT IntersectionObserver -- tried that first, and
+// on every section, NOT IntersectionObserver - tried that first, and
 // confirmed (via a bare-minimum viewport-rooted observer, no custom root
 // or rootMargin involved) that it never fires at all for anything inside
 // a native <dialog> shown via showModal(): elements promoted to the
@@ -227,14 +350,14 @@
 
   // Trigger line sits a little below the pane's own top edge (roughly
   // where a heading ends up right after scrolling to it), not dead
-  // center -- the last section whose heading has crossed above that line
+  // center - the last section whose heading has crossed above that line
   // is "current." Sections are in document order, so the first one that
   // *hasn't* crossed it yet means every later one hasn't either; no need
   // to keep checking past that point.
   const TRIGGER_OFFSET_PX = 96;
 
   function updateActiveFromScroll() {
-    // Scrolled all the way to the bottom -- the last section forces
+    // Scrolled all the way to the bottom - the last section forces
     // itself active here rather than via the trigger-line loop below,
     // since a short final section (not much page left beneath it) may
     // never actually scroll far enough to cross that line on its own,
@@ -268,7 +391,7 @@
 
   // showModal() doesn't fire a load/open event browsers expose directly,
   // so this hooks the button that actually calls showModal() on this
-  // dialog (the "Open full Help" row) -- simplest reliable "this just
+  // dialog (the "Open full Help" row) - simplest reliable "this just
   // became visible" signal available. Resets scroll position + highlight
   // to the top on every open, same as a fresh page load would.
   document.querySelectorAll('[onclick*="full-help-modal\').showModal"]').forEach(function (btn) {
@@ -280,7 +403,7 @@
 })();
 
 // A disabled-tab redirect (services/auth_service.py's feature_required)
-// lands here as '/?feature_disabled=<label>' -- this app has no
+// lands here as '/?feature_disabled=<label>' - this app has no
 // server-side flash(), so the one-shot message rides a query param
 // instead and gets toasted client-side. Wrapped in DOMContentLoaded (even
 // though this script tag already runs after the DOM is parsed) so it
@@ -297,7 +420,7 @@ document.addEventListener('DOMContentLoaded', function () {
     history.replaceState(null, '', newUrl);
   }
 
-  // Same one-shot-param pattern as feature_disabled above -- an old
+  // Same one-shot-param pattern as feature_disabled above - an old
   // bookmark/link to the /help page (routes/pages.py's help_page, now a
   // redirect) lands here as '/?open_help=1'; this is what actually opens
   // the modal that page used to be, then cleans the param back off the
@@ -305,7 +428,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const openHelp = params.get('open_help');
   if (openHelp) {
     // .click() (not a direct .showModal() call) so this goes through the
-    // exact same button the "Open full Help" row uses -- that button has
+    // exact same button the "Open full Help" row uses - that button has
     // its own click listener (see the scroll-spy IIFE above) that resets
     // the TOC highlight/scroll position and starts the IntersectionObserver;
     // calling showModal() directly here would open the dialog without any
@@ -319,7 +442,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
-// Accumulated across possibly-repeated "Add screenshot" clicks -- a plain
+// Accumulated across possibly-repeated "Add screenshot" clicks - a plain
 // <input multiple> alone would replace its file list on every pick, so
 // this array (and the previews rendered from it) is the actual source of
 // truth for what gets uploaded, not the <input>'s own .files.
@@ -407,7 +530,7 @@ async function submitGiveFeedback(event) {
     const res = await fetch('/api/v1/feedback', {
       method: 'POST',
       headers: {
-        // No Content-Type here -- the browser sets multipart/form-data
+        // No Content-Type here - the browser sets multipart/form-data
         // with the correct boundary itself; setting it manually on a
         // FormData body breaks the boundary and the server can't parse it.
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
@@ -440,7 +563,7 @@ async function submitGiveFeedback(event) {
   return false;
 }
 
-// Generalizes login.html's togglePassword() to any field id -- expects a
+// Generalizes login.html's togglePassword() to any field id - expects a
 // sibling button #<fieldId>-toggle-btn and two SVGs #<fieldId>-eye-open/
 // -eye-closed, all emitted together by base.html's password_toggle_field
 // macro. Only the `type` attribute flips (password <-> text); nothing
@@ -462,7 +585,7 @@ function toggleFieldVisibility(fieldId) {
 }
 
 // Same "only show the toggle once there's something to reveal" behavior
-// as login.html's password field -- wired once per field id here rather
+// as login.html's password field - wired once per field id here rather
 // than repeated inline per input.
 function wirePasswordToggleField(fieldId) {
   const field = document.getElementById(fieldId);
@@ -473,11 +596,13 @@ function wirePasswordToggleField(fieldId) {
   });
 }
 
-['cp-current', 'cp-new', 'cp-confirm', 'crp-current-password', 'crp-new-pin', 'crp-confirm-pin']
+// cp-current/cp-new/cp-confirm (Change Password) no longer render a toggle
+// button at all - see base.html's password_toggle_field show_toggle param.
+['crp-current-password', 'crp-new-pin', 'crp-confirm-pin']
   .forEach(wirePasswordToggleField);
 
 // Restores every password_toggle_field back to its default hidden-text,
-// toggle-hidden state -- form.reset() clears values but not a `type`
+// toggle-hidden state - form.reset() clears values but not a `type`
 // attribute changed imperatively by toggleFieldVisibility, so a field
 // left toggled to "text" would otherwise still show as "text" the next
 // time this modal opens even after being reset/closed.
@@ -570,7 +695,7 @@ async function submitChangePassword(event) {
   return false;
 }
 
-// Change RFID PIN -- mirrors resetChangePasswordForm/submitChangePassword
+// Change RFID PIN - mirrors resetChangePasswordForm/submitChangePassword
 // above exactly, just pointed at /api/v1/staff/change-rfid-pin and a
 // 6-digit PIN instead of a password. See that endpoint (routes/
 // staff.py) for why current *password* (not current PIN) is what
@@ -627,7 +752,7 @@ async function submitChangeRfidPin(event) {
 
     const data = await res.json().catch(() => ({}));
 
-    // Same reasoning as submitChangePassword's identical check -- 401
+    // Same reasoning as submitChangePassword's identical check - 401
     // here can mean "wrong current password" (expected form error) or
     // "your session expired" (require_session), and only the second one
     // should pop the session-timeout modal.
@@ -656,6 +781,176 @@ async function submitChangeRfidPin(event) {
   return false;
 }
 
+// Barcode + PIN login (self-service, every role) - one shared modal for
+// both first-time enable and a later change, since both endpoints do the
+// same write (set rfid_pin_hash) and only differ in whether
+// barcode_pin_enabled also flips on. openBarcodePinModal(mode) picks which;
+// submitBarcodePinForm() reads that mode back to choose the endpoint and
+// button/title text. See routes/staff.py's enable/change-barcode-pin routes.
+let barcodePinModalMode = 'enable';
+
+function openBarcodePinModal(mode) {
+  barcodePinModalMode = mode;
+  document.getElementById('barcode-pin-modal-title').textContent =
+    mode === 'change' ? 'Change barcode + PIN' : 'Enable barcode + PIN login';
+  document.getElementById('barcode-pin-submit-btn').textContent =
+    mode === 'change' ? 'Update PIN' : 'Enable';
+  document.getElementById('barcode-pin-modal').showModal();
+}
+
+function resetBarcodePinForm() {
+  const form = document.getElementById('barcode-pin-form');
+  if (form) form.reset();
+  const errorEl = document.getElementById('barcode-pin-error');
+  if (errorEl) errorEl.classList.add('invisible');
+  const btn = document.getElementById('barcode-pin-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = barcodePinModalMode === 'change' ? 'Update PIN' : 'Enable'; }
+  ['bp-current-password', 'bp-new-pin', 'bp-confirm-pin'].forEach(resetPasswordToggleField);
+}
+
+async function submitBarcodePinForm(event) {
+  event.preventDefault();
+
+  const errorEl = document.getElementById('barcode-pin-error');
+  errorEl.classList.add('invisible');
+
+  const currentPassword = document.getElementById('bp-current-password').value;
+  const newPin = document.getElementById('bp-new-pin').value;
+  const confirmPin = document.getElementById('bp-confirm-pin').value;
+
+  if (!currentPassword || !newPin || !confirmPin) {
+    errorEl.textContent = 'Fill in all three fields.';
+    errorEl.classList.remove('invisible');
+    return false;
+  }
+  if (newPin !== confirmPin) {
+    errorEl.textContent = "New PIN and confirmation don't match.";
+    errorEl.classList.remove('invisible');
+    return false;
+  }
+  if (!/^\d{6}$/.test(newPin)) {
+    errorEl.textContent = 'New PIN must be exactly 6 digits.';
+    errorEl.classList.remove('invisible');
+    return false;
+  }
+
+  const btn = document.getElementById('barcode-pin-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+
+  const endpoint = barcodePinModalMode === 'change'
+    ? '/api/v1/staff/change-barcode-pin'
+    : '/api/v1/staff/barcode-pin/enable';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ current_password: currentPassword, new_pin: newPin }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    // Same reasoning as submitChangePassword's identical check - 401 here
+    // can mean "wrong current password" (expected form error) or "your
+    // session expired" (require_session), and only the second should pop
+    // the session-timeout modal.
+    if (res.status === 401 && data.error !== 'Current password is incorrect') {
+      showSessionTimeoutModal();
+      return false;
+    }
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't save. Please try again.";
+      errorEl.classList.remove('invisible');
+      btn.disabled = false;
+      btn.textContent = barcodePinModalMode === 'change' ? 'Update PIN' : 'Enable';
+      return false;
+    }
+
+    document.getElementById('barcode-pin-modal').close();
+    showToast(data.message || 'Saved successfully', 'success');
+    // Reloads so the account modal's row (Enable vs Change PIN/Disable)
+    // reflects the new barcode_pin_enabled state on next open.
+    setTimeout(function () { window.location.reload(); }, 400);
+  } catch (err) {
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    errorEl.classList.remove('invisible');
+    btn.disabled = false;
+    btn.textContent = barcodePinModalMode === 'change' ? 'Update PIN' : 'Enable';
+  }
+
+  return false;
+}
+
+function resetDisableBarcodePinForm() {
+  const form = document.getElementById('disable-barcode-pin-form');
+  if (form) form.reset();
+  const errorEl = document.getElementById('disable-barcode-pin-error');
+  if (errorEl) errorEl.classList.add('invisible');
+  const btn = document.getElementById('disable-barcode-pin-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Disable'; }
+  resetPasswordToggleField('dbp-current-password');
+}
+
+async function submitDisableBarcodePin(event) {
+  event.preventDefault();
+
+  const errorEl = document.getElementById('disable-barcode-pin-error');
+  errorEl.classList.add('invisible');
+
+  const currentPassword = document.getElementById('dbp-current-password').value;
+  if (!currentPassword) {
+    errorEl.textContent = 'Enter your current password.';
+    errorEl.classList.remove('invisible');
+    return false;
+  }
+
+  const btn = document.getElementById('disable-barcode-pin-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Disabling...';
+
+  try {
+    const res = await fetch('/api/v1/staff/barcode-pin/disable', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({ current_password: currentPassword }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401 && data.error !== 'Current password is incorrect') {
+      showSessionTimeoutModal();
+      return false;
+    }
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't disable. Please try again.";
+      errorEl.classList.remove('invisible');
+      btn.disabled = false;
+      btn.textContent = 'Disable';
+      return false;
+    }
+
+    document.getElementById('disable-barcode-pin-modal').close();
+    showToast(data.message || 'Barcode + PIN login disabled', 'success');
+    setTimeout(function () { window.location.reload(); }, 400);
+  } catch (err) {
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    errorEl.classList.remove('invisible');
+    btn.disabled = false;
+    btn.textContent = 'Disable';
+  }
+
+  return false;
+}
+
 const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5MB
 const PROFILE_PHOTO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -675,7 +970,7 @@ function renderAvatars(url) {
   });
 
   // account-modal-avatar is the only one that's clickable (opens the
-  // lightbox) -- its cursor/hover styling is set server-side to match
+  // lightbox) - its cursor/hover styling is set server-side to match
   // whatever staff.photo_path was at page load, but an upload changes
   // that client-side without a reload, so it has to be resynced here too.
   const accountAvatar = document.getElementById('account-modal-avatar');
@@ -690,14 +985,25 @@ function renderAvatars(url) {
   if (removeBtn) removeBtn.classList.toggle('hidden', !url);
 }
 
-// Opens the current profile photo at full size. No-ops when the avatar is
-// still showing initials (nothing to enlarge) -- reads the live DOM
-// rather than a server-rendered flag so it stays correct right after an
-// upload, before any page reload.
-function openPhotoLightbox() {
-  const avatarImg = document.querySelector('#account-modal-avatar img');
-  if (!avatarImg) return;
-  document.getElementById('photo-lightbox-img').src = avatarImg.src;
+// Opens any image at full size in the one shared lightbox (defined once in
+// base.html, so it works from every page without each needing its own copy).
+// `src`/`alt` cover every OTHER caller (asset photos, staff photos, etc.) -
+// passed straight through to the lightbox <img>. Called with no arguments
+// at all, it falls back to the My Account avatar's own <img> (its original,
+// still-supported use before this became general-purpose): no-ops when
+// that avatar is still showing initials (nothing to enlarge), reading the
+// live DOM rather than a server-rendered flag so it stays correct right
+// after an upload, before any page reload.
+function openPhotoLightbox(src, alt) {
+  let url = src;
+  if (!url) {
+    const avatarImg = document.querySelector('#account-modal-avatar img');
+    if (!avatarImg) return;
+    url = avatarImg.src;
+  }
+  const img = document.getElementById('photo-lightbox-img');
+  img.src = url;
+  img.alt = alt || 'Photo';
   document.getElementById('photo-lightbox-modal').showModal();
 }
 
@@ -726,7 +1032,7 @@ function handleProfilePhotoSelect(event) {
 }
 
 // Shared entry point for every way a photo can be picked (file input,
-// drag-and-drop onto the avatar, or pasting an image) -- validates once,
+// drag-and-drop onto the avatar, or pasting an image) - validates once,
 // then opens the crop modal rather than uploading straight away.
 function openPickedPhoto(file, input) {
   const error = validateProfilePhotoFile(file);
@@ -749,7 +1055,7 @@ function handleAvatarDrop(event) {
 // Pasting an image (Ctrl+V) while the account modal is open replaces the
 // photo the same way a drop would. Scoped to the whole document since the
 // browser puts focus all over the modal (buttons, nothing at all), not
-// reliably on the avatar itself -- gated on the modal being open so paste
+// reliably on the avatar itself - gated on the modal being open so paste
 // elsewhere in the app is untouched.
 document.addEventListener('paste', function (event) {
   const modal = document.getElementById('my-account-modal');
@@ -769,7 +1075,7 @@ document.addEventListener('paste', function (event) {
 // # # # PHOTO CROP MODAL --------------------------------------------------
 // Circular-viewport pan-and-zoom cropper. cropState tracks everything
 // needed to redraw the preview and, on Save, to bake the same transform
-// onto an offscreen canvas at a fixed output size -- so what's previewed
+// onto an offscreen canvas at a fixed output size - so what's previewed
 // behind the circular mask is exactly what gets uploaded.
 const CROP_VIEWPORT = 260; // px, must match #crop-viewport's w/h in the template
 const CROP_OUTPUT = 480; // px, exported square image size
@@ -823,7 +1129,7 @@ function currentCropScale() {
   return cropState.baseScale * cropState.zoom;
 }
 
-// Keeps the image covering the viewport at all times -- panX/panY are
+// Keeps the image covering the viewport at all times - panX/panY are
 // clamped so the viewport's circular mask never shows empty space.
 function clampCropPan() {
   const scale = currentCropScale();
@@ -854,7 +1160,7 @@ function updateCropZoom(sliderValue) {
   applyCropTransform();
 }
 
-// Click handlers for the magnifier icons flanking the slider -- same
+// Click handlers for the magnifier icons flanking the slider - same
 // clamped 100-300 range, just nudged by `delta` instead of dragged. Below
 // 100 the photo would no longer fully cover the circular mask (gaps at
 // the edges), so 100 is a hard floor, not just the slider's default.
@@ -1036,7 +1342,7 @@ function markAllNotificationsRead() {
   }).catch(() => showToast("Couldn't mark notifications as read", 'error'));
 }
 
-// Per-item dismiss from the bell dropdown -- the small '×' next to each
+// Per-item dismiss from the bell dropdown - the small '×' next to each
 // row. Reloads on success (same as every other notification/staff action
 // in this app that needs a sidebar badge count to reflect immediately)
 // rather than just removing the row client-side, so the bell's unread
@@ -1060,7 +1366,7 @@ function dismissBellNotification(id) {
 
 // The notification-settings modal (routes/staff.py: update_notification_
 // settings) swaps an empty body into #global-modal-container on a
-// successful save -- that's what actually closes it (see that route's
+// successful save - that's what actually closes it (see that route's
 // docstring), but it leaves no on-screen confirmation. This delegated
 // listener (the form is loaded in dynamically, so it can't have its own
 // listener attached at page load) fills that in: an empty response body
@@ -1077,12 +1383,12 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
 
 // Inventory/Members/Staff's barcode-scan-to-Enter shortcut (asset-search /
 // member-search / staff-search, see each page's own <script>) renders
-// _barcode_not_found_modal.html into #modal-container on a miss -- the
+// _barcode_not_found_modal.html into #modal-container on a miss - the
 // modal itself already names the scanned barcode, so once it's up the
 // search box can just be cleared outright for the next scan, same as
 // every other barcode field in the app. `evt.detail.elt` resolves to the
 // search input because each page's htmx.ajax call passes `source: e.target`
-// -- not a hardcoded id, so this one listener covers all three pages.
+// - not a hardcoded id, so this one listener covers all three pages.
 document.body.addEventListener('htmx:afterSwap', function (evt) {
   if (evt.detail.target?.id !== 'modal-container') return;
   if (!document.getElementById('barcode-not-found-modal')) return;
@@ -1108,7 +1414,7 @@ function updateNotificationPref(field, checked) {
     if (res.status === 401) {
       showSessionTimeoutModal();
     } else if (!res.ok) {
-      // revert the toggle -- the save didn't take
+      // revert the toggle - the save didn't take
       if (toggleEl) toggleEl.checked = !checked;
       showToast("Couldn't save that preference", 'error');
     }
@@ -1119,7 +1425,7 @@ function updateNotificationPref(field, checked) {
 }
 
 // Same shape as updateNotificationPref above, for the toast-duration
-// number input -- note the newly-saved duration only takes effect for
+// number input - note the newly-saved duration only takes effect for
 // toasts shown *after* a reload (TOAST_DEFAULT_DURATION_MS/
 // TOAST_ACTION_DURATION_MS below are computed once at page-render time),
 // not the confirmation toast this very call triggers.
@@ -1143,7 +1449,7 @@ function updateToastDuration(value) {
     } else if (!res.ok) {
       showToast("Couldn't save that preference", 'error');
     } else {
-      showToast('Toast duration saved -- applies after your next page load', 'success');
+      showToast('Toast duration saved - applies after your next page load', 'success');
     }
   }).catch(() => {
     showToast("Couldn't save that preference", 'error');
@@ -1171,18 +1477,18 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
-// Four modes now -- see the head boot script's comment at the top of
+// Four modes now - see the head boot script's comment at the top of
 // this file for the full reasoning. Mixed and Light share
 // data-theme="tesda" (same color tokens throughout) and differ only in
 // data-sidebar, which the CSS overrides further up this file key off
 // of. Dark and Modern Dark are two fully separate themes
-// (data-theme="tesda-dark" / "tesda-modern") -- Modern Dark isn't a
+// (data-theme="tesda-dark" / "tesda-modern") - Modern Dark isn't a
 // variant of Dark, it has its own deeper surfaces/shadows defined in
 // static/css/input.css. Cycling order (Mixed -> Light -> Dark -> Modern
 // Dark -> Mixed -> ...) keeps the old default first and Dark right
 // after it, so an existing saved "tesda"/"tesda-dark" preference (mapped
 // to 'mixed'/'dark' below) lands in the exact same visual spot it always
-// has -- Modern Dark is purely additive at the end of the cycle.
+// has - Modern Dark is purely additive at the end of the cycle.
 const THEME_MODES = ['mixed', 'light', 'dark', 'modern'];
 const THEME_MODE_ATTRS = {
   mixed: { theme: 'tesda', sidebar: 'dark' },
@@ -1192,12 +1498,12 @@ const THEME_MODE_ATTRS = {
 };
 const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode', modern: 'Modern Dark' };
 const THEME_MODE_ICONS = {
-  // Contrast glyph (half-filled circle) -- distinct from the plain sun/moon
+  // Contrast glyph (half-filled circle) - distinct from the plain sun/moon
   // below, reads as "part light, part dark" at a glance.
   mixed: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>',
   light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
-  // Moon + sparkle -- distinct from plain Dark's bare crescent, reads as
+  // Moon + sparkle - distinct from plain Dark's bare crescent, reads as
   // "dark, plus something extra" at a glance.
   modern: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12.79A9 9 0 1110.21 3a7 7 0 008.79 9.79z" fill="currentColor" stroke="none"/><path d="M19 3v4M17 5h4"/></svg>',
 };
@@ -1215,10 +1521,27 @@ function currentThemeMode() {
 
 let THEME_MODE = currentThemeMode();
 
+// Same light/dark logo asset pairing as the sidebar wordmark and the
+// early-paint favicon script in base.html's <head> - kept as one small
+// lookup here since url_for isn't available from a static .js file, unlike
+// that inline <script>.
+const FAVICON_HREFS = {
+  light: '/static/images/logo-icon-light.png',
+  dark: '/static/images/logo-icon-dark.png',
+};
+
+function setFaviconForTheme(theme) {
+  const link = document.getElementById('favicon-link');
+  if (!link) return;
+  const isDark = theme === 'tesda-dark' || theme === 'tesda-modern';
+  link.href = isDark ? FAVICON_HREFS.dark : FAVICON_HREFS.light;
+}
+
 function applyThemeMode(mode) {
   const attrs = THEME_MODE_ATTRS[mode];
   document.documentElement.setAttribute('data-theme', attrs.theme);
   document.documentElement.setAttribute('data-sidebar', attrs.sidebar);
+  setFaviconForTheme(attrs.theme);
 }
 
 function syncThemeModeLabel() {
@@ -1239,7 +1562,7 @@ syncThemeModeLabel();
 //
 // The panel is relocated to a direct child of <body> the first time it
 // opens and positioned with `position: fixed` from its toggle button's
-// own getBoundingClientRect() -- same technique the shared #app-tooltip
+// own getBoundingClientRect() - same technique the shared #app-tooltip
 // bubble elsewhere in this file already uses. This isn't just "floating
 // instead of inline" for its own sake: an earlier version kept the panel
 // in place with plain `position: absolute` (containing block = an
@@ -1260,7 +1583,7 @@ function toggleInlineDropdown(menuId, chevronId) {
   if (!menu) return;
   const opening = menu.classList.contains('hidden');
 
-  // Only one of these floating panels open at a time -- opening one
+  // Only one of these floating panels open at a time - opening one
   // closes any other that's already open, same as a native <select>.
   document.querySelectorAll('.inline-dropdown-menu').forEach(function (m) {
     if (m === menu) return;
@@ -1281,7 +1604,7 @@ function toggleInlineDropdown(menuId, chevronId) {
       // rendering *behind* this modal instead of above it. Keeping the
       // panel inside the dialog preserves that top-layer promotion while
       // still escaping .modal-box's overflow (the original reason it's
-      // relocated at all -- see the comment above this function).
+      // relocated at all - see the comment above this function).
       (btn.closest('dialog') || document.body).appendChild(menu);
       const rect = btn.getBoundingClientRect();
       menu.style.position = 'fixed';
@@ -1296,7 +1619,7 @@ function toggleInlineDropdown(menuId, chevronId) {
   if (chevron) chevron.style.transform = opening ? 'rotate(180deg)' : '';
 }
 
-// Closes any open floating dropdown panel on an outside click -- same
+// Closes any open floating dropdown panel on an outside click - same
 // "click away to dismiss" behavior a native <select> gets for free.
 // Once relocated to <body>, a panel is no longer near its toggle button
 // in the DOM, so "outside" is checked against the button directly
@@ -1353,7 +1676,7 @@ function syncToastStyleLabel() {
 }
 syncToastStyleLabel();
 
-// List-and-click, same as Theme mode above -- replaces the old
+// List-and-click, same as Theme mode above - replaces the old
 // cycle-through-on-click toggle (see toggleInlineDropdown's comment).
 function setToastStyle(style) {
   if (!TOAST_STYLES.includes(style)) return;
@@ -1368,7 +1691,7 @@ function setToastStyle(style) {
 
 // Per-staff preference (staff.toast_duration_seconds, migrations/0038,
 // routes/staff.py's update_own_notification_prefs, the Settings &
-// privacy modal above) -- "if staff else" rather than "staff.toast_...
+// privacy modal above) - "if staff else" rather than "staff.toast_...
 // or 4" since this script runs outside the Jinja "staff is truthy" guard
 // further up the page (e.g. an anonymous /login render), and unlike a
 // plain "or" expression, Jinja's inline if/else never evaluates the
@@ -1384,7 +1707,7 @@ function showSessionTimeoutModal() {
   const modal = document.getElementById('session-timeout-modal');
   // Guards against every other 401 handler on the page calling this --
   // there are several, one per fetch() call scattered across templates
-  // plus the global htmx:responseError listener -- re-triggering the
+  // plus the global htmx:responseError listener - re-triggering the
   // countdown/redirect timer on an already-open modal.
   if (!modal || modal.open) return;
   modal.showModal();
@@ -1406,6 +1729,69 @@ function showSessionTimeoutModal() {
   const modal = document.getElementById('session-timeout-modal');
   if (modal) modal.addEventListener('cancel', (e) => e.preventDefault());
 })();
+
+// Global RFID exit-monitoring alarm - polls from every logged-in page (not
+// just Monitoring itself) so an unauthorized/unknown-tag detection anywhere
+// in the app interrupts with the same full-screen modal
+// (templates/base.html's #global-alarm-modal). Same idea, unauthenticated
+// version lives in templates/login.html for someone not yet logged in.
+//
+// "Episode"-based, not "poll-based": the modal shows once when the alarm
+// transitions inactive -> active, and Dismiss hides it for the rest of that
+// same active stretch (polling continues regardless, so it still auto-hides
+// the moment the Admin's Master Key Card tap clears it) - without this, a
+// dismissed alarm would just pop back up on the very next 5s poll.
+let globalAlarmWasActive = false;
+let globalAlarmDismissedForThisEpisode = false;
+
+function dismissGlobalAlarmModal() {
+  globalAlarmDismissedForThisEpisode = true;
+  document.getElementById('global-alarm-modal')?.close();
+}
+
+async function pollGlobalAlarm() {
+  const modal = document.getElementById('global-alarm-modal');
+  if (!modal) return;
+
+  try {
+    const res = await fetch('/api/v1/monitoring/alarm-status');
+    if (!res.ok) return; // best-effort - a hiccup here shouldn't itself interrupt anyone
+    const data = await res.json();
+
+    if (data.active) {
+      if (!globalAlarmWasActive) globalAlarmDismissedForThisEpisode = false; // new episode
+      globalAlarmWasActive = true;
+
+      const detailEl = document.getElementById('global-alarm-detail');
+      if (detailEl) {
+        const who = data.asset_name
+          ? `${data.asset_name} (${data.asset_barcode || '?'})`
+          : 'An unregistered tag';
+        const countNote = data.active_count > 1 ? ` - ${data.active_count} events` : '';
+        detailEl.textContent = `${who} was detected leaving without an authorized checkout.${countNote}`;
+      }
+
+      // Never on the Monitoring page itself - its own alarm banner already
+      // gives this full prominent treatment there; a second interrupt on
+      // top of it would just be noise for someone already looking at it.
+      const onMonitoringPage = window.location.pathname === '/monitoring';
+      if (!modal.open && !globalAlarmDismissedForThisEpisode && !onMonitoringPage) {
+        modal.showModal();
+      }
+    } else {
+      globalAlarmWasActive = false;
+      globalAlarmDismissedForThisEpisode = false;
+      if (modal.open) modal.close();
+    }
+  } catch (err) {
+    // Network hiccup - next poll tries again, nothing to surface here.
+  }
+}
+
+if (window.APP_CONFIG.monitoringAlarmPollEnabled) {
+  pollGlobalAlarm();
+  setInterval(pollGlobalAlarm, 5000);
+}
 
 const TOAST_VARIANTS = {
   success: {
@@ -1482,7 +1868,7 @@ function clearInputAfterError(input) {
   input.focus();
 }
 
-// Briefly highlights an element -- used to point at a cart/checklist row
+// Briefly highlights an element - used to point at a cart/checklist row
 // that a rescanned barcode turned out to already match (already in the
 // checkout cart, already checked off on a return), so staff can see *which*
 // row it was without hunting the list themselves. Driven entirely by
@@ -1496,7 +1882,13 @@ function flashHighlight(el, ms) {
   const prevShadow = el.style.boxShadow;
   el.style.transition = 'background-color 0.25s ease, box-shadow 0.25s ease';
   el.style.backgroundColor = 'rgba(67, 160, 71, 0.45)'; // success-green, theme-independent on purpose
-  el.style.boxShadow = '0 0 0 2px rgba(67, 160, 71, 0.65)';
+  // inset (not an outer 0 0 0 2px ring) - an outer shadow's spread extends
+  // past the element's own edges, so on a rounded-corner row (cart items,
+  // etc.) it visibly overshoots the box and squares off the corners since
+  // the extra 2px ring sits outside the radius. Inset draws the ring
+  // entirely within the border box instead, so it always exactly matches
+  // the element's own size and corner radius, whatever that is.
+  el.style.boxShadow = 'inset 0 0 0 2px rgba(67, 160, 71, 0.65)';
   setTimeout(() => {
     el.style.backgroundColor = prevBg;
     el.style.boxShadow = prevShadow;
@@ -1745,7 +2137,7 @@ document.body.addEventListener('show-toast', function (evt) {
 document.body.addEventListener('htmx:responseError', function (evt) {
   // Passive/ambient regions (e.g. a background banner check on page load)
   // refresh themselves without the user asking, so a failure there
-  // shouldn't interrupt them with an error toast -- it should just stay
+  // shouldn't interrupt them with an error toast - it should just stay
   // quiet and try again next time its trigger fires. Still 401-aware, since
   // a real session timeout matters everywhere, even in passive regions.
   const status = evt.detail && evt.detail.xhr ? evt.detail.xhr.status : null;
@@ -1771,17 +2163,17 @@ document.body.addEventListener('htmx:sendError', function (evt) {
 });
 
 // Checkout widget controller. A staff member can have several checkout sessions open at once
-// (one minimized while checking out a second trainee), so every instance -- a dialog in
-// #checkout-modal-container plus its dock in #checkout-docks-tray -- gets its own data-client-id
+// (one minimized while checking out a second trainee), so every instance - a dialog in
+// #checkout-modal-container plus its dock in #checkout-docks-tray - gets its own data-client-id
 // and its state lives in this module's `state` map, keyed by that id.
 // Attached to window (not just `const Checkout = ...`) because htmx's "js:" hx-vals expressions
-// run through `new Function(...)`, which can only see true globals -- a plain const would be
+// run through `new Function(...)`, which can only see true globals - a plain const would be
 // invisible to hx-trigger="click[Checkout.countOk()]" even though onclick="" can see it fine.
 window.Checkout = (function () {
   const state = new Map();
   const MAX_CONCURRENT_CHECKOUTS = 4;
   // Which instance the shared #checkout-close-confirm-modal is currently
-  // asking about -- set by requestClose() right before showing it, read
+  // asking about - set by requestClose() right before showing it, read
   // by confirmCloseFromDock()/cancelCloseConfirm() below.
   let pendingCloseClientId = null;
 
@@ -1816,7 +2208,7 @@ window.Checkout = (function () {
   }
 
   // Finds the cart row for a rescanned-and-already-there asset and flashes
-  // it via the global flashHighlight() -- see that function (near
+  // it via the global flashHighlight() - see that function (near
   // showToast, above) for why it's inline-style-driven rather than a CSS
   // class.
   function flashCartItem(clientId, itemId) {
@@ -1845,7 +2237,7 @@ window.Checkout = (function () {
   }
 
   // Keeps body.checkout-panel-open in sync with "is any checkout dialog
-  // currently expanded" -- the #checkout-docks-tray CSS above reads this
+  // currently expanded" - the #checkout-docks-tray CSS above reads this
   // class to shift itself clear of the panel only while one's actually
   // open, rather than permanently relocating the tray. Safe to call
   // after any state change (expand, minimize, cancel) since at most one
@@ -1866,6 +2258,9 @@ window.Checkout = (function () {
         completedCount: 0,
         memberFirstName: memberFirstName || null,
         memberBarcode: memberBarcode || null,
+        // Holds the first scan of a barcode-then-RFID pair while awaiting
+        // the (optional) second scan - see addItem()/skipRfidVerify().
+        pendingAssetCode: null,
       });
       if (isMinimized(clientId)) updateDockLabel(clientId);
     },
@@ -1887,6 +2282,12 @@ window.Checkout = (function () {
       errorEl.classList.add('hidden');
       if (!barcode) return;
 
+      // Typing/scanning a barcode directly and hitting Start is a separate
+      // path from picking a row in the browse panel (selectAvailableMember
+      // already closes it before calling in here) - close it here too, so
+      // it doesn't linger open over step-cart once the session starts.
+      fieldOf(clientId, 'available-members-panel')?.classList.add('hidden');
+
       try {
         const res = await fetch('/api/v1/checkout-sessions', {
           method: 'POST',
@@ -1900,7 +2301,7 @@ window.Checkout = (function () {
           if (res.status === 409 && data.checkout_session_id) {
             // This member already has a cart in progress somewhere (e.g.
             // it was minimized and forgotten, this member's badge was
-            // scanned twice, or it's open in another tab) -- reopen that
+            // scanned twice, or it's open in another tab) - reopen that
             // instead of dead-ending on an error or creating a duplicate.
             this._handleAlreadyInProgress(clientId, data.checkout_session_id);
             return;
@@ -1933,14 +2334,14 @@ window.Checkout = (function () {
     _handleAlreadyInProgress(blankClientId, existingSessionId) {
       // The blank instance that triggered this never had a session of its
       // own (sessionId is still null), so tearing it down is a pure DOM
-      // removal -- nothing to cancel on the server.
+      // removal - nothing to cancel on the server.
       this._performCancel(blankClientId);
       this.resumeOrExpand(existingSessionId);
     },
 
     // Shared by the 409 fallback above and every "Resume" button (the
     // per-page active-checkout banner, etc). If this session is already
-    // rendered in the current tab, just bring it forward -- no duplicate
+    // rendered in the current tab, just bring it forward - no duplicate
     // dialog, no server round-trip. Otherwise fetch it fresh and append it.
     resumeOrExpand(sessionId) {
       const existing = dialogOf(sessionId);
@@ -1955,40 +2356,251 @@ window.Checkout = (function () {
       });
     },
 
+    // One field, two possible Enters per item - see the template comment
+    // above the input for why (preserving the barcode+RFID anti-swap check
+    // from the old two-field layout without needing two visible boxes).
+    // First Enter: hold the scanned value as pending, don't call the API
+    // yet - there's no way to know whether an RFID follow-up scan is
+    // coming. Second Enter (or skipRfidVerify()): send the pending code as
+    // asset_code and whatever's in the field now (possibly nothing) as
+    // rfid_code, in the exact same single add-item call the two-field
+    // version always made.
     async addItem(btn) {
       const clientId = clientIdOf(btn);
+      const s = state.get(clientId);
       const input = fieldOf(clientId, 'asset-code-input');
-      const rfidInput = fieldOf(clientId, 'rfid-code-input');
-      const assetCode = input.value.trim();
-      const rfidCode = rfidInput.value.trim();
-      if (!assetCode) return;
+      const value = input.value.trim();
 
-      // Clear + refocus either way -- on success there's just nothing else
+      if (!s.pendingAssetCode) {
+        if (!value) return;
+
+        // If this scan is itself the asset's RFID tag - not just its
+        // barcode or asset ID code - it already proves physical possession
+        // the same way a second confirmatory tap would: a barcode sticker
+        // can be peeled and moved to a different tool, an embedded RFID
+        // tag can't. Skip the "scan again to verify" prompt entirely in
+        // that case and add it straight away, self-verified, instead of
+        // asking staff to scan the exact same tag a second time for no
+        // real reason. Falls through to the normal pending/second-scan
+        // flow below for anything that isn't a real RFID match (a plain
+        // barcode, an unresolvable code, or a network hiccup).
+        if (await this._looksLikeRfidScan(value)) {
+          input.value = '';
+          await this._addAssetByCode(clientId, value, value);
+          clearInputAfterError(input);
+          return;
+        }
+
+        s.pendingAssetCode = value;
+        input.value = '';
+        fieldOf(clientId, 'pending-verify-hint')?.classList.remove('hidden');
+        input.focus();
+        return;
+      }
+
+      const assetCode = s.pendingAssetCode;
+      const rfidCode = value || null;
+      s.pendingAssetCode = null;
+      fieldOf(clientId, 'pending-verify-hint')?.classList.add('hidden');
+
+      // Clear + refocus either way - on success there's just nothing else
       // to show; on failure _addAssetByCode has already set the error text
       // (and flashed the matching cart row, if it was an already-in-cart hit).
       await this._addAssetByCode(clientId, assetCode, rfidCode);
       clearInputAfterError(input);
-      if (rfidCode) clearInputAfterError(rfidInput);
+    },
+
+    // The pending-verify hint's "add without verifying" link - same as
+    // pressing Enter on the (now empty) field mid-verification, just a
+    // mouse alternative for staff who scanned a barcode-only tool and
+    // don't want to wait around for an RFID tap that isn't coming.
+    skipRfidVerify(el) {
+      const clientId = clientIdOf(el);
+      this.addItem(fieldOf(clientId, 'asset-code-input'));
+    },
+
+    // Checks whether `code` is itself the RFID tag of a real, resolvable
+    // asset - not just its barcode or asset ID - so addItem() can decide
+    // whether a single scan already proves physical possession. Best-effort
+    // only: a network hiccup, no match, or a match via barcode/asset ID
+    // instead of rfid_id all just return false, which simply falls through
+    // to the normal two-scan flow - this never blocks adding the item, it
+    // only ever skips a redundant prompt.
+    async _looksLikeRfidScan(code) {
+      let asset;
+      try {
+        const res = await fetch(`/api/v1/assets/barcode/${encodeURIComponent(code)}`);
+        if (!res.ok) return false;
+        asset = await res.json();
+      } catch (err) {
+        return false;
+      }
+      if (!asset.rfid_id) return false;
+      const upper = code.toUpperCase();
+      if (asset.rfid_id.toUpperCase() === upper) return true;
+      // Some readers set to type scans as keyboard input only type the
+      // decimal value of an EPC's last 3 bytes, not the full hex ID - see
+      // utils/validators.py's decimal_scan_hex_suffix() docstring for the
+      // real example this is derived from.
+      if (/^\d+$/.test(code)) {
+        const n = parseInt(code, 10);
+        if (n <= 0xffffff) {
+          const suffix = n.toString(16).toUpperCase().padStart(6, '0');
+          if (asset.rfid_id.toUpperCase().endsWith(suffix)) return true;
+        }
+      }
+      return false;
     },
 
     // Shared by the manual scan input above and the browse-available-assets
-    // panel below -- both end up adding one asset code to the same cart, so
+    // panel below - both end up adding one asset code to the same cart, so
     // the actual API call + cart-list DOM update only lives once. Returns
     // true/false so each caller can decide what to do with its own control
     // (clear the input vs. re-enable a panel row) on success/failure.
-    // rfidCode is optional -- see the template comment on the RFID input.
-    async _addAssetByCode(clientId, assetCode, rfidCode) {
+    // rfidCode is optional - see the template comment on the RFID input.
+    async _addAssetByCode(clientId, assetCode, rfidCode, quantity) {
       const s = state.get(clientId);
       const errorEl = fieldOf(clientId, 'item-error');
       errorEl.classList.add('hidden');
       if (!assetCode || !s.sessionId) return false;
 
+      // Renders the cart row from whatever response eventually comes back -
+      // called immediately below on a live response, or later (possibly
+      // after this whole call has already returned false) by offline_queue.js
+      // once a queued retry succeeds, if this tab is still open. Safe to
+      // retry: add-to-cart is guarded server-side by both the atomic
+      // status='available'->'reserved' claim and checkout_session_items'
+      // UNIQUE(checkout_session_id, asset_id), so a duplicate POST from a
+      // retried queue item just comes back 409 already_in_cart, not a
+      // second row - see offline_queue.js's module doc.
+      const renderAddedItem = (data) => {
+        const list = fieldOf(clientId, 'cart-list');
+        if (!list) return;
+        const isConsumable = data.asset_type === 'consumable';
+        const existing = list.querySelector(`li[data-item-id="${data.item_id}"]`);
+        if (existing) {
+          // Re-scan of an already-in-cart consumable: server already
+          // incremented its quantity (add_item_to_checkout_session) - just
+          // reflect the new total, don't add a second row. A retried/queued
+          // duplicate of the SAME add lands here too and is a harmless no-op
+          // (same quantity value written again).
+          const qtyEl = existing.querySelector('[data-cart-qty]');
+          if (qtyEl) qtyEl.textContent = `x${data.quantity}`;
+          flashHighlight(existing, 2000);
+          document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+          return;
+        }
+        const li = document.createElement('li');
+        // flex-col (not the plain row this used to be) whenever a
+        // reservation notice needs a second line underneath - same
+        // structure either way otherwise, so a plain item's row still
+        // looks identical to before.
+        li.className = data.reservation_notice
+          ? 'flex flex-col gap-1 px-3 py-1.5 rounded-lg bg-base-200 text-sm'
+          : 'flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm';
+        li.dataset.itemId = data.item_id;
+
+        const row = data.reservation_notice ? document.createElement('div') : li;
+        if (data.reservation_notice) row.className = 'flex items-center justify-between gap-2';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'truncate flex-1';
+        nameSpan.textContent = data.barcode_id ? `${data.asset_name} · ${data.barcode_id}` : data.asset_name;
+        row.appendChild(nameSpan);
+
+        if (isConsumable) {
+          // Quantity stepper instead of a single remove icon - "-" decrements
+          // the cart line (removing it outright once it hits zero), "+"
+          // re-runs the same add-to-cart call that a rescan would trigger.
+          const stepper = document.createElement('div');
+          stepper.className = 'flex items-center gap-1.5 shrink-0';
+          const minusBtn = document.createElement('button');
+          minusBtn.type = 'button';
+          minusBtn.className = 'btn btn-ghost btn-xs btn-circle';
+          minusBtn.setAttribute('aria-label', `Remove one ${data.asset_name}`);
+          minusBtn.textContent = '-';
+          minusBtn.onclick = () => Checkout.removeItem(minusBtn, data.item_id, li, 1);
+          const qtySpan = document.createElement('span');
+          qtySpan.className = 'text-xs font-medium w-8 text-center';
+          qtySpan.dataset.cartQty = '';
+          qtySpan.textContent = `x${data.quantity}`;
+          const plusBtn = document.createElement('button');
+          plusBtn.type = 'button';
+          plusBtn.className = 'btn btn-ghost btn-xs btn-circle';
+          plusBtn.setAttribute('aria-label', `Add one more ${data.asset_name}`);
+          plusBtn.textContent = '+';
+          plusBtn.onclick = () => this._addAssetByCode(clientId, assetCode, null, 1);
+          stepper.appendChild(minusBtn);
+          stepper.appendChild(qtySpan);
+          stepper.appendChild(plusBtn);
+          li.appendChild(stepper);
+        } else {
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'text-error hover:text-error/70 shrink-0';
+          removeBtn.setAttribute('aria-label', `Remove ${data.asset_name}`);
+          removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
+          removeBtn.onclick = () => Checkout.removeItem(removeBtn, data.item_id, li);
+          row.appendChild(removeBtn);
+        }
+        if (row !== li) li.appendChild(row);
+
+        // Advisory-only heads-up (see services/transaction_service.py's
+        // add_item_to_checkout_session) - this asset has an upcoming
+        // reservation, but nothing here blocks the checkout itself, just
+        // surfaces it the same moment staff scan it in, same as the
+        // "RESERVED FOR" banner on the asset's own Details panel.
+        if (data.reservation_notice) {
+          // Built with textContent, not an innerHTML template string - this
+          // file is shared across every page (including ones with no local
+          // escapeHtml helper of their own), and member_name ultimately
+          // comes from user-entered data.
+          const notice = document.createElement('p');
+          notice.className = 'text-xs text-warning flex items-start gap-1';
+          notice.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>';
+          const noticeText = document.createElement('span');
+          noticeText.textContent = `Reserved for ${data.reservation_notice.member_name}, ${formatDateTime12h(data.reservation_notice.start_at)} – ${formatDateTime12h(data.reservation_notice.end_at)}`;
+          notice.appendChild(noticeText);
+          li.appendChild(notice);
+        }
+
+        list.appendChild(li);
+        // Confirms the scan actually landed - same green glow already used
+        // for an already-in-cart rescan, just on the freshly-added row this
+        // time. Matters most right after an RFID verification tap (the whole
+        // point of that second scan is "yes, this is the real tool"), but
+        // it's shown for a plain barcode-only add too so the feedback is
+        // consistent either way.
+        flashHighlight(li, 2000);
+        // This asset just flipped available -> reserved (or a consumable's
+        // quantity dropped) - the Inventory table (if it's the page
+        // underneath, or wherever staff navigate to next) shouldn't need a
+        // manual refresh to notice, same as every other status-changing
+        // action in the app already does via this same event.
+        document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+
+        // Remembers which asset code produced which cart item id, so the
+        // browse panel (if open) can grey an asset out the moment it's
+        // added, and un-grey it again if the item is later removed --
+        // without this we'd only know the asset's *name*, not the code
+        // the panel keys its rows on.
+        if (!s.cartAssetCodes) s.cartAssetCodes = new Map();
+        s.cartAssetCodes.set(String(data.item_id), assetCode);
+        this._updateCartCount(clientId);
+      };
+
       try {
-        const res = await fetch(`/api/v1/checkout-sessions/${s.sessionId}/items/add`, {
-          method: 'POST',
-          headers: csrfHeaders(),
-          body: JSON.stringify({ asset_code: assetCode, rfid_code: rfidCode || null }),
-        });
+        const res = await (window.OfflineQueue ? window.OfflineQueue.queuedFetch : fetch)(
+          `/api/v1/checkout-sessions/${s.sessionId}/items/add`,
+          {
+            method: 'POST',
+            headers: csrfHeaders(),
+            body: JSON.stringify({ asset_code: assetCode, rfid_code: rfidCode || null, quantity: quantity || 1 }),
+          },
+          { label: `adding ${assetCode}`, onSuccess: async (queuedRes) => {
+            if (queuedRes.ok) renderAddedItem(await queuedRes.json());
+          } }
+        );
         const data = await res.json();
 
         if (!res.ok) {
@@ -1999,51 +2611,49 @@ window.Checkout = (function () {
           return false;
         }
 
-        const list = fieldOf(clientId, 'cart-list');
-        const li = document.createElement('li');
-        li.className = 'flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm';
-        li.dataset.itemId = data.item_id;
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'truncate';
-        nameSpan.textContent = data.asset_name;
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'text-error hover:text-error/70 shrink-0';
-        removeBtn.setAttribute('aria-label', `Remove ${data.asset_name}`);
-        removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>';
-        removeBtn.onclick = () => Checkout.removeItem(removeBtn, data.item_id, li);
-        li.appendChild(nameSpan);
-        li.appendChild(removeBtn);
-        list.appendChild(li);
-
-        // Remembers which asset code produced which cart item id, so the
-        // browse panel (if open) can grey an asset out the moment it's
-        // added, and un-grey it again if the item is later removed --
-        // without this we'd only know the asset's *name*, not the code
-        // the panel keys its rows on.
-        if (!s.cartAssetCodes) s.cartAssetCodes = new Map();
-        s.cartAssetCodes.set(String(data.item_id), assetCode);
-
-        this._updateCartCount(clientId);
+        renderAddedItem(data);
         return true;
       } catch (err) {
+        if (window.OfflineQueue && window.OfflineQueue.isOfflineQueuedError(err)) {
+          // Already toasted "saved offline" by queuedFetch - nothing more to
+          // show here; the row appears once the retry succeeds (onSuccess
+          // above), or silently server-side if this tab gets reloaded first.
+          return false;
+        }
         errorEl.textContent = 'Network error - check your connection and try again.';
         errorEl.classList.remove('hidden');
         return false;
       }
     },
 
-    async removeItem(el, itemId, li) {
+    // decrementBy: consumable-only ("-" stepper button removes just one
+    // unit); omitted/undefined removes the whole cart line, as before.
+    async removeItem(el, itemId, li, decrementBy) {
       const clientId = clientIdOf(el);
       const s = state.get(clientId);
       if (!s || !s.sessionId) return;
       try {
-        await fetch(`/api/v1/checkout-sessions/${s.sessionId}/items/${itemId}/remove`, {
-          method: 'POST',
-          headers: csrfHeaders(),
-        });
+        const url = `/api/v1/checkout-sessions/${s.sessionId}/items/${itemId}/remove`
+          + (decrementBy ? `?decrement_by=${encodeURIComponent(decrementBy)}` : '');
+        const res = await fetch(url, { method: 'POST', headers: csrfHeaders() });
+        const data = await res.json().catch(() => ({}));
+
+        if (decrementBy && data && data.removed === false) {
+          // Line still has units left - just update the displayed count,
+          // the row itself stays. Still a real quantity change on a
+          // consumable (Inventory shows "Qty: N" live), so still worth
+          // refreshing the table underneath.
+          const qtyEl = li.querySelector('[data-cart-qty]');
+          if (qtyEl) qtyEl.textContent = `x${data.quantity}`;
+          document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+          return;
+        }
+
         li.remove();
         this._updateCartCount(clientId);
+        // Removing releases this asset back to 'available' (or restores a
+        // consumable's quantity) - same reasoning as complete()/_performCancel().
+        document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
 
         const assetCode = s.cartAssetCodes && s.cartAssetCodes.get(String(itemId));
         if (assetCode) {
@@ -2066,7 +2676,7 @@ window.Checkout = (function () {
       const panel = fieldOf(clientId, 'available-assets-panel');
       if (!panel) return;
       const opening = panel.classList.contains('hidden');
-      if (opening) this._positionAvailableAssetsPanel(clientId);
+      if (opening) this._positionFlyoutPanel(clientId, 'available-assets-panel');
       panel.classList.toggle('hidden');
       if (opening) {
         fieldOf(clientId, 'available-assets-filter').value = '';
@@ -2078,17 +2688,19 @@ window.Checkout = (function () {
     // the markup comment for why it can't just be `absolute` inside
     // .modal-box), so this computes where "flush against the panel's left
     // edge" actually is from .modal-box's live bounding rect each time
-    // it's opened, and again on resize while it's open (below) -- the
+    // it's opened, and again on resize while it's open (below) - the
     // side panel's rendered width is viewport-dependent under the 26rem
-    // breakpoint (max-width: 92vw in base.html).
-    _positionAvailableAssetsPanel(clientId) {
+    // breakpoint (max-width: 92vw in base.html). Shared by both the
+    // available-assets and available-members flyouts - same geometry
+    // either way, just a different panel role.
+    _positionFlyoutPanel(clientId, panelRole) {
       const box = dialogOf(clientId)?.querySelector('.modal-box');
-      const panel = fieldOf(clientId, 'available-assets-panel');
+      const panel = fieldOf(clientId, panelRole);
       if (!box || !panel) return;
       const rect = box.getBoundingClientRect();
       // Top and height mirror .modal-box's own rect exactly (rather than
       // inset + maxHeight-24) so the flyout's top and bottom edges line up
-      // flush with the panel it's attached to -- same height, not just
+      // flush with the panel it's attached to - same height, not just
       // capped at it. `height` (not maxHeight) is what's needed here: the
       // panel's flex-1 list only grows to fill a *definite* parent height,
       // so a maxHeight alone left it sized to content instead of matching
@@ -2110,7 +2722,7 @@ window.Checkout = (function () {
       try {
         // GET /checkout-sessions/available-assets (routes/transactions.py)
         // returns { assets: [{ code, name, category }, ...] }. `code` is
-        // each asset's barcode_id -- sent back through items/add below so
+        // each asset's barcode_id - sent back through items/add below so
         // a clicked row resolves to the same asset that was shown.
         const res = await fetch('/api/v1/checkout-sessions/available-assets', { headers: csrfHeaders() });
         const data = await res.json();
@@ -2173,7 +2785,7 @@ window.Checkout = (function () {
       return li;
     },
 
-    // Client-side filter over whatever's already loaded -- no re-fetch,
+    // Client-side filter over whatever's already loaded - no re-fetch,
     // just show/hide rows. Fine at inventory list sizes; swap for a
     // debounced server query if the real list ends up huge.
     filterAvailableAssets(input) {
@@ -2185,12 +2797,141 @@ window.Checkout = (function () {
     },
 
     // Clicking a row in the panel adds it exactly like scanning its
-    // barcode would -- same endpoint, same cart-list DOM update -- it just
+    // barcode would - same endpoint, same cart-list DOM update - it just
     // disables the row afterward instead of clearing a text input.
     async selectAvailableAsset(btn, clientId, assetCode) {
+      // Picking from the browse panel is its own one-shot add, unrelated to
+      // whatever might be mid-verification in the scan field - clear that
+      // so a leftover pending code from a different tool doesn't get
+      // silently attached as this item's "RFID verification" on the next
+      // Enter in that field.
+      const s = state.get(clientId);
+      s.pendingAssetCode = null;
+      fieldOf(clientId, 'pending-verify-hint')?.classList.add('hidden');
+
       btn.disabled = true;
       const added = await this._addAssetByCode(clientId, assetCode);
       if (!added) btn.disabled = false;
+    },
+
+    // Step 1's "Show available members" flyout - same open/load/filter/select
+    // shape as the available-assets one above, just listing eligible
+    // (active, unrestricted) members instead of borrowable assets.
+    toggleAvailableMembers(el) {
+      const clientId = clientIdOf(el);
+      const panel = fieldOf(clientId, 'available-members-panel');
+      if (!panel) return;
+      const opening = panel.classList.contains('hidden');
+      if (opening) this._positionFlyoutPanel(clientId, 'available-members-panel');
+      panel.classList.toggle('hidden');
+      if (opening) {
+        fieldOf(clientId, 'available-members-filter').value = '';
+        this._loadAvailableMembers(clientId);
+      }
+    },
+
+    async _loadAvailableMembers(clientId) {
+      const listEl = fieldOf(clientId, 'available-members-list');
+      const loadingEl = fieldOf(clientId, 'available-members-loading');
+      const errorEl = fieldOf(clientId, 'available-members-error');
+      listEl.innerHTML = '';
+      errorEl.classList.add('hidden');
+      loadingEl.classList.remove('hidden');
+
+      try {
+        // GET /checkout-sessions/available-members (routes/transactions.py)
+        // returns { members: [{ code, name, department }, ...] }. `code` is
+        // each member's barcode_id - fed straight into startSession below.
+        const res = await fetch('/api/v1/checkout-sessions/available-members', { headers: csrfHeaders() });
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (res.status === 401) { showSessionTimeoutModal(); return; }
+          errorEl.textContent = data.error || "Couldn't load available members.";
+          errorEl.classList.remove('hidden');
+          return;
+        }
+
+        const members = data.members || [];
+        members.forEach((member) => listEl.appendChild(this._buildAvailableMemberRow(clientId, member)));
+
+        if (members.length === 0) {
+          const empty = document.createElement('li');
+          empty.className = 'text-xs text-base-content/50 text-center py-4';
+          empty.textContent = 'No available members.';
+          listEl.appendChild(empty);
+        }
+      } catch (err) {
+        errorEl.textContent = 'Network error - check your connection and try again.';
+        errorEl.classList.remove('hidden');
+      } finally {
+        loadingEl.classList.add('hidden');
+      }
+    },
+
+    // Restricted members are shown, not hidden - staff should still see the
+    // whole roster (a member who's just vanished from the list looks like a
+    // data bug), they just can't be picked: the row is disabled and flagged
+    // with why, matching the same restriction start_checkout_session would
+    // otherwise reject the barcode for anyway.
+    _buildAvailableMemberRow(clientId, member) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg hover:bg-base-200 disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed';
+      btn.dataset.memberCode = member.code;
+      if (member.restricted) {
+        btn.disabled = true;
+        btn.title = member.restriction_reason || 'This member is restricted';
+      } else {
+        btn.onclick = () => Checkout.selectAvailableMember(btn, clientId, member.code);
+      }
+
+      const nameRow = document.createElement('span');
+      nameRow.className = 'flex items-center gap-1.5';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'text-sm truncate';
+      nameSpan.textContent = member.name;
+      nameRow.appendChild(nameSpan);
+      if (member.restricted) {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-error badge-xs shrink-0';
+        badge.textContent = 'Restricted';
+        nameRow.appendChild(badge);
+      }
+      btn.appendChild(nameRow);
+
+      const codeSpan = document.createElement('span');
+      codeSpan.className = 'block text-xs font-mono text-base-content/40 truncate';
+      codeSpan.textContent = member.code;
+      btn.appendChild(codeSpan);
+
+      if (member.department) {
+        const deptSpan = document.createElement('span');
+        deptSpan.className = 'block text-xs text-base-content/50 truncate';
+        deptSpan.textContent = member.department;
+        btn.appendChild(deptSpan);
+      }
+
+      li.appendChild(btn);
+      return li;
+    },
+
+    filterAvailableMembers(input) {
+      const clientId = clientIdOf(input);
+      const q = input.value.trim().toLowerCase();
+      fieldOf(clientId, 'available-members-list').querySelectorAll('button[data-member-code]').forEach((btn) => {
+        btn.closest('li').classList.toggle('hidden', !btn.textContent.toLowerCase().includes(q));
+      });
+    },
+
+    // Picking a row starts the session exactly as if that barcode had been
+    // scanned/typed into the member-barcode field and Start clicked.
+    selectAvailableMember(btn, clientId, memberCode) {
+      const input = fieldOf(clientId, 'member-barcode-input');
+      input.value = memberCode;
+      fieldOf(clientId, 'available-members-panel')?.classList.add('hidden');
+      this.startSession(input);
     },
 
     _updateCartCount(clientId) {
@@ -2228,6 +2969,11 @@ window.Checkout = (function () {
         s.completedCount += 1;
         showToast(data.message || 'Checkout complete', 'success');
         document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+        // Every scanned asset just flipped reserved -> borrowed - the
+        // Inventory table (if it's the page underneath, or the next page
+        // visited) should already show that instead of needing a manual
+        // refresh, same as every other status-changing action here.
+        document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
         this._resetForNextTrainee(clientId);
       } catch (err) {
         errorEl.textContent = 'Network error - check your connection and try again.';
@@ -2245,6 +2991,8 @@ window.Checkout = (function () {
       const s = state.get(clientId);
       s.memberFirstName = null;
       s.memberBarcode = null;
+      s.pendingAssetCode = null;
+      fieldOf(clientId, 'pending-verify-hint')?.classList.add('hidden');
       fieldOf(clientId, 'cart-list').innerHTML = '';
       fieldOf(clientId, 'cart-count').textContent = '0 items';
       fieldOf(clientId, 'member-barcode-label').textContent = '';
@@ -2268,7 +3016,7 @@ window.Checkout = (function () {
 
     // Actually tears down one instance's session and removes its DOM.
     // Only ever called once the user has confirmed (or there was nothing
-    // to confirm). Only affects this instance -- any other open or
+    // to confirm). Only affects this instance - any other open or
     // minimized checkout is untouched.
     async _performCancel(clientId) {
       const s = state.get(clientId);
@@ -2278,8 +3026,12 @@ window.Checkout = (function () {
             method: 'POST',
             headers: csrfHeaders(),
           });
+          // Cancelling releases every scanned asset back to 'available' -
+          // same "the table underneath shouldn't need a manual refresh to
+          // notice" reasoning as every other status-changing action here.
+          document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
         } catch (err) {
-          // Best-effort -- the session will also auto-cancel on its own
+          // Best-effort - the session will also auto-cancel on its own
           // after SESSION_STALE_MINUTES if this fails.
         }
       }
@@ -2289,29 +3041,30 @@ window.Checkout = (function () {
       syncPanelOpenClass();
     },
 
-    // Pure restyle -- the dialog, its cart DOM, and its state entry are
+    // Pure restyle - the dialog, its cart DOM, and its state entry are
     // all untouched. Only visibility toggles, and only for this instance.
     minimize(el) {
       const clientId = clientIdOf(el);
       updateDockLabel(clientId);
       const dialog = dialogOf(clientId);
       // close() (not just hiding .modal-box/.modal-backdrop) is what
-      // actually takes the dialog out of the top layer -- otherwise the
+      // actually takes the dialog out of the top layer - otherwise the
       // native ::backdrop stays rendered and the rest of the page stays
       // inert/unclickable even though our own elements are visually hidden.
       if (dialog.open) dialog.close();
       dockOf(clientId).classList.remove('hidden');
       // The available-assets panel is `position: fixed`, so closing the
       // dialog doesn't visually hide it the way it hides everything still
-      // nested inside .modal-box -- without this it would just sit there
+      // nested inside .modal-box - without this it would just sit there
       // floating over the page, and would reappear pre-opened (with a now
       // stale list) the next time this instance expands.
       fieldOf(clientId, 'available-assets-panel')?.classList.add('hidden');
+      fieldOf(clientId, 'available-members-panel')?.classList.add('hidden');
       syncPanelOpenClass();
     },
 
     // Expanding one instance minimizes whatever else is currently
-    // expanded first -- two full-size native <dialog>s open at once is
+    // expanded first - two full-size native <dialog>s open at once is
     // confusing, so at most one is ever shown expanded even though
     // several can sit minimized in the tray at the same time.
     expand(el) {
@@ -2333,7 +3086,7 @@ window.Checkout = (function () {
     // below), and its dock's close button.
     //
     // Closing from the dock ALWAYS asks for confirmation first, whether
-    // or not anything's been scanned -- a lightweight native confirm()
+    // or not anything's been scanned - a lightweight native confirm()
     // rather than expanding the full dialog, so the dock doesn't flash
     // open just to close again.
     //
@@ -2366,6 +3119,7 @@ window.Checkout = (function () {
 
       fieldOf(clientId, 'discard-count').textContent = `${count} scanned item${count === 1 ? '' : 's'}`;
       fieldOf(clientId, 'available-assets-panel')?.classList.add('hidden');
+      fieldOf(clientId, 'available-members-panel')?.classList.add('hidden');
       fieldOf(clientId, 'step-member').classList.add('hidden');
       fieldOf(clientId, 'step-cart').classList.add('hidden');
       fieldOf(clientId, 'step-discard').classList.remove('hidden');
@@ -2373,7 +3127,7 @@ window.Checkout = (function () {
       fieldOf(clientId, 'discard-actions').classList.remove('hidden');
     },
 
-    // "Close checkout" in the shared confirm dialog -- tears down
+    // "Close checkout" in the shared confirm dialog - tears down
     // whichever instance requestClose() flagged as pending. Reads
     // pendingCloseClientId into a local first: dialog.close() fires its
     // 'close' event synchronously, and that event also clears
@@ -2385,7 +3139,7 @@ window.Checkout = (function () {
       if (clientId) this._performCancel(clientId);
     },
 
-    // "Keep it" (or backdrop/Escape) -- just dismiss, instance untouched.
+    // "Keep it" (or backdrop/Escape) - just dismiss, instance untouched.
     cancelCloseConfirm() {
       document.getElementById('checkout-close-confirm-modal').close();
       pendingCloseClientId = null;
@@ -2413,21 +3167,23 @@ window.Checkout = (function () {
   };
 })();
 
-// Keeps any currently-open available-assets panel(s) flush against their
-// checkout dialog's edge as the viewport resizes -- needed because the
-// side panel's own width is responsive (max-width: 92vw) below the 26rem
-// breakpoint, so a stale position computed at open time would drift out
-// of alignment.
+// Keeps any currently-open available-assets/available-members panel(s)
+// flush against their checkout dialog's edge as the viewport resizes --
+// needed because the side panel's own width is responsive (max-width:
+// 92vw) below the 26rem breakpoint, so a stale position computed at open
+// time would drift out of alignment.
 window.addEventListener('resize', function () {
-  document.querySelectorAll('[data-role="available-assets-panel"]:not(.hidden)').forEach((panel) => {
-    const clientId = panel.closest('[data-client-id]')?.dataset.clientId;
-    if (clientId) Checkout._positionAvailableAssetsPanel(clientId);
+  ['available-assets-panel', 'available-members-panel'].forEach((role) => {
+    document.querySelectorAll(`[data-role="${role}"]:not(.hidden)`).forEach((panel) => {
+      const clientId = panel.closest('[data-client-id]')?.dataset.clientId;
+      if (clientId) Checkout._positionFlyoutPanel(clientId, role);
+    });
   });
 });
 
 // data-close-guard hook for the shared Escape-key handler below. That
 // handler only knows the topmost *open* dialog exists, it doesn't pass it
-// in -- but since Checkout.expandById() never lets more than one checkout
+// in - but since Checkout.expandById() never lets more than one checkout
 // dialog be open at a time, there's at most one to find here.
 window.requestCheckoutModalClose = function () {
   const minimizeBtn = document.querySelector('#checkout-modal-container > dialog.checkout-modal[open] [data-role="minimize-btn"]');
@@ -2435,14 +3191,14 @@ window.requestCheckoutModalClose = function () {
 };
 
 // Shared data-close-guard target for the CSV import modals (Assets/
-// Members/Staff -- templates/{assets,members,staff}/_import_modal.html),
+// Members/Staff - templates/{assets,members,staff}/_import_modal.html),
 // each set data-close-guard="guardImportModalClose" on their outer
 // .modal.modal-open div. Only one of these can ever be open at a time
 // (same one-modal-in-#modal-container assumption requestCheckoutModalClose
 // above makes), so this doesn't need to know which app it's for. The
 // import form itself toggles data-uploading="1" on this same div via
 // hx-on::before-request/after-request (there's no htmx-request class on
-// the outer div itself to check instead -- that class only lands on the
+// the outer div itself to check instead - that class only lands on the
 // elements htmx actually targets/indicates). While a preview/commit
 // request is in flight, the click/Escape is swallowed entirely rather
 // than closing mid-upload and losing the file selection or leaving an
@@ -2461,11 +3217,11 @@ document.getElementById('checkout-close-confirm-modal')?.addEventListener('close
   Checkout.cancelCloseConfirm();
 });
 
-// "?" opens Keyboard shortcuts from anywhere -- skipped while typing in a
+// "?" opens Keyboard shortcuts from anywhere - skipped while typing in a
 // field (an input/textarea/contenteditable, or anything already inside an
 // open modal) so it doesn't hijack a literal "?" character someone's
 // typing into a search box or form field. Mirrors the "?" convention used
-// elsewhere (GitHub, Slack, etc.) for "show me the shortcuts" -- opens
+// elsewhere (GitHub, Slack, etc.) for "show me the shortcuts" - opens
 // #keyboard-shortcuts-modal specifically, not the general Help modal
 // (see the account-menu rows above, now two separate entries).
 document.addEventListener('keydown', function (e) {
@@ -2490,22 +3246,33 @@ document.addEventListener('keydown', function (e) {
     document.getElementById('checkout-modal-container'),
     // Notification settings (opened from the System page and the
     // notification-bell dropdown's gear icon) targets this container
-    // specifically, not #modal-container -- left out of this list
+    // specifically, not #modal-container - left out of this list
     // before, so Escape silently did nothing while it was open.
     document.getElementById('global-modal-container'),
   ].filter(Boolean);
-  // Two modal patterns coexist in this app: native <dialog> (opened via
-  // showModal(), e.g. Manage Categories/Departments -- those two also
+  // Three modal patterns coexist in this app: native <dialog> (opened via
+  // showModal(), e.g. Manage Categories/Departments - those two also
   // listen for the dialog's own native Escape-triggered 'close' event
   // themselves and remove() on it, so this handler finding and
-  // remove()-ing them too is redundant but harmless) and the older
+  // remove()-ing them too is redundant but harmless), the older
   // div.modal.modal-open pattern (no dialog semantics, so no native
   // Escape handling at all) that most of the htmx-swapped-in Add/Edit/
-  // Delete/Import/Export forms still use. Matching only dialog[open]
-  // here meant Escape silently did nothing for that second, much larger
-  // group -- this now covers both.
+  // Delete/Import/Export forms still use, and the .fixed.inset-0.z-50
+  // "sheet" pattern used by the Details/Profile slide-in panels (assets,
+  // members, staff - each used to register its own document-level
+  // escClose listener that unconditionally grabbed the FIRST such element
+  // in the whole document via querySelector, so opening e.g. Edit
+  // *from* Details - appended as a sibling .modal.modal-open, both
+  // direct children of #modal-container - meant one Escape press fired
+  // both that stale listener and this one, closing the sheet underneath
+  // as well as the modal on top. Folding all three patterns into this
+  // single container-scoped, topmost-only handler and deleting the
+  // per-template ones (see assets/_details_modal.html,
+  // members/_profile_modal.html, staff/_profile_modal.html) fixes that -
+  // one Escape now only ever closes the single topmost modal, whatever
+  // pattern it uses.
   const modals = containers.flatMap((c) =>
-    Array.from(c.querySelectorAll(':scope > dialog[open], :scope > .modal.modal-open'))
+    Array.from(c.querySelectorAll(':scope > dialog[open], :scope > .modal.modal-open, :scope > .fixed.inset-0.z-50'))
   );
   if (modals.length === 0) return;
 
@@ -2527,16 +3294,16 @@ document.addEventListener('keydown', function (e) {
 // Backdrop-click-to-close for the older div.modal.modal-open pattern (see
 // the Escape handler's comment above for why two modal patterns coexist).
 // Native <dialog> modals already get this for free via their own
-// <form method="dialog" class="modal-backdrop"> sibling -- clicking the
+// <form method="dialog" class="modal-backdrop"> sibling - clicking the
 // backdrop submits that hidden form, which calls the dialog's native
 // close(), no JS needed. The div-based pattern has no dialog semantics
-// at all, so it's never had backdrop-click-close -- this adds it,
+// at all, so it's never had backdrop-click-close - this adds it,
 // sharing the exact same data-close-guard contract the Escape handler
 // above uses, so a modal only ever needs to opt into ONE guard function
 // to protect itself from both dismissal paths at once.
 document.addEventListener('click', function (e) {
   // Only fires when the click landed directly on the outer wrapper
-  // itself (the backdrop) -- not on .modal-box or anything inside it.
+  // itself (the backdrop) - not on .modal-box or anything inside it.
   // e.target === the modal div is the standard way to detect that with
   // a single delegated listener instead of attaching one per modal.
   if (!e.target.classList || !e.target.classList.contains('modal') || !e.target.classList.contains('modal-open')) {
@@ -2562,3 +3329,113 @@ document.addEventListener('click', function (e) {
     } catch (e) {}
   }
 })();
+
+// # # # GLOBAL SEARCH -------------------------------------------------------
+// Content header's Ctrl/Cmd+/ search bar (base.html) - #global-search-results'
+// own visibility is driven purely by whether it's :empty (see that element's
+// comment in base.html), so this only needs to handle clearing/closing it and
+// basic keyboard navigation between the rendered results.
+
+function closeGlobalSearch() {
+  const input = document.getElementById('global-search-input');
+  const results = document.getElementById('global-search-results');
+  if (input) { input.value = ''; input.blur(); }
+  if (results) results.innerHTML = '';
+}
+
+// Replays the dropdown's fade/slide-in (base.html's .global-search-dropdown-in
+// keyframe) every time htmx swaps fresh results into it - removing then
+// re-adding the class (with a forced reflow between, via offsetWidth) is
+// needed because the element itself never leaves the DOM between searches,
+// so just re-adding an already-present class wouldn't restart the animation.
+document.body.addEventListener('htmx:afterSwap', function (e) {
+  const results = e.target;
+  if (!results || results.id !== 'global-search-results') return;
+  results.classList.remove('global-search-dropdown-in');
+  void results.offsetWidth;
+  results.classList.add('global-search-dropdown-in');
+});
+
+function handleGlobalSearchKeydown(e) {
+  const results = document.getElementById('global-search-results');
+  if (!results) return;
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeGlobalSearch();
+    return;
+  }
+
+  const items = Array.from(results.querySelectorAll('.global-search-result'));
+  if (!items.length) return;
+
+  const current = results.querySelector('.global-search-result-active');
+  let index = items.indexOf(current);
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    index = (index + 1) % items.length;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    index = (index - 1 + items.length) % items.length;
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    // Deliberately NOT (current || items[0]).click() here - a real Enter
+    // keypress on a type="search" input races against that element's own
+    // native search-field behavior (Chrome/Edge can replay the field's prior
+    // text right after), which was intermittently swallowing the synthetic
+    // click before htmx ever saw it. Driving htmx directly via its public API
+    // sidesteps the input entirely, so it can't be re-clobbered afterward.
+    const target = current || items[0];
+    const hxUrl = target.getAttribute('hx-get');
+    // Read the actual hx-target/hx-swap off the element rather than assuming
+    // #modal-container/beforeend - true for assets/members/staff results, but
+    // Quick Actions' own targets vary (Checkout docks into
+    // #checkout-modal-container; Return/Add Member/Add Asset use "innerHTML",
+    // not "beforeend" - same as home.html's own Quick Actions buttons).
+    const hxTarget = target.getAttribute('hx-target') || '#modal-container';
+    const hxSwap = target.getAttribute('hx-swap') || 'beforeend';
+    // Pages results are plain <a href> (a full page nav, not an htmx swap -
+    // see _global_search_results.html), so they have no hx-get to read here.
+    const hrefUrl = target.tagName === 'A' ? target.getAttribute('href') : null;
+    closeGlobalSearch();
+    if (hxUrl && target.dataset.quickAction === 'checkout') {
+      // Same concurrent-checkout cap home.html's own Checkout button enforces
+      // via hx-trigger="click[Checkout.countOk()]" - replicated here since
+      // htmx.ajax bypasses that trigger guard entirely.
+      if (window.Checkout && window.Checkout.countOk()) {
+        window.htmx.ajax('GET', hxUrl, { target: hxTarget, swap: hxSwap, values: { client_id: crypto.randomUUID() } });
+      }
+    } else if (hxUrl && window.htmx) {
+      window.htmx.ajax('GET', hxUrl, { target: hxTarget, swap: hxSwap });
+    } else if (hrefUrl) {
+      window.location.href = hrefUrl;
+    } else {
+      // Account/theme results (search_service.py's _ACCOUNT_ACTIONS) have
+      // neither hx-get nor href - just a plain onclick (showModal()/
+      // setThemeMode()) baked into the row itself. A real .click() here is
+      // fine (unlike the entity-result case above this replaced) since
+      // there's no htmx request racing a native search-field side effect -
+      // it's a synchronous, self-contained JS call either way. Still works
+      // even though closeGlobalSearch() just emptied #global-search-results
+      // out from under it - detaching an element doesn't stop a already-bound
+      // onclick from firing when .click() is called on it directly.
+      target.click();
+    }
+    return;
+  } else {
+    return;
+  }
+
+  if (current) current.classList.remove('global-search-result-active', 'bg-base-200');
+  items[index].classList.add('global-search-result-active', 'bg-base-200');
+  items[index].scrollIntoView({ block: 'nearest' });
+}
+
+// Click-outside closes the dropdown, same convention as the account/
+// notification dropdowns elsewhere in this same header.
+document.addEventListener('click', function (e) {
+  const wrap = document.getElementById('global-search-wrap');
+  if (wrap && !wrap.contains(e.target)) closeGlobalSearch();
+});

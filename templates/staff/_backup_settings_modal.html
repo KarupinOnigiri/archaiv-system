@@ -1,5 +1,5 @@
 <div class="modal modal-open">
-  <!-- overflow-y-hidden overrides daisyUI's default modal-box scrolling -- left
+  <!-- overflow-y-hidden overrides daisyUI's default modal-box scrolling - left
        alone, the header/footer (shrink-0) would scroll along with the content
        instead of staying pinned. Only the wrapper below is meant to scroll. -->
   <div class="modal-box max-w-lg flex flex-col max-h-[85vh] overflow-y-hidden">
@@ -15,12 +15,12 @@
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
 
-    <!-- The one and only scrollable region here -- the file list below used to
+    <!-- The one and only scrollable region here - the file list below used to
          have its own nested overflow-auto strip, causing two scrollbars at once.
          Now just this wrapper scrolls, list included. -->
     <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
 
-    <!-- Always in the DOM, invisible when empty -- reserves its layout space so
+    <!-- Always in the DOM, invisible when empty - reserves its layout space so
          the form below doesn't shift when showBackupSettingsError() fills it in. -->
     <div id="backup-settings-error" class="alert alert-error text-sm mb-4 py-2 invisible"></div>
 
@@ -39,7 +39,7 @@
           <span class="text-sm text-base-content/60">hours</span>
         </div>
         <p class="text-xs text-base-content/40 mt-1">
-          The last {{ keep_last_n }} backups are kept -- older ones are pruned automatically.
+          The last {{ keep_last_n }} backups are kept - older ones are pruned automatically.
         </p>
       </div>
 
@@ -131,7 +131,7 @@ async function runBackupNow() {
       return;
     }
     showToast('Backup completed', 'success');
-    // Full reload, not just an in-place list swap -- simplest way to also
+    // Full reload, not just an in-place list swap - simplest way to also
     // refresh the "Last backup" timestamp above the list.
     window.location.reload();
   } catch (err) {

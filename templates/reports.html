@@ -9,7 +9,7 @@
       
     </div>
     <div class="flex items-center gap-2">
-      <!-- Customize -- a modal list to reorder/toggle widgets, rather than
+      <!-- Customize - a modal list to reorder/toggle widgets, rather than
            dragging cards live: stays well-defined even while some are hidden. -->
       <button type="button" id="reports-customize-btn" class="btn btn-outline btn-sm gap-1.5" data-tooltip="Customize widgets (Alt+C)" onclick="openCustomizeModal()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -57,7 +57,7 @@
         <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">TOTAL CHECKOUTS</p>
-            <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">&mdash;</p>
+            <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">-</p>
           </div>
           <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
@@ -66,7 +66,7 @@
         <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSETS BORROWED</p>
-            <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">&mdash;</p>
+            <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">-</p>
           </div>
           <div class="w-10 h-10 rounded-full bg-gradient-to-br from-info/30 to-info/5 ring-1 ring-info/20 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
@@ -75,7 +75,7 @@
         <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">BORROWERS</p>
-            <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">&mdash;</p>
+            <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">-</p>
           </div>
           <div class="w-10 h-10 rounded-full bg-gradient-to-br from-success/30 to-success/5 ring-1 ring-success/20 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
@@ -84,7 +84,7 @@
         <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">OVERDUE RATE</p>
-            <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+            <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">-</p>
           </div>
           <div class="w-10 h-10 rounded-full bg-gradient-to-br from-warning/30 to-warning/5 ring-1 ring-warning/20 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -93,7 +93,7 @@
         <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-error/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RATE</p>
-            <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">&mdash;</p>
+            <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">-</p>
           </div>
           <div class="w-10 h-10 rounded-full bg-gradient-to-br from-error/30 to-error/5 ring-1 ring-error/20 flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
@@ -159,6 +159,68 @@
       </div>
     </div>
 
+    <!-- Asset Valuation -->
+    <div class="report-widget" data-widget-id="asset_valuation">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 3"/></svg>
+            </span>
+            <h3 class="font-semibold">Asset Valuation</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['asset_valuation'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Current book value of priced assets on hand.</p>
+        <div id="report-asset-valuation" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
+
+    <!-- Maintenance Schedule -->
+    <div class="report-widget" data-widget-id="maintenance_schedule">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+            </span>
+            <h3 class="font-semibold">Maintenance Schedule</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['maintenance_schedule'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">Assets due (or nearly due) for preventive maintenance.</p>
+        <div id="report-maintenance-schedule" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
+
+    <!-- Monitoring Activity - summary of the RFID exit-monitoring log for
+         this report's date range. Monitoring's own Trends tab is the
+         detailed/interactive view; this is the printable/exportable
+         summary alongside the rest of Reports. Absent from the layout
+         entirely (server-side) whenever the "monitoring" feature is off -
+         see routes/stats.py's _feature_disabled_widget_ids. -->
+    <div class="report-widget" data-widget-id="monitoring_activity">
+      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+        <div class="widget-header flex items-center justify-between mb-0.5">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-error/25 to-error/5 text-error flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            </span>
+            <h3 class="font-semibold">Monitoring Activity</h3>
+          </div>
+          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['monitoring_activity'])" data-tooltip="Export this widget" aria-label="Export this widget">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          </button>
+        </div>
+        <p class="text-xs text-base-content/50 mb-3">RFID exit-monitoring events and alarm response times.</p>
+        <div id="report-monitoring-activity" class="report-body min-h-[8rem]"></div>
+      </div>
+    </div>
+
     <!-- Average Loan Duration -->
     <div class="report-widget" data-widget-id="avg_loan_duration">
       <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
@@ -171,8 +233,8 @@
           </div>
           <div class="flex items-center gap-1.5">
             <div class="join">
-              <button type="button" id="loan-duration-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('loan-duration', 'asset')">By Asset</button>
-              <button type="button" id="loan-duration-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('loan-duration', 'category')">By Category</button>
+              <button type="button" id="loan-duration-group-asset" class="join-item btn btn-xs btn-primary" onclick="setReportGroupBy('loan-duration', 'asset')">By Asset</button>
+              <button type="button" id="loan-duration-group-category" class="join-item btn btn-xs btn-outline" onclick="setReportGroupBy('loan-duration', 'category')">By Category</button>
             </div>
             <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['avg_loan_duration'])" data-tooltip="Export this widget" aria-label="Export this widget">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
@@ -234,8 +296,8 @@
           </div>
           <div class="flex items-center gap-1.5">
             <div class="join">
-              <button type="button" id="condition-changes-group-asset" class="join-item btn btn-xs btn-active" onclick="setReportGroupBy('condition-changes', 'asset')">By Asset</button>
-              <button type="button" id="condition-changes-group-category" class="join-item btn btn-xs" onclick="setReportGroupBy('condition-changes', 'category')">By Category</button>
+              <button type="button" id="condition-changes-group-asset" class="join-item btn btn-xs btn-primary" onclick="setReportGroupBy('condition-changes', 'asset')">By Asset</button>
+              <button type="button" id="condition-changes-group-category" class="join-item btn btn-xs btn-outline" onclick="setReportGroupBy('condition-changes', 'category')">By Category</button>
             </div>
             <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['condition_changes'])" data-tooltip="Export this widget" aria-label="Export this widget">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
@@ -247,7 +309,7 @@
       </div>
     </div>
 
-    <!-- Staff Activity -- admin-only (role gate enforced by /api/v1/stats/layout,
+    <!-- Staff Activity - admin-only (role gate enforced by /api/v1/stats/layout,
          not a Jinja check). A plain table, sorted alphabetically not by count --
          workload visibility, not a leaderboard. -->
     <div class="report-widget xl:col-span-2" data-widget-id="staff_activity">
@@ -263,12 +325,12 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
           </button>
         </div>
-        <p class="text-xs text-base-content/50 mb-3">Workload coverage across active staff accounts -- who's processing checkouts/returns, and whether an account is being used at all. Click a row for their profile.</p>
+        <p class="text-xs text-base-content/50 mb-3">Workload coverage across active staff accounts - who's processing checkouts/returns, and whether an account is being used at all. Click a row for their profile.</p>
         <div id="report-staff-activity" class="report-body min-h-[8rem]"></div>
       </div>
     </div>
 
-    <!-- Tool Keeper's "own activity only" widgets -- never shown to admin/in_charge,
+    <!-- Tool Keeper's "own activity only" widgets - never shown to admin/in_charge,
          and every query filters to the requesting staff member's own id server-side. -->
     <div class="report-widget" data-widget-id="my_checkouts">
       <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
@@ -329,7 +391,7 @@
 
 <div id="modal-container"></div>
 
-<!-- Customize modal -- reorder/show-hide widgets via native HTML5 drag-and-drop,
+<!-- Customize modal - reorder/show-hide widgets via native HTML5 drag-and-drop,
      not a vendored library, keeping this page dependency-free. -->
 <dialog id="customize-modal" class="modal">
   <div class="modal-box max-w-md">
@@ -353,7 +415,7 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- Export modal -- XLSX/CSV built server-side (routes/stats.py export_stats);
+<!-- Export modal - XLSX/CSV built server-side (routes/stats.py export_stats);
      PDF assembled client-side with jsPDF, reusing the on-screen chart/row data. -->
 <dialog id="export-modal" class="modal">
   <div class="modal-box max-w-md">
@@ -397,7 +459,7 @@
 </dialog>
 
 <!-- Vendored locally (static/js/chart.min.js, static/js/jspdf.umd.min.js),
-     same as htmx.min.js -- not loaded from a CDN, so this works the same
+     same as htmx.min.js - not loaded from a CDN, so this works the same
      whether or not this deployment has internet access. Only pulled in on
      this page, since it's the only one that uses either. -->
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
@@ -410,12 +472,12 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-const REPORT_EMPTY_STATE = '<p class="text-center py-8 text-sm text-base-content/40">No data for this range.</p>';
-const REPORT_ERROR_STATE = '<p class="text-center py-8 text-sm text-error">Couldn\'t load this report.</p>';
-const REPORT_LOADING_STATE = '<div class="flex justify-center py-8"><span class="loading loading-spinner loading-sm text-primary"></span></div>';
+var REPORT_EMPTY_STATE = '<p class="text-center py-8 text-sm text-base-content/40">No data for this range.</p>';
+var REPORT_ERROR_STATE = '<p class="text-center py-8 text-sm text-error">Couldn\'t load this report.</p>';
+var REPORT_LOADING_STATE = '<div class="flex justify-center py-8"><span class="loading loading-spinner loading-sm text-primary"></span></div>';
 
 // Opens the existing Inventory/Members row-click modals via htmx.ajax(), not raw
-// fetch()+innerHTML -- innerHTML wouldn't run the modal's trailing <script>
+// fetch()+innerHTML - innerHTML wouldn't run the modal's trailing <script>
 // (which loads its history/activity tabs), leaving those tabs spinning forever.
 function openMemberProfile(id) {
   htmx.ajax('GET', `/api/v1/members/${id}/profile`, { target: '#modal-container', swap: 'innerHTML' });
@@ -429,7 +491,7 @@ function openStaffProfile(id) {
   htmx.ajax('GET', `/api/v1/staff/${id}/profile`, { target: '#modal-container', swap: 'innerHTML' });
 }
 
-// Delegator shared with renderTable below -- avoids re-serializing each
+// Delegator shared with renderTable below - avoids re-serializing each
 // row's data into an inline onclick attribute (member/asset rows carry
 // more than a plain id/name), reading it back from whatever last stashed
 // it here instead.
@@ -446,10 +508,10 @@ function themeColor(varName) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
-const REPORT_CHARTS = {}; // elId -> Chart instance, so a refetch can destroy-and-recreate instead of leaking canvases
-const REPORT_LAST_ROWS = {}; // elId -> last-rendered rows, reused by the PDF export builder below
+var REPORT_CHARTS = {}; // elId -> Chart instance, so a refetch can destroy-and-recreate instead of leaking canvases
+var REPORT_LAST_ROWS = {}; // elId -> last-rendered rows, reused by the PDF export builder below
 
-// Real bar chart (Chart.js) for the three pure "ranking" reports -- one metric,
+// Real bar chart (Chart.js) for the three pure "ranking" reports - one metric,
 // ranked, nothing else per row. Other reports stay tables since multi-column data
 // doesn't compress into a chart cleanly. Gradient fill + rounded corners are cosmetic only.
 function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', colorVar, onClick = null }) {
@@ -470,7 +532,7 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
   const baseColor = themeColor('--color-base-100');
 
   // Horizontal gradient (bars are indexAxis: 'y', so the bar's "length"
-  // runs left-to-right) -- full-strength color at the base, fading out
+  // runs left-to-right) - full-strength color at the base, fading out
   // toward the tip, so longer bars don't just look like a solid color
   // block sitting next to shorter ones.
   const gradient = ctx2d.createLinearGradient(0, 0, canvas.width || 400, 0);
@@ -535,7 +597,7 @@ function renderBarChart(elId, rows, { label, value, sublabel, valueSuffix = '', 
   REPORT_CHARTS[elId] = chart;
 }
 
-// Re-renders charts on screen when the theme toggles -- Chart.js reads colors
+// Re-renders charts on screen when the theme toggles - Chart.js reads colors
 // once at creation time, so they'd otherwise stay frozen at the old theme.
 new MutationObserver(function () {
   if (Object.keys(REPORT_CHARTS).length === 0) return;
@@ -601,12 +663,20 @@ async function fetchReport(elId, url, params, render) {
   }
 }
 
-const REPORT_GROUP_BY = { 'loan-duration': 'asset', 'condition-changes': 'asset' };
+var REPORT_GROUP_BY = { 'loan-duration': 'asset', 'condition-changes': 'asset' };
 
+// btn-active alone reads as nearly identical to a resting .btn in this
+// theme (no --btn-color set on a plain .btn) - see barcodes.html's Label
+// Size toggle for the same fix. btn-primary/btn-outline gives an
+// unmistakable solid-fill-vs-outline contrast instead.
 function setReportGroupBy(report, groupBy) {
   REPORT_GROUP_BY[report] = groupBy;
-  document.getElementById(`${report}-group-asset`).classList.toggle('btn-active', groupBy === 'asset');
-  document.getElementById(`${report}-group-category`).classList.toggle('btn-active', groupBy === 'category');
+  const assetBtn = document.getElementById(`${report}-group-asset`);
+  const categoryBtn = document.getElementById(`${report}-group-category`);
+  assetBtn.classList.toggle('btn-primary', groupBy === 'asset');
+  assetBtn.classList.toggle('btn-outline', groupBy !== 'asset');
+  categoryBtn.classList.toggle('btn-primary', groupBy === 'category');
+  categoryBtn.classList.toggle('btn-outline', groupBy !== 'category');
   if (report === 'loan-duration') fetchLoanDuration();
   if (report === 'condition-changes') fetchConditionChanges();
 }
@@ -617,7 +687,7 @@ function fetchMostBorrowedAssets() {
   fetchReport('report-most-borrowed-assets', '/api/v1/stats/assets/most-borrowed', params, function (rows) {
     renderBarChart('report-most-borrowed-assets', rows, {
       label: (r) => r.name,
-      sublabel: (r) => r.category || 'Uncategorized',
+      sublabel: (r) => `${r.category || 'Uncategorized'} · ${r.barcode_id}`,
       value: (r) => r.borrow_count,
       valueSuffix: ' borrows',
       colorVar: '--color-primary',
@@ -644,8 +714,33 @@ function fetchLeastBorrowedAssets() {
   const params = reportsDateParams();
   fetchReport('report-least-borrowed-assets', '/api/v1/stats/assets/least-borrowed', params, function (rows) {
     renderTable('report-least-borrowed-assets', rows, [
-      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')}</div>` },
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')} &middot; ${escapeHtml(r.barcode_id)}</div>` },
       { header: 'BORROWS', headCls: 'text-right', cls: 'text-right', render: (r) => r.borrow_count === 0 ? '<span class="text-warning font-medium">0</span>' : r.borrow_count },
+    ], { onClick: (r) => openAssetDetails(r.id) });
+  });
+}
+
+function fetchAssetValuation() {
+  if (isWidgetHiddenForRole('asset_valuation')) return;
+  // Not date-ranged (current book value snapshot) - deliberately no reportsDateParams() here.
+  fetchReport('report-asset-valuation', '/api/v1/stats/assets/valuation', new URLSearchParams({ limit: 10, offset: 0 }), function (rows) {
+    renderTable('report-asset-valuation', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')} &middot; ${escapeHtml(r.barcode_id)}</div>` },
+      { header: 'STATUS', render: (r) => escapeHtml(r.status) },
+      { header: 'COST', headCls: 'text-right', cls: 'text-right', render: (r) => Number(r.purchase_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+    ], { onClick: (r) => openAssetDetails(r.id) });
+  });
+}
+
+function fetchMaintenanceSchedule() {
+  if (isWidgetHiddenForRole('maintenance_schedule')) return;
+  // Not date-ranged (current schedule snapshot) - same reasoning as fetchAssetValuation.
+  fetchReport('report-maintenance-schedule', '/api/v1/stats/assets/maintenance-schedule', new URLSearchParams({ limit: 10, offset: 0 }), function (rows) {
+    renderTable('report-maintenance-schedule', rows, [
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')} &middot; ${escapeHtml(r.barcode_id)}</div>` },
+      { header: 'DUE', render: (r) => r.next_maintenance_due
+          ? escapeHtml(r.next_maintenance_due)
+          : (r.maintenance_interval_checkouts ? `${r.checkouts_since_maintenance}/${r.maintenance_interval_checkouts} checkouts` : '-') },
     ], { onClick: (r) => openAssetDetails(r.id) });
   });
 }
@@ -657,7 +752,9 @@ function fetchLoanDuration() {
   params.set('group_by', groupBy);
   fetchReport('report-loan-duration', '/api/v1/stats/loan-duration', params, function (rows) {
     renderTable('report-loan-duration', rows, [
-      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => escapeHtml(groupBy === 'asset' ? r.name : r.category) },
+      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => groupBy === 'asset'
+          ? `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.barcode_id)}</div>`
+          : escapeHtml(r.category) },
       { header: 'AVG HOURS', headCls: 'text-right', cls: 'text-right', render: (r) => r.avg_loan_hours },
     ], groupBy === 'asset' ? { onClick: (r) => openAssetDetails(r.group_id) } : {});
   });
@@ -697,7 +794,9 @@ function fetchConditionChanges() {
   params.set('group_by', groupBy);
   fetchReport('report-condition-changes', '/api/v1/stats/assets/condition-changes', params, function (rows) {
     renderTable('report-condition-changes', rows, [
-      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => escapeHtml(groupBy === 'asset' ? r.name : r.category) },
+      { header: groupBy === 'asset' ? 'ASSET' : 'CATEGORY', render: (r) => groupBy === 'asset'
+          ? `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.barcode_id)}</div>`
+          : escapeHtml(r.category) },
       { header: 'RETURNS', headCls: 'text-right', cls: 'text-right', render: (r) => r.completed_returns },
       { header: 'WORSENED', headCls: 'text-right', cls: 'text-right', render: (r) => r.worsened_count > 0 ? `<span class="text-error font-medium">${r.worsened_count}</span>` : r.worsened_count },
     ], groupBy === 'asset' ? { onClick: (r) => openAssetDetails(r.group_id) } : {});
@@ -727,9 +826,20 @@ function fetchSummary() {
     });
 }
 
+function fetchMonitoringActivity() {
+  if (isWidgetHiddenForRole('monitoring_activity')) return;
+  const params = reportsDateParams();
+  fetchReport('report-monitoring-activity', '/api/v1/stats/monitoring-summary', params, function (rows) {
+    renderTable('report-monitoring-activity', rows, [
+      { header: 'METRIC', render: (r) => escapeHtml(r.label) },
+      { header: 'VALUE', headCls: 'text-right', cls: 'text-right font-medium', render: (r) => escapeHtml(String(r.value)) },
+    ]);
+  });
+}
+
 function fetchStaffActivity() {
   // No-op (rather than erroring) for anyone without this widget in their
-  // layout -- see applyReportLayout(), which hides the whole card, but
+  // layout - see applyReportLayout(), which hides the whole card, but
   // this can still be called by fetchAllReports() unconditionally.
   const el = document.getElementById('report-staff-activity');
   if (!el || isWidgetHiddenForRole('staff_activity')) return;
@@ -752,9 +862,9 @@ function fetchMyCheckouts() {
   const params = reportsDateParams();
   fetchReport('report-my-checkouts', '/api/v1/stats/my/checkouts', params, function (rows) {
     renderTable('report-my-checkouts', rows, [
-      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}&nbsp;&middot;&nbsp;${escapeHtml(r.barcode_id)}</div>` },
       { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
-      { header: 'CHECKED OUT', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => r.time_out },
+      { header: 'CHECKED OUT', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => formatDateTime12h(r.time_out) },
     ]);
   });
 }
@@ -764,9 +874,9 @@ function fetchMyReturns() {
   const params = reportsDateParams();
   fetchReport('report-my-returns', '/api/v1/stats/my/returns', params, function (rows) {
     renderTable('report-my-returns', rows, [
-      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}&nbsp;&middot;&nbsp;${escapeHtml(r.barcode_id)}</div>` },
       { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
-      { header: 'RETURNED', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => r.time_in },
+      { header: 'RETURNED', headCls: 'text-right', cls: 'text-right text-base-content/60', render: (r) => formatDateTime12h(r.time_in) },
     ]);
   });
 }
@@ -776,14 +886,14 @@ function fetchMyOverdueHandled() {
   const params = reportsDateParams();
   fetchReport('report-my-overdue-handled', '/api/v1/stats/my/overdue-handled', params, function (rows) {
     renderTable('report-my-overdue-handled', rows, [
-      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}</div>` },
+      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.asset_name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.asset_id)}&nbsp;&middot;&nbsp;${escapeHtml(r.barcode_id)}</div>` },
       { header: 'MEMBER', render: (r) => escapeHtml(r.member_name) },
-      { header: 'DUE', headCls: 'text-right', cls: 'text-right text-warning font-medium', render: (r) => r.due_date },
+      { header: 'DUE', headCls: 'text-right', cls: 'text-right text-warning font-medium', render: (r) => formatDateTime12h(r.due_date) },
     ]);
   });
 }
 
-// Keeps the address bar in sync with since/until -- this page uses plain fetch()
+// Keeps the address bar in sync with since/until - this page uses plain fetch()
 // (no htmx configRequest hook), so this lives here instead, at the one function
 // every date change funnels through. routes/pages.py reads it back on load.
 function syncReportsDateUrl() {
@@ -795,7 +905,7 @@ function syncReportsDateUrl() {
     if (until) url.searchParams.set('until', until); else url.searchParams.delete('until');
     history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
   } catch (e) {
-    // URL sync is a non-critical enhancement -- never let it break the actual request.
+    // URL sync is a non-critical enhancement - never let it break the actual request.
   }
 }
 
@@ -806,6 +916,9 @@ function fetchAllReports() {
   fetchMostBorrowedAssets();
   fetchMostBorrowedCategories();
   fetchLeastBorrowedAssets();
+  fetchAssetValuation();
+  fetchMaintenanceSchedule();
+  fetchMonitoringActivity();
   fetchLoanDuration();
   fetchTopBorrowers();
   fetchOverdueFrequency();
@@ -832,7 +945,7 @@ function formatDateLocal(d) {
   return `${y}-${m}-${day}`;
 }
 
-// This Week / This Month / Last 30 Days / This Year / All Time -- same
+// This Week / This Month / Last 30 Days / This Year / All Time - same
 // preset-button idea as Audit Log/Notifications' Today/Yesterday, just a
 // wider set of ranges since a usage report is more often read over weeks
 // or months than single days.
@@ -885,8 +998,12 @@ function updateReportsDateFilterUI() {
     'reports-preset-30d': since.value === formatDateLocal(days30Start) && until.value === todayStr,
     'reports-preset-year': since.value === formatDateLocal(yearStart) && until.value === todayStr,
   };
+  // btn-primary/btn-outline swap, not btn-active - see setReportGroupBy's
+  // comment above for why btn-active alone doesn't read as "selected" here.
   Object.keys(presetMatches).forEach(function (id) {
-    document.getElementById(id).classList.toggle('btn-active', presetMatches[id]);
+    const btn = document.getElementById(id);
+    btn.classList.toggle('btn-primary', presetMatches[id]);
+    btn.classList.toggle('btn-outline', !presetMatches[id]);
   });
 }
 
@@ -894,13 +1011,13 @@ function updateReportsDateFilterUI() {
 // Customizable / draggable widget layout
 // ===========================================================================
 
-let REPORTS_LAYOUT = []; // [{widget_id, visible, position}], role-scoped order from the server
-let REPORTS_ROLE_WIDGETS = []; // [{id, title, type}], role-scoped catalog from the server
+var REPORTS_LAYOUT = []; // [{widget_id, visible, position}], role-scoped order from the server
+var REPORTS_ROLE_WIDGETS = []; // [{id, title, type}], role-scoped catalog from the server
 
 function isWidgetHiddenForRole(widgetId) {
   const entry = REPORTS_LAYOUT.find((w) => w.widget_id === widgetId);
   // Not in the layout at all (role doesn't get this widget) counts as
-  // hidden too -- fetch* functions use this to skip a request their role
+  // hidden too - fetch* functions use this to skip a request their role
   // isn't allowed to make in the first place.
   return !entry;
 }
@@ -915,7 +1032,7 @@ async function loadReportLayout() {
     applyReportLayout();
   } catch (err) {
     // Falls back to the DOM's own default order (source order) and every
-    // widget visible -- better than a blank page if this one call fails.
+    // widget visible - better than a blank page if this one call fails.
   }
 }
 
@@ -927,7 +1044,7 @@ function applyReportLayout() {
     const wid = el.dataset.widgetId;
     if (!roleIds.has(wid)) {
       // Not in this role's catalog at all (e.g. an admin viewing
-      // tool_keeper-only "My Checkouts") -- always hidden, customize
+      // tool_keeper-only "My Checkouts") - always hidden, customize
       // panel doesn't even list it.
       el.classList.add('hidden');
       return;
@@ -963,7 +1080,7 @@ function openCustomizeModal() {
   document.getElementById('customize-modal').showModal();
 }
 
-let __customizeDragEl = null;
+var __customizeDragEl = null;
 function customizeDragStart(e) {
   __customizeDragEl = e.currentTarget;
   e.currentTarget.classList.add('opacity-40');
@@ -1016,7 +1133,7 @@ async function saveReportLayout() {
     showToast('Layout saved', 'success');
   } catch (err) {
     // Surface the real reason (e.g. a stale CSRF token, session timeout)
-    // instead of a blanket "check your connection" -- much faster to
+    // instead of a blanket "check your connection" - much faster to
     // diagnose than guessing at a network issue that isn't the actual cause.
     showToast(err.message || 'Could not save layout - check your connection', 'error');
   }
@@ -1045,7 +1162,7 @@ async function resetReportLayout() {
 // Export (CSV / XLSX server-side, PDF client-side)
 // ===========================================================================
 
-let EXPORT_SCOPE = null; // null = every visible widget; an array = pre-scoped to specific widget id(s)
+var EXPORT_SCOPE = null; // null = every visible widget; an array = pre-scoped to specific widget id(s)
 
 function openExportModal(widgetIds) {
   EXPORT_SCOPE = Array.isArray(widgetIds) && widgetIds.length ? widgetIds : null;
@@ -1114,20 +1231,35 @@ async function runExport() {
 // builder can grab either the live chart image or the last-rendered rows,
 // exactly what's already on screen) and the column labels for table
 // widgets whose REPORT_LAST_ROWS shape isn't self-describing.
-const EXPORT_WIDGET_MAP = {
+var EXPORT_WIDGET_MAP = {
   summary: { kind: 'summary' },
   most_borrowed_assets: { kind: 'chart', el: 'report-most-borrowed-assets', title: 'Most Borrowed Assets' },
   most_borrowed_categories: { kind: 'chart', el: 'report-most-borrowed-categories', title: 'Most Borrowed Categories' },
   top_borrowers: { kind: 'chart', el: 'report-top-borrowers', title: 'Top Borrowers' },
   least_borrowed_assets: {
     kind: 'table', el: 'report-least-borrowed-assets', title: 'Least Borrowed Assets',
-    columns: ['Asset', 'Category', 'Borrows'],
-    row: (r) => [r.name, r.category || 'Uncategorized', r.borrow_count],
+    columns: ['Asset', 'Barcode', 'Category', 'Borrows'],
+    row: (r) => [r.name, r.barcode_id, r.category || 'Uncategorized', r.borrow_count],
+  },
+  asset_valuation: {
+    kind: 'table', el: 'report-asset-valuation', title: 'Asset Valuation',
+    columns: ['Asset', 'Barcode', 'Status', 'Purchase Cost'],
+    row: (r) => [r.name, r.barcode_id, r.status, r.purchase_cost],
+  },
+  maintenance_schedule: {
+    kind: 'table', el: 'report-maintenance-schedule', title: 'Maintenance Schedule',
+    columns: ['Asset', 'Barcode', 'Next Due', 'Checkouts Since Service'],
+    row: (r) => [r.name, r.barcode_id, r.next_maintenance_due || '-', r.maintenance_interval_checkouts ? `${r.checkouts_since_maintenance}/${r.maintenance_interval_checkouts}` : '-'],
+  },
+  monitoring_activity: {
+    kind: 'table', el: 'report-monitoring-activity', title: 'Monitoring Activity',
+    columns: ['Metric', 'Value'],
+    row: (r) => [r.label, r.value],
   },
   avg_loan_duration: {
     kind: 'table', el: 'report-loan-duration', title: 'Average Loan Duration',
-    columns: () => [REPORT_GROUP_BY['loan-duration'] === 'asset' ? 'Asset' : 'Category', 'Avg Hours'],
-    row: (r) => [REPORT_GROUP_BY['loan-duration'] === 'asset' ? r.name : r.category, r.avg_loan_hours],
+    columns: () => REPORT_GROUP_BY['loan-duration'] === 'asset' ? ['Asset', 'Barcode', 'Avg Hours'] : ['Category', 'Avg Hours'],
+    row: (r) => REPORT_GROUP_BY['loan-duration'] === 'asset' ? [r.name, r.barcode_id, r.avg_loan_hours] : [r.category, r.avg_loan_hours],
   },
   overdue_frequency: {
     kind: 'table', el: 'report-overdue-frequency', title: 'Overdue Frequency',
@@ -1136,28 +1268,28 @@ const EXPORT_WIDGET_MAP = {
   },
   condition_changes: {
     kind: 'table', el: 'report-condition-changes', title: 'Condition Changes',
-    columns: () => [REPORT_GROUP_BY['condition-changes'] === 'asset' ? 'Asset' : 'Category', 'Returns', 'Worsened'],
-    row: (r) => [REPORT_GROUP_BY['condition-changes'] === 'asset' ? r.name : r.category, r.completed_returns, r.worsened_count],
+    columns: () => REPORT_GROUP_BY['condition-changes'] === 'asset' ? ['Asset', 'Barcode', 'Returns', 'Worsened'] : ['Category', 'Returns', 'Worsened'],
+    row: (r) => REPORT_GROUP_BY['condition-changes'] === 'asset' ? [r.name, r.barcode_id, r.completed_returns, r.worsened_count] : [r.category, r.completed_returns, r.worsened_count],
   },
   staff_activity: {
     kind: 'table', el: 'report-staff-activity', title: 'Staff Activity',
-    columns: ['Staff', 'Role', 'Checkouts', 'Returns', 'Logged Actions'],
-    row: (r) => [r.name, r.role, r.checkouts_processed, r.returns_processed, r.audit_actions],
+    columns: ['Staff', 'Role', 'Checkouts', 'Returns', 'Logged Actions', 'Avg Session (min)'],
+    row: (r) => [r.name, r.role, r.checkouts_processed, r.returns_processed, r.audit_actions, r.avg_session_minutes ?? '-'],
   },
   my_checkouts: {
     kind: 'table', el: 'report-my-checkouts', title: 'My Checkouts Processed',
-    columns: ['Asset', 'Member', 'Checked Out'],
-    row: (r) => [r.asset_name, r.member_name, r.time_out],
+    columns: ['Asset', 'Barcode', 'Member', 'Checked Out'],
+    row: (r) => [r.asset_name, r.barcode_id, r.member_name, r.time_out],
   },
   my_returns: {
     kind: 'table', el: 'report-my-returns', title: 'My Returns Processed',
-    columns: ['Asset', 'Member', 'Returned'],
-    row: (r) => [r.asset_name, r.member_name, r.time_in],
+    columns: ['Asset', 'Barcode', 'Member', 'Returned'],
+    row: (r) => [r.asset_name, r.barcode_id, r.member_name, r.time_in],
   },
   my_overdue_handled: {
     kind: 'table', el: 'report-my-overdue-handled', title: 'My Overdue Handled',
-    columns: ['Asset', 'Member', 'Due'],
-    row: (r) => [r.asset_name, r.member_name, r.due_date],
+    columns: ['Asset', 'Barcode', 'Member', 'Due'],
+    row: (r) => [r.asset_name, r.barcode_id, r.member_name, r.due_date],
   },
 };
 
@@ -1264,22 +1396,20 @@ async function exportSectionsAsPdf(sectionIds) {
   }
 
   // toISOString() converts to UTC first, which rolls back to the previous
-  // calendar day for anyone east of UTC (e.g. UTC+8) -- build the filename
+  // calendar day for anyone east of UTC (e.g. UTC+8) - build the filename
   // from local date parts instead.
   const _now = new Date();
   const basename = `reports_${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
   doc.save(`${basename}.pdf`);
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  loadReportLayout().then(fetchAllReports);
-});
+setTimeout(function () { loadReportLayout().then(fetchAllReports); }, 0);
 
 // --- Keyboard shortcuts (Reports page) ---
 // Escape clears the date range (as before). Alt+C/Alt+E open Customize/
 // Export, following the same Alt-shortcut convention Inventory/Members
 // use for their primary actions.
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.altKey && !e.ctrlKey && !e.metaKey) {
     if (isTypingTargetReports(e.target)) return;
     if (e.key.toLowerCase() === 'c') { e.preventDefault(); openCustomizeModal(); return; }
@@ -1292,7 +1422,7 @@ document.addEventListener('keydown', function (e) {
     document.activeElement.blur();
   }
   clearReportsDateFilter();
-});
+};
 
 function isTypingTargetReports(el) {
   if (!el) return false;

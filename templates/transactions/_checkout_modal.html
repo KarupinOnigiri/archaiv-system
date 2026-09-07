@@ -22,18 +22,25 @@
 
     <!-- Step 1: start session -->
     <div data-role="step-member" class="{% if resume_session %}hidden{% endif %}">
-      <div class="form-control">
-        <label class="label py-1" for="checkout-member-barcode-{{ client_id }}">
-          <span class="label-text text-sm">Member barcode</span>
-        </label>
-        <div class="join w-full">
-          <input type="text" id="checkout-member-barcode-{{ client_id }}" data-role="member-barcode-input" autofocus
-                 class="input input-bordered input-sm join-item w-full"
-                 placeholder="Scan or type barcode..."
-                 onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.startSession(this);}">
-          <button type="button" class="btn btn-primary btn-sm join-item" onclick="Checkout.startSession(this)">Start</button>
-        </div>
+      <!-- Header/input-row structure mirrors Step 2's (below) exactly - same
+           flex header + join row + browse-button spacing - so "Show available
+           members" and "Show available assets" land at the identical X:Y and
+           don't visually jump when startSession() swaps step-member for
+           step-cart. -->
+      <div class="flex items-center justify-between mb-2">
+        <label for="checkout-member-barcode-{{ client_id }}" class="text-sm text-base-content/60">Member barcode</label>
       </div>
+      <div class="join w-full mb-1">
+        <input type="text" id="checkout-member-barcode-{{ client_id }}" data-role="member-barcode-input" autofocus
+               class="input input-bordered input-sm join-item w-full"
+               placeholder="Scan or type barcode..."
+               onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.startSession(this);}">
+        <button type="button" class="btn btn-primary btn-sm join-item" onclick="Checkout.startSession(this)">Start</button>
+      </div>
+      <button type="button" data-role="browse-members-btn" class="btn btn-ghost btn-xs mb-2 gap-1" onclick="Checkout.toggleAvailableMembers(this)">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        Show available members
+      </button>
       <div data-role="member-error" class="text-error text-sm mt-2 hidden"></div>
     </div>
 
@@ -44,23 +51,33 @@
         <span data-role="cart-count" class="text-xs text-base-content/50">{{ resume_session.cart_items|length if resume_session else 0 }} item{{ '' if resume_session and resume_session.cart_items|length == 1 else 's' }}</span>
       </div>
 
+      <!-- Single scan field doing double duty: the first Enter holds whatever was scanned
+           (barcode or RFID tag - the backend resolves either one to the asset) as pending,
+           not added yet; a second Enter in the same field is sent along as an RFID
+           verification tap against that same tool (the actual anti-swap check - a barcode
+           sticker alone can be peeled and moved to a different tool, an embedded RFID tag
+           can't) in the SAME add-item call the two-field version always made, just gathered
+           from one field used twice instead of two fields at once. Pressing Enter on an
+           empty field (or the "Add without verifying" hint button) sends the pending code
+           with no RFID check, exactly like scanning barcode-only always has - see
+           Checkout.addItem/_addAssetByCode.
+
+           Exception: if that very first scan already IS the tool's RFID tag (checked via
+           Checkout._looksLikeRfidScan before this pending state ever gets set), physical
+           possession is already proven the same way a second tap would - asking for a
+           second RFID scan of the exact same tag would be pure friction, so it's added
+           immediately instead and this pending-verify prompt never shows at all. -->
       <div class="join w-full mb-1">
         <input type="text" id="checkout-asset-code-{{ client_id }}" data-role="asset-code-input" autofocus
                class="input input-bordered input-sm join-item w-full"
-               placeholder="Scan or type asset barcode..."
+               placeholder="Scan or type asset barcode or RFID tag..."
                onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.addItem(this);}">
         <button type="button" class="btn btn-outline btn-sm join-item" onclick="Checkout.addItem(this)">Add</button>
       </div>
-      <!-- Optional, separate from the barcode field on purpose -- a value here means an RFID
-           reader (not the barcode scanner) actually sensed this tag, which is what lets the
-           backend cross-check it against the asset's registered rfid_id. Left blank, checkout
-           behaves exactly as it did before RFID verification existed. -->
-      <div class="join w-full mb-1">
-        <input type="text" id="checkout-rfid-code-{{ client_id }}" data-role="rfid-code-input"
-               class="input input-bordered input-sm join-item w-full"
-               placeholder="Scan RFID tag (optional -- verifies it's the real tool)"
-               onkeydown="if(event.key==='Enter'){event.preventDefault();Checkout.addItem(this);}">
-      </div>
+      <p data-role="pending-verify-hint" class="text-xs text-info mb-2 hidden">
+        Scanned - tap the tool's RFID tag now to verify it's the real one, or
+        <button type="button" class="link link-hover font-medium" onclick="Checkout.skipRfidVerify(this)">add without verifying</button>.
+      </p>
       <button type="button" data-role="browse-assets-btn" class="btn btn-ghost btn-xs mb-2 gap-1" onclick="Checkout.toggleAvailableAssets(this)">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         Show available assets
@@ -70,12 +87,24 @@
       <ul data-role="cart-list" class="space-y-1 max-h-48 overflow-y-auto mb-3">
         {% if resume_session %}
         {% for item in resume_session.cart_items %}
-        <li class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-base-200 text-sm" data-item-id="{{ item.id }}">
-          <span class="truncate">{{ item.asset_name }}</span>
-          <button type="button" class="text-error hover:text-error/70 shrink-0" aria-label="Remove {{ item.asset_name }}" data-tooltip="Remove"
-                  onclick="Checkout.removeItem(this, '{{ item.id }}', this.closest('li'))">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-          </button>
+        <li class="flex {% if item.reservation_notice %}flex-col gap-1{% else %}items-center justify-between gap-2{% endif %} px-3 py-1.5 rounded-lg bg-base-200 text-sm" data-item-id="{{ item.id }}">
+          <div class="flex items-center justify-between gap-2{% if item.reservation_notice %} w-full{% endif %}">
+            <span class="truncate">{{ item.asset_name }}{% if item.barcode_id %} &middot; {{ item.barcode_id }}{% endif %}</span>
+            <button type="button" class="text-error hover:text-error/70 shrink-0" aria-label="Remove {{ item.asset_name }}" data-tooltip="Remove"
+                    onclick="Checkout.removeItem(this, '{{ item.id }}', this.closest('li'))">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <!-- Same advisory-only heads-up as a freshly-scanned item gets
+               (static/js/ui.js's renderAddedItem) - recomputed server-side
+               here since this item was already in the cart before the
+               session was minimized/resumed, not just-scanned. -->
+          {% if item.reservation_notice %}
+          <p class="text-xs text-warning flex items-start gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            <span>Reserved for {{ item.reservation_notice.member_name }}, {{ item.reservation_notice.start_at | format_date }} &ndash; {{ item.reservation_notice.end_at | format_date }}</span>
+          </p>
+          {% endif %}
         </li>
         {% endfor %}
         {% endif %}
@@ -83,7 +112,7 @@
 
       <div class="form-control">
         <label class="label py-1" for="checkout-due-date-{{ client_id }}">
-          <span class="label-text text-sm">Due date (optional &mdash; defaults to 2 days)</span>
+          <span class="label-text text-sm">Due date (optional - defaults to 2 days)</span>
         </label>
         <input type="datetime-local" id="checkout-due-date-{{ client_id }}" data-role="due-date-input" class="input input-bordered input-sm w-full">
       </div>
@@ -108,7 +137,7 @@
     </div>
   </div>
 
-  <!-- Available-assets flyout -- kept as a sibling of .modal-box, not nested
+  <!-- Available-assets flyout - kept as a sibling of .modal-box, not nested
        inside it: .modal-box has overflow-y:auto (for its own scrolling), and
        per the CSS overflow spec that makes the x-axis resolve to auto too, so
        anything positioned to pop out sideways from inside it gets clipped.
@@ -131,12 +160,33 @@
     <ul data-role="available-assets-list" class="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5"></ul>
   </div>
 
+  <!-- Available-members flyout - same structure/positioning approach as the
+       available-assets one above, just for Step 1's "Show available members"
+       button. Only active (not deactivated) and unrestricted members are
+       listed, matching start_checkout_session's own eligibility rule. -->
+  <div data-role="available-members-panel"
+       class="hidden fixed w-72 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-xl z-[1100]">
+    <div class="flex items-center justify-between px-3 py-2 border-b border-base-300 shrink-0">
+      <span class="text-sm font-semibold">Available Members</span>
+      <button type="button" class="btn btn-ghost btn-xs btn-circle" aria-label="Close available members" data-tooltip="Close" onclick="Checkout.toggleAvailableMembers(this)">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="px-3 pt-2 shrink-0">
+      <input type="text" data-role="available-members-filter" placeholder="Filter..."
+             class="input input-bordered input-xs w-full" oninput="Checkout.filterAvailableMembers(this)">
+    </div>
+    <div data-role="available-members-loading" class="text-xs text-base-content/50 px-3 py-4 text-center">Loading&hellip;</div>
+    <div data-role="available-members-error" class="text-error text-xs px-3 py-2 hidden"></div>
+    <ul data-role="available-members-list" class="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5"></ul>
+  </div>
+
   <form method="dialog" class="modal-backdrop">
     <button type="button" onclick="Checkout.minimize(this)">close</button>
   </form>
 </dialog>
 
-<!-- Minimized dock for this instance -- same session/DOM node, toggling is
+<!-- Minimized dock for this instance - same session/DOM node, toggling is
      just a restyle. Lives outside the <dialog> (closed dialogs are
      display:none) and gets OOB-swapped into base.html's #checkout-docks-tray.
 
@@ -148,7 +198,7 @@
 <div hx-swap-oob="beforeend:#checkout-docks-tray">
   <div id="checkout-dock-{{ client_id }}" class="checkout-dock {% if not auto_minimize %}hidden{% endif %} pointer-events-auto flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-base-100 border border-base-300 shadow-lg"
        data-client-id="{{ client_id }}">
-    <button type="button" class="flex items-center gap-2 text-sm font-medium" onclick="Checkout.expand(this)" aria-label="Expand checkout">
+    <button type="button" class="flex items-center gap-2 text-sm font-medium cursor-pointer" onclick="Checkout.expand(this)" aria-label="Expand checkout">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
       <span data-role="dock-label">Checkout</span>
     </button>
@@ -160,7 +210,7 @@
 
 <script>
   // The Checkout controller itself (window.Checkout) is defined once in
-  // base.html -- every instance just registers its starting state here
+  // base.html - every instance just registers its starting state here
   // and, unless it's a silent page-load restore, takes over as the one
   // expanded dialog (auto-minimizing whatever else was expanded before it).
   Checkout.init(

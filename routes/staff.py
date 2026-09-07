@@ -13,6 +13,13 @@ from services.settings_service import (
     get_default_loan_days,
     get_damage_restriction_threshold,
     get_archive_purge_days,
+    get_checkout_session_stale_minutes,
+    get_default_maintenance_interval_days,
+    get_maintenance_reminder_lead_days,
+    get_alarm_enabled,
+    get_asset_id_prefix,
+    get_member_code_prefix,
+    get_staff_code_prefix,
 )
 from services import staff_service
 from utils.validators import (
@@ -54,7 +61,7 @@ def view_staff():
         return error
 
     if request.headers.get("HX-Request") == "true":
-        # staff=g.staff needed here too -- _table.html's can_manage check reads it on every htmx swap.
+        # staff=g.staff needed here too - _table.html's can_manage check reads it on every htmx swap.
         return render_template("staff/_table.html", staff=g.staff, **context)
 
     return jsonify(
@@ -161,7 +168,7 @@ def view_audit_log():
 @staff_bp.route("/audit-log/table")
 @login_required
 def view_audit_log_table():
-    """htmx partial -- just the table + pagination footer, so filtering/paging
+    """htmx partial - just the table + pagination footer, so filtering/paging
     doesn't re-render the whole page."""
     context, error = get_audit_log_context(request.args, g.staff)
     if error:
@@ -306,7 +313,7 @@ def edit_staff_submit(id):
     if error:
         return error
 
-    # A blank rfid_pin leaves the existing one untouched -- not wiped by an empty submit.
+    # A blank rfid_pin leaves the existing one untouched - not wiped by an empty submit.
     if data.get("rfid_pin"):
         error = validate_rfid_pin(data["rfid_pin"])
         if error:
@@ -387,6 +394,110 @@ def change_rfid_pin_submit():
     conn = get_db_connection()
     try:
         result = staff_service.change_own_rfid_pin(conn, g.staff, new_pin, current_token)
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+# # # BARCODE + PIN LOGIN (self-service, any staff role) --------------------
+
+
+@staff_bp.route("/staff/barcode-pin/enable", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute; 30 per hour")
+def enable_barcode_pin_login_submit():
+    """Turns barcode + PIN login on for the calling staff member and sets
+    the PIN in one step - unlike change-rfid-pin above, open to every role
+    (see 0051_add_staff_barcode_pin_enabled.sql: this is the general
+    opt-in toggle, not the admin-only RFID+PIN flow it replaces at login)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_pin = data.get("new_pin")
+
+    if not current_password or not new_pin:
+        return jsonify({"error": "current_password and new_pin are required"}), 400
+
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    error = validate_rfid_pin(new_pin)
+    if error:
+        return error
+
+    current_token = request.cookies.get("session_token")
+
+    conn = get_db_connection()
+    try:
+        result = staff_service.enable_barcode_pin_login(conn, g.staff, new_pin, current_token)
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+@staff_bp.route("/staff/barcode-pin/disable", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute; 30 per hour")
+def disable_barcode_pin_login_submit():
+    """Turns barcode + PIN login back off. Confirms with the password same
+    as every other credential change here, even though this direction only
+    ever *removes* a way in, not adds one - consistent > clever, and it
+    stops someone else at an unlocked, still-logged-in session from doing it."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    if not current_password:
+        return jsonify({"error": "current_password is required"}), 400
+
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    conn = get_db_connection()
+    try:
+        result = staff_service.disable_barcode_pin_login(conn, g.staff)
+    finally:
+        conn.close()
+
+    return jsonify(result)
+
+
+@staff_bp.route("/staff/change-barcode-pin", methods=["POST"])
+@login_required
+@limiter.limit("10 per minute; 30 per hour")
+def change_barcode_pin_submit():
+    """Self-service PIN change once barcode + PIN login is already enabled --
+    same shape as change-rfid-pin above, just open to every role."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_pin = data.get("new_pin")
+
+    if not current_password or not new_pin:
+        return jsonify({"error": "current_password and new_pin are required"}), 400
+
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    if not g.staff["barcode_pin_enabled"]:
+        return jsonify({"error": "Barcode + PIN login isn't enabled for this account"}), 400
+
+    error = validate_rfid_pin(new_pin)
+    if error:
+        return error
+
+    current_token = request.cookies.get("session_token")
+
+    conn = get_db_connection()
+    try:
+        result = staff_service.change_own_barcode_pin(conn, g.staff, new_pin, current_token)
     finally:
         conn.close()
 
@@ -493,7 +604,7 @@ def reset_password_submit(id):
 @staff_bp.route("/staff/<int:id>/lock-form")
 @roles_required("admin")
 def lock_staff_form(id):
-    """Manual-lock modal -- duration presets, custom minutes field, and an
+    """Manual-lock modal - duration presets, custom minutes field, and an
     indefinite option. Mirrors delete_staff_form's shape."""
     conn = get_db_connection()
     try:
@@ -531,7 +642,7 @@ def lock_staff(id):
         if duration_minutes > MAX_MANUAL_LOCK_MINUTES:
             return (
                 jsonify(
-                    {"error": f"duration_minutes can't exceed {MAX_MANUAL_LOCK_MINUTES} (1 year) -- use an indefinite lock instead"}
+                    {"error": f"duration_minutes can't exceed {MAX_MANUAL_LOCK_MINUTES} (1 year) - use an indefinite lock instead"}
                 ),
                 400,
             )
@@ -950,7 +1061,7 @@ def import_staff_form():
 
 
 def _staff_import_error_response(error_msg, status):
-    """Mirrors assets.py's _import_error_response -- see that function's
+    """Mirrors assets.py's _import_error_response - see that function's
     docstring for why HX-Retarget/HX-Reswap are needed."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
@@ -1269,6 +1380,112 @@ def update_loan_duration():
     return response
 
 
+# # # CHECKOUT SESSION TIMEOUT (admin/in_charge-editable stale-cart auto-release) --
+
+
+@staff_bp.route("/checkout-session-settings/manage-form")
+@roles_required("admin", "in_charge")
+def manage_checkout_session_settings_form():
+    return render_template(
+        "staff/_checkout_session_settings_modal.html",
+        checkout_session_stale_minutes=get_checkout_session_stale_minutes(),
+        error=None,
+    )
+
+
+@staff_bp.route("/checkout-session-settings/update", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def update_checkout_session_settings():
+    """Updates how long an in-progress checkout cart can sit untouched before
+    it's auto-cancelled and its reserved assets released back to available."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    conn = get_db_connection()
+    try:
+        result, error_msg = staff_service.update_checkout_session_settings(conn, data, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error_msg:
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_checkout_session_settings_modal.html",
+                checkout_session_stale_minutes=get_checkout_session_stale_minutes(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    if request.is_json:
+        return jsonify(result)
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
+# # # MAINTENANCE SETTINGS (admin/in_charge-editable scheduling defaults) ----
+
+
+@staff_bp.route("/maintenance-settings/manage-form")
+@roles_required("admin", "in_charge")
+def manage_maintenance_settings_form():
+    return render_template(
+        "staff/_maintenance_settings_modal.html",
+        default_maintenance_interval_days=get_default_maintenance_interval_days(),
+        maintenance_reminder_lead_days=get_maintenance_reminder_lead_days(),
+        error=None,
+    )
+
+
+@staff_bp.route("/maintenance-settings/update", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def update_maintenance_settings():
+    """Updates the two app-wide preventive-maintenance defaults - how far out
+    a new/re-serviced asset's next_maintenance_due auto-computes to, and how
+    many days ahead of due counts as "due soon" for the dashboard/notification
+    sweep."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    conn = get_db_connection()
+    try:
+        result, error_msg = staff_service.update_maintenance_settings(conn, data, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error_msg:
+        if request.is_json:
+            return jsonify({"error": error_msg}), 400
+        return (
+            render_template(
+                "staff/_maintenance_settings_modal.html",
+                default_maintenance_interval_days=get_default_maintenance_interval_days(),
+                maintenance_reminder_lead_days=get_maintenance_reminder_lead_days(),
+                error=error_msg,
+            ),
+            200,
+        )
+
+    if request.is_json:
+        return jsonify(result)
+    response = make_response("", 200)
+    response.headers["HX-Redirect"] = "/system"
+    return response
+
+
 # # # DAMAGE RESTRICTION (admin-editable auto-restrict occurrence threshold) --
 
 
@@ -1372,6 +1589,89 @@ def update_feature_flags():
     response = make_response("", 200)
     response.headers["HX-Redirect"] = "/system"
     return response
+
+
+# # # ALARM SETTINGS ---------------------------------------------------------
+
+
+@staff_bp.route("/alarm-settings/manage-form")
+@roles_required("admin")
+def manage_alarm_settings_form():
+    return render_template("staff/_alarm_settings_modal.html", enabled=get_alarm_enabled(), error=None)
+
+
+@staff_bp.route("/alarm-settings/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_alarm_settings():
+    """Requires the admin's password, same as feature-flags' update_feature_flags -
+    muting the exit-monitoring alarm is exactly the kind of security-relevant
+    toggle that shouldn't be one accidental click away."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    current_password = (data.get("current_password") or "").strip()
+    if not current_password:
+        return jsonify({"error": "Enter your current password to confirm this change"}), 400
+    if not check_password_hash(g.staff["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    conn = get_db_connection()
+    try:
+        result, error_msg = staff_service.update_alarm_settings(conn, data, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error_msg:
+        return jsonify({"error": error_msg}), 400
+    return jsonify(result)
+
+
+# # # BARCODE ID PREFIXES -----------------------------------------------------
+
+
+@staff_bp.route("/barcode-prefixes/manage-form")
+@roles_required("admin")
+def manage_barcode_prefixes_form():
+    return render_template(
+        "staff/_barcode_prefixes_modal.html",
+        asset_id_prefix=get_asset_id_prefix(),
+        member_code_prefix=get_member_code_prefix(),
+        staff_code_prefix=get_staff_code_prefix(),
+        error=None,
+    )
+
+
+@staff_bp.route("/barcode-prefixes/update", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def update_barcode_prefixes():
+    """force_regenerate additionally rewrites every existing record's own
+    code, not just future ones - requires the admin's password to confirm,
+    same convention as Feature Access/Alarm Settings, since old printed
+    barcode labels stop scanning to the right record afterward."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    force_regenerate = bool(data.get("force_regenerate"))
+    if force_regenerate:
+        current_password = (data.get("current_password") or "").strip()
+        if not current_password:
+            return jsonify({"error": "Enter your password to confirm updating existing codes"}), 400
+        if not check_password_hash(g.staff["password_hash"], current_password):
+            return jsonify({"error": "Current password is incorrect"}), 401
+
+    conn = get_db_connection()
+    try:
+        result, error_msg = staff_service.update_barcode_prefixes(conn, data, g.staff["id"], force_regenerate)
+    finally:
+        conn.close()
+
+    if error_msg:
+        return jsonify({"error": error_msg}), 400
+    return jsonify(result)
 
 
 # # # BARCODE LABEL ACTIVITY LOGGING ---------------------------------------

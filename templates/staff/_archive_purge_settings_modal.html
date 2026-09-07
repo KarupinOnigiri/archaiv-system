@@ -14,7 +14,7 @@
 
     <div class="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
 
-    <!-- Always in the DOM, invisible (not hidden) when empty -- reserves
+    <!-- Always in the DOM, invisible (not hidden) when empty - reserves
          its layout space so the picker below doesn't shift when
          showArchivePurgeSettingsError() fills it in. -->
     <div id="archive-purge-settings-error" class="alert alert-error text-sm mb-4 py-2 invisible"></div>
@@ -29,7 +29,7 @@
                   data-days="{{ days }}" onclick="selectArchivePurgePreset({{ days }})">
             <span class="flex-1 text-sm text-base-content">
               {%- if days == 0 -%}
-                None -- keep archived items forever
+                None - keep archived items forever
               {%- elif days == 7 -%}
                 1 week
               {%- elif days == 30 -%}

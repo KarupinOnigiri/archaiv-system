@@ -177,7 +177,7 @@ async function handleMembersExportSubmit(event) {
       try {
         const data = await response.json();
         if (data.error) message = data.error;
-      } catch (e) { /* response wasn't JSON -- keep default message */ }
+      } catch (e) { /* response wasn't JSON - keep default message */ }
       showExportError(message);
       btn.disabled = false;
       btn.innerHTML = originalLabel;

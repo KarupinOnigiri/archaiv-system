@@ -15,7 +15,7 @@
       {% for txn in transactions %}
       <li class="text-sm">
         <span class="font-medium">{{ txn.asset_name }}</span>
-        <span class="text-base-content/50">({{ txn.asset_code }}) &mdash; {{ full_name(txn.first_name, txn.last_name, txn.middle_name, txn.suffix) }}</span>
+        <span class="text-base-content/50">({{ txn.asset_code }}) - {{ full_name(txn.first_name, txn.last_name, txn.middle_name, txn.suffix) }}</span>
       </li>
       {% endfor %}
     </ul>
@@ -44,7 +44,7 @@
       </div>
     </form>
 
-    <!-- Always in the DOM, invisible (not hidden) when empty -- reserves
+    <!-- Always in the DOM, invisible (not hidden) when empty - reserves
          its layout space so the footer buttons don't shift when a
          return fails. -->
     <div id="batch-return-error" class="text-error text-sm mt-3 min-h-5 invisible"></div>
@@ -76,18 +76,37 @@ async function submitBatchReturn(transactionIds) {
 
   let res;
   try {
-    res = await fetch('/api/v1/transactions/batch-return', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+    // Safe to retry: batch_return (services/transaction_service.py) skips any
+    // transaction that's no longer 'borrowed' instead of double-processing
+    // it, so a retried duplicate POST from a queued item just comes back
+    // with everything already-returned in `skipped`, not applied twice.
+    const doFetch = window.OfflineQueue ? window.OfflineQueue.queuedFetch : fetch;
+    res = await doFetch(
+      '/api/v1/transactions/batch-return',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+        },
+        body: JSON.stringify({
+          transaction_ids: transactionIds,
+          condition_in,
+          return_remarks: return_remarks || null,
+        }),
       },
-      body: JSON.stringify({
-        transaction_ids: transactionIds,
-        condition_in,
-        return_remarks: return_remarks || null,
-      }),
-    });
+      {
+        label: `returning ${transactionIds.length} asset(s)`,
+        onSuccess: async (queuedRes) => {
+          if (!queuedRes.ok) return;
+          const queuedData = await queuedRes.json();
+          showToast(queuedData.message || 'Assets returned successfully', 'success');
+          if (typeof clearTxnSelection === 'function') clearTxnSelection();
+          document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+          document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+        },
+      }
+    );
     const data = await res.json();
 
     if (!res.ok) {
@@ -102,7 +121,15 @@ async function submitBatchReturn(transactionIds) {
     showToast(data.message || 'Assets returned successfully', 'success');
     if (typeof clearTxnSelection === 'function') clearTxnSelection();
     document.body.dispatchEvent(new Event('transactions-refreshed', { bubbles: true }));
+    document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
   } catch (err) {
+    if (window.OfflineQueue && window.OfflineQueue.isOfflineQueuedError(err)) {
+      // Already toasted "saved offline" by queuedFetch - close the modal
+      // since there's nothing more for the staff member to do here; the
+      // success toast/refresh fires later via onSuccess above once synced.
+      modal.remove();
+      return;
+    }
     console.error('submitBatchReturn failed:', err, 'response:', res);
     if (res && res.status === 401) {
       showSessionTimeoutModal();

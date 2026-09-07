@@ -6,7 +6,7 @@
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold">Staff Summary</h1>
-      <!--<p class="text-sm text-base-content/50 mt-1">Everyone with system access &mdash; roles, assignments, and account status.</p>-->
+      <!--<p class="text-sm text-base-content/50 mt-1">Everyone with system access - roles, assignments, and account status.</p>-->
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role == "admin" %}
@@ -141,7 +141,7 @@
     </div>
 
     <!-- Role-only check on purpose (not show_inactive-aware like _table.html's
-         copy) -- this bar renders once on page load but "Show inactive" toggles
+         copy) - this bar renders once on page load but "Show inactive" toggles
          client-side after, so it has to cover both states upfront. -->
     {% set can_bulk_act = staff.role == "admin" %}
     {% if can_bulk_act %}
@@ -328,7 +328,7 @@
       }
       showToast(message, skippedCount > 0 ? 'info' : 'success');
 
-      // Full reload, not an htmx refresh -- the stat cards up top need to update too.
+      // Full reload, not an htmx refresh - the stat cards up top need to update too.
       window.location.reload();
     } catch (err) {
       showToast(`Couldn't ${pastTense} the selected staff accounts`, 'error');
@@ -344,7 +344,7 @@
   // Deactivating removes system access, so this confirms first instead of firing
   // immediately (same pattern as Members'/Inventory's bulk deactivate). Admin rows
   // do get a checkbox like anyone else, but bulk_deactivate_staff skips them
-  // server-side and reports them back in `skipped` -- see routes/staff.py.
+  // server-side and reports them back in `skipped` - see routes/staff.py.
   function confirmBulkDeactivate(ids, names, onConfirm) {
     const backdrop = document.createElement('div');
     backdrop.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
@@ -366,7 +366,7 @@
               <h3 id="bulk-deactivate-confirm-title" class="font-semibold">Deactivate ${ids.length} staff account${ids.length === 1 ? '' : 's'}?</h3>
               <button type="button" id="bulk-deactivate-close-btn" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
             </div>
-            <p class="text-sm text-base-content/60 mt-1">This can be reversed later from the inactive view. Admin accounts are skipped here -- deactivate those via a deactivation request instead.</p>
+            <p class="text-sm text-base-content/60 mt-1">This can be reversed later from the inactive view. Admin accounts are skipped here - deactivate those via a deactivation request instead.</p>
             <ul class="text-sm mt-3 space-y-0.5">${shown}${more}</ul>
           </div>
         </div>
@@ -416,7 +416,7 @@
 {% endif %}
 
 <script>
-// Mirrors Members' updateMemberFilterUI() -- keeps each filter's active ring,
+// Mirrors Members' updateMemberFilterUI() - keeps each filter's active ring,
 // its clear button, and the combined clear-all count in sync.
 function updateStaffFilterUI() {
   const search = document.getElementById('staff-search');
@@ -430,6 +430,12 @@ function updateStaffFilterUI() {
   document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
   document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
   document.getElementById('staff-search-clear-btn').classList.toggle('hidden', !searchActive);
+  // The clear button is the join's real last child even while hidden (CSS
+  // :last-child doesn't care about display:none), so it - not the input -
+  // keeps the join's rounded right corner whenever it's hidden, leaving the
+  // input's own right edge square. Give the input that same corner back
+  // itself whenever the clear button isn't there to own it.
+  document.getElementById('staff-search').classList.toggle('rounded-r-(--radius-field)', !searchActive);
 
   document.getElementById('role-filter-wrap').classList.toggle('ring-2', roleActive);
   document.getElementById('role-filter-wrap').classList.toggle('ring-primary/40', roleActive);
@@ -452,7 +458,7 @@ function updateStaffFilterUI() {
 }
 
 // Single source of truth for the filter row's current state (minus status/
-// show-inactive, which the stat cards own) -- mirrors Members' getBaseMemberFilterParams().
+// show-inactive, which the stat cards own) - mirrors Members' getBaseMemberFilterParams().
 function getBaseStaffFilterParams() {
   const q = document.getElementById('staff-search').value.trim();
   const role = document.getElementById('role-filter').value;
@@ -517,7 +523,7 @@ function clearAllStaffFilters() {
   document.getElementById('show-inactive-toggle').checked = false;
   updateShowInactivePillUI(false);
   updateStaffFilterUI();
-  // Filters are blanked above, so this just returns sort_by/sort_dir -- keeps sort intact.
+  // Filters are blanked above, so this just returns sort_by/sort_dir - keeps sort intact.
   const params = getBaseStaffFilterParams();
   params.set('limit', '{{ limit }}');
   params.set('offset', 0);
@@ -534,7 +540,13 @@ function clearAllStaffFilters() {
   el.addEventListener('input', function () { currentStaffStatusFilter = ''; updateStaffFilterUI(); });
   el.addEventListener('change', function () { currentStaffStatusFilter = ''; updateStaffFilterUI(); });
 });
-document.addEventListener('DOMContentLoaded', updateStaffFilterUI);
+// Deferred (not a direct call): updateStaffFilterUI() reaches into
+// updateStaffStatCardUI(), which isn't defined until the *next* <script>
+// block below has run. setTimeout(fn, 0) queues this for right after every
+// script tag in this swap (boosted or a hard load) has finished executing --
+// same ordering DOMContentLoaded used to guarantee, but that event only
+// ever fires once and never again on a boosted revisit of this page.
+setTimeout(updateStaffFilterUI, 0);
 </script>
 
 <script>
@@ -550,9 +562,9 @@ document.addEventListener('DOMContentLoaded', updateStaffFilterUI);
 {% else %}
   {% set initial_status = '' %}
 {% endif %}
-let currentStaffStatusFilter = {{ initial_status | tojson }};
+var currentStaffStatusFilter = {{ initial_status | tojson }};
 
-const STAFF_STATUS_CARD_ACCENTS = {
+var STAFF_STATUS_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
   'active': 'ring-success/40 border-success/40',
   'locked': 'ring-warning/40 border-warning/40',
@@ -575,7 +587,7 @@ function updateStaffStatCardUI() {
 }
 
 // Keeps the "Show inactive" pill's color/text in sync whether it was flipped
-// by hand or by a stat-card click -- mirrors Members' equivalent handler.
+// by hand or by a stat-card click - mirrors Members' equivalent handler.
 function updateShowInactivePillUI(isInactive) {
   const toggle = document.getElementById('show-inactive-toggle');
   const toggleLabel = document.getElementById('inactive-toggle-label');
@@ -594,7 +606,7 @@ document.getElementById('show-inactive-toggle').addEventListener('change', funct
   updateStaffFilterUI();
 });
 
-// Same shortcut-filter behavior as Members'/Inventory's stat cards -- clicking
+// Same shortcut-filter behavior as Members'/Inventory's stat cards - clicking
 // sends a fresh request for that status via the `status` param.
 function filterByStaffStatus(status) {
   currentStaffStatusFilter = status;
@@ -636,13 +648,13 @@ function filterByStaffStatus(status) {
 
 <!-- Unlock/deactivate/reactivate/request-deactivation each render their own
      styled confirmation modal now (staff/_unlock_modal.html etc.), same
-     hx-get + fetch+CSRF+reload shape as Members' equivalents -- no more
+     hx-get + fetch+CSRF+reload shape as Members' equivalents - no more
      shared staffAction() helper. -->
 
 <script>
 // Same cold-load spacing workaround as Inventory/Members: replay the initial
 // swap through htmx once so the filter row settles into its post-swap spacing.
-document.addEventListener('DOMContentLoaded', function () {
+(function () {
   var params = new URLSearchParams({
     limit: '{{ limit }}',
     offset: '{{ offset }}',
@@ -663,13 +675,13 @@ document.addEventListener('DOMContentLoaded', function () {
     target: '#staff-table-container',
     swap: 'innerHTML'
   });
-});
+})();
 
-// Keeps the address bar in sync with search/filters/sort/paging -- same
+// Keeps the address bar in sync with search/filters/sort/paging - same
 // htmx:configRequest pattern as assets.html/members.html/transactions.html,
 // so a bookmark or hard refresh reproduces the filtered view. Only reacts to
 // requests targeting the staff table, so modals (#modal-container) don't leak params in.
-document.body.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const tableContainer = document.getElementById('staff-table-container');
   if (evt.detail.target !== tableContainer) return;
   try {
@@ -686,9 +698,9 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
     });
     history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
   } catch (e) {
-    // URL sync is a non-critical enhancement -- never let it break the actual request.
+    // URL sync is a non-critical enhancement - never let it break the actual request.
   }
-});
+};
 </script>
 
 <script>
@@ -705,7 +717,7 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal'));
 }
 
-// Barcode-scan shortcut -- see assets.html's identical block for the full
+// Barcode-scan shortcut - see assets.html's identical block for the full
 // reasoning. Looks up via the linked member's barcode since staff has none
 // of their own (routes/staff.py:staff_by_barcode).
 document.getElementById('staff-search').addEventListener('keydown', function (e) {
@@ -720,7 +732,7 @@ document.getElementById('staff-search').addEventListener('keydown', function (e)
   });
 });
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   // / - focus the search box.
@@ -784,6 +796,6 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllStaffFilters();
   }
-});
+};
 </script>
 {% endblock %}

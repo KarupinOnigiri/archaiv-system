@@ -169,7 +169,7 @@ def get_notification_bell_context(conn, staff_id, role, staff, limit=8):
 
 
 # # # UNRESTRICTION REQUEST LIFECYCLE --------------------------------------
-# Fire once, right when the triggering action happens -- nothing to reconcile later.
+# Fire once, right when the triggering action happens - nothing to reconcile later.
 
 
 def create_unrestriction_requested_notifications(conn, request_id, member_name, requester_username):
@@ -202,8 +202,25 @@ def create_unrestriction_resolved_notification(conn, request_id, requester_staff
     )
 
 
+# # # RESERVATIONS --------------------------------------------------------
+# One-shot, fired from services/reservation_service.py's cancel_reservation.
+# No "created"/"upcoming" notification for v1 - reservations are advisory
+# (see that module's docstring), so the only event worth interrupting the
+# original booking staff member for is their own booking falling through.
+
+
+def create_reservation_cancelled_notification(conn, reservation_id, staff_id, asset_name, member_name):
+    conn.execute(
+        """
+        INSERT INTO notifications (type, reservation_id, recipient_staff_id, message)
+        VALUES ('reservation_cancelled', ?, ?, ?)
+        """,
+        (reservation_id, staff_id, f"Reservation for {asset_name} ({member_name}) was cancelled"),
+    )
+
+
 # # # ADMIN DEACTIVATION REQUEST LIFECYCLE -----------------------------------
-# Same one-shot shape as above -- fired once from routes/staff.py.
+# Same one-shot shape as above - fired once from routes/staff.py.
 
 
 def create_admin_deactivation_requested_notifications(conn, request_id, target_name, requester_name):
@@ -237,7 +254,7 @@ def create_admin_deactivation_resolved_notification(conn, request_id, requester_
 
 
 # # # FEEDBACK LIFECYCLE ----------------------------------------------------
-# Same one-shot shape -- fired once from routes/feedback.py on submit/resolve.
+# Same one-shot shape - fired once from routes/feedback.py on submit/resolve.
 
 
 def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id, submitter_name, category):
@@ -294,7 +311,7 @@ def get_notifications_table_context(conn, args, staff):
     # Drops any type this staff member muted in Settings & privacy.
     where_clauses.append(PREF_FILTER_SQL.removeprefix("AND "))
     params.extend(pref_filter_params(staff))
-    # Cleared notifications stay gone -- no "show cleared" view here.
+    # Cleared notifications stay gone - no "show cleared" view here.
     where_clauses.append("COALESCE(nr.is_cleared, 0) = 0")
 
     show_unread_only = args.get("show_unread_only") == "1"
@@ -387,7 +404,7 @@ def mark_notification_read(conn, notification_id, staff):
 
 
 def clear_notification(conn, notification_id, staff):
-    """The '×' on each row -- clears one notification at a time."""
+    """The '×' on each row - clears one notification at a time."""
     notification = conn.execute(
         f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
         (notification_id, staff["id"], staff["role"]),
@@ -446,5 +463,5 @@ def resolve_notification_open(conn, notification_id, staff):
             f"&open_transaction={notification['transaction_id']}"
         )
 
-    # Neither kind -- shouldn't happen, but a dead-end redirect beats a 500.
+    # Neither kind - shouldn't happen, but a dead-end redirect beats a 500.
     return "/notifications"

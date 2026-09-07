@@ -1,0 +1,143 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-sm">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Adjust Stock</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      <strong>{{ asset.name }}</strong> ({{ asset.asset_id }}) currently has
+      <strong id="adjust-stock-current" data-current="{{ asset.quantity }}">{{ asset.quantity }}</strong> in stock.
+    </p>
+
+    <!-- Always rendered (not just when there is an error) so its reserved space
+         doesn't appear/disappear and shift the form below it - min-h-5
+         matches a single line of text-sm content. -->
+    <p class="text-error text-sm mb-3 min-h-5">{{ error or '' }}</p>
+
+    <!-- Three explicit modes instead of one bare "type a signed number"
+         field - staff shouldn't have to do the +/- arithmetic themselves
+         (least of all "what do I type to end up at exactly 40 units").
+         Whatever mode's picked, the actual submit still just sends the
+         same signed `delta` services/asset_service.py's
+         adjust_consumable_stock already expects - this only changes how
+         staff arrive at that number, not the API contract. -->
+    <div class="join w-full mb-3">
+      <button type="button" id="adjust-stock-mode-add" class="join-item btn btn-sm flex-1 btn-primary" onclick="setAdjustStockMode('add')">Add</button>
+      <button type="button" id="adjust-stock-mode-deduct" class="join-item btn btn-sm flex-1 btn-outline" onclick="setAdjustStockMode('deduct')">Deduct</button>
+      <button type="button" id="adjust-stock-mode-set" class="join-item btn btn-sm flex-1 btn-outline" onclick="setAdjustStockMode('set')">Set to</button>
+    </div>
+
+    <form id="adjust-stock-form" hx-post="/api/v1/assets/{{ asset.id }}/adjust-stock" hx-target="closest .modal" hx-swap="outerHTML" onsubmit="return prepareAdjustStockSubmit(event)">
+      <input type="hidden" name="delta" id="adjust-stock-delta-input">
+
+      <div class="form-control mb-1">
+        <label class="label"><span class="label-text" id="adjust-stock-amount-label">Units to add</span></label>
+        <input type="number" id="adjust-stock-amount" min="0" step="1" required placeholder="e.g. 20"
+               class="input input-bordered w-full" oninput="updateAdjustStockPreview()">
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">
+        New stock level: <span id="adjust-stock-preview" class="font-semibold text-base-content">{{ asset.quantity }}</span>
+      </p>
+
+      <div class="form-control mb-2">
+        <label class="label"><span class="label-text">Reason</span><span class="label-text-alt text-base-content/40">Optional</span></label>
+        <textarea name="reason" rows="2"
+                  placeholder="e.g. restocked from supplier, damaged units removed"
+                  class="textarea textarea-bordered w-full"></textarea>
+      </div>
+
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" id="adjust-stock-submit-btn" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let adjustStockMode = 'add';
+
+function setAdjustStockMode(mode) {
+  adjustStockMode = mode;
+  const modes = { add: 'adjust-stock-mode-add', deduct: 'adjust-stock-mode-deduct', set: 'adjust-stock-mode-set' };
+  Object.keys(modes).forEach(function (m) {
+    const btn = document.getElementById(modes[m]);
+    btn.classList.toggle('btn-primary', m === mode);
+    btn.classList.toggle('btn-outline', m !== mode);
+  });
+
+  const label = document.getElementById('adjust-stock-amount-label');
+  const amountInput = document.getElementById('adjust-stock-amount');
+  if (mode === 'add') {
+    label.textContent = 'Units to add';
+    amountInput.placeholder = 'e.g. 20';
+  } else if (mode === 'deduct') {
+    label.textContent = 'Units to remove';
+    amountInput.placeholder = 'e.g. 5';
+  } else {
+    label.textContent = 'New total on hand';
+    amountInput.placeholder = 'e.g. 40';
+  }
+  amountInput.value = '';
+  updateAdjustStockPreview();
+  amountInput.focus();
+}
+
+function updateAdjustStockPreview() {
+  const current = parseInt(document.getElementById('adjust-stock-current').dataset.current, 10) || 0;
+  const raw = document.getElementById('adjust-stock-amount').value;
+  const amount = raw === '' ? null : parseInt(raw, 10);
+  const previewEl = document.getElementById('adjust-stock-preview');
+
+  if (amount === null || isNaN(amount)) {
+    previewEl.textContent = current;
+    previewEl.classList.remove('text-error', 'text-success');
+    return;
+  }
+
+  let newTotal;
+  if (adjustStockMode === 'add') newTotal = current + amount;
+  else if (adjustStockMode === 'deduct') newTotal = current - amount;
+  else newTotal = amount;
+
+  previewEl.textContent = newTotal;
+  previewEl.classList.toggle('text-error', newTotal < 0);
+  previewEl.classList.toggle('text-success', newTotal >= 0 && newTotal !== current);
+}
+
+// Translates whatever mode was picked into the single signed `delta` the
+// server-side contract (services/asset_service.py's adjust_consumable_stock)
+// has always taken - the three-mode UI is purely a client-side convenience,
+// not a change to what actually gets submitted.
+function prepareAdjustStockSubmit(event) {
+  const current = parseInt(document.getElementById('adjust-stock-current').dataset.current, 10) || 0;
+  const amount = parseInt(document.getElementById('adjust-stock-amount').value, 10);
+  const errorEl = document.querySelector('#adjust-stock-form').previousElementSibling;
+
+  if (isNaN(amount) || amount < 0) {
+    event.preventDefault();
+    return false;
+  }
+
+  let delta;
+  if (adjustStockMode === 'add') delta = amount;
+  else if (adjustStockMode === 'deduct') delta = -amount;
+  else delta = amount - current;
+
+  if (delta === 0) {
+    event.preventDefault();
+    if (errorEl) {
+      errorEl.textContent = adjustStockMode === 'set'
+        ? "That's already the current stock level."
+        : 'Enter a non-zero amount.';
+    }
+    return false;
+  }
+
+  document.getElementById('adjust-stock-delta-input').value = delta;
+  return true;
+}
+
+setAdjustStockMode('add');
+</script>

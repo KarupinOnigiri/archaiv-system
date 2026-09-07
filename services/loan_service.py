@@ -84,7 +84,7 @@ def check_and_restrict_overdue_member(member_id, conn):
 
 def check_and_restrict_damaged_returns(member_id, conn):
     """Damage counterpart to check_and_restrict_overdue_member; restricts after enough non-functional returns.
-    Not auto-liftable like overdue -- stays restricted until a human resolves it."""
+    Not auto-liftable like overdue - stays restricted until a human resolves it."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None or member["is_restricted"]:
         return False

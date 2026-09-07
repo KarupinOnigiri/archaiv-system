@@ -38,10 +38,10 @@
 
 <script>
 // Server-side folder picker: lists subfolders via /api/v1/assets/export/browse for click-through browsing.
-// Rows use createElement/textContent, not innerHTML -- folder names come from the filesystem, don't trust them as HTML.
+// Rows use createElement/textContent, not innerHTML - folder names come from the filesystem, don't trust them as HTML.
 
-let currentBrowsePath = '';
-let folderBrowserTargetInput = null;
+var currentBrowsePath = '';
+var folderBrowserTargetInput = null;
 
 function openFolderBrowser(targetInputId) {
   folderBrowserTargetInput = document.getElementById(targetInputId || 'export-save-path');

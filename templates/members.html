@@ -6,7 +6,7 @@
   <div class="flex flex-wrap items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold">Members Summary</h1>
-      <!--  <p class="text-sm text-base-content/50 mt-1">Everyone who can borrow tools &mdash; trainees, trainers, and their current standing.</p>-->
+      <!--  <p class="text-sm text-base-content/50 mt-1">Everyone who can borrow tools - trainees, trainers, and their current standing.</p>-->
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role in ["admin", "in_charge"] %}
@@ -158,7 +158,7 @@
 
     </div>
 
-    <!-- role-only check, not show_inactive-aware -- this bar renders once on
+    <!-- role-only check, not show_inactive-aware - this bar renders once on
          page load but "Show inactive" toggles client-side after, so it has
          to cover both states upfront (same reasoning as Inventory's bar). -->
     {% set can_bulk_act = staff.role in ["admin", "in_charge"] %}
@@ -211,7 +211,7 @@
   const reactivateBtn = document.getElementById('bulk-reactivate-btn');
 
   // Same "select every matching row across every page" escape hatch as
-  // Inventory's equivalent flag -- set by selectAllMatching() below, cleared
+  // Inventory's equivalent flag - set by selectAllMatching() below, cleared
   // the moment any checkbox is touched again or the table reloads.
   let selectAllMatched = false;
   let matchedAllIds = [];
@@ -361,7 +361,7 @@
       }
       showToast(message, skippedCount > 0 ? 'info' : 'success');
 
-      // Full reload rather than an htmx table refresh -- the stat cards at the
+      // Full reload rather than an htmx table refresh - the stat cards at the
       // top of this page also need to reflect the change, same reasoning as
       // Inventory's bulk actions.
       window.location.reload();
@@ -457,7 +457,7 @@ document.getElementById('show-inactive-toggle').addEventListener('change', funct
   const isInactive = e.target.checked;
 
   // Mirrors clicking the "Inactive" stat card when switched on, and "All
-  // Members" when switched off -- even though the toggle alone doesn't send
+  // Members" when switched off - even though the toggle alone doesn't send
   // the is_active=0 filterByStanding('inactive') does, "Inactive" is still
   // the more honest read of "show inactive" than leaving no card lit.
   currentStandingFilter = isInactive ? 'inactive' : '';
@@ -496,6 +496,12 @@ function updateMemberFilterUI() {
   document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
   document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
   document.getElementById('member-search-clear-btn').classList.toggle('hidden', !searchActive);
+  // The clear button is the join's real last child even while hidden (CSS
+  // :last-child doesn't care about display:none), so it - not the input -
+  // keeps the join's rounded right corner whenever it's hidden, leaving the
+  // input's own right edge square. Give the input that same corner back
+  // itself whenever the clear button isn't there to own it.
+  document.getElementById('member-search').classList.toggle('rounded-r-(--radius-field)', !searchActive);
 
   document.getElementById('department-filter-wrap').classList.toggle('ring-2', departmentActive);
   document.getElementById('department-filter-wrap').classList.toggle('ring-primary/40', departmentActive);
@@ -531,7 +537,7 @@ function getBaseMemberFilterParams() {
 }
 
 // Re-fetches the table with whatever filters/sort/page are currently in
-// effect -- a manual refresh shouldn't reset the view to page 1 the way
+// effect - a manual refresh shouldn't reset the view to page 1 the way
 // add/edit/delete intentionally do (via the members-refreshed event).
 function refreshMembersTable() {
   const table = document.querySelector('#member-table-container table');
@@ -580,7 +586,7 @@ function clearAllMemberFilters() {
   document.getElementById('restricted-filter').value = '';
   updateMemberFilterUI();
   // Every control was just blanked above, so getBaseMemberFilterParams() now
-  // naturally returns nothing but the empty set -- same shared helper
+  // naturally returns nothing but the empty set - same shared helper
   // filterByStanding() uses, rather than a third hand-built params object.
   const params = getBaseMemberFilterParams();
   params.set('limit', '{{ limit }}');
@@ -590,7 +596,7 @@ function clearAllMemberFilters() {
   params.set('sort_dir', '{{ sort_dir }}');
   // `values` (not a baked-in URL string) so htmx reports these back as
   // evt.detail.parameters, which the URL-sync listener below needs to
-  // update the address bar -- a direct htmx.ajax() call has no triggering
+  // update the address bar - a direct htmx.ajax() call has no triggering
   // element to pull hx-vals/hx-include from otherwise.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
@@ -604,7 +610,13 @@ function clearAllMemberFilters() {
   el.addEventListener('input', function () { currentStandingFilter = ''; updateMemberFilterUI(); });
   el.addEventListener('change', function () { currentStandingFilter = ''; updateMemberFilterUI(); });
 });
-document.addEventListener('DOMContentLoaded', updateMemberFilterUI);
+// Deferred: updateMemberFilterUI() reaches into updateMemberStatCardUI(),
+// which reads STANDING_CARD_ACCENTS further down this same script - var
+// hoisting only hoists the declaration, not its assigned value, so calling
+// this synchronously here would run before that assignment executes.
+// setTimeout(fn, 0) queues it for right after this whole swap's scripts
+// finish, matching the DOMContentLoaded ordering this used to rely on.
+setTimeout(updateMemberFilterUI, 0);
 
 // Keeps the stat cards' highlight in sync with whichever standing they
 // represent (mirrors Inventory's STAT_CARD_ACCENTS). currentStandingFilter is
@@ -621,9 +633,9 @@ document.addEventListener('DOMContentLoaded', updateMemberFilterUI);
 {% else %}
   {% set initial_standing = '' %}
 {% endif %}
-let currentStandingFilter = {{ initial_standing | tojson }};
+var currentStandingFilter = {{ initial_standing | tojson }};
 
-const STANDING_CARD_ACCENTS = {
+var STANDING_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
   'active': 'ring-success/40 border-success/40',
   'restricted': 'ring-warning/40 border-warning/40',
@@ -647,7 +659,7 @@ function updateMemberStatCardUI() {
 
 // Same shortcut-filter behavior as Inventory's filterByStatus: a card click
 // sends a fresh request for exactly that standing. "Inactive" is an
-// approximation -- the endpoint can't return *only* inactive members yet, so
+// approximation - the endpoint can't return *only* inactive members yet, so
 // this just adds is_active=0 alongside show_inactive=1 for the backend to honor precisely later.
 function filterByStanding(standing) {
   currentStandingFilter = standing;
@@ -688,7 +700,7 @@ function filterByStanding(standing) {
 
   // Setting .checked directly (rather than dispatching a real "change" event)
   // skips the dedicated show-inactive-toggle listener, so update its pill
-  // styling here instead -- avoids that listener resetting
+  // styling here instead - avoids that listener resetting
   // currentStandingFilter right after this function just set it.
   const isInactiveView = inactiveToggle.checked;
   inactiveToggle.classList.toggle('toggle-warning', isInactiveView);
@@ -705,7 +717,7 @@ function filterByStanding(standing) {
 
   updateMemberFilterUI();
   // `values` (not a baked-in URL string), same reasoning as
-  // clearAllMemberFilters() above -- keeps the address bar in sync and lets
+  // clearAllMemberFilters() above - keeps the address bar in sync and lets
   // search/department survive a stat-card click.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
@@ -715,10 +727,10 @@ function filterByStanding(standing) {
 }
 
 // Keeps the address bar in sync with the current search/filter/sort/paging
-// state, same as Inventory's equivalent listener -- scoped to requests
+// state, same as Inventory's equivalent listener - scoped to requests
 // actually targeting the member table (not modal-opening requests, which
 // target #modal-container).
-document.body.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const tableContainer = document.getElementById('member-table-container');
   if (evt.detail.target !== tableContainer) return;
   try {
@@ -735,16 +747,16 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
     });
     history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
   } catch (e) {
-    // URL sync is a non-critical enhancement -- never let it break the actual request.
+    // URL sync is a non-critical enhancement - never let it break the actual request.
   }
-});
+};
 </script>
 
 <script>
 // Mirrors the same cold-load spacing workaround used on the Inventory page:
 // replay the initial swap through htmx's own request path once, so the
 // filter row settles into the same spacing it has after any later swap.
-document.addEventListener('DOMContentLoaded', function () {
+(function () {
   var params = new URLSearchParams({
     limit: '{{ limit }}',
     offset: '{{ offset }}',
@@ -763,20 +775,20 @@ document.addEventListener('DOMContentLoaded', function () {
   {% endif %}
   // `values` (not a pre-built query string), or the URL-sync listener above
   // sees an empty parameter set on this auto-fired request and wipes every
-  // filter from the address bar right after page load -- that was the actual bug behind a filtered URL resetting on refresh.
+  // filter from the address bar right after page load - that was the actual bug behind a filtered URL resetting on refresh.
   htmx.ajax('GET', '/api/v1/members', {
     target: '#member-table-container',
     swap: 'innerHTML',
     values: Object.fromEntries(params)
   });
-});
+})();
 </script>
 
 <script>
 // --- Keyboard shortcuts (Members page only) ---
 // Same "don't hijack typing" / "back off while a modal is open" guards as
 // Inventory's equivalent block. isModalOpen() only needs to check
-// #modal-container here -- Members has no folder-browser-style popup.
+// #modal-container here - Members has no folder-browser-style popup.
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -788,7 +800,7 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal'));
 }
 
-// Barcode-scan shortcut -- see templates/assets.html's identical block
+// Barcode-scan shortcut - see templates/assets.html's identical block
 // for the full reasoning (Enter-key on the same box the live substring
 // filter uses, exact match, jumps straight to the profile modal).
 document.getElementById('member-search').addEventListener('keydown', function (e) {
@@ -803,7 +815,7 @@ document.getElementById('member-search').addEventListener('keydown', function (e
   });
 });
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   // / - focus the search box.
@@ -876,6 +888,6 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllMemberFilters();
   }
-});
+};
 </script>
 {% endblock %}

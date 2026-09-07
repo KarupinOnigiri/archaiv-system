@@ -12,7 +12,7 @@
 
     <div id="reactivate-staff-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
 
-    <!-- Reason only here -- entering it and confirming your password are two
+    <!-- Reason only here - entering it and confirming your password are two
          separate steps (see openReactivateStaffPasswordConfirm below), same
          split as /feature-flags/update's Save Changes -> password dialog.
          Reactivating an account (any role: admin, in_charge, tool_keeper) is
@@ -97,7 +97,7 @@ async function submitReactivateStaffForm(event) {
   // Reactivating removes this row from the Inactive filter it was almost
   // certainly opened from (that's the only view a deactivated account's
   // Reactivate action is reachable from), which can otherwise look like
-  // the click did nothing or reset the filter -- read here, before the
+  // the click did nothing or reset the filter - read here, before the
   // reload below, since the toggle is a sibling of this modal in the
   // page, not part of it. Checked defensively (?.) since the table row
   // action (staff/_table.html) can also reach this modal from a context
@@ -136,12 +136,12 @@ async function submitReactivateStaffForm(event) {
     }
 
     const message = wasViewingInactive
-      ? 'Staff account reactivated -- still viewing the Inactive filter'
+      ? 'Staff account reactivated - still viewing the Inactive filter'
       : 'Staff account reactivated';
     sessionStorage.setItem('pending-toast', JSON.stringify({ message: message, type: 'success' }));
 
     // Rebuild the URL from staffStatusFilter rather than trusting the
-    // address bar to already be in sync -- see the comment above. This is
+    // address bar to already be in sync - see the comment above. This is
     // still a full navigation (not an htmx table refresh) because the
     // stat cards at the top of the page also need to reflect the change,
     // same reasoning as the bulk reactivate/deactivate actions below.

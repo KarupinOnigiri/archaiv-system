@@ -6,15 +6,15 @@
   {% for row in rows %}
   <li class="text-sm border-l-2 {% if row.kind == 'request' %}border-info/40{% else %}border-base-300{% endif %} pl-3">
     {% if row.kind == 'request' %}
-    <div class="font-medium capitalize">Unrestriction request &mdash; {{ row.title }}</div>
+    <div class="font-medium capitalize">Unrestriction request - {{ row.title }}</div>
     <div class="text-base-content/60">{{ row.detail }}</div>
     <div class="text-xs text-base-content/40 mt-0.5">
-      Requested by {{ row.actor }}{% if row.reviewer %} &middot; reviewed by {{ row.reviewer }}{% endif %} &middot; {{ row.created_at }}
+      Requested by {{ row.actor }}{% if row.reviewer %} &middot; reviewed by {{ row.reviewer }}{% endif %} &middot; {{ row.created_at | format_date }}
     </div>
     {% else %}
     <div class="font-medium capitalize">{{ (row.title or '').replace('_', ' ') }}</div>
     <div class="text-base-content/60">{{ row.detail }}</div>
-    <div class="text-xs text-base-content/40 mt-0.5">{{ row.actor or 'system' }} &middot; {{ row.created_at }}</div>
+    <div class="text-xs text-base-content/40 mt-0.5">{{ row.actor or 'system' }} &middot; {{ row.created_at | format_date }}</div>
     {% endif %}
   </li>
   {% endfor %}
@@ -23,7 +23,7 @@
 <p class="text-base-content/50 py-8 text-center text-sm">No restriction history.</p>
 {% endif %}
 
-<!-- Pagination footer -- same numbered-with-ellipsis pattern as assets/
+<!-- Pagination footer - same numbered-with-ellipsis pattern as assets/
      members/staff/transactions/notifications/audit-log. -->
 <div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
 

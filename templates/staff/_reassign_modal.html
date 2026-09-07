@@ -43,10 +43,10 @@
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(180)">+6 months</button>
             <button type="button" class="btn btn-xs btn-outline" onclick="extendReassignEnd(365)">+1 year</button>
             <!-- Sets assigned_end to the PERMANENT_ASSIGNED_END sentinel instead of a day
-                 count -- login()'s tool_keeper check needs *some* assigned_end, this is
+                 count - login()'s tool_keeper check needs *some* assigned_end, this is
                  just one far enough out to never matter. -->
             <button type="button" class="btn btn-xs btn-outline" onclick="setReassignPermanent()">Permanent</button>
-            <!-- Separated visually from the quick-extend group -- wipes both fields
+            <!-- Separated visually from the quick-extend group - wipes both fields
                  blank instead of computing a date, for undoing an accidental click
                  or leaving the account dateless again. -->
             <button type="button" class="btn btn-xs btn-outline btn-error ml-auto" onclick="clearReassignDates()">Clear</button>
@@ -67,7 +67,7 @@
 const REASSIGN_PERMANENT_ASSIGNED_END = {{ PERMANENT_ASSIGNED_END | tojson }};
 
 // toISOString() converts to UTC first, so for anyone east of UTC (e.g. UTC+8) a local
-// midnight Date rolls back to the previous calendar day -- that's why +30 days was
+// midnight Date rolls back to the previous calendar day - that's why +30 days was
 // landing on +28. Local date parts, not UTC, avoid that entirely.
 function toLocalDateStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -83,7 +83,7 @@ function extendReassignEnd(days) {
   const startInput = document.getElementById('reassign-start');
   const endInput = document.getElementById('reassign-end');
 
-  // Fills ASSIGNED START with today if blank -- common right after a deactivate/
+  // Fills ASSIGNED START with today if blank - common right after a deactivate/
   // reactivate, which nulls both dates out (see routes/staff.py).
   if (!startInput.value) {
     startInput.value = toLocalDateStr(new Date());
@@ -97,7 +97,7 @@ function extendReassignEnd(days) {
   endInput.value = toLocalDateStr(base);
 }
 
-// Wipes both date fields blank -- undo an accidental quick-extend click, or
+// Wipes both date fields blank - undo an accidental quick-extend click, or
 // leave the account dateless again, without clearing each picker by hand.
 function clearReassignDates() {
   document.getElementById('reassign-start').value = '';
@@ -105,7 +105,7 @@ function clearReassignDates() {
 }
 
 // Mirrors submitEditStaffForm's fetch-based JSON submit but only sends
-// assigned_start/assigned_end -- /staff/<id>/edit leaves other fields untouched.
+// assigned_start/assigned_end - /staff/<id>/edit leaves other fields untouched.
 async function submitReassignUsageForm(event, id) {
   event.preventDefault();
   const form = document.getElementById('reassign-usage-form');

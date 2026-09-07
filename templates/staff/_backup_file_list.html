@@ -5,7 +5,7 @@
 <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
   <div class="min-w-0">
     <p class="font-medium truncate">{{ b.name }}</p>
-    <p class="text-xs text-base-content/40">{{ b.created_at }} &middot; {{ "%.1f"|format(b.size_bytes / 1048576) }} MB</p>
+    <p class="text-xs text-base-content/40">{{ b.created_at | format_date }} &middot; {{ "%.1f"|format(b.size_bytes / 1048576) }} MB</p>
   </div>
   <div class="flex items-center gap-1 shrink-0">
     <a href="/api/v1/backup-settings/download/{{ b.name }}" class="btn btn-ghost btn-xs" download>
@@ -15,7 +15,7 @@
          (no undo/archive) and now also requires the acting admin's password --
          see staff/_backup_delete_modal.html. Appended to <body> (not swapped
          into #modal-container) since this list already lives inside the
-         backup-settings modal in #modal-container -- targeting that again
+         backup-settings modal in #modal-container - targeting that again
          would blow away the list this button is sitting in. -->
     <button type="button" class="btn btn-ghost btn-xs text-error"
             hx-get="/api/v1/backup-settings/delete-confirm/{{ b.name }}"

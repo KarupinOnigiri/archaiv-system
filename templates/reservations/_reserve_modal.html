@@ -1,0 +1,254 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">Reserve for Later</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      Book <strong>{{ asset.name }}</strong> ({{ asset.asset_id }}) for a member ahead of time.
+      This is advisory only - it doesn't block anyone from checking it out in the meantime.
+    </p>
+
+    <p id="reserve-error" class="text-error text-sm mb-3 min-h-5"></p>
+
+    <form id="reserve-form" onsubmit="submitReservation(event, {{ asset.id }})">
+      <div class="form-control mb-2 relative">
+        <label class="label"><span class="label-text">Member Barcode</span></label>
+        <input type="text" id="reserve-member-barcode" name="member_barcode" required autocomplete="off"
+               placeholder="Scan or type member barcode"
+               class="input input-bordered w-full"
+               oninput="lookupReserveMember(this.value)">
+        <p id="reserve-member-name" class="text-xs text-success mt-1 hidden"></p>
+        <p id="reserve-member-not-found" class="text-xs text-error mt-1 hidden">No member found for that barcode.</p>
+        <!-- Same "browse instead of scan" pattern as transactions/_checkout_modal.html's
+             Step 1 (Show available members) - reuses that same available-members
+             endpoint. Positioned absolute (same convention as base.html's
+             #global-search-results dropdown) rather than sitting in normal
+             document flow, so opening it overlays on top of the rest of the
+             form instead of pushing the Start/End/Notes fields down and
+             growing the modal itself. -->
+        <button type="button" id="reserve-browse-members-btn" class="btn btn-ghost btn-xs mt-1 gap-1 self-start" onclick="toggleReserveAvailableMembers()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          Show available members
+        </button>
+        <div id="reserve-available-members-panel" class="hidden absolute top-full left-0 right-0 mt-1 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-2xl z-30 max-h-64">
+          <div class="px-3 pt-2 shrink-0">
+            <input type="text" id="reserve-available-members-filter" placeholder="Filter..."
+                   class="input input-bordered input-xs w-full" oninput="filterReserveAvailableMembers(this.value)">
+          </div>
+          <div id="reserve-available-members-loading" class="text-xs text-base-content/50 px-3 py-4 text-center">Loading&hellip;</div>
+          <div id="reserve-available-members-error" class="text-error text-xs px-3 py-2 hidden"></div>
+          <ul id="reserve-available-members-list" class="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5"></ul>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-2">
+        <div class="form-control">
+          <label class="label"><span class="label-text">Start</span></label>
+          <input type="datetime-local" name="start_at" required class="input input-bordered w-full">
+        </div>
+        <div class="form-control">
+          <label class="label"><span class="label-text">End</span></label>
+          <input type="datetime-local" name="end_at" required class="input input-bordered w-full">
+        </div>
+      </div>
+
+      <div class="form-control mb-2">
+        <label class="label"><span class="label-text">Notes</span><span class="label-text-alt text-base-content/40">Optional</span></label>
+        <textarea name="notes" rows="2" class="textarea textarea-bordered w-full"></textarea>
+      </div>
+
+      <div class="modal-action">
+        <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Reserve</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let reserveMemberLookupTimer = null;
+let reserveAvailableMembersCache = null;
+
+// Debounced live "does this barcode resolve to a real member" check, same
+// info the browse panel's rows would give you, just for the typed/scanned
+// path - was previously a dead #reserve-member-name element nothing ever
+// filled in.
+function lookupReserveMember(value) {
+  const nameEl = document.getElementById('reserve-member-name');
+  const notFoundEl = document.getElementById('reserve-member-not-found');
+  nameEl.classList.add('hidden');
+  notFoundEl.classList.add('hidden');
+  clearTimeout(reserveMemberLookupTimer);
+  const barcode = value.trim();
+  if (!barcode) return;
+  reserveMemberLookupTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/v1/members/barcode/${encodeURIComponent(barcode)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        notFoundEl.classList.remove('hidden');
+        return;
+      }
+      nameEl.textContent = `${data.first_name} ${data.last_name}${data.department ? ' · ' + data.department : ''}`;
+      nameEl.classList.remove('hidden');
+    } catch (err) {
+      // A lookup hiccup here isn't fatal - the real check happens again on
+      // submit, this is just an early "yes that's a real barcode" hint.
+    }
+  }, 300);
+}
+
+function toggleReserveAvailableMembers() {
+  const panel = document.getElementById('reserve-available-members-panel');
+  const nowHidden = !panel.classList.contains('hidden');
+  panel.classList.toggle('hidden');
+  if (!nowHidden) loadReserveAvailableMembers();
+}
+
+async function loadReserveAvailableMembers() {
+  const listEl = document.getElementById('reserve-available-members-list');
+  const loadingEl = document.getElementById('reserve-available-members-loading');
+  const errorEl = document.getElementById('reserve-available-members-error');
+  listEl.innerHTML = '';
+  errorEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+
+  try {
+    // Same GET /checkout-sessions/available-members endpoint the checkout
+    // modal's own "Show available members" browses - returns
+    // { members: [{ code, name, department }, ...] }, code is the barcode.
+    const res = await fetch('/api/v1/checkout-sessions/available-members', {
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+    });
+    const data = await res.json();
+    loadingEl.classList.add('hidden');
+
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      errorEl.textContent = data.error || "Couldn't load available members.";
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    reserveAvailableMembersCache = data.members || [];
+    renderReserveAvailableMembers(reserveAvailableMembersCache);
+  } catch (err) {
+    loadingEl.classList.add('hidden');
+    errorEl.textContent = "Couldn't load available members.";
+    errorEl.classList.remove('hidden');
+  }
+}
+
+function renderReserveAvailableMembers(members) {
+  const listEl = document.getElementById('reserve-available-members-list');
+  listEl.innerHTML = '';
+  if (members.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'text-xs text-base-content/40 px-2 py-2 text-center';
+    li.textContent = 'No members found.';
+    listEl.appendChild(li);
+    return;
+  }
+  members.forEach((member) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w-full text-left px-2 py-1.5 rounded hover:bg-base-200 text-sm flex flex-col';
+    // Restricted members are still selectable here (unlike the checkout
+    // browse panel, which disables them) - a restriction blocks an actual
+    // checkout, not booking one ahead of time for after it's lifted. Same
+    // reasoning as create_reservation not checking is_restricted at all.
+    const nameRow = document.createElement('span');
+    nameRow.className = 'flex items-center gap-1.5 truncate';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'truncate';
+    nameSpan.textContent = member.name;
+    nameRow.appendChild(nameSpan);
+    if (member.restricted) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-warning badge-xs shrink-0';
+      badge.textContent = 'Restricted';
+      badge.title = member.restriction_reason || 'This member is restricted';
+      nameRow.appendChild(badge);
+    }
+    const deptSpan = document.createElement('span');
+    deptSpan.className = 'text-xs text-base-content/40 truncate';
+    deptSpan.textContent = member.department || '';
+    btn.appendChild(nameRow);
+    btn.appendChild(deptSpan);
+    btn.onclick = () => selectReserveMember(member.code, member.name, member.department);
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  });
+}
+
+function filterReserveAvailableMembers(query) {
+  if (!reserveAvailableMembersCache) return;
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? reserveAvailableMembersCache.filter((m) => m.name.toLowerCase().includes(q) || (m.department || '').toLowerCase().includes(q) || m.code.toLowerCase().includes(q))
+    : reserveAvailableMembersCache;
+  renderReserveAvailableMembers(filtered);
+}
+
+function selectReserveMember(code, name, department) {
+  const input = document.getElementById('reserve-member-barcode');
+  input.value = code;
+  document.getElementById('reserve-available-members-panel').classList.add('hidden');
+  const nameEl = document.getElementById('reserve-member-name');
+  nameEl.textContent = `${name}${department ? ' · ' + department : ''}`;
+  nameEl.classList.remove('hidden');
+  document.getElementById('reserve-member-not-found').classList.add('hidden');
+}
+
+async function submitReservation(event, assetId) {
+  event.preventDefault();
+  const form = event.target;
+  const errorEl = document.getElementById('reserve-error');
+  errorEl.textContent = '';
+  const submitBtn = form.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+
+  try {
+    const memberBarcode = form.member_barcode.value.trim();
+    const memberRes = await fetch(`/api/v1/members/barcode/${encodeURIComponent(memberBarcode)}`);
+    const memberData = await memberRes.json();
+    if (!memberRes.ok) {
+      errorEl.textContent = memberData.error || 'Member not found for that barcode.';
+      submitBtn.disabled = false;
+      return;
+    }
+
+    const toIsoSeconds = (v) => v ? v.replace('T', ' ') + ':00' : v;
+    const res = await fetch('/api/v1/reservations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: JSON.stringify({
+        asset_id: assetId,
+        member_id: memberData.id,
+        start_at: toIsoSeconds(form.start_at.value),
+        end_at: toIsoSeconds(form.end_at.value),
+        notes: form.notes.value.trim() || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't create that reservation.";
+      submitBtn.disabled = false;
+      return;
+    }
+
+    showToast('Reservation created', 'success');
+    document.querySelectorAll('.modal, .fixed.inset-0.z-50').forEach((el) => el.remove());
+    document.body.dispatchEvent(new Event('assets-refreshed'));
+  } catch (err) {
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    submitBtn.disabled = false;
+  }
+}
+</script>

@@ -2,12 +2,12 @@
    Inventory/Members/Staff (see each page's own <script>, and
    routes/assets.py:asset_by_barcode, routes/members.py:member_by_barcode,
    routes/staff.py:staff_by_barcode). One generic template rather than
-   three near-identical ones -- only `kind` (a plain-English noun for
+   three near-identical ones - only `kind` (a plain-English noun for
    what was being searched) and `barcode` (the scanned/typed value)
    differ per caller. #}
 <dialog id="barcode-not-found-modal" class="modal" open>
   <div class="modal-box max-w-sm text-center relative">
-    <!-- Absolutely positioned (rather than a flex header row) -- this
+    <!-- Absolutely positioned (rather than a flex header row) - this
          modal's whole layout is centered/stacked (icon, title, body all
          mx-auto), so the ESC pill sits in the corner instead of trying to
          share a row with a centered title. -->

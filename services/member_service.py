@@ -16,6 +16,7 @@ import os
 from datetime import datetime
 
 from database import get_db_connection, sqlite3
+from services.settings_service import get_member_code_prefix
 from utils.exports import sanitize_export_filename
 from utils.formatters import full_name
 from utils.logger import log_action
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 VALID_MEMBER_TYPES = ("trainee", "trainer")
 
-# Flat cap instead of real pagination -- see get_restriction_history docstring.
+# Flat cap instead of real pagination - see get_restriction_history docstring.
 RESTRICTION_HISTORY_CAP = 20
 
 # "name" maps to last_name + first_name (no single full-name column), both sorted the same direction.
@@ -42,7 +43,7 @@ SORTABLE_COLUMNS = {
     "batch": "members.batch",
 }
 
-# No exclusions needed -- unlike staff, members have no password/credential fields.
+# No exclusions needed - unlike staff, members have no password/credential fields.
 MEMBERS_EXPORT_COLUMNS = (
     "member_code",
     "first_name",
@@ -280,7 +281,7 @@ def create_member(conn, data, staff_id):
             ),
         )
         new_member_id = cursor.lastrowid
-        generated_code = f"MBR{new_member_id:05d}"
+        generated_code = f"{get_member_code_prefix(conn)}{new_member_id:05d}"
         conn.execute(
             "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
             (generated_code, custom_barcode or generated_code, new_member_id),
@@ -343,7 +344,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
         error = _validate_department_id(conn, data.get("department_id"))
         if error:
             # Matches the original route: this specific failure always returns raw JSON,
-            # even on non-JSON (htmx/form) requests -- no modal re-render, unlike the other errors below.
+            # even on non-JSON (htmx/form) requests - no modal re-render, unlike the other errors below.
             return None, _no_ctx(*error)
 
     new_barcode_id = member["barcode_id"]
@@ -351,12 +352,12 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
         custom_barcode, barcode_error = normalize_barcode_id(data.get("barcode_id"))
         if barcode_error:
             return None, ({"error": barcode_error}, 400, {"member": member})
-        # Blank clears back to nothing meaningful to fall back to -- barcode_id is
+        # Blank clears back to nothing meaningful to fall back to - barcode_id is
         # NOT NULL, so refuse rather than silently keeping the old value or erroring
         # obscurely at the UPDATE.
         if custom_barcode is None:
             return None, (
-                {"error": "barcode_id cannot be blank -- clear it back to the member code instead if needed."},
+                {"error": "barcode_id cannot be blank - clear it back to the member code instead if needed."},
                 400,
                 {"member": member},
             )
@@ -777,13 +778,13 @@ def bulk_deactivate_members(conn, ids, staff_id, acting_staff_role):
 
         if linked_staff is not None and acting_staff_role != "admin":
             skipped.append(
-                {"id": member_id, "name": name, "reason": "Has an active staff account -- only an admin can deactivate"}
+                {"id": member_id, "name": name, "reason": "Has an active staff account - only an admin can deactivate"}
             )
             continue
 
         if linked_staff is not None and linked_staff["role"] == "admin":
             skipped.append(
-                {"id": member_id, "name": name, "reason": "Has an active admin account -- deactivate via staff management instead"}
+                {"id": member_id, "name": name, "reason": "Has an active admin account - deactivate via staff management instead"}
             )
             continue
 
@@ -1207,7 +1208,7 @@ def delete_department(conn, department_id, staff_id):
         noun = "member" if member_count == 1 else "members"
         return None, _no_ctx(
             {
-                "error": f"Can't delete \"{department['name']}\" -- {member_count} {noun} still assigned to it. Reassign them to another department first."
+                "error": f"Can't delete \"{department['name']}\" - {member_count} {noun} still assigned to it. Reassign them to another department first."
             },
             400,
         )
@@ -1275,7 +1276,7 @@ def import_members_csv(content, mode, staff_id):
         conn.close()
 
     if dry_run:
-        # Nothing was persisted, so no log_action here -- same as import_assets_csv.
+        # Nothing was persisted, so no log_action here - same as import_assets_csv.
         return {
             "dry_run": True,
             "rows_to_create": len(created),
@@ -1305,7 +1306,7 @@ def _import_members_rows(reader, header_map, conn, created, errors, new_departme
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         first_name = (row.get("first_name") or "").strip()
         last_name = (row.get("last_name") or "").strip()
-        # barcode_id isn't read from the CSV -- always auto-generated to match member_code, even on import.
+        # barcode_id isn't read from the CSV - always auto-generated to match member_code, even on import.
         department_name = (row.get("department") or "").strip()
         member_type = (row.get("member_type") or "").strip().lower()
 
@@ -1355,7 +1356,7 @@ def _import_members_rows(reader, header_map, conn, created, errors, new_departme
                 ),
             )
             new_id = cursor.lastrowid
-            generated_code = f"MBR{new_id:05d}"
+            generated_code = f"{get_member_code_prefix(conn)}{new_id:05d}"
             conn.execute(
                 "UPDATE members SET member_code = ?, barcode_id = ? WHERE id = ?",
                 (generated_code, generated_code, new_id),
@@ -1399,7 +1400,7 @@ def resolve_export_columns(selected):
 
 
 def build_members_export_file(members, columns, export_format, show_inactive):
-    """Returns (file_bytes, content_type, export_format) -- export_format may be
+    """Returns (file_bytes, content_type, export_format) - export_format may be
     normalized back to 'csv' if an unrecognized format slipped through."""
     if export_format == "xlsx":
         wb = Workbook()

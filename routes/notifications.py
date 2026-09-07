@@ -17,7 +17,7 @@ def get_notifications_table_context(args, staff):
 @notifications_bp.route("/notifications/table")
 @login_required
 def view_notifications_table():
-    """htmx partial -- just the list + pagination footer, so paging doesn't re-render the whole page."""
+    """htmx partial - just the list + pagination footer, so paging doesn't re-render the whole page."""
     context, error = get_notifications_table_context(request.args, g.staff)
     if error:
         return error
@@ -55,7 +55,7 @@ def mark_notification_read(id):
 @notifications_bp.route("/notifications/<int:id>/clear", methods=["POST"])
 @login_required
 def clear_notification(id):
-    """The '×' on each row -- clears one notification at a time."""
+    """The '×' on each row - clears one notification at a time."""
     conn = get_db_connection()
     try:
         found = notification_service.clear_notification(conn, id, g.staff)

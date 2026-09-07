@@ -11,12 +11,41 @@
     }
   </style>
   <script>
-    document.addEventListener('keydown', function escClose(e) {
-      if (e.key === 'Escape') {
-        const modal = document.querySelector('.fixed.inset-0.z-50');
-        if (modal) modal.remove();
-        document.removeEventListener('keydown', escClose);
+    // Escape-to-close is handled by the single shared, topmost-only
+    // handler in ui.js (scoped to #modal-container's direct children) -
+    // see assets/_details_modal.html's comment for why this used to have
+    // its own buggy document-level escClose here and why that was removed.
+
+    // E dit / L ock-Unlock / P assword reset / D eactivate-Reactivate /
+    // reassign U sage - see assets/_details_modal.html's identical pattern
+    // for the full reasoning (mnemonic letters, self-cleaning on close,
+    // and standing down without unregistering whenever a later modal has
+    // been appended on top of this one).
+    document.addEventListener('keydown', function profileShortcuts(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const modal = document.querySelector('.fixed.inset-0.z-50');
+      if (!modal) {
+        document.removeEventListener('keydown', profileShortcuts);
+        return;
       }
+      if (modal.parentElement && modal.parentElement.lastElementChild !== modal) return;
+      const target = e.target;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+      if (isTyping) return;
+
+      const idByKey = {
+        e: 'staff-profile-edit-btn',
+        l: 'staff-profile-lock-btn',
+        p: 'staff-profile-reset-password-btn',
+        d: 'staff-profile-deactivate-btn',
+        u: 'staff-profile-reassign-btn',
+      };
+      const btnId = idByKey[e.key.toLowerCase()];
+      if (!btnId) return;
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      e.preventDefault();
+      btn.click();
     });
   </script>
 
@@ -30,7 +59,7 @@
         <h3 class="font-bold text-lg leading-snug">{{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ staff_member.staff_code or "-" }} &middot; @{{ staff_member.username }}</p>
       </div>
-      <!-- ESC pill instead of an X icon -- see assets/_details_modal.html for why. -->
+      <!-- ESC pill instead of an X icon - see assets/_details_modal.html for why. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
               onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
         ESC
@@ -40,7 +69,7 @@
     <!-- Two-column body -->
     <div class="flex-1 flex min-h-0 overflow-hidden">
 
-      <!-- overflow-hidden not overflow-y-auto -- the banners/info box above have
+      <!-- overflow-hidden not overflow-y-auto - the banners/info box above have
            fixed height and shouldn't scroll; only Account Activity's own list
            further down grows unbounded and gets a scrollbar. -->
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden p-5">
@@ -105,7 +134,7 @@
                 {% elif staff_member.role == "in_charge" %}
                 <span class="text-warning font-normal" data-tooltip="No assignment period set for this In Charge account yet">Not set</span>
                 {% else %}
-                <span class="text-warning font-normal" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
+                <span class="text-warning font-normal" data-tooltip="No assignment period set - this account can't log in until one is">Not set</span>
                 {% endif %}
               </span>
             </div>
@@ -153,7 +182,7 @@
               </div>
             </div>
             <!-- Stacks _full_activity_modal.html on top rather than navigating to
-                 /audit-log -- that used to replace this profile modal outright. -->
+                 /audit-log - that used to replace this profile modal outright. -->
             <div class="shrink-0 pt-2 border-t border-base-200 mt-2">
               <button type="button" class="text-xs font-medium text-primary hover:underline"
                       hx-get="/api/v1/staff/{{ staff_member.id }}/full-activity-modal"
@@ -171,8 +200,11 @@
       <div class="w-64 shrink-0 border-l border-base-300 bg-base-200/30 overflow-y-auto min-h-0 p-5">
         <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">STAFF</p>
 
-        <!-- Avatar -->
-        <div class="w-24 aspect-square rounded-full overflow-hidden border border-base-300 bg-base-100 flex items-center justify-center mx-auto">
+        <!-- Avatar - click to view full-size in the shared lightbox
+             (openPhotoLightbox, defined once in base.html). Only clickable
+             when there's an actual photo; initials have nothing to enlarge. -->
+        <div class="w-24 aspect-square rounded-full overflow-hidden border border-base-300 bg-base-100 flex items-center justify-center mx-auto {% if staff_member.photo_path %}cursor-pointer hover:opacity-80 transition-opacity{% endif %}"
+             {% if staff_member.photo_path %}onclick='openPhotoLightbox({{ url_for("static", filename=staff_member.photo_path) | tojson }}, {{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) | tojson }})' data-tooltip="View full size"{% endif %}>
           {% if staff_member.photo_path %}
           <img src="{{ url_for('static', filename=staff_member.photo_path) }}" alt="" class="w-full h-full object-cover">
           {% else %}
@@ -208,7 +240,7 @@
           </div>
           {% if can_manage %}
           <!-- RFID card, admin-only same as the Edit modal. Shows "Not assigned"
-               instead of hiding the row -- an admin should be able to tell "no
+               instead of hiding the row - an admin should be able to tell "no
                card on file" apart from "I can't see this field". -->
           <div class="flex items-center justify-between gap-3">
             <span class="text-xs text-base-content/50">RFID card</span>
@@ -221,16 +253,14 @@
 
     <!-- Footer actions -->
     <div class="flex justify-end gap-2 p-5 border-t border-base-300 shrink-0">
-      <button type="button" class="btn" onclick="this.closest('.fixed').remove()">Cancel</button>
-
       {% if can_manage %}
         {% if is_locked %}
-        <button type="button" class="btn btn-outline btn-warning"
+        <button type="button" id="staff-profile-lock-btn" class="btn btn-outline btn-warning" data-tooltip="Unlock (L)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/unlock-form" hx-target="#modal-container" hx-swap="beforeend">
           Unlock
         </button>
         {% elif staff_member.is_active and staff_member.id != g.staff.id %}
-        <button type="button" class="btn btn-outline btn-warning"
+        <button type="button" id="staff-profile-lock-btn" class="btn btn-outline btn-warning" data-tooltip="Lock (L)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/lock-form"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -239,7 +269,7 @@
         {% endif %}
 
         {% if staff_member.is_active %}
-        <button type="button" class="btn btn-outline btn-warning"
+        <button type="button" id="staff-profile-reset-password-btn" class="btn btn-outline btn-warning" data-tooltip="Reset Password (P)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/reset-password-form"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -249,14 +279,14 @@
 
         {% if staff_member.is_active %}
           {% if staff_member.role == "admin" %}
-          <button type="button" class="btn btn-outline btn-error"
+          <button type="button" id="staff-profile-deactivate-btn" class="btn btn-outline btn-error" data-tooltip="Request Deactivation (D)"
                   hx-get="/api/v1/staff/{{ staff_member.id }}/request-deactivation-form"
                   hx-target="#modal-container"
                   hx-swap="beforeend">
             Request Deactivation
           </button>
           {% else %}
-          <button type="button" class="btn btn-outline btn-error"
+          <button type="button" id="staff-profile-deactivate-btn" class="btn btn-outline btn-error" data-tooltip="Deactivate (D)"
                   hx-get="/api/v1/staff/{{ staff_member.id }}/delete-confirm"
                   hx-target="#modal-container"
                   hx-swap="beforeend">
@@ -264,7 +294,7 @@
           </button>
           {% endif %}
         {% else %}
-        <button type="button" class="btn btn-outline btn-success"
+        <button type="button" id="staff-profile-deactivate-btn" class="btn btn-outline btn-success" data-tooltip="Reactivate (D)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/reactivate-confirm"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -274,9 +304,9 @@
 
         {% if staff_member.role != "admin" %}
         <!-- Same shortcut as the table's row action. Always shown, not just when
-             expired/expiring -- extending someone ahead of time is just as valid
+             expired/expiring - extending someone ahead of time is just as valid
              a use as fixing a lapsed window. -->
-        <button type="button" class="btn btn-outline"
+        <button type="button" id="staff-profile-reassign-btn" class="btn btn-outline" data-tooltip="Reassign Usage (U)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/reassign-form"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -284,7 +314,7 @@
         </button>
         {% endif %}
 
-        <button type="button" class="btn btn-primary w-20"
+        <button type="button" id="staff-profile-edit-btn" class="btn btn-primary w-20" data-tooltip="Edit (E)"
                 hx-get="/api/v1/staff/{{ staff_member.id }}/edit-form"
                 hx-target="#modal-container"
                 hx-swap="beforeend">
@@ -321,7 +351,7 @@
           <li class="text-sm border-l-2 border-base-300 pl-3">
             <div class="font-medium capitalize">${escapeHtml((ev.action || '').replace(/_/g, ' '))}</div>
             <div class="text-base-content/60">${escapeHtml(ev.details)}</div>
-            <div class="text-xs text-base-content/40 mt-0.5">${escapeHtml(ev.created_at)}</div>
+            <div class="text-xs text-base-content/40 mt-0.5">${escapeHtml(formatDateTime12h(ev.created_at))}</div>
           </li>`;
       }).join('') + '</ul>';
     })

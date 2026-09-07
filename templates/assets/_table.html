@@ -15,7 +15,7 @@
           hx-target="#asset-table-container"
           hx-swap="innerHTML"
           hx-indicator="#table-spinner"
-          hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+          hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle, #maintenance-due-filter"
           hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
     {{ label }}
     {% if is_active %}
@@ -36,12 +36,16 @@
     <!-- Checkbox column always renders (even empty) so toggling "Show archived" doesn't shift columns. -->
     <col style="width: 2.5rem">
     <col style="width: 3.5rem">
-    <col style="width: 14%">
-    <col style="width: 24%">
-    <col style="width: 16%">
-    <col style="width: 14%">
-    <col style="width: 12%">
-    <col style="width: 14%">
+    <col style="width: 11%">
+    <col style="width: 21%">
+    <col style="width: 11%">
+    <col style="width: 5rem">
+    <!-- Wider than the other % columns - Status can carry a maintenance
+         due/overdue pill and a "Booked" reservation pill alongside the
+         base status pill, and needs room not to wrap awkwardly. -->
+    <col style="width: 20%">
+    <col style="width: 10%">
+    <col style="width: 11%">
     <col style="width: 5rem">
   </colgroup>
   <thead>
@@ -56,6 +60,10 @@
       {{ sort_header("ASSET ID", "asset_id") }}
       {{ sort_header("NAME", "name") }}
       {{ sort_header("CATEGORY", "category") }}
+      <!-- Not sortable - most rows (serialized assets) have no quantity at
+           all, so sorting by it would mostly just group all the dashes
+           together rather than mean anything. -->
+      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">QTY</th>
       {% if show_archived %}
       {{ sort_header("DELETED", "deleted_at") }}
       {% else %}
@@ -73,41 +81,69 @@
         hx-target="#modal-container"
         hx-swap="innerHTML"
         hx-trigger="click[!target.closest('input,.dropdown,button,a')]">
-      <td class="py-2.5">
+      <td class="py-2">
         {% if can_bulk_act %}
         <input type="checkbox" class="asset-row-checkbox checkbox checkbox-sm"
                value="{{ asset.id }}" data-name="{{ asset.name }}" data-asset-code="{{ asset.asset_id }}"
                aria-label="Select {{ asset.name }}">
         {% endif %}
       </td>
-      <td class="py-2.5">
+      <td class="py-2">
         {% if asset.image_path %}
-        <div class="w-7 h-7 rounded-lg border border-base-300 overflow-hidden shrink-0 relative">
+        <div class="w-6 h-6 rounded-lg border border-base-300 overflow-hidden shrink-0 relative">
           <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
                class="w-full h-full object-cover block"
                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <div class="w-7 h-7 rounded-lg bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
+          <div class="w-6 h-6 rounded-lg bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
           </div>
         </div>
         {% else %}
-        <div class="w-7 h-7 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
+        <div class="w-6 h-6 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         </div>
         {% endif %}
       </td>
-      <td class="py-2.5 text-sm text-base-content/60 truncate">{{ asset.asset_id }}</td>
-      <td class="py-2.5 font-medium truncate">{{ asset.name }}</td>
-      <td class="py-2.5 text-sm truncate">{{ asset.category or "-" }}</td>
+      <td class="py-2 text-sm text-base-content/60 truncate">{{ asset.asset_id }}</td>
+      <td class="py-2 font-medium truncate">{{ asset.name }}</td>
+      <td class="py-2 text-sm truncate">{{ asset.category or "-" }}</td>
+      <td class="py-2 text-sm">
+        {% if asset.asset_type == 'consumable' %}
+        {% set qty = asset.quantity if asset.quantity is not none else 0 %}
+        <span class="font-semibold {% if qty == 0 %}text-error{% elif qty < 5 %}text-warning{% else %}text-success{% endif %}"
+              {% if qty == 0 %}data-tooltip="Out of stock"{% elif qty < 5 %}data-tooltip="Low stock"{% endif %}>
+          {{ qty }}
+        </span>
+        {% else %}
+        <!-- Serialized (non-consumable) assets aren't tracked by quantity at
+             all - there's just the one physical unit this row represents -
+             so show a flat "1" here rather than the old dash, instead of
+             implying "no quantity data" for something that obviously has one. -->
+        <span class="font-semibold text-success" data-tooltip="One unit (not stock-tracked)">1</span>
+        {% endif %}
+      </td>
       {% if show_archived %}
-      <td class="py-2.5 text-sm text-base-content/50">
+      <td class="py-2 text-sm text-base-content/50">
         <div>{{ asset.deleted_at }}</div>
         {% if asset.deleted_by_username %}
         <div class="text-xs text-base-content/40 mt-0.5 truncate">by {{ asset.deleted_by_username }}</div>
         {% endif %}
       </td>
       {% else %}
-      <td class="py-2.5">
+      <td class="py-2">
+        {% if asset.asset_type == 'consumable' %}
+        {% set qty = asset.quantity if asset.quantity is not none else 0 %}
+        <!-- "Low" also fires below the configured reorder_threshold (not
+             just under the flat 5-unit floor), so a higher threshold set on
+             the asset itself still gets flagged - the QTY column next door
+             already shows the actual number, so this pill's job is just the
+             stock-level word, not a repeat of the count. -->
+        {% set low_stock = qty > 0 and (qty < 5 or (asset.reorder_threshold is not none and qty <= asset.reorder_threshold)) %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium {% if qty == 0 %}bg-error/15 text-error{% elif low_stock %}bg-warning/15 text-warning{% else %}bg-success/15 text-success{% endif %}"
+              {% if low_stock %}data-tooltip="At or below reorder threshold ({{ asset.reorder_threshold }})"{% endif %}>
+          {% if qty == 0 %}Out of Stock{% elif low_stock %}Low{% else %}In Stock{% endif %}
+        </span>
+        {% else %}
         <span class="px-2.5 py-1 rounded-full text-xs font-medium
           {% if asset.status == 'available' %}bg-success/15 text-success
           {% elif asset.status == 'borrowed' %}bg-info/15 text-info
@@ -115,11 +151,25 @@
           {% else %}bg-warning/15 text-warning{% endif %}">
           {{ asset.status | capitalize }}
         </span>
+        {% if asset.status != 'maintenance' and asset.next_maintenance_due and asset.next_maintenance_due <= maintenance_due_soon_cutoff %}
+        {% set overdue = asset.next_maintenance_due <= today %}
+        <span class="ml-1 px-2 py-1 rounded-full text-[11px] font-medium {% if overdue %}bg-error/15 text-error{% else %}bg-warning/15 text-warning{% endif %}"
+              data-tooltip="{{ 'Maintenance overdue' if overdue else 'Maintenance due soon' }} ({{ asset.next_maintenance_due }})">
+          &#128295; {{ asset.next_maintenance_due }}
+        </span>
+        {% endif %}
+        {% if feature_flags.reservations and asset.next_reservation_start %}
+        <span class="ml-1 px-2 py-1 rounded-full text-[11px] font-medium bg-info/15 text-info"
+              data-tooltip="Reserved starting {{ asset.next_reservation_start }}">
+          &#128197; Booked {{ asset.next_reservation_start }}
+        </span>
+        {% endif %}
+        {% endif %}
       </td>
       {% endif %}
-      <td class="py-2.5 text-sm">{{ asset.condition | humanize }}</td>
-      <td class="py-2.5 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
-      <td class="py-2.5 text-right">
+      <td class="py-2 text-sm">{{ asset.condition | humanize }}</td>
+      <td class="py-2 text-sm text-base-content/50 truncate">{{ asset.barcode_id }}</td>
+      <td class="py-2 text-right">
         <div class="dropdown dropdown-end">
           <label tabindex="0" class="btn btn-ghost btn-xs btn-circle" role="button" data-tooltip="More actions" aria-label="Row actions for {{ asset.name }}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
@@ -132,6 +182,45 @@
             <li>
               <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/edit-form" hx-target="#modal-container" hx-swap="innerHTML">{{ icon_edit() }} Edit</a>
             </li>
+            {% if not show_archived and asset.status == 'maintenance' %}
+            <li>
+              <a class="flex items-center gap-2 text-success" hx-get="/api/v1/assets/{{ asset.id }}/resolve-maintenance-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                Resolve Maintenance
+              </a>
+            </li>
+            {% elif not show_archived and asset.asset_type != 'consumable' and asset.status not in ['borrowed', 'reserved'] %}
+            <li>
+              <a class="flex items-center gap-2 text-error" hx-get="/api/v1/assets/{{ asset.id }}/mark-maintenance-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                Mark for Maintenance
+              </a>
+            </li>
+            {% endif %}
+            {% if not show_archived and asset.asset_type != 'consumable' %}
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/mark-calibrated-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+                Mark Calibrated
+              </a>
+            </li>
+            {% endif %}
+            {% if not show_archived and asset.asset_type == 'consumable' %}
+            <li>
+              <a class="flex items-center gap-2" hx-get="/api/v1/assets/{{ asset.id }}/adjust-stock-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Adjust Stock
+              </a>
+            </li>
+            {% endif %}
+            {% if not show_archived and asset.status == 'reserved' and g.staff.role == 'admin' %}
+            <li>
+              <a class="flex items-center gap-2 text-warning" hx-get="/api/v1/assets/{{ asset.id }}/release-reservation-form" hx-target="#modal-container" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                Release Reservation
+              </a>
+            </li>
+            {% endif %}
             {% if show_archived %}
             {% if can_restore %}
             <li>
@@ -150,7 +239,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="9" class="text-center py-10 text-base-content/50">
+      <td colspan="10" class="text-center py-10 text-base-content/50">
         {% if show_archived %}No archived assets found.{% else %}No assets found.{% endif %}
       </td>
     </tr>
@@ -169,7 +258,7 @@
             hx-target="#asset-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle, #maintenance-due-filter"
             name="limit"
             hx-vals='js:{"limit": event.target.value, "offset": 0, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
@@ -191,7 +280,7 @@
             hx-target="#asset-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle, #maintenance-due-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
@@ -219,7 +308,7 @@
                 hx-target="#asset-table-container"
                 hx-swap="innerHTML"
                 hx-indicator="#table-spinner"
-                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+                hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle, #maintenance-due-filter"
                 hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
           {{ p }}
         </button>
@@ -233,7 +322,7 @@
             hx-target="#asset-table-container"
             hx-swap="innerHTML"
             hx-indicator="#table-spinner"
-            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle"
+            hx-include="#asset-search, #category-filter, #status-filter, #condition-filter, #deleted-from-filter, #deleted-to-filter, #show-archived-toggle, #maintenance-due-filter"
             hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "show_archived": "{{ "1" if show_archived else "0" }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
     </button>

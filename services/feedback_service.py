@@ -71,7 +71,7 @@ def submit_feedback(conn, staff, category, message, page_path, screenshots):
         details=f"category={category}, screenshots={len(saved_paths)}",
     )
 
-    return {"message": "Thanks -- your feedback was sent to the admins."}, None
+    return {"message": "Thanks - your feedback was sent to the admins."}, None
 
 
 # # # REVIEW (admin only) ---------------------------------------------------

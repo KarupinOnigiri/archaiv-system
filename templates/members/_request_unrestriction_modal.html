@@ -9,7 +9,7 @@
       <strong>{{ full_name(member.first_name, member.last_name, member.middle_name, member.suffix) }}</strong> is currently restricted:
     </p>
     <p class="text-sm text-base-content/60 bg-base-200/50 rounded-lg p-2 mb-3">{{ member.restriction_reason or "No reason on file." }}</p>
-    <p class="text-xs text-base-content/50 mb-4">This won't lift the restriction directly -- an admin or in_charge will review your reason and approve or deny it from Approvals.</p>
+    <p class="text-xs text-base-content/50 mb-4">This won't lift the restriction directly - an admin or in_charge will review your reason and approve or deny it from Approvals.</p>
 
     <div id="request-unrestriction-error" class="alert alert-error text-sm mb-3 py-2 hidden"></div>
 
@@ -35,7 +35,7 @@
 // Plain JS fetch (not an hx-post form) since the endpoint this posts to
 // (POST /api/v1/unrestriction-requests, requests_bp) is a JSON-only API
 // shared with the Approvals page's own JS, not an htmx-partial-aware
-// route like restrict_member/unrestrict_member above -- mirrors the same
+// route like restrict_member/unrestrict_member above - mirrors the same
 // fetch+CSRF+inline-error shape used by staff/_lock_modal.html.
 async function submitRequestUnrestriction(memberId) {
   const errorBox = document.getElementById('request-unrestriction-error');
@@ -68,7 +68,7 @@ async function submitRequestUnrestriction(memberId) {
     }
 
     if (!res.ok) {
-      // Includes the 409 "a pending request already exists" case -- this
+      // Includes the 409 "a pending request already exists" case - this
       // modal doesn't pre-check for that (the table row it's opened from
       // has no cheap way to know), so the create endpoint's own duplicate
       // guard is what actually surfaces it, right here inline.

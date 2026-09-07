@@ -11,7 +11,7 @@
     </div>
 
     <!-- Always rendered (not just when there is an error), invisible (not
-         removed) when empty -- reserves the alert box's layout space so
+         removed) when empty - reserves the alert box's layout space so
          content below never jumps when an error appears. -->
     <div class="alert alert-error text-sm mb-4 py-2 {% if not error %}invisible{% endif %}">{{ error or '' }}</div>
 

@@ -11,7 +11,7 @@ import os
 import sys
 from datetime import datetime
 
-# Sourced from database.py, not stdlib -- a mismatched driver would silently produce an unencrypted backup.
+# Sourced from database.py, not stdlib - a mismatched driver would silently produce an unencrypted backup.
 from database import DB_PATH, DB_ENCRYPTION_KEY, sqlite3, harden_backup_file
 
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -29,7 +29,7 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
     try:
         os.makedirs(backup_dir, exist_ok=True)
     except OSError as e:
-        # Usually means backup_dir is an unmounted USB drive on a Pi -- fail loudly, don't skip silently.
+        # Usually means backup_dir is an unmounted USB drive on a Pi - fail loudly, don't skip silently.
         print(f"ERROR: could not create/access backup directory {backup_dir}: {e}")
         sys.exit(1)
 
@@ -40,7 +40,7 @@ def backup_database(backup_dir=DEFAULT_BACKUP_DIR, keep_last_n=KEEP_LAST_N):
     dst = sqlite3.connect(backup_path)
     try:
         if DB_ENCRYPTION_KEY:
-            # Both src and dst need the key -- one to read encrypted pages, the other to write them.
+            # Both src and dst need the key - one to read encrypted pages, the other to write them.
             src.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
             dst.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
         with dst:

@@ -28,7 +28,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </button>
 
-        <!-- No horizontal padding -- keeps this checkbox aligned with each
+        <!-- No horizontal padding - keeps this checkbox aligned with each
              row's own .notif-row-checkbox, or "select all" visually points
              at nothing. -->
         <label class="flex items-center gap-2 text-sm cursor-pointer select-none" data-tooltip="Select all on this page">
@@ -204,7 +204,7 @@ async function clearSelectedNotifications() {
   }
 }
 
-// Delegated, not attached per-row -- the container's contents get swapped
+// Delegated, not attached per-row - the container's contents get swapped
 // wholesale on every filter/page change, so a direct listener would need
 // re-wiring after each swap.
 document.getElementById('notifications-table-container').addEventListener('change', function (e) {
@@ -212,11 +212,16 @@ document.getElementById('notifications-table-container').addEventListener('chang
     updateClearSelectedBar();
   }
 });
-document.addEventListener('htmx:afterSwap', function (evt) {
+// Merged into one window.pageAfterSwapHandler with the second afterSwap
+// listener further down this file (the single-slot dispatcher in ui.js
+// only forwards to one handler per page - see its "BOOSTED NAVIGATION"
+// comment) rather than two separate registrations.
+window.pageAfterSwapHandler = function (evt) {
   if (evt.target && evt.target.id === 'notifications-table-container') {
     updateClearSelectedBar();
+    updateNotifFilterUI();
   }
-});
+};
 
 document.getElementById('select-all-notifs-checkbox').addEventListener('change', function (e) {
   const checked = e.target.checked;
@@ -231,7 +236,7 @@ function formatDateLocal(d) {
   return `${y}-${m}-${day}`;
 }
 
-// Prefer htmx's own trigger API over a raw dispatchEvent -- more reliable
+// Prefer htmx's own trigger API over a raw dispatchEvent - more reliable
 // across htmx versions than relying on native event bubbling.
 function fireHtmxChange(el) {
   if (window.htmx) {
@@ -305,8 +310,15 @@ function updateNotifFilterUI() {
   const yesterday = formatDateLocal(new Date(Date.now() - 86400000));
   const isToday = since.value === today && until.value === today;
   const isYesterday = since.value === yesterday && until.value === yesterday;
-  document.getElementById('notif-preset-today').classList.toggle('btn-active', isToday);
-  document.getElementById('notif-preset-yesterday').classList.toggle('btn-active', isYesterday);
+  // btn-primary/btn-outline swap, not btn-active - see reports.html's
+  // setReportGroupBy comment for why btn-active alone doesn't read as
+  // "selected" in this theme (no --btn-color set on a plain .btn).
+  const notifTodayBtn = document.getElementById('notif-preset-today');
+  const notifYesterdayBtn = document.getElementById('notif-preset-yesterday');
+  notifTodayBtn.classList.toggle('btn-primary', isToday);
+  notifTodayBtn.classList.toggle('btn-outline', !isToday);
+  notifYesterdayBtn.classList.toggle('btn-primary', isYesterday);
+  notifYesterdayBtn.classList.toggle('btn-outline', !isYesterday);
 
   const unreadToggle = document.getElementById('show-unread-only-toggle');
   const unreadLabel = document.getElementById('unread-toggle-label');
@@ -327,7 +339,7 @@ function updateNotifFilterUI() {
 
 document.getElementById('show-unread-only-toggle').addEventListener('change', updateNotifFilterUI);
 
-document.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const container = document.getElementById('notifications-table-container');
   if (evt.detail.target !== container) return;
   try {
@@ -342,13 +354,7 @@ document.addEventListener('htmx:configRequest', function (evt) {
     });
     window.history.replaceState({}, '', url);
   } catch (e) {}
-});
-
-document.addEventListener('htmx:afterSwap', function (evt) {
-  if (evt.target && evt.target.id === 'notifications-table-container') {
-    updateNotifFilterUI();
-  }
-});
+};
 
 // --- Keyboard shortcuts (Notifications page) ---
 // Same isTypingTarget/isModalOpen guard as every other tab.
@@ -363,7 +369,7 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal'));
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   // ArrowLeft / ArrowRight - previous / next page.
@@ -397,8 +403,8 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllNotifFilters();
   }
-});
+};
 
-document.addEventListener('DOMContentLoaded', updateNotifFilterUI);
+setTimeout(updateNotifFilterUI, 0);
 </script>
 {% endblock %}

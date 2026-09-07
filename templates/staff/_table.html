@@ -32,7 +32,7 @@
 
 <table class="table w-full table-fixed" data-total-count="{{ total_count }}" data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}" data-limit="{{ limit }}" data-offset="{{ offset }}">
   <colgroup>
-    <!-- Checkbox column is unconditional, same as Members'/Inventory's -- keeps
+    <!-- Checkbox column is unconditional, same as Members'/Inventory's - keeps
          the columns from shifting depending on who's viewing it. -->
     <col style="width: 2.5rem">
     <col style="width: 17%">
@@ -105,7 +105,7 @@
         {% elif row.role == "in_charge" %}
         <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-info/10 text-info">In Charge</span>
         {% else %}
-        <!-- whitespace-nowrap -- "Tool Keeper" was wrapping onto two lines and
+        <!-- whitespace-nowrap - "Tool Keeper" was wrapping onto two lines and
              inflating row height. Letting the badge overflow a touch into the
              roomy DEPARTMENT column reads better than doubling every row's height. -->
         <span class="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/70">Tool Keeper</span>
@@ -127,11 +127,11 @@
         <span class="text-base-content/50">Permanent</span>
         {% elif row.role == "in_charge" %}
         <!-- in_charge can have a window set but it's not enforced at login like
-             tool_keeper's is -- still worth flagging blank as "not set yet",
+             tool_keeper's is - still worth flagging blank as "not set yet",
              just without implying it blocks sign-in. -->
         <span class="text-warning" data-tooltip="No assignment period set for this In Charge account yet">Not set</span>
         {% else %}
-        <span class="text-warning" data-tooltip="No assignment period set -- this account can't log in until one is">Not set</span>
+        <span class="text-warning" data-tooltip="No assignment period set - this account can't log in until one is">Not set</span>
         {% endif %}
       </td>
 
@@ -140,7 +140,7 @@
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-base-300 text-base-content/60 whitespace-nowrap">Indefinite</span>
         {% elif row.usage_status == "expired" %}
         <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-error/10 text-error whitespace-nowrap"
-              data-tooltip="Assignment window ended {{ row.assigned_end }} -- this account can no longer log in on it">
+              data-tooltip="Assignment window ended {{ row.assigned_end }} - this account can no longer log in on it">
           Expired {{ -row.usage_days_left }}d ago
         </span>
         {% elif row.usage_status == "expiring_soon" %}

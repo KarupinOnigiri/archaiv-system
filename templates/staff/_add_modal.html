@@ -13,7 +13,7 @@
                 onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
       </div>
 
-      <!-- Always in the DOM, just `invisible` when empty -- keeps its height
+      <!-- Always in the DOM, just `invisible` when empty - keeps its height
            reserved so the layout doesn't jump when an error appears. -->
       <div id="add-staff-error" class="alert alert-error text-sm mt-4 py-2 invisible"></div>
     </div>
@@ -32,7 +32,7 @@
             <button type="button" class="btn btn-ghost btn-xs shrink-0" onclick="clearEligibleMember()">Change</button>
           </div>
 
-          <!-- Type-ahead search instead of a preloaded <select> -- a full dropdown
+          <!-- Type-ahead search instead of a preloaded <select> - a full dropdown
                stops scaling once there are enough members. Also doubles as the
                barcode-scanner input, since scanners just type the code + Enter. -->
           <div id="member-picker-search-wrap" class="mt-1 relative">
@@ -102,7 +102,7 @@
         </div>
         <!-- Quick-set shortcuts for the three durations staff get assigned most
              often. "Permanent" writes the PERMANENT_ASSIGNED_END sentinel instead
-             of leaving assigned_end blank -- blank still means "not set, can't
+             of leaving assigned_end blank - blank still means "not set, can't
              log in" for a Tool Keeper (see routes/auth.py's login()). -->
         <div class="flex flex-wrap gap-2 -mt-2">
           <button type="button" class="btn btn-xs btn-outline" onclick="setAddStaffAssignedPreset('permanent')">Permanent</button>
@@ -159,7 +159,7 @@ function setAddStaffAssignedPreset(preset) {
   endInput.value = formatDateLocalAddStaff(end);
 }
 
-// Admin defaults to Permanent the moment that role is picked -- the profile
+// Admin defaults to Permanent the moment that role is picked - the profile
 // modal already displays every admin as Permanent regardless, so leaving the
 // actual columns null was a gap between the record and how it's shown
 // elsewhere. Only fires when both fields are still empty, so it won't stomp
@@ -175,7 +175,7 @@ function handleAddStaffRoleChange(select) {
 
 // Clicking a search result calls this to record the choice and swap the search
 // box for a confirmation card. Reads id/label off data-* attributes rather than
-// inline JS-string args -- interpolating a name into onclick="...(...)" isn't
+// inline JS-string args - interpolating a name into onclick="...(...)" isn't
 // safe if it ever contains a quote character.
 function selectEligibleMember(el) {
   const id = el.dataset.memberId;
@@ -232,7 +232,7 @@ if (!window.__eligibleMemberDismissListenerAdded) {
   });
 }
 
-// Escape in the search box dismisses just the dropdown -- stopPropagation keeps
+// Escape in the search box dismisses just the dropdown - stopPropagation keeps
 // it from also triggering base.html's Escape handler and closing the whole form.
 document.getElementById('member-search-input').addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {

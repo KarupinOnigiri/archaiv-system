@@ -1,0 +1,61 @@
+<!-- Shared audit-log-entry detail modal + its opener function, included from
+     both templates/audit_log.html (the main Activity Log page) and
+     templates/staff/_full_activity_modal.html (Staff -> a staff member's
+     profile -> Full Activity), since both pages render the exact same
+     audit_log/_table.html rows, whose onclick="openAuditLogDetail(this)"
+     needs this to exist wherever that table ends up. Reads the clicked
+     row's own data-* attributes instead of a second request - see
+     audit_log/_table.html's own comment on why.
+
+     Native <dialog>.showModal() promotes this to the browser's top layer,
+     so it renders above the Full Activity modal (a plain z-[60] div, not a
+     <dialog>) without any z-index tuning needed to stack correctly on top
+     of it. -->
+<dialog id="audit-log-detail-modal" class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="flex justify-between items-start mb-4">
+      <h3 class="font-bold text-lg">Activity detail</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="document.getElementById('audit-log-detail-modal').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <dl class="space-y-3 text-sm">
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">WHEN</dt>
+        <dd id="audit-detail-when" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">STAFF</dt>
+        <dd id="audit-detail-staff" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">ACTION</dt>
+        <dd class="mt-0.5"><span id="audit-detail-action" class="inline-block px-2 py-0.5 rounded-full bg-base-200 text-xs"></span></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">TARGET</dt>
+        <dd id="audit-detail-target" class="mt-0.5"></dd>
+      </div>
+      <div>
+        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">DETAILS</dt>
+        <dd id="audit-detail-details" class="mt-0.5 whitespace-pre-wrap break-words text-base-content/80"></dd>
+      </div>
+    </dl>
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn btn-sm">Close</button>
+      </form>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script>
+function openAuditLogDetail(rowEl) {
+  document.getElementById('audit-detail-when').textContent = rowEl.dataset.when;
+  document.getElementById('audit-detail-staff').textContent = rowEl.dataset.staff;
+  document.getElementById('audit-detail-action').textContent = rowEl.dataset.action;
+  document.getElementById('audit-detail-target').textContent = rowEl.dataset.target;
+  document.getElementById('audit-detail-details').textContent = rowEl.dataset.details;
+  document.getElementById('audit-log-detail-modal').showModal();
+}
+</script>

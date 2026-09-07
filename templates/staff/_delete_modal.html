@@ -21,7 +21,7 @@
 
 <script>
 // /api/v1/staff/<id>/delete reads no request body, so a plain fetch POST
-// (no JSON payload needed) is enough -- this reuses the same
+// (no JSON payload needed) is enough - this reuses the same
 // fetch+CSRF+reload shape as staffAction() in staff.html, just inlined
 // here so this modal can show its own error text instead of a toast if
 // something goes wrong (e.g. the account is already deactivated).

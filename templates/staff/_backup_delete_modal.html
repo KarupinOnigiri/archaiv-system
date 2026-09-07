@@ -6,7 +6,7 @@
               onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
     <p class="text-sm text-base-content/70 mb-4">
-      Permanently delete <strong>{{ filename }}</strong>? This can't be undone -- there's no archive/undo for backup files
+      Permanently delete <strong>{{ filename }}</strong>? This can't be undone - there's no archive/undo for backup files
       like there is for most other deletes in this app.
     </p>
 
@@ -27,7 +27,7 @@
 
 <script>
 // Backup files are permanent deletes (no archive/undo), so this requires
-// the acting admin's own password -- same check_password_hash
+// the acting admin's own password - same check_password_hash
 // re-confirmation pattern as staff/_reactivate_modal.html.
 async function submitDeleteBackupForm(filename) {
   const errorBox = document.getElementById('delete-backup-error');

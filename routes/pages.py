@@ -1,7 +1,8 @@
+from datetime import date
 from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
-from services.auth_service import login_required, roles_required, feature_required
-from services import asset_service, member_service, staff_service, transaction_service
+from services.auth_service import login_required, roles_required, feature_required, require_session
+from services import asset_service, member_service, staff_service, transaction_service, monitoring_service, setup_service, settings_service, backup_service
 from routes.assets import get_assets_table_context  # adjust path if assets.py lives elsewhere
 from routes.members import get_members_table_context  # same
 from routes.staff import get_staff_table_context  # same
@@ -16,21 +17,40 @@ pages_bp = Blueprint("pages", __name__)
 def login_page():
     error = request.args.get("error")
     username = request.args.get("username", "")
-    return render_template("login.html", error=error, username=username)
+    # Only a same-site relative path is ever honored (routes/auth.py re-checks
+    # this itself before actually redirecting there) - an absolute/external
+    # `next` would be an open-redirect vector, so anything else is just dropped
+    # here rather than carried through to the form.
+    next_url = request.args.get("next", "")
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        next_url = ""
+    return render_template("login.html", error=error, username=username, next_url=next_url)
 
 
 @pages_bp.route("/setup")
-@login_required
 def setup_page():
-    """First-admin setup wizard; only the temp seeded admin sees it, everyone else gets redirected."""
-    if not g.staff["is_system_seeded"]:
-        return redirect(url_for("home"))
+    """First-admin setup wizard. No @login_required - a true fresh install (no
+    staff at all yet) has no one to log in as, so it's served openly in that
+    case. Anything else (a live system's temp-admin recovery path, see
+    services/seed_service.py) still requires being logged in as that temp
+    admin, checked manually below since the two cases need different rules."""
     conn = get_db_connection()
+    fresh_install = setup_service.is_fresh_install(conn)
+
+    if not fresh_install:
+        staff, error = require_session(conn)
+        if error:
+            conn.close()
+            return redirect(url_for("pages.login_page"))
+        if not staff["is_system_seeded"]:
+            conn.close()
+            return redirect(url_for("home"))
+
     departments = conn.execute(
         "SELECT * FROM departments ORDER BY sort_order, name"
     ).fetchall()
     conn.close()
-    return render_template("setup.html", departments=departments)
+    return render_template("setup.html", departments=departments, fresh_install=fresh_install)
 
 
 @pages_bp.route("/assets")
@@ -211,6 +231,61 @@ def notifications_page():
     return render_template("notifications.html", staff=g.staff, limit=limit, offset=offset)
 
 
+@pages_bp.route("/monitoring")
+@roles_required("admin", "in_charge", "tool_keeper")
+@feature_required("monitoring")
+def monitoring_page():
+    """RFID exit-monitoring tab: live alarm status + a log of tagged-tool
+    detection events reported by the Pi's RFID listener. Table/banner load
+    via htmx, same pattern as Activity Log and Notifications."""
+    conn = get_db_connection()
+    stats = monitoring_service.get_monitoring_stat_cards(conn)
+    conn.close()
+
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        limit, offset = 25, 0
+
+    classification = request.args.get("classification", "")
+    if classification not in ("", "authorized", "unauthorized", "unknown_tag"):
+        classification = ""
+
+    # Defaults to today when the date range wasn't specified at all --
+    # distinct from an explicit "All time" click, which threads since=&until=
+    # (empty, but present) through so this doesn't re-default on refresh.
+    # See templates/monitoring.html's applyMonitoringDateFilter().
+    if "since" in request.args or "until" in request.args:
+        since = request.args.get("since", "")
+        until = request.args.get("until", "")
+    else:
+        today = date.today().isoformat()
+        since = today
+        until = today
+
+    q = request.args.get("q", "")
+
+    sort_by = request.args.get("sort_by", "detected_at")
+    if sort_by not in monitoring_service.MONITORING_SORTABLE_COLUMNS:
+        sort_by = "detected_at"
+    sort_dir = request.args.get("sort_dir", "desc")
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "desc"
+
+    return render_template(
+        "monitoring.html",
+        staff=g.staff,
+        **stats,
+        limit=limit,
+        offset=offset,
+        classification=classification,
+        since=since,
+        until=until,
+        q=q,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
 @pages_bp.route("/audit-log")
 @login_required
 def audit_log_page():
@@ -280,6 +355,25 @@ def requests_page():
     )
 
 
+@pages_bp.route("/reservations")
+@login_required
+@feature_required("reservations")
+def reservations_page():
+    """Advance-booking list - see services/reservation_service.py's module
+    docstring for the feature's design. New reservations are created from
+    an asset's Details modal ("Reserve for Later"), not from this page."""
+    limit, offset, error = parse_pagination_params(request.args)
+    if error:
+        limit, offset = 20, 0
+    status = request.args.get("status", "scheduled")
+    if status not in ("scheduled", "fulfilled", "cancelled", "expired", ""):
+        status = "scheduled"
+    return render_template(
+        "reservations.html", staff=g.staff, limit=limit, offset=offset,
+        status=status, mine=request.args.get("mine") == "1",
+    )
+
+
 @pages_bp.route("/reports")
 @roles_required("admin", "in_charge", "tool_keeper")
 @feature_required("reports")
@@ -325,8 +419,51 @@ def barcodes_page():
 @pages_bp.route("/system")
 @roles_required("admin", "in_charge")
 def system_page():
-    """Launcher for app-wide policy knobs; system.html hides admin-only cards from in_charge."""
-    return render_template("system.html", staff=g.staff)
+    """Launcher for app-wide policy knobs; system.html hides admin-only cards from in_charge.
+    Every card's live current value is gathered here so its own summary line can show it
+    without each card needing its own htmx round-trip just to display what's already set."""
+    conn = get_db_connection()
+    try:
+        loan_limits = {
+            row["member_type"]: row["max_concurrent_loans"]
+            for row in staff_service.get_loan_limits(conn)
+        }
+        feature_flags_all = settings_service.get_feature_flags(conn)
+        enabled_feature_labels = [
+            settings_service.get_feature_label(name)
+            for name, enabled in feature_flags_all.items()
+            if enabled
+        ]
+        last_backup_at = backup_service.get_last_backup_at(conn)
+        settings_ctx = dict(
+            session_idle_minutes=settings_service.get_session_idle_minutes(conn),
+            session_absolute_hours=settings_service.get_session_absolute_hours(conn),
+            max_failed_attempts=settings_service.get_max_failed_attempts(conn),
+            lockout_minutes=settings_service.get_lockout_minutes(conn),
+            loan_limit_trainee=loan_limits.get("trainee"),
+            loan_limit_trainer=loan_limits.get("trainer"),
+            default_loan_days=settings_service.get_default_loan_days(conn),
+            checkout_session_stale_minutes=settings_service.get_checkout_session_stale_minutes(conn),
+            default_maintenance_interval_days=settings_service.get_default_maintenance_interval_days(conn),
+            maintenance_reminder_lead_days=settings_service.get_maintenance_reminder_lead_days(conn),
+            damage_restriction_threshold=settings_service.get_damage_restriction_threshold(conn),
+            due_soon_hours=settings_service.get_due_soon_hours(conn),
+            enabled_feature_labels=enabled_feature_labels,
+            auto_backup_enabled=settings_service.get_auto_backup_enabled(conn),
+            auto_backup_interval_hours=settings_service.get_auto_backup_interval_hours(conn),
+            last_backup_at=last_backup_at.isoformat() if last_backup_at else None,
+            archive_purge_label=settings_service.format_archive_purge_label(
+                settings_service.get_archive_purge_days(conn)
+            ),
+            barcode_labels_printed=staff_service.get_barcode_labels_printed_count(conn),
+            alarm_enabled=settings_service.get_alarm_enabled(conn),
+            asset_id_prefix=settings_service.get_asset_id_prefix(conn),
+            member_code_prefix=settings_service.get_member_code_prefix(conn),
+            staff_code_prefix=settings_service.get_staff_code_prefix(conn),
+        )
+    finally:
+        conn.close()
+    return render_template("system.html", staff=g.staff, **settings_ctx)
 
 
 @pages_bp.route("/feedback")

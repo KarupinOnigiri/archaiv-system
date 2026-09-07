@@ -18,7 +18,17 @@
     {% set can_review_this = is_eligible_reviewer(staff.role) and staff.id not in [req.target_staff_id, req.requested_by_staff_id] %}
     {% set is_requester = req.requested_by_staff_id == staff.id %}
     {% set requirements_met = req.approvals_received >= req.required_approvals and req.in_charge_approvals_received >= req.required_in_charge %}
-    <tr class="border-t border-base-200">
+    <!-- Row-click detail (View Reviews modal) is admin-only, same
+         gating as the row's own eye-icon button below - list_admin_
+         deactivation_reviews (routes/staff.py) is a @roles_required("admin")
+         route, so a non-admin's click would just 403. -->
+    <tr class="border-t border-base-200 {% if staff.role == 'admin' %}hover:bg-base-200/40 cursor-pointer transition-colors{% endif %}"
+        {% if staff.role == 'admin' %}
+        hx-get="/api/v1/admin-deactivation-requests/{{ req.id }}/reviews"
+        hx-target="#modal-container"
+        hx-swap="beforeend"
+        hx-trigger="click[!target.closest('a,button')]"
+        {% endif %}>
       <td class="py-2 text-sm">
         <a class="link link-hover font-medium" hx-get="/api/v1/staff/{{ req.target_staff_id }}/profile" hx-target="#modal-container" hx-swap="beforeend"
            data-tooltip="@{{ req.target_username }}">{{ full_name(req.target_first_name, req.target_last_name, req.target_middle_name, req.target_suffix) }}</a>
@@ -55,7 +65,7 @@
         {% elif req.status == "cancelled" %}
         Cancelled by requester
         {% else %}
-        &mdash;
+        -
         {% endif %}
       </td>
       <td class="py-2 text-right">
@@ -86,7 +96,7 @@
           <button type="button" class="btn btn-ghost btn-xs" onclick="cancelDeactivationRequest({{ req.id }}, this)">Cancel</button>
           {% endif %}
         {% else %}
-        <span class="text-base-content/30 text-xs">&mdash;</span>
+        <span class="text-base-content/30 text-xs">-</span>
         {% endif %}
       </td>
     </tr>
@@ -136,7 +146,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
 
-    <!-- Numbered pages, capped to a handful of buttons via ellipsis -- same
+    <!-- Numbered pages, capped to a handful of buttons via ellipsis - same
          pattern as every other table in the app (assets/members/staff/
          transactions/audit_log/notifications). -->
     <nav aria-label="Pagination" class="flex items-center gap-1">

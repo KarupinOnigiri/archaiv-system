@@ -85,7 +85,7 @@
   </div>
 </div>
 
-<!-- Screenshot lightbox -- one shared element (see openFeedbackImageLightbox below),
+<!-- Screenshot lightbox - one shared element (see openFeedbackImageLightbox below),
      simpler than a per-thumbnail lightbox needing its own z-index/backdrop. -->
 <dialog id="feedback-image-lightbox" class="modal">
   <div class="modal-box max-w-3xl p-0 overflow-hidden bg-transparent shadow-none relative">
@@ -100,7 +100,7 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- Resolve-with-reply -- resolving requires an actual message back to
+<!-- Resolve-with-reply - resolving requires an actual message back to
      whoever filed the report (see routes/feedback.py's resolve_feedback),
      the same way a real support inbox replies instead of silently
      closing a ticket. -->
@@ -111,7 +111,7 @@
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
               onclick="document.getElementById('feedback-resolve-dialog').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
     </div>
-    <p class="text-sm text-base-content/50 mb-3">Let the reporter know what happened -- e.g. "Fixed", "Testing this now", "Not applicable".</p>
+    <p class="text-sm text-base-content/50 mb-3">Let the reporter know what happened - e.g. "Fixed", "Testing this now", "Not applicable".</p>
     <textarea id="feedback-resolve-reply" class="textarea textarea-bordered w-full" rows="3" placeholder="Your reply..."></textarea>
     <div class="modal-action">
       <button type="button" class="btn btn-outline" onclick="document.getElementById('feedback-resolve-dialog').close()">Cancel</button>
@@ -154,7 +154,7 @@ async function feedbackAction(url, successMessage) {
   }
 }
 
-let feedbackResolveTargetId = null;
+var feedbackResolveTargetId = null;
 
 function openFeedbackResolveDialog(reportId) {
   feedbackResolveTargetId = reportId;
@@ -193,7 +193,7 @@ async function submitFeedbackResolve() {
 }
 
 // Same active-filter ring/clear-button/count-badge pattern as Members'/
-// Assets' filter rows -- "Open" counts as the default (not blank) for the
+// Assets' filter rows - "Open" counts as the default (not blank) for the
 // status filter's own active-state, since that's what feedback_page()
 // falls back to; category's default is genuinely blank.
 function updateFeedbackFilterUI() {
@@ -251,7 +251,7 @@ function clearAllFeedbackFilters() {
 
 // Re-fetches the list with whatever filters/page are currently in effect,
 // read straight off the live controls plus the currently-rendered list's
-// own data-limit/data-offset -- a manual refresh shouldn't jump back to
+// own data-limit/data-offset - a manual refresh shouldn't jump back to
 // page 1 the way changing a filter does.
 function refreshFeedbackTable() {
   const list = document.querySelector('#feedback-table-container [data-total-count]');
@@ -272,9 +272,9 @@ function refreshFeedbackTable() {
 ['feedback-status-filter', 'feedback-category-filter'].forEach(function (id) {
   document.getElementById(id).addEventListener('change', updateFeedbackFilterUI);
 });
-document.addEventListener('DOMContentLoaded', updateFeedbackFilterUI);
+setTimeout(updateFeedbackFilterUI, 0);
 
-// Keyboard shortcuts -- "?" and Escape-to-close are already global (base.html),
+// Keyboard shortcuts - "?" and Escape-to-close are already global (base.html),
 // so only the page-specific ones live here.
 function isTypingTarget(el) {
   return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable));
@@ -286,7 +286,7 @@ function isModalOpen() {
 
 // Keeps the address bar in sync with status/category/paging, same pattern as
 // assets/members/transactions/staff, so a bookmarked/refreshed URL reproduces the view.
-document.body.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const tableContainer = document.getElementById('feedback-table-container');
   if (evt.detail.target !== tableContainer) return;
   try {
@@ -303,11 +303,11 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
     });
     history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
   } catch (e) {
-    // URL sync is a non-critical enhancement -- never let it break the actual request.
+    // URL sync is a non-critical enhancement - never let it break the actual request.
   }
-});
+};
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (isTypingTarget(e.target) || isModalOpen()) return;
 
@@ -343,6 +343,6 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllFeedbackFilters();
   }
-});
+};
 </script>
 {% endblock %}

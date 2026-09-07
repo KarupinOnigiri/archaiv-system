@@ -1,0 +1,11 @@
+-- 0050_checkout_session_stale_minutes.sql
+-- Admin/in_charge-editable timeout for auto-cancelling an abandoned
+-- in-progress checkout cart and releasing its reserved assets (see
+-- services/settings_service.py's get_checkout_session_stale_minutes,
+-- routes/staff.py's checkout-session-settings manage-form/update pair,
+-- and services/checkout_service.py's scheduled sweep). Replaces the
+-- previously-hardcoded SESSION_STALE_MINUTES = 20 constant that lived in
+-- utils/constants.py (now removed) -- that number now only backs
+-- DEFAULT_SETTINGS as a fallback if this row is ever missing.
+-- Seeded '20' so nothing changes behaviorally until an admin edits it.
+INSERT INTO app_settings (key, value) VALUES ('checkout_session_stale_minutes', '20');

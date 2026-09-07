@@ -9,13 +9,77 @@
     }
   </style>
   <script>
-    document.addEventListener('keydown', function escClose(e) {
-      if (e.key === 'Escape') {
-        const modal = document.querySelector('.fixed.inset-0.z-50');
-        if (modal) modal.remove();
-        document.removeEventListener('keydown', escClose);
+    // Escape-to-close is handled by the single shared, topmost-only
+    // handler in ui.js (scoped to #modal-container's direct children) -
+    // this used to also register its own document-level escClose here,
+    // but that grabbed the FIRST .fixed.inset-0.z-50 in the whole
+    // document rather than the topmost one, so opening e.g. Edit *from*
+    // Details (appended as a sibling, both direct children of
+    // #modal-container) made one Escape press close both instead of just
+    // the modal on top. See ui.js's shared handler for the full story.
+
+    // Single-letter shortcuts for this modal's own footer actions (E dit,
+    // D elete, R estore, M aintenance, S tock, reser V e) - mnemonic
+    // letters, matching each button's own data-tooltip hint. Removed with
+    // the modal so a stray keypress after closing can't fire a stale
+    // action, and typing in a field (e.g. this modal has none, but a
+    // nested one might) is excluded the same way every other page-local
+    // shortcut handler already checks for. Also stands down (without
+    // unregistering) whenever a later modal has been appended on top of
+    // this one - same "topmost only" rule as the shared Escape handler,
+    // so e.g. pressing "e" while the Edit modal it opened is itself still
+    // open doesn't re-trigger Details' own Edit button underneath it.
+    document.addEventListener('keydown', function detailsShortcuts(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const modal = document.querySelector('.fixed.inset-0.z-50');
+      if (!modal) {
+        document.removeEventListener('keydown', detailsShortcuts);
+        return;
       }
+      if (modal.parentElement && modal.parentElement.lastElementChild !== modal) return;
+      const target = e.target;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+      if (isTyping) return;
+
+      const idByKey = {
+        e: 'asset-details-edit-btn',
+        d: 'asset-details-delete-btn',
+        r: 'asset-details-restore-btn',
+        m: 'asset-details-maintenance-btn',
+        s: 'asset-details-stock-btn',
+        v: 'asset-details-reserve-btn',
+        c: 'asset-details-calibrate-btn',
+      };
+      const btnId = idByKey[e.key.toLowerCase()];
+      if (!btnId) return;
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      e.preventDefault();
+      btn.click();
     });
+
+    async function cancelAssetReservation(reservationId, btn) {
+      if (!confirm('Cancel this reservation?')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/v1/reservations/${reservationId}/cancel`, {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(data.error || "Couldn't cancel that reservation.", 'error');
+          btn.disabled = false;
+          return;
+        }
+        showToast('Reservation cancelled', 'success');
+        document.querySelector('.fixed.inset-0.z-50')?.remove();
+        document.body.dispatchEvent(new Event('assets-refreshed'));
+      } catch (err) {
+        showToast('Network error - check your connection and try again.', 'error');
+        btn.disabled = false;
+      }
+    }
   </script>
 
   <div class="sheet-panel absolute inset-y-4 right-4 w-full max-w-2xl bg-base-100 rounded-2xl shadow-2xl border border-base-300 flex flex-col overflow-hidden"
@@ -28,7 +92,7 @@
         <h3 class="font-bold text-lg leading-snug">Asset Details</h3>
         <p class="text-sm text-base-content/50 mt-1">{{ asset.asset_id }}</p>
       </div>
-      <!-- ESC pill instead of an X icon -- doubles as a hint that Escape closes it too, used on every modal header. -->
+      <!-- ESC pill instead of an X icon - doubles as a hint that Escape closes it too, used on every modal header. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
               onclick="this.closest('.fixed').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">
         ESC
@@ -45,6 +109,11 @@
           <h4 class="text-base font-semibold leading-snug">{{ asset.name }}</h4>
           {% if asset.deleted_at %}
           <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-base-300 text-base-content/60 shrink-0">Archived</span>
+          {% elif asset.asset_type == 'consumable' %}
+          {% set low_stock = asset.reorder_threshold is not none and asset.quantity <= asset.reorder_threshold %}
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium shrink-0 {% if low_stock %}bg-warning/15 text-warning{% else %}bg-success/15 text-success{% endif %}">
+            Qty: {{ asset.quantity }}{% if low_stock %} &#9888;{% endif %}
+          </span>
           {% else %}
           <span class="px-2.5 py-1 rounded-full text-xs font-medium shrink-0
             {% if asset.status == 'available' %}bg-success/15 text-success
@@ -88,14 +157,32 @@
               <span class="text-xs text-base-content/50">Last calibrated</span>
               <span class="text-sm font-medium text-right">{{ asset.last_calibrated or "-" }}</span>
             </div>
+            {% if g.staff.role in ["admin", "in_charge"] %}
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Purchase cost</span>
+              <span class="text-sm font-medium text-right">{{ "%.2f"|format(asset.purchase_cost) if asset.purchase_cost is not none else "-" }}</span>
+            </div>
+            {% endif %}
+            {% if asset.asset_type != 'consumable' %}
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Next maintenance due</span>
+              <span class="text-sm font-medium text-right">{{ asset.next_maintenance_due or "-" }}</span>
+            </div>
+            {% if asset.maintenance_interval_checkouts %}
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs text-base-content/50">Maintenance interval</span>
+              <span class="text-sm font-medium text-right">{{ asset.checkouts_since_maintenance }} / {{ asset.maintenance_interval_checkouts }} checkouts</span>
+            </div>
+            {% endif %}
+            {% endif %}
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs text-base-content/50">Date added</span>
-              <span class="text-sm font-medium text-right">{{ asset.created_at or "-" }}</span>
+              <span class="text-sm font-medium text-right">{{ asset.created_at | format_date if asset.created_at else "-" }}</span>
             </div>
             {% if asset.deleted_at %}
             <div class="flex items-center justify-between gap-3 pt-2 border-t border-base-300">
               <span class="text-xs text-base-content/50">Deleted</span>
-              <span class="text-sm font-medium text-right">{{ asset.deleted_at }}</span>
+              <span class="text-sm font-medium text-right">{{ asset.deleted_at | format_date }}</span>
             </div>
             {% endif %}
           </div>
@@ -111,8 +198,29 @@
         <div class="bg-info/10 rounded-lg p-3 mt-4">
           <p class="text-xs font-semibold text-info tracking-wide mb-1">CURRENTLY BORROWED BY</p>
           <p class="text-sm font-medium">{{ full_name(current_loan.first_name, current_loan.last_name, current_loan.middle_name, current_loan.suffix) }}</p>
-          <p class="text-xs text-base-content/60 mt-1">Out: {{ current_loan.time_out }}</p>
-          <p class="text-xs text-base-content/60">Due: {{ current_loan.due_date or "-" }}</p>
+          <p class="text-xs text-base-content/60 mt-1">Out: {{ current_loan.time_out | format_date }}</p>
+          <p class="text-xs text-base-content/60">Due: {{ current_loan.due_date | format_date if current_loan.due_date else "-" }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Advisory only (see services/reservation_service.py's module docstring) -
+             this asset can still be checked out today by anyone; it's a heads-up,
+             not a hold enforced by the checkout flow. -->
+        {% if upcoming_reservations %}
+        <div class="bg-warning/10 rounded-lg p-3 mt-4">
+          <p class="text-xs font-semibold text-warning tracking-wide mb-2">RESERVED FOR</p>
+          {% for r in upcoming_reservations %}
+          <div class="{% if not loop.first %}pt-2 mt-2 border-t border-warning/20{% endif %}">
+            <p class="text-sm font-medium">{{ full_name(r.first_name, r.last_name, r.middle_name, r.suffix) }}</p>
+            <p class="text-xs text-base-content/60 mt-0.5">{{ r.start_at | format_date }} &ndash; {{ r.end_at | format_date }}</p>
+            {% if g.staff.role in ["admin", "in_charge"] or g.staff.id == r.staff_id %}
+            <button type="button" class="text-xs text-error hover:underline mt-1"
+                    onclick="cancelAssetReservation({{ r.id }}, this)">
+              Cancel reservation
+            </button>
+            {% endif %}
+          </div>
+          {% endfor %}
         </div>
         {% endif %}
       </div>
@@ -121,8 +229,12 @@
       <div class="w-64 shrink-0 border-l border-base-300 bg-base-200/30 overflow-y-auto min-h-0 p-5">
         <p class="text-xs font-semibold text-base-content/50 tracking-wide mb-3">PRODUCT DETAIL</p>
 
-        <!-- Primary image -->
-        <div class="w-24 aspect-square rounded-lg overflow-hidden border border-base-300 bg-base-100 flex items-center justify-center mx-auto">
+        <!-- Primary image - click to view full-size in the shared lightbox
+             (openPhotoLightbox, defined once in base.html). Only clickable
+             when there's an actual photo; the placeholder icon has nothing
+             to enlarge. -->
+        <div class="w-24 aspect-square rounded-lg overflow-hidden border border-base-300 bg-base-100 flex items-center justify-center mx-auto {% if asset.image_path %}cursor-pointer hover:opacity-80 transition-opacity{% endif %}"
+             {% if asset.image_path %}onclick='openPhotoLightbox({{ url_for("static", filename=asset.image_path) | tojson }}, {{ asset.name | tojson }})' data-tooltip="View full size"{% endif %}>
           {% if asset.image_path %}
           <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}" class="w-full h-full object-cover">
           {% else %}
@@ -138,10 +250,14 @@
           {% for slot in [1, 2] %}
           {% set img = additional_images.get(slot) %}
           {% if img %}
-          <a href="{{ url_for('static', filename=img.image_path) }}" target="_blank" rel="noopener"
-             class="block rounded-lg overflow-hidden border border-base-300 aspect-square hover:opacity-80 transition-opacity">
+          <!-- Same shared lightbox as the primary image above, not a new
+               browser tab - keeps every photo view consistent app-wide. -->
+          <button type="button"
+                  onclick='openPhotoLightbox({{ url_for("static", filename=img.image_path) | tojson }}, {{ (asset.name ~ " additional image " ~ slot) | tojson }})'
+                  data-tooltip="View full size"
+                  class="block rounded-lg overflow-hidden border border-base-300 aspect-square hover:opacity-80 transition-opacity">
             <img src="{{ url_for('static', filename=img.image_path) }}" alt="{{ asset.name }} additional image {{ slot }}" class="w-full h-full object-cover">
-          </a>
+          </button>
           {% endif %}
           {% endfor %}
         </div>
@@ -158,9 +274,9 @@
             <div class="relative">
               <span class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border-2 border-base-100
                 {% if h.status == 'returned' %}bg-success{% else %}bg-info{% endif %}"></span>
-              <p class="text-sm font-semibold leading-snug">{{ h.time_out }}</p>
+              <p class="text-sm font-semibold leading-snug">{{ h.time_out | format_date }}</p>
               <p class="text-xs text-base-content/50 mt-0.5">
-                {{ h.status | capitalize }}{% if h.time_in %} &middot; In {{ h.time_in }}{% endif %}
+                {{ h.status | capitalize }}{% if h.time_in %} &middot; In {{ h.time_in | format_date }}{% endif %}
               </p>
               <div class="flex items-center gap-1.5 mt-1.5">
                 <div class="w-4 h-4 rounded-full bg-base-300 shrink-0"></div>
@@ -191,10 +307,9 @@
     {% set can_edit_delete = g.staff.role in ["admin", "in_charge"] %}
     {% set can_restore = g.staff.role == "admin" %}
     <div class="flex justify-end gap-2 p-5 border-t border-base-300 shrink-0">
-      <button type="button" class="btn w-20" onclick="this.closest('.fixed').remove()">Cancel</button>
       {% if asset.deleted_at %}
       {% if can_restore %}
-      <button type="button" class="btn btn-primary w-20"
+      <button type="button" id="asset-details-restore-btn" class="btn btn-primary w-20" data-tooltip="Restore (R)"
               hx-get="/api/v1/assets/{{ asset.id }}/restore-confirm?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">
@@ -202,7 +317,7 @@
       </button>
       {% endif %}
       {% if can_edit_delete %}
-      <button type="button" class="btn btn-outline w-20"
+      <button type="button" id="asset-details-edit-btn" class="btn btn-outline w-20" data-tooltip="Edit (E)"
               hx-get="/api/v1/assets/{{ asset.id }}/edit-form?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">
@@ -210,14 +325,61 @@
       </button>
       {% endif %}
       {% else %}
+      {% if can_edit_delete and asset.status == 'maintenance' %}
+      <button type="button" id="asset-details-maintenance-btn" class="btn btn-success btn-outline" data-tooltip="Resolve Maintenance (M)"
+              hx-get="/api/v1/assets/{{ asset.id }}/resolve-maintenance-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Resolve Maintenance
+      </button>
+      {% elif can_edit_delete and asset.asset_type != 'consumable' and asset.status not in ['borrowed', 'reserved'] %}
+      <button type="button" id="asset-details-maintenance-btn" class="btn btn-error btn-outline" data-tooltip="Mark for Maintenance (M)"
+              hx-get="/api/v1/assets/{{ asset.id }}/mark-maintenance-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Mark for Maintenance
+      </button>
+      {% endif %}
+      {% if g.staff.role == 'admin' and asset.status == 'reserved' %}
+      <button type="button" class="btn btn-warning btn-outline" data-tooltip="Release Reservation"
+              hx-get="/api/v1/assets/{{ asset.id }}/release-reservation-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Release Reservation
+      </button>
+      {% endif %}
+      {% if can_edit_delete and asset.asset_type == 'consumable' %}
+      <button type="button" id="asset-details-stock-btn" class="btn btn-outline" data-tooltip="Adjust Stock (S)"
+              hx-get="/api/v1/assets/{{ asset.id }}/adjust-stock-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Adjust Stock
+      </button>
+      {% endif %}
+      {% if can_edit_delete and asset.asset_type != 'consumable' and not asset.deleted_at %}
+      <button type="button" id="asset-details-calibrate-btn" class="btn btn-outline" data-tooltip="Mark Calibrated (C)"
+              hx-get="/api/v1/assets/{{ asset.id }}/mark-calibrated-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Mark Calibrated
+      </button>
+      {% endif %}
+      {% if feature_flags.reservations and asset.asset_type != 'consumable' and not asset.deleted_at %}
+      <button type="button" id="asset-details-reserve-btn" class="btn btn-outline" data-tooltip="Reserve for Later (V)"
+              hx-get="/api/v1/assets/{{ asset.id }}/reserve-form"
+              hx-target="#modal-container"
+              hx-swap="beforeend">
+        Reserve
+      </button>
+      {% endif %}
       {% if can_edit_delete %}
-      <button type="button" class="btn btn-error btn-outline w-20"
+      <button type="button" id="asset-details-delete-btn" class="btn btn-error btn-outline w-20" data-tooltip="Delete (D)"
               hx-get="/api/v1/assets/{{ asset.id }}/delete-confirm?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">
         Delete
       </button>
-      <button type="button" class="btn btn-primary w-20"
+      <button type="button" id="asset-details-edit-btn" class="btn btn-primary w-20" data-tooltip="Edit (E)"
               hx-get="/api/v1/assets/{{ asset.id }}/edit-form?return_to=details"
               hx-target="#modal-container"
               hx-swap="beforeend">

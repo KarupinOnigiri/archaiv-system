@@ -11,6 +11,7 @@ from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
 from services.settings_service import is_feature_enabled, get_feature_label
 from services import asset_service
+from services import transaction_service
 from utils.logger import log_action
 from utils.validators import validate_date_fields, parse_pagination_params
 from utils.uploads import validate_image_upload
@@ -206,7 +207,7 @@ def add_asset_form():
         categories = asset_service.list_categories(conn)
     finally:
         conn.close()
-    return render_template("assets/_add_modal.html", categories=categories, error=None)
+    return render_template("assets/_add_modal.html", categories=categories, error=None, staff=g.staff)
 
 
 def _add_asset_form_error(error_msg):
@@ -215,7 +216,7 @@ def _add_asset_form_error(error_msg):
         categories = asset_service.list_categories(conn)
     finally:
         conn.close()
-    return render_template("assets/_add_modal.html", categories=categories, error=error_msg), 200
+    return render_template("assets/_add_modal.html", categories=categories, error=error_msg, staff=g.staff), 200
 
 
 @assets_bp.route("/assets/add", methods=["POST"])
@@ -229,7 +230,7 @@ def add_asset_submit():
     else:
         data = request.form
 
-    # barcode_id isn't from the form -- auto-generated to match asset_id, so it's always uniform.
+    # barcode_id isn't from the form - auto-generated to match asset_id, so it's always uniform.
     required_fields = ["name"]
     for field in required_fields:
         if field not in data or not data[field]:
@@ -238,7 +239,7 @@ def add_asset_submit():
                 return jsonify({"error": error_msg}), 400
             return _add_asset_form_error(error_msg)
 
-    error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
+    error = validate_date_fields(data, ("acquired_date", "last_calibrated", "next_maintenance_due"))
     if error:
         return error
 
@@ -501,6 +502,7 @@ def edit_asset_form(id):
         additional_images=result["additional_images"],
         error=None,
         return_to=return_to,
+        staff=g.staff,
     )
 
 
@@ -528,6 +530,7 @@ def _edit_error_response(error_payload, status, asset=None, asset_id=None, retur
             additional_images=additional_images,
             error=error_msg,
             return_to=return_to,
+            staff=g.staff,
         ),
         200,
     )
@@ -549,7 +552,7 @@ def edit_asset_submit(id):
     if return_to not in ("table", "details"):
         return_to = "table"
 
-    error = validate_date_fields(data, ("acquired_date", "last_calibrated"))
+    error = validate_date_fields(data, ("acquired_date", "last_calibrated", "next_maintenance_due"))
     if error:
         return error
 
@@ -721,7 +724,7 @@ def bulk_delete_assets():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def bulk_restore_assets():
-    """Restores multiple archived assets, admin-only. Disposed ones are skipped -- no per-row condition UI."""
+    """Restores multiple archived assets, admin-only. Disposed ones are skipped - no per-row condition UI."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -741,6 +744,77 @@ def bulk_restore_assets():
     finally:
         conn.close()
 
+    return jsonify(result)
+
+
+@assets_bp.route("/assets/bulk-reassign-category", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("10 per minute")
+def bulk_reassign_category():
+    """Moves multiple assets to a different category in one action."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return jsonify({"error": "Missing required field: ids (must be a non-empty list)"}), 400
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    category_id = data.get("category_id")
+    if not category_id:
+        return jsonify({"error": "Missing required field: category_id"}), 400
+    try:
+        category_id = int(category_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "category_id must be an integer"}), 400
+
+    conn = get_db_connection()
+    try:
+        result, error = asset_service.bulk_reassign_category(conn, ids, category_id, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        return jsonify(error_payload), status
+    return jsonify(result)
+
+
+@assets_bp.route("/assets/bulk-change-status", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("10 per minute")
+def bulk_change_status():
+    """Bulk status change - limited to available<->maintenance, see
+    asset_service.bulk_change_status's docstring for why."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    raw_ids = data.get("ids")
+    if not raw_ids or not isinstance(raw_ids, list):
+        return jsonify({"error": "Missing required field: ids (must be a non-empty list)"}), 400
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return jsonify({"error": "ids must be a list of integers"}), 400
+
+    new_status = data.get("status")
+    if not new_status:
+        return jsonify({"error": "Missing required field: status"}), 400
+
+    conn = get_db_connection()
+    try:
+        result, error = asset_service.bulk_change_status(conn, ids, new_status, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status_code, _ctx = error
+        return jsonify(error_payload), status_code
     return jsonify(result)
 
 
@@ -783,7 +857,7 @@ def _restore_error_response(error_msg, status, asset_id, return_to="table"):
 @limiter.limit("20 per minute")
 def restore_asset(id):
     """Admin-only, deliberately tighter than delete_asset (admin/in_charge)
-    -- reversing a disposal is a bigger call than making one."""
+    - reversing a disposal is a bigger call than making one."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -812,7 +886,7 @@ def restore_asset(id):
         )
     if condition == "disposed":
         return _restore_error_response(
-            "Cannot restore an asset with condition 'disposed' -- choose a different condition",
+            "Cannot restore an asset with condition 'disposed' - choose a different condition",
             400,
             id,
             return_to=return_to,
@@ -849,6 +923,325 @@ def restore_asset(id):
                     "successMessage": "Restore undone",
                 },
             },
+        }
+    )
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/mark-calibrated-form")
+@roles_required("admin", "in_charge")
+def mark_calibrated_form(id):
+    conn = get_db_connection()
+    try:
+        asset, error = asset_service.get_asset_for_mark_calibrated(conn, id)
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        return jsonify(error_payload), status
+
+    return render_template("assets/_mark_calibrated_modal.html", asset=asset, error=None)
+
+
+@assets_bp.route("/assets/<int:id>/mark-calibrated", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def mark_calibrated_submit(id):
+    """Quick action from the Inventory row menu/Details modal - logs a
+    calibration (last_calibrated = today) without opening the full Edit
+    modal and hand-typing the date there."""
+    conn = get_db_connection()
+    try:
+        result, error = asset_service.mark_calibrated(conn, id, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, ctx = error
+        if request.is_json or "asset" not in ctx:
+            return jsonify(error_payload), status
+        return render_template(
+            "assets/_mark_calibrated_modal.html", asset=ctx["asset"], error=error_payload.get("error")
+        ), 200
+
+    if request.is_json:
+        return jsonify({"message": result["message"]})
+    response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "assets-refreshed": True,
+            "show-toast": {"message": f"{result['asset_id_code']} marked as calibrated", "type": "success"},
+        }
+    )
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/mark-maintenance-form")
+@roles_required("admin", "in_charge")
+def mark_maintenance_form(id):
+    conn = get_db_connection()
+    try:
+        asset, error = asset_service.get_asset_for_mark_maintenance(conn, id)
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        return jsonify(error_payload), status
+
+    return render_template("assets/_mark_maintenance_modal.html", asset=asset, error=None)
+
+
+@assets_bp.route("/assets/<int:id>/mark-maintenance", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def mark_maintenance_submit(id):
+    """Quick action from the Inventory row menu/Details modal - flips an
+    asset straight to status='maintenance' without opening the full Edit
+    modal and hand-picking it from the status dropdown there."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    notes = data.get("notes")
+
+    conn = get_db_connection()
+    try:
+        result, error = asset_service.mark_for_maintenance(conn, id, notes, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, ctx = error
+        if request.is_json or "asset" not in ctx:
+            return jsonify(error_payload), status
+        return render_template(
+            "assets/_mark_maintenance_modal.html", asset=ctx["asset"], error=error_payload.get("error")
+        ), 200
+
+    if request.is_json:
+        return jsonify({"message": result["message"]})
+    response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "assets-refreshed": True,
+            "show-toast": {"message": f"{result['asset_id_code']} marked for maintenance", "type": "success"},
+        }
+    )
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/resolve-maintenance-form")
+@roles_required("admin", "in_charge")
+def resolve_maintenance_form(id):
+    conn = get_db_connection()
+    try:
+        asset, error = asset_service.get_asset_for_resolve_maintenance(conn, id)
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        return jsonify(error_payload), status
+
+    return render_template("assets/_resolve_maintenance_modal.html", asset=asset, error=None)
+
+
+def _resolve_maintenance_error_response(error_msg, status, asset_id):
+    """Returns JSON if this was a JSON request; renders the modal with an
+    inline error if it was an htmx/form request - same shape as the edit
+    and restore error responders above."""
+    if request.is_json:
+        return jsonify({"error": error_msg}), status
+    conn = get_db_connection()
+    try:
+        asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    finally:
+        conn.close()
+    return render_template("assets/_resolve_maintenance_modal.html", asset=asset, error=error_msg), 200
+
+
+@assets_bp.route("/assets/<int:id>/resolve-maintenance", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def resolve_maintenance_submit(id):
+    """Quick action from the Inventory row menu - brings a 'maintenance'
+    asset back into circulation without opening the full Edit modal."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    condition = (data.get("condition") or "").strip()
+    notes = data.get("notes")
+    next_maintenance_due = data.get("next_maintenance_due") or None
+
+    error = validate_date_fields(data, ("next_maintenance_due",))
+    if error:
+        return error
+
+    conn = get_db_connection()
+    try:
+        result, error = asset_service.resolve_maintenance(
+            conn, id, condition, notes, g.staff["id"], next_maintenance_due
+        )
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, ctx = error
+        if "asset" not in ctx:
+            return jsonify(error_payload), status
+        return _resolve_maintenance_error_response(error_payload.get("error"), status, id)
+
+    if request.is_json:
+        return jsonify({"message": result["message"]})
+    response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "assets-refreshed": True,
+            "show-toast": {"message": f"{result['asset_id_code']} is back in circulation", "type": "success"},
+        }
+    )
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/adjust-stock-form")
+@roles_required("admin", "in_charge")
+def adjust_stock_form(id):
+    conn = get_db_connection()
+    try:
+        asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+    finally:
+        conn.close()
+    if asset is None:
+        return jsonify({"error": "Asset not found"}), 404
+    if asset["asset_type"] != "consumable":
+        return jsonify({"error": "Only consumable assets have stock to adjust"}), 400
+    return render_template("assets/_adjust_stock_modal.html", asset=asset, error=None)
+
+
+@assets_bp.route("/assets/<int:id>/adjust-stock", methods=["POST"])
+@roles_required("admin", "in_charge")
+@limiter.limit("20 per minute")
+def adjust_stock_submit(id):
+    """Manual stock correction (restock/write-off/recount) - not the
+    automatic decrement/increment a checkout/return already does."""
+    if request.is_json:
+        data, error = get_json_or_error()
+        if error:
+            return error
+    else:
+        data = request.form
+
+    try:
+        delta = int(data.get("delta"))
+    except (TypeError, ValueError):
+        delta = None
+    reason = (data.get("reason") or "").strip() or None
+
+    conn = get_db_connection()
+    try:
+        if delta is None:
+            return jsonify({"error": "delta must be a whole number"}), 400
+        result, error = asset_service.adjust_consumable_stock(conn, id, delta, reason, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        if request.is_json:
+            return jsonify(error_payload), status
+        conn = get_db_connection()
+        try:
+            asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+        finally:
+            conn.close()
+        return render_template(
+            "assets/_adjust_stock_modal.html", asset=asset, error=error_payload.get("error")
+        ), 200
+
+    if request.is_json:
+        return jsonify(result)
+    response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    response.headers["HX-Trigger"] = json.dumps(
+        {"assets-refreshed": True, "show-toast": {"message": result["message"], "type": "success"}}
+    )
+    return response
+
+
+@assets_bp.route("/assets/<int:id>/release-reservation-form")
+@roles_required("admin")
+def release_reservation_form(id):
+    """Admin-only escape hatch for an asset stuck 'reserved' because whoever
+    was checking it out logged out (or crashed) without cancelling or
+    completing - see transaction_service.release_reserved_asset. Shows who's
+    actually holding it before the admin confirms bypassing it."""
+    conn = get_db_connection()
+    try:
+        result, error = transaction_service.get_reserved_asset_hold(conn, id)
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, _ctx = error
+        return jsonify(error_payload), status
+
+    return render_template(
+        "assets/_release_reservation_modal.html", asset=result["asset"], hold=result["hold"], error=None
+    )
+
+
+@assets_bp.route("/assets/<int:id>/release-reservation", methods=["POST"])
+@roles_required("admin")
+@limiter.limit("20 per minute")
+def release_reservation_submit(id):
+    conn = get_db_connection()
+    try:
+        result, error = transaction_service.release_reserved_asset(conn, id, g.staff["id"])
+    finally:
+        conn.close()
+
+    if error:
+        error_payload, status, ctx = error
+        if request.is_json:
+            return jsonify(error_payload), status
+        conn = get_db_connection()
+        try:
+            asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
+            hold_result, _ = transaction_service.get_reserved_asset_hold(conn, id)
+        finally:
+            conn.close()
+        return render_template(
+            "assets/_release_reservation_modal.html",
+            asset=ctx.get("asset", asset),
+            hold=hold_result["hold"] if hold_result else None,
+            error=error_payload.get("error"),
+        ), 200
+
+    if request.is_json:
+        return jsonify({"message": result["message"]})
+    response = make_response("", 200)
+    response.headers["HX-Retarget"] = "#modal-container"
+    response.headers["HX-Reswap"] = "innerHTML"
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "assets-refreshed": True,
+            "show-toast": {"message": result["message"], "type": "success"},
         }
     )
     return response
@@ -940,6 +1333,11 @@ def asset_details_modal(id):
     conn = get_db_connection()
     try:
         result, error = asset_service.get_asset_details(conn, id)
+        upcoming_reservations = []
+        if not error and is_feature_enabled("reservations", conn):
+            from services import reservation_service
+
+            upcoming_reservations = reservation_service.get_upcoming_reservations_for_asset(conn, id)
     finally:
         conn.close()
 
@@ -954,4 +1352,5 @@ def asset_details_modal(id):
         recent_history=result["recent_history"],
         history_total_count=result["history_total_count"],
         additional_images=result["additional_images"],
+        upcoming_reservations=upcoming_reservations,
     )

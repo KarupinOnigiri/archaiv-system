@@ -1,0 +1,173 @@
+{% macro sort_header(label, col, width) %}
+{% set next_dir = "desc" if (sort_by == col and sort_dir == "asc") else "asc" %}
+{% set is_active = (sort_by == col) %}
+<th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300" style="width: {{ width }}">
+  <button type="button" class="inline-flex items-center gap-1 hover:text-base-content {% if is_active %}text-primary font-semibold{% else %}text-base-content/50{% endif %}"
+          hx-get="/api/v1/monitoring/table"
+          hx-target="#monitoring-table-container"
+          hx-swap="innerHTML"
+          hx-indicator="#table-spinner"
+          hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+          hx-vals='{"limit": {{ limit }}, "offset": 0, "sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'>
+    {{ label }}
+    {% if is_active %}
+      {% if sort_dir == "asc" %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 15l-6-6-6 6"/></svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+      {% endif %}
+    {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l4-4 4 4"/><path d="M16 15l-4 4-4-4"/></svg>
+    {% endif %}
+  </button>
+</th>
+{% endmacro %}
+
+<table class="table table-sm w-full table-fixed"
+       data-total-count="{{ total_count }}" data-limit="{{ limit }}" data-offset="{{ offset }}"
+       data-sort-by="{{ sort_by }}" data-sort-dir="{{ sort_dir }}">
+  <thead>
+    <tr class="text-xs text-base-content/50">
+      {{ sort_header("DATE", "detected_at", "8%") }}
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300" style="width: 7%">TIME</th>
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300" style="width: 10%">TAG</th>
+      {{ sort_header("ASSET", "asset_name", "15%") }}
+      {{ sort_header("CATEGORY", "category", "10%") }}
+      {{ sort_header("BARCODE", "barcode", "10%") }}
+      {{ sort_header("CLASSIFICATION", "classification", "11%") }}
+      {{ sort_header("BORROWER", "member_name", "19%") }}
+      <th class="py-2 sticky top-0 z-10 bg-base-100 border-b border-base-300" style="width: 10%">ALARM</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr class="border-t border-base-200 {% if event.alarm_activated and not event.alarm_deactivated_at %}bg-error/5{% endif %}">
+      <td class="py-2 text-sm whitespace-nowrap truncate">{{ event.detected_at | format_date("%b %d, %Y") }}</td>
+      <td class="py-2 text-sm whitespace-nowrap truncate text-base-content/70">{{ event.detected_at | format_date("%I:%M %p") }}</td>
+      <td class="py-2 text-sm font-mono truncate" title="{{ event.rfid_tag_scanned }}">{{ event.rfid_tag_scanned }}</td>
+      <td class="py-2 text-sm truncate">
+        {% if event.asset_name %}
+        {{ event.asset_name }}
+        {% else %}
+        <span class="text-warning">Unregistered tag</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-sm text-base-content/70 truncate">{{ event.category_name or "-" }}</td>
+      <td class="py-2 text-sm text-base-content/70 font-mono truncate">{{ event.asset_barcode or "-" }}</td>
+      <td class="py-2 text-sm truncate">
+        {% if event.classification == "authorized" %}
+        <span class="px-2 py-0.5 rounded-full bg-success/15 text-success text-xs font-medium">Authorized</span>
+        {% elif event.classification == "unauthorized" %}
+        <span class="px-2 py-0.5 rounded-full bg-error/15 text-error text-xs font-medium">Unauthorized</span>
+        {% else %}
+        <span class="px-2 py-0.5 rounded-full bg-warning/15 text-warning text-xs font-medium">Unknown tag</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-sm truncate">
+        {% if event.first_name %}
+        <span class="text-base-content/70">{{ full_name(event.first_name, event.last_name, event.middle_name, event.suffix) }}</span>
+        <span class="block text-xs font-mono text-base-content/40">{{ event.member_barcode }}</span>
+        {% else %}
+        <span class="text-base-content/30">-</span>
+        {% endif %}
+      </td>
+      <td class="py-2 text-sm text-base-content/70 truncate">
+        {% if not event.alarm_activated %}
+        <span class="text-base-content/40">&ndash;</span>
+        {% elif event.alarm_deactivated_at %}
+        Cleared {{ event.alarm_deactivated_at | format_date }}{% if event.deactivated_by_username %} by @{{ event.deactivated_by_username }}{% endif %}
+        {% else %}
+        <span class="text-error font-medium">Active</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="9" class="py-16 text-center text-sm text-base-content/50">No detection events match these filters.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Pagination footer - same numbered-with-ellipsis pattern as audit_log/_table.html. -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-base-300">
+
+  <div class="flex items-center gap-2 text-sm text-base-content/60">
+    <select class="select select-bordered select-xs"
+            aria-label="Items per page"
+            hx-get="/api/v1/monitoring/table"
+            hx-trigger="change"
+            hx-target="#monitoring-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+            name="limit"
+            hx-vals='js:{"limit": event.target.value, "offset": 0, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'>
+      <option value="10" {% if limit == 10 %}selected{% endif %}>10</option>
+      <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+    </select>
+    <span class="whitespace-nowrap">Items per page</span>
+    <span class="text-base-content/40">&middot;</span>
+    <span class="whitespace-nowrap">
+      {% if total_count == 0 %}0{% else %}{{ offset + 1 }}-{{ [offset + limit, total_count] | min }}{% endif %}
+      of {{ total_count }}
+    </span>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset == 0 %}disabled{% endif %}
+            data-tooltip="Previous page" aria-label="Previous page"
+            hx-get="/api/v1/monitoring/table"
+            hx-target="#monitoring-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ [offset - limit, 0] | max }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+
+    <nav aria-label="Pagination" class="flex items-center gap-1">
+      {% set current_page = (offset // limit) + 1 %}
+      {% set total_pages = ((total_count - 1) // limit) + 1 if total_count > 0 else 1 %}
+      {% set page_set = [] %}
+      {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= current_page - 1 and p <= current_page + 1) %}
+          {% set _ = page_set.append(p) %}
+        {% endif %}
+      {% endfor %}
+      {% set ns = namespace(prev=0) %}
+      {% for p in page_set %}
+        {% if ns.prev != 0 and p - ns.prev > 1 %}
+        <span class="px-1 text-base-content/40 select-none" aria-hidden="true">&hellip;</span>
+        {% endif %}
+        <button type="button"
+                class="btn btn-xs btn-circle {% if p == current_page %}btn-primary{% else %}btn-ghost{% endif %}"
+                {% if p == current_page %}aria-current="page"{% endif %}
+                aria-label="Page {{ p }}"
+                hx-get="/api/v1/monitoring/table"
+                hx-target="#monitoring-table-container"
+                hx-swap="innerHTML"
+                hx-indicator="#table-spinner"
+                hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+                hx-vals='{"limit": {{ limit }}, "offset": {{ (p - 1) * limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
+          {{ p }}
+        </button>
+        {% set ns.prev = p %}
+      {% endfor %}
+    </nav>
+
+    <button type="button" class="btn btn-outline btn-xs btn-circle" {% if offset + limit >= total_count %}disabled{% endif %}
+            data-tooltip="Next page" aria-label="Next page"
+            hx-get="/api/v1/monitoring/table"
+            hx-target="#monitoring-table-container"
+            hx-swap="innerHTML"
+            hx-indicator="#table-spinner"
+            hx-include="#monitoring-search, #monitoring-classification-filter, #monitoring-since-filter, #monitoring-until-filter"
+            hx-vals='{"limit": {{ limit }}, "offset": {{ offset + limit }}, "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}" }'>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+
+</div>

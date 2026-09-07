@@ -4,7 +4,7 @@
 {% set can_restrict = g.staff.role in ["admin", "in_charge", "tool_keeper"] %}
 {# Bulk deactivate/reactivate uses the same permission as the single-row
    actions and isn't show_inactive-aware (unlike Inventory's can_bulk_act,
-   which mixes two differently-gated actions) -- a flat role check is enough here. #}
+   which mixes two differently-gated actions) - a flat role check is enough here. #}
 {% set can_bulk_act = can_manage %}
 
 {% macro sort_header(label, col) %}
@@ -204,7 +204,7 @@
     </button>
 
     <!-- Same numbered-with-ellipsis pagination as Inventory, so both tables
-         behave identically -- see the matching comment there for why this
+         behave identically - see the matching comment there for why this
          caps at a handful of buttons instead of one per page. -->
     <nav aria-label="Pagination" class="flex items-center gap-1">
       {% set current_page = (offset // limit) + 1 %}

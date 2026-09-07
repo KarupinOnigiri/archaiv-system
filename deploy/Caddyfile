@@ -1,0 +1,34 @@
+# Reverse proxy in front of the app's own Waitress server (wsgi.py),
+# terminating HTTPS -- Waitress itself has no TLS support at all (its own
+# docs say to put a proxy in front of it for that), which is why
+# .env.example's COOKIE_SECURE comment already points at "a TLS-terminating
+# reverse proxy (nginx/Caddy)" rather than a Flask/Waitress setting.
+#
+# The one feature that actually *needs* this: the RFID Tag Writer (Add/Edit
+# Asset -> Scan/Write Tag) uses the browser's Web Serial API to talk to each
+# admin's own SR3308 reader/writer directly -- no per-laptop install, just a
+# one-time "Connect Reader" click. Web Serial only works in a "secure
+# context" (HTTPS, or the exact address `localhost`), so reaching this app
+# over plain http://<lan-ip> -- the default in .env.example -- silently
+# hides that feature; `navigator.serial` won't even exist on the page.
+# Nothing else in the app requires this.
+#
+# Setup (see DEPLOYMENT.md's HTTPS section for the full walkthrough):
+#   1. Install Caddy: https://caddyserver.com/docs/install
+#   2. Replace <server-lan-ip-or-hostname> below with the address staff
+#      actually use to reach this app (e.g. 192.168.1.50, or a hostname).
+#   3. caddy run --config /opt/toolroom/deploy/Caddyfile
+#      (or install as a service -- see Caddy's own docs for your OS)
+#   4. Set COOKIE_SECURE=1 in .env once staff are reaching the app through
+#      Caddy instead of hitting Waitress on :5000 directly.
+#
+# Caddy auto-generates and manages its own local certificate authority for
+# this -- admins see a one-time "not secure" warning to click through in the
+# browser (it's self-signed, not from a public CA), then it's normal after
+# that. No cert files to create or manage by hand.
+
+<server-lan-ip-or-hostname> {
+	tls internal
+
+	reverse_proxy 127.0.0.1:5000
+}

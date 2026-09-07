@@ -104,46 +104,9 @@
   </div>
 </div>
 
-<!-- Audit log entry detail modal -- reads the clicked row's own data-*
-     attributes instead of a second request. Lives on the parent page
-     (not the htmx-swapped partial) so it isn't recreated on every filter change. -->
-<dialog id="audit-log-detail-modal" class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="flex justify-between items-start mb-4">
-      <h3 class="font-bold text-lg">Activity detail</h3>
-      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
-              onclick="document.getElementById('audit-log-detail-modal').close()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
-    </div>
-    <dl class="space-y-3 text-sm">
-      <div>
-        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">WHEN</dt>
-        <dd id="audit-detail-when" class="mt-0.5"></dd>
-      </div>
-      <div>
-        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">STAFF</dt>
-        <dd id="audit-detail-staff" class="mt-0.5"></dd>
-      </div>
-      <div>
-        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">ACTION</dt>
-        <dd class="mt-0.5"><span id="audit-detail-action" class="inline-block px-2 py-0.5 rounded-full bg-base-200 text-xs"></span></dd>
-      </div>
-      <div>
-        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">TARGET</dt>
-        <dd id="audit-detail-target" class="mt-0.5"></dd>
-      </div>
-      <div>
-        <dt class="text-xs font-semibold text-base-content/50 tracking-wide">DETAILS</dt>
-        <dd id="audit-detail-details" class="mt-0.5 whitespace-pre-wrap break-words text-base-content/80"></dd>
-      </div>
-    </dl>
-    <div class="modal-action">
-      <form method="dialog">
-        <button class="btn btn-sm">Close</button>
-      </form>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+<!-- Shared with the Staff "Full Activity" modal, which renders these same
+     table rows too - see audit_log/_detail_modal.html's own comment. -->
+{% include "audit_log/_detail_modal.html" %}
 
 <style>
 .htmx-indicator { opacity: 0; }
@@ -151,15 +114,6 @@
 </style>
 
 <script>
-function openAuditLogDetail(rowEl) {
-  document.getElementById('audit-detail-when').textContent = rowEl.dataset.when;
-  document.getElementById('audit-detail-staff').textContent = rowEl.dataset.staff;
-  document.getElementById('audit-detail-action').textContent = rowEl.dataset.action;
-  document.getElementById('audit-detail-target').textContent = rowEl.dataset.target;
-  document.getElementById('audit-detail-details').textContent = rowEl.dataset.details;
-  document.getElementById('audit-log-detail-modal').showModal();
-}
-
 function formatDateLocal(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -167,7 +121,7 @@ function formatDateLocal(d) {
   return `${y}-${m}-${day}`;
 }
 
-// Prefer htmx's own trigger API over a raw dispatchEvent -- more reliable
+// Prefer htmx's own trigger API over a raw dispatchEvent - more reliable
 // across htmx versions than relying on native event bubbling.
 function fireHtmxChange(el) {
   if (window.htmx) {
@@ -269,11 +223,18 @@ function updateAuditFilterUI() {
   const yesterday = formatDateLocal(new Date(Date.now() - 86400000));
   const isToday = since.value === today && until.value === today;
   const isYesterday = since.value === yesterday && until.value === yesterday;
-  document.getElementById('audit-preset-today').classList.toggle('btn-active', isToday);
-  document.getElementById('audit-preset-yesterday').classList.toggle('btn-active', isYesterday);
+  // btn-primary/btn-outline swap, not btn-active - see reports.html's
+  // setReportGroupBy comment for why btn-active alone doesn't read as
+  // "selected" in this theme (no --btn-color set on a plain .btn).
+  const todayBtn = document.getElementById('audit-preset-today');
+  const yesterdayBtn = document.getElementById('audit-preset-yesterday');
+  todayBtn.classList.toggle('btn-primary', isToday);
+  todayBtn.classList.toggle('btn-outline', !isToday);
+  yesterdayBtn.classList.toggle('btn-primary', isYesterday);
+  yesterdayBtn.classList.toggle('btn-outline', !isYesterday);
 }
 
-document.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const container = document.getElementById('audit-log-table-container');
   if (evt.detail.target !== container) return;
   try {
@@ -288,16 +249,16 @@ document.addEventListener('htmx:configRequest', function (evt) {
     });
     window.history.replaceState({}, '', url);
   } catch (e) {}
-});
+};
 
-document.addEventListener('htmx:afterSwap', function (evt) {
+window.pageAfterSwapHandler = function (evt) {
   if (evt.target && evt.target.id === 'audit-log-table-container') {
     updateAuditFilterUI();
   }
-});
+};
 
 // --- Keyboard shortcuts (Activity Log page) ---
-// Same isTypingTarget/isModalOpen guard as every other tab -- shortcuts
+// Same isTypingTarget/isModalOpen guard as every other tab - shortcuts
 // back off while typing or while a modal is open.
 function isTypingTarget(el) {
   if (!el) return false;
@@ -311,7 +272,7 @@ function isModalOpen() {
   return !!(container && container.querySelector(':scope > .modal')) || !!(detailModal && detailModal.open);
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   // ArrowLeft / ArrowRight - previous / next page.
@@ -337,8 +298,8 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllAuditFilters();
   }
-});
+};
 
-document.addEventListener('DOMContentLoaded', updateAuditFilterUI);
+setTimeout(updateAuditFilterUI, 0);
 </script>
 {% endblock %}

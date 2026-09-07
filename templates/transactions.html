@@ -68,7 +68,7 @@
 
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
 
-        <!-- Not a visible control -- carries the notification's member_id
+        <!-- Not a visible control - carries the notification's member_id
              filter through every htmx request on this page (search, status,
              dates, sort, paging) via hx-include, same as the visible filters. -->
         <input type="hidden" id="member-id-filter" name="member_id" value="{{ request.args.get('member_id', '') }}">
@@ -155,12 +155,16 @@
         <!-- Today/Yesterday quick presets, same pattern as Audit Log's date
              range. Each sets from/to to the same single day and fires the
              same htmx request the pickers themselves would. -->
+        <!-- Same plain-bordered join-item convention as the search/status/date
+             boxes to its left, rather than daisyUI's own .btn chrome (heavier
+             border weight, different radius/font) - btn-outline stood out as
+             a visibly different size/weight next to its neighbors. -->
         <div id="date-quick-filters" class="join rounded-lg" data-tooltip="Quick date filter">
-          <button type="button" id="date-quick-today-btn" class="join-item btn btn-outline btn-sm"
+          <button type="button" id="date-quick-today-btn" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="applyDateQuickFilter('today')" data-tooltip="Filter to today's transactions (t)">
             Today
           </button>
-          <button type="button" id="date-quick-yesterday-btn" class="join-item btn btn-outline btn-sm"
+          <button type="button" id="date-quick-yesterday-btn" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="applyDateQuickFilter('yesterday')" data-tooltip="Filter to yesterday's transactions (y)">
             Yesterday
           </button>
@@ -173,7 +177,7 @@
 
       </div>
 
-      <!-- Batch-return bar -- overlays the filter row (same pattern as
+      <!-- Batch-return bar - overlays the filter row (same pattern as
            members.html's #bulk-actions-bar) once a row's checked, instead of
            pushing the table down. Selection is JS-only and clears on refresh. -->
       <div id="batch-action-bar" class="pointer-events-none flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-sm" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; visibility: hidden;">
@@ -219,7 +223,7 @@ function exportTransactions() {
 // Batch return: row checkboxes -> selectedTxnIds -> batch-action bar -> the
 // batch-return-confirm modal. JS-only selection, cleared on every table
 // refresh via clearTxnSelection() since refreshed rows can reorder/drop ids.
-let selectedTxnIds = new Set();
+var selectedTxnIds = new Set();
 
 function updateBatchActionBar() {
   const bar = document.getElementById('batch-action-bar');
@@ -269,7 +273,7 @@ function toggleSelectAllTxn(checked) {
   updateBatchActionBar();
 }
 
-// Called on table refresh and after a successful batch return -- clears
+// Called on table refresh and after a successful batch return - clears
 // both the JS set and whatever checkboxes are still in the DOM.
 function clearTxnSelection() {
   selectedTxnIds.clear();
@@ -324,6 +328,18 @@ function clearDateFilter() {
   from.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+// Replaces daisyUI's .btn-active (meaningless now that these are plain
+// join-items, not .btn) with the same primary-highlight look the other
+// active filter joins already use.
+function setDateQuickBtnActive(btn, active) {
+  btn.classList.toggle('bg-primary', active);
+  btn.classList.toggle('border-primary', active);
+  btn.classList.toggle('text-primary-content', active);
+  btn.classList.toggle('hover:bg-primary', active);
+  btn.classList.toggle('hover:text-primary-content', active);
+  btn.classList.toggle('text-base-content/70', !active);
+}
+
 // Sets from/to to a single local calendar day (midnight-to-midnight, same
 // as Audit Log's presets) and fires the change event so this behaves
 // exactly like typing the date into the picker by hand.
@@ -361,7 +377,7 @@ function getBaseFilterParams() {
 }
 
 // Re-fetches the table with whatever filters/sort/page are currently in
-// effect -- unlike most other actions here, a manual refresh shouldn't
+// effect - unlike most other actions here, a manual refresh shouldn't
 // jump back to page 1.
 function refreshTransactionsTable() {
   const table = document.querySelector('#transaction-table-container table');
@@ -411,7 +427,7 @@ function clearAllFilters() {
 }
 
 // Active-filter highlighting + "Clear filters" + search clear (x) + stat-card
-// quick filters -- client-side chrome only; every control still drives the
+// quick filters - client-side chrome only; every control still drives the
 // table through its own hx-get.
 function updateFilterUI() {
   const search = document.getElementById('transaction-search');
@@ -426,6 +442,12 @@ function updateFilterUI() {
   document.getElementById('search-filter-wrap').classList.toggle('ring-2', searchActive);
   document.getElementById('search-filter-wrap').classList.toggle('ring-primary/40', searchActive);
   document.getElementById('search-clear-btn').classList.toggle('hidden', !searchActive);
+  // The clear button is the join's real last child even while hidden (CSS
+  // :last-child doesn't care about display:none), so it - not the input -
+  // keeps the join's rounded right corner whenever it's hidden, leaving the
+  // input's own right edge square. Give the input that same corner back
+  // itself whenever the clear button isn't there to own it.
+  document.getElementById('transaction-search').classList.toggle('rounded-r-(--radius-field)', !searchActive);
 
   document.getElementById('status-filter-wrap').classList.toggle('ring-2', statusActive);
   document.getElementById('status-filter-wrap').classList.toggle('ring-primary/40', statusActive);
@@ -442,8 +464,8 @@ function updateFilterUI() {
   const yesterdayIso = new Date();
   yesterdayIso.setDate(yesterdayIso.getDate() - 1);
   const singleDay = dateFrom.value !== '' && dateFrom.value === dateTo.value;
-  document.getElementById('date-quick-today-btn').classList.toggle('btn-active', singleDay && dateFrom.value === isoOf(todayIso));
-  document.getElementById('date-quick-yesterday-btn').classList.toggle('btn-active', singleDay && dateFrom.value === isoOf(yesterdayIso));
+  setDateQuickBtnActive(document.getElementById('date-quick-today-btn'), singleDay && dateFrom.value === isoOf(todayIso));
+  setDateQuickBtnActive(document.getElementById('date-quick-yesterday-btn'), singleDay && dateFrom.value === isoOf(yesterdayIso));
 
   const anyActive = searchActive || statusActive || dateActive;
   const activeCount = [searchActive, statusActive, dateActive].filter(Boolean).length;
@@ -459,7 +481,7 @@ function updateFilterUI() {
 
 // Keeps the stat cards' ring/border highlight in sync with the active
 // status. "All Transactions" (data-status="") is active when unset.
-const STAT_CARD_ACCENTS = {
+var STAT_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
   'borrowed': 'ring-info/40 border-info/40',
   'overdue': 'ring-error/40 border-error/40',
@@ -479,7 +501,7 @@ function updateStatCardUI(currentStatus) {
 
 // Keeps the address bar in sync with search/filters/sort/paging, same
 // pattern as the assets page's htmx:configRequest listener.
-document.body.addEventListener('htmx:configRequest', function (evt) {
+window.pageConfigRequestHandler = function (evt) {
   const tableContainer = document.getElementById('transaction-table-container');
   if (evt.detail.target !== tableContainer) return;
   try {
@@ -494,19 +516,19 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
     });
     window.history.replaceState({}, '', url);
   } catch (e) {
-    // Non-fatal -- worst case the address bar just doesn't reflect the
+    // Non-fatal - worst case the address bar just doesn't reflect the
     // latest filter state.
   }
-});
+};
 
-document.addEventListener('htmx:afterSwap', function (evt) {
+window.pageAfterSwapHandler = function (evt) {
   if (evt.target && evt.target.id === 'transaction-table-container') {
     updateFilterUI();
     clearTxnSelection();
   }
-});
+};
 
-document.addEventListener('DOMContentLoaded', function () {
+setTimeout(function () {
   updateFilterUI();
 
   // Cold-load replay: fires the real htmx request so a hard refresh on a
@@ -537,7 +559,7 @@ document.addEventListener('DOMContentLoaded', function () {
     swap: 'innerHTML',
     values: Object.fromEntries(params)
   });
-});
+}, 0);
 
 function isTypingTarget(el) {
   if (!el) return false;
@@ -553,7 +575,7 @@ function isModalOpen() {
   return containers.some((c) => c.querySelector(':scope > dialog[open]'));
 }
 
-document.addEventListener('keydown', function (e) {
+window.pageKeydownHandler = function (e) {
   if (e.ctrlKey || e.metaKey) return;
 
   // / - focus search
@@ -634,6 +656,6 @@ document.addEventListener('keydown', function (e) {
     }
     clearAllFilters();
   }
-});
+};
 </script>
 {% endblock %}

@@ -1,25 +1,89 @@
 <!-- hx-swap="beforeend" into #modal-container stacks this on top of the profile
-     modal instead of replacing it -- each modal only removes itself. -->
+     modal instead of replacing it - each modal only removes itself. -->
 <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
      onclick="if (event.target === this) this.remove()">
   <div class="bg-base-100 rounded-xl shadow-xl border border-base-300 w-full max-w-3xl max-h-[85vh] flex flex-col">
     <div class="flex items-center justify-between p-5 border-b border-base-300 shrink-0">
       <h3 class="font-bold text-lg">
-        Full Activity &mdash; {{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}
+        Full Activity - {{ full_name(staff_member.first_name, staff_member.last_name, staff_member.middle_name, staff_member.suffix) }}
       </h3>
-      <!-- ESC pill instead of an X icon -- see assets/_details_modal.html for why. -->
+      <!-- ESC pill instead of an X icon - see assets/_details_modal.html for why. -->
       <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all"
               aria-label="Close (Esc)" data-tooltip="Close (Esc)" onclick="this.closest('.fixed').remove()">
         ESC
       </button>
     </div>
 
-    <div class="p-5 overflow-y-auto min-h-0">
-      <!-- Reuses audit_log/_table.html's partial as-is (matching its hx-include ids)
-           instead of forking it; #audit-staff-filter scopes it to this staff member. -->
-      <input type="hidden" id="audit-since-filter" value="">
-      <input type="hidden" id="audit-until-filter" value="">
-      <input type="hidden" id="audit-staff-filter" value="{{ staff_member.id }}">
+    <!-- px-5 pb-5 (no pt-5) rather than a flat p-5 - the table partial's
+         thead uses `sticky top-0`, which sticks to THIS div's padding edge
+         (it's the nearest scrolling ancestor). A top padding here would
+         leave a gap above the sticky point that the filter row could still
+         scroll up through and be visible in, floating above the sticky
+         table header right under the modal's own fixed header. Moving that
+         top spacing onto the filter row itself (pt-5 below) keeps the same
+         look with nothing left to bleed through. -->
+    <div class="px-5 pb-5 overflow-y-auto min-h-0">
+      <!-- Reuses audit_log/_table.html's partial as-is (matching its
+           hx-include ids) instead of forking it; #audit-staff-filter scopes
+           it to this staff member and stays hidden (not user-changeable
+           here, unlike the Activity Log page's own staff dropdown).
+
+           Each of these three MUST carry a real name= attribute -
+           hx-include (like native form submission) only sends a field
+           whose element actually has one, id= alone isn't enough. This
+           modal's since/until/staff_id used to be missing all three,
+           which meant this "Full Activity" view was silently never
+           actually filtered by staff (or date) at all - it showed the
+           latest 20 entries across EVERY staff member, most of which
+           didn't even belong to whoever's profile this was opened from.
+           See the project conversation history for the full diagnosis. -->
+      <div class="flex flex-wrap items-center gap-3 mb-4 pt-5">
+        <div id="full-activity-date-presets" class="join rounded-lg">
+          <button type="button" id="full-activity-preset-today" class="join-item btn btn-xs btn-outline"
+                  onclick="fullActivitySetDatePreset('today')">Today</button>
+          <button type="button" id="full-activity-preset-yesterday" class="join-item btn btn-xs btn-outline"
+                  onclick="fullActivitySetDatePreset('yesterday')">Yesterday</button>
+        </div>
+        <div id="full-activity-date-filters" class="join rounded-lg transition-shadow" data-tooltip="Date range">
+          <button type="button" id="full-activity-date-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
+                  onclick="fullActivityClearDateFilter()" aria-label="Clear date range filter" data-tooltip="Clear date range filter" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </button>
+          <input type="date" id="audit-since-filter" name="since"
+                 aria-label="From date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="" data-tooltip="From"
+                 hx-get="/api/v1/audit-log/table"
+                 hx-trigger="change"
+                 hx-target="#audit-log-table-container"
+                 hx-swap="innerHTML"
+                 hx-include="#audit-until-filter, #audit-staff-filter"
+                 hx-vals='{"limit": 20, "offset": 0}'
+                 onchange="fullActivityUpdateFilterUI()">
+          <div class="join-item flex items-center px-1.5 h-8 border-t border-b border-base-300 bg-base-100 text-base-content/40 text-sm" aria-hidden="true">&ndash;</div>
+          <input type="date" id="audit-until-filter" name="until"
+                 aria-label="To date"
+                 class="input input-bordered input-sm join-item w-32"
+                 value="" data-tooltip="To"
+                 hx-get="/api/v1/audit-log/table"
+                 hx-trigger="change"
+                 hx-target="#audit-log-table-container"
+                 hx-swap="innerHTML"
+                 hx-include="#audit-since-filter, #audit-staff-filter"
+                 hx-vals='{"limit": 20, "offset": 0}'
+                 onchange="fullActivityUpdateFilterUI()">
+        </div>
+
+        <!-- Same "Clear filters" convention as Inventory/Activity Log/etc. -
+             staff_id isn't included since it's fixed to this profile, not a
+             user-clearable filter here; this only ever clears the date range. -->
+        <button type="button" id="full-activity-clear-filters-btn" class="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/10 hidden relative"
+                onclick="fullActivityClearDateFilter()" data-tooltip="Clear filters (Esc)" aria-label="Clear filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+          <span id="full-activity-clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
+        </button>
+      </div>
+      <input type="hidden" id="audit-staff-filter" name="staff_id" value="{{ staff_member.id }}">
 
       <div id="audit-log-table-container"
            hx-get="/api/v1/audit-log/table"
@@ -33,5 +97,106 @@
         </div>
       </div>
     </div>
+
+    <script>
+      // Scoped to this modal instance; the Activity Log page's own
+      // same-named ids/functions never coexist with this modal in the
+      // DOM at once, same assumption the original id-reuse already made.
+      function fullActivityFormatDateLocal(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+      function fullActivityFireChange(el) {
+        if (window.htmx) htmx.trigger(el, 'change');
+        else el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      function fullActivitySetDatePreset(which) {
+        const since = document.getElementById('audit-since-filter');
+        const until = document.getElementById('audit-until-filter');
+        const target = new Date();
+        if (which === 'yesterday') target.setDate(target.getDate() - 1);
+        const dateStr = fullActivityFormatDateLocal(target);
+        since.value = dateStr;
+        until.value = dateStr;
+        fullActivityFireChange(since);
+        fullActivityUpdateFilterUI();
+      }
+      function fullActivityClearDateFilter() {
+        const since = document.getElementById('audit-since-filter');
+        const until = document.getElementById('audit-until-filter');
+        if (since.value === '' && until.value === '') return;
+        since.value = '';
+        until.value = '';
+        fullActivityFireChange(since);
+        fullActivityUpdateFilterUI();
+      }
+      function fullActivityUpdateFilterUI() {
+        const since = document.getElementById('audit-since-filter');
+        const until = document.getElementById('audit-until-filter');
+        const dateActive = since.value !== '' || until.value !== '';
+        const wrap = document.getElementById('full-activity-date-filters');
+        wrap.classList.toggle('ring-2', dateActive);
+        wrap.classList.toggle('ring-primary/40', dateActive);
+        document.getElementById('full-activity-date-clear-btn').disabled = !dateActive;
+
+        // Highlights whichever preset (if either) matches the current range -
+        // same btn-primary/btn-outline swap as audit_log.html's own Today/
+        // Yesterday presets (not btn-active, which reads as nearly identical
+        // to a resting .btn in this theme - see reports.html's
+        // setReportGroupBy comment for the full reasoning). This used to have
+        // no highlight logic at all, unlike every other quick-filter pair in
+        // the app.
+        const todayStr = fullActivityFormatDateLocal(new Date());
+        const yesterdayStr = fullActivityFormatDateLocal(new Date(Date.now() - 86400000));
+        const isToday = since.value === todayStr && until.value === todayStr;
+        const isYesterday = since.value === yesterdayStr && until.value === yesterdayStr;
+        const todayBtn = document.getElementById('full-activity-preset-today');
+        const yesterdayBtn = document.getElementById('full-activity-preset-yesterday');
+        todayBtn.classList.toggle('btn-primary', isToday);
+        todayBtn.classList.toggle('btn-outline', !isToday);
+        yesterdayBtn.classList.toggle('btn-primary', isYesterday);
+        yesterdayBtn.classList.toggle('btn-outline', !isYesterday);
+
+        const clearBtn = document.getElementById('full-activity-clear-filters-btn');
+        clearBtn.classList.toggle('hidden', !dateActive);
+        document.getElementById('full-activity-clear-filters-count').textContent = dateActive ? 1 : 0;
+        const clearLabel = dateActive ? 'Clear 1 filter' : 'Clear filters';
+        clearBtn.setAttribute('title', clearLabel);
+        clearBtn.setAttribute('aria-label', clearLabel);
+      }
+
+      // Escape clears the date filter here (matching Inventory/Activity
+      // Log's own "Esc = clear filters" convention) rather than closing
+      // the modal outright, but only while there's actually a filter to
+      // clear - falls through to the modal's own native Escape-to-close
+      // otherwise. `modalRoot` is captured now, while this <script> is
+      // actually running (document.currentScript is only valid
+      // synchronously, not from inside a later event callback), so the
+      // listener can tell once this modal's been removed and stop.
+      (function () {
+        const modalRoot = document.currentScript.closest('.fixed');
+        document.addEventListener('keydown', function fullActivityEscHandler(e) {
+          if (!modalRoot.isConnected) {
+            document.removeEventListener('keydown', fullActivityEscHandler);
+            return;
+          }
+          if (e.key !== 'Escape') return;
+          if (document.getElementById('audit-log-detail-modal')?.open) return;
+          const since = document.getElementById('audit-since-filter');
+          const until = document.getElementById('audit-until-filter');
+          if (since.value === '' && until.value === '') return;
+          e.preventDefault();
+          e.stopPropagation();
+          fullActivityClearDateFilter();
+        });
+      })();
+    </script>
   </div>
 </div>
+
+<!-- Same click-a-row-for-details behavior as the main Activity Log page --
+     these rows are the exact same audit_log/_table.html partial, whose
+     onclick="openAuditLogDetail(this)" needs this to exist here too. -->
+{% include "audit_log/_detail_modal.html" %}
