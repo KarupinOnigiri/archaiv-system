@@ -1,11 +1,13 @@
-"""Query-building and mutation logic for routes/assets.py (assets + categories).
+"""Query-building ug mutation logic para sa routes/assets.py (assets +
+categories).
 
-Same convention as services/member_service.py: every function takes an already-open
-`conn` (the route owns open/close, except import_assets_csv which needs raw
-isolation-level control and opens its own) and returns `(data, error)`. `error` is
-`None` on success, or `(error_payload, status, context)` on failure - `error_payload`
-is a plain dict (for jsonify), `context` holds extra objects (e.g. {"asset": asset})
-the route may need to re-render an inline-error template on non-JSON requests.
+Same convention sa services/member_service.py: matag function mo-dawat ug
+bukas nga `conn` (ang route ang mo-open/close, gawas sa import_assets_csv
+nga naa kaugalingong isolation-level control), mobalik ug `(data, error)`.
+`error` None kung malampuson, o `(error_payload, status, context)` kung
+napakyas - `error_payload` plain dict (para sa jsonify), `context` naay
+dugang objects (e.g. {"asset": asset}) nga gikinahanglan sa route para
+i-rerender ang inline-error template sa non-JSON nga request.
 """
 
 import csv
@@ -100,11 +102,14 @@ _FOLDER_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
 def _no_ctx(error_payload, status):
+    """Wrapper para sa error tuple nga walay dugang context - kadaghanan
+    sa mga error dinhi walay laing object nga gikinahanglan sa route."""
     return (error_payload, status, {})
 
 
 def _ensure_category_sort_order_column():
-    """Adds sort_order to categories if missing, backfilled alphabetically. Safe to rerun."""
+    """Dugangan ang sort_order sa categories kung wala pa, backfilled
+    alphabetically. Safe rerun-on."""
     conn = get_db_connection()
     try:
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(categories)").fetchall()}
@@ -127,7 +132,8 @@ _ensure_category_sort_order_column()
 
 
 def fetch_asset_images(asset_id, conn):
-    """Returns {1: row_or_None, 2: row_or_None} so templates can index by slot number."""
+    """Mobalik ug {1: row_or_None, 2: row_or_None} para ang templates
+    makaindex base sa slot number."""
     rows = conn.execute("SELECT * FROM asset_images WHERE asset_id = ?", (asset_id,)).fetchall()
     by_slot = {slot: None for slot in ADDITIONAL_IMAGE_SLOTS}
     for row in rows:
@@ -136,7 +142,8 @@ def fetch_asset_images(asset_id, conn):
 
 
 def _validate_category_id(conn, category_id, required=False):
-    """Local, non-Flask mirror of utils.validators.validate_lookup_id(conn, "categories", ...)."""
+    """Local, non-Flask nga mirror sa
+    utils.validators.validate_lookup_id(conn, "categories", ...)."""
     if category_id is None:
         if required:
             return {"error": "Missing required field: category_id"}, 400
@@ -148,8 +155,9 @@ def _validate_category_id(conn, category_id, required=False):
 
 
 def _validate_int(raw, field_name, allow_negative=False):
-    """Shared int-field parser for quantity/reorder_threshold. Returns
-    (value_or_None, error_message_or_None)."""
+    """Shared int-field parser para sa quantity/reorder_threshold.
+
+    Returns: tuple (value_or_None, error_message_or_None)."""
     if raw in (None, ""):
         return None, None
     try:
@@ -162,14 +170,14 @@ def _validate_int(raw, field_name, allow_negative=False):
 
 
 def _validate_asset_type_fields(asset_type_raw, quantity_raw, reorder_threshold_raw):
-    """Returns (asset_type, quantity, reorder_threshold, error_message_or_None).
-    Consumables need a quantity to mean anything (that's the whole point -
-    quantity tracks availability instead of a status flip); reorder_threshold
-    stays optional (no low-stock badge without one, nothing more). Serialized
-    assets (the default) always come back with quantity/reorder_threshold
-    forced to None - those columns aren't meaningful for a uniquely-tagged
-    physical item, so silently ignore any stray values rather than erroring
-    on them (e.g. a leftover form field)."""
+    """Ang consumable nga asset kinahanglan gyud naay quantity - mao gyud
+    ang punto niini, ang quantity ang nagsubay sa availability imbes usa
+    ka status flip; ang reorder_threshold optional ra. Ang serialized nga
+    asset (default) kanunay quantity/reorder_threshold None - dili
+    makahulugan kining mga column para sa usa ka uniquely-tagged nga
+    physical item, so hilom ra i-ignore ang bisan unsa nga stray value.
+
+    Returns: tuple (asset_type, quantity, reorder_threshold, error)."""
     asset_type = asset_type_raw or "serialized"
     if asset_type not in VALID_ASSET_TYPES:
         return None, None, None, f"asset_type must be one of: {', '.join(VALID_ASSET_TYPES)}"
@@ -191,11 +199,10 @@ def _validate_asset_type_fields(asset_type_raw, quantity_raw, reorder_threshold_
 
 
 def _default_next_maintenance_due(conn, acquired_date, last_calibrated):
-    """Auto-fills next_maintenance_due when staff don't set one by hand -
-    last_calibrated + the global default interval (migration 0059) if a
-    calibration date is on record, else acquired_date + interval, else just
-    today + interval. Consumables never call this (see asset_type docs -
-    they have no maintenance concept)."""
+    """Mag-auto-fill sa next_maintenance_due kung wala ni-set ang staff -
+    last_calibrated + ang global default interval kung naa'y calibration
+    date, kung wala, acquired_date + interval, kung wala pod, today +
+    interval. Ang consumable dili mutawag ani - walay maintenance concept."""
     interval_days = get_default_maintenance_interval_days(conn)
     anchor = last_calibrated or acquired_date
     if anchor:
@@ -207,11 +214,11 @@ def _default_next_maintenance_due(conn, acquired_date, last_calibrated):
 
 
 def _validate_purchase_cost(raw):
-    """Optional purchase cost (Reports' Asset Valuation section reads this).
-    Returns (value_or_None, error_message_or_None) - mirrors normalize_barcode_id's
-    shape so callers can reuse the same `if error: return None, _no_ctx({"error": error}, 400)`
-    pattern. Blank/missing is fine - most existing assets won't have this
-    backfilled; a negative or unparseable value is rejected."""
+    """Optional nga purchase cost (gigamit sa Reports' Asset Valuation).
+    Mirrors normalize_barcode_id's shape para pareho ra ang pattern sa
+    caller. Blank/missing OK ra; negative o dili ma-parse i-reject.
+
+    Returns: tuple (value_or_None, error_message_or_None)."""
     if raw in (None, ""):
         return None, None
     try:
@@ -227,7 +234,11 @@ def _validate_purchase_cost(raw):
 
 
 def get_assets_table_context(conn, args, limit, offset):
-    """Shared table context for view_assets() and assets_page(), so they can't drift apart."""
+    """Shared table context para sa view_assets() ug assets_page(), para
+    dili sila mag-drift apart.
+
+    Returns: dict {assets, total_count, limit, offset, ...} - tan-awa ang
+    return statement sa ubos para sa tanang keys."""
     show_archived = args.get("show_archived") == "1"
 
     if show_archived:
@@ -365,6 +376,12 @@ def get_assets_table_context(conn, args, limit, offset):
 
 
 def get_asset_stat_cards(conn):
+    """Ang 4 ka numero sa Inventory page's stat cards (All/Available/
+    Borrowed/Maintenance) dungan sa low-stock ug maintenance-due-soon
+    counts.
+
+    Returns: dict {stat_all, stat_available, stat_borrowed,
+    stat_maintenance, stat_low_stock, stat_maintenance_due_soon}."""
     lead_days = get_maintenance_reminder_lead_days(conn)
     counts = conn.execute(
         """
@@ -398,10 +415,13 @@ def get_asset_stat_cards(conn):
 
 
 def list_categories(conn):
+    """Tanang categories, sorted, para sa dropdown/select options."""
     return conn.execute("SELECT * FROM categories ORDER BY sort_order, name").fetchall()
 
 
 def get_categories_with_asset_count(conn):
+    """Categories dungan sa ilang asset_count - para sa Manage Categories
+    modal, mao ni nag-decide kung deletable ba ang category."""
     # asset_count skips archived assets, so an all-archived category still looks deletable.
     return conn.execute(
         """
@@ -415,6 +435,8 @@ def get_categories_with_asset_count(conn):
 
 
 def add_category(conn, name, staff_id):
+    """Mag-add ug bag-ong category - naay unique-name check ug auto
+    sort_order (mo-last siya sa listahan)."""
     name = (name or "").strip()
     if not name:
         return None, _no_ctx({"error": "Missing required field: name"}, 400)
@@ -446,6 +468,7 @@ def add_category(conn, name, staff_id):
 
 
 def edit_category(conn, category_id, name, staff_id):
+    """Mag-rename ug category - naay unique-name check pud."""
     name = (name or "").strip()
     if not name:
         return None, _no_ctx({"error": "Missing required field: name"}, 400)
@@ -474,7 +497,8 @@ def edit_category(conn, category_id, name, staff_id):
 
 
 def reorder_categories(conn, ordered_ids, staff_id):
-    """Saves category order from the Manage Categories modal. Mirrors reorder_departments."""
+    """Mag-save sa bag-ong category order gikan sa Manage Categories modal
+    (drag-and-drop). Mirrors reorder_departments."""
     if len(set(ordered_ids)) != len(ordered_ids):
         return None, _no_ctx({"error": "order contains duplicate category ids"}, 400)
 
@@ -504,7 +528,8 @@ def reorder_categories(conn, ordered_ids, staff_id):
 
 
 def delete_category(conn, category_id, staff_id):
-    """Blocks deleting a category with active assets; asks for reassignment first."""
+    """Mag-delete ug category, pero dili tugotan kung naay active assets pa
+    - reassign una sa laing category before delete."""
     category = conn.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
     if category is None:
         return None, _no_ctx({"error": "Category not found"}, 404)
@@ -547,13 +572,11 @@ def delete_category(conn, category_id, staff_id):
 
 
 def create_asset(conn, data, image_file, additional_image_files, staff_id):
-    """Inserts a new asset. asset_id always auto-generates as AST#####; barcode_id
-    matches it unless the caller supplies one (e.g. scanned off an existing
-    manufacturer/asset-tag barcode already on the item), in which case that value
-    is reused instead of printing a new barcode sticker.
-    Images are validated by the route before this is called; this function
-    does the actual save-to-disk + DB write, rolling back and cleaning up
-    saved files together if any step fails."""
+    """Mag-insert ug bag-ong asset. Ang asset_id kanunay auto-generate as
+    AST##### - ang barcode_id parehas ana gawas kung naay gi-supply na
+    custom barcode (e.g. naa nay existing manufacturer tag). Images gi
+    validate na sa route; dinhi na lang ang save-to-disk + DB write, ug
+    mag-rollback + cleanup sa saved files tanan kung naay mapakyas."""
     error = _validate_category_id(conn, data.get("category_id") or None)
     if error:
         return None, _no_ctx(*error)
@@ -691,7 +714,8 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
 
 
 def _parse_import_deleted_at(raw):
-    """Row is archived if deleted_at is non-blank. Returns None on unparseable so it errors, not un-archives."""
+    """Archived na ang row kung naay laman ang deleted_at. Mobalik ug None
+    kung dili ma-parse aron mo-error dayon, dili basta mag-unarchive."""
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d %H:%M:%S")
@@ -701,8 +725,9 @@ def _parse_import_deleted_at(raw):
 
 
 def import_assets_csv(content, mode, staff_id):
-    """Bulk-adds assets from CSV; 'preview' rolls back, 'commit' keeps it. Opens its own
-    connection because it needs raw isolation_level/SAVEPOINT control the shared conn doesn't offer."""
+    """Bulk-add ug assets gikan sa CSV - 'preview' mode mo-rollback ra,
+    'commit' mo-save jud. Naay kaugalingong connection kay kinahanglan raw
+    isolation_level/SAVEPOINT control nga wala sa shared conn."""
     dry_run = mode == "preview"
 
     reader = csv.DictReader(io.StringIO(content))
@@ -773,8 +798,9 @@ def import_assets_csv(content, mode, staff_id):
 
 
 def _import_assets_rows(reader, header_map, conn, staff_id, created, errors, new_categories, seen_category_names):
-    """The per-row body of import_assets_csv(), split out so the outer function's
-    try/finally can guarantee conn.close() runs no matter what happens in here."""
+    """Ang per-row logic sa import_assets_csv(), gi-separate para ang
+    outer function's try/finally maka-guarantee nga mo-run gyud ang
+    conn.close() bisan unsay mahitabo diri."""
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         name = (row.get("name") or "").strip()
@@ -857,10 +883,14 @@ def _import_assets_rows(reader, header_map, conn, staff_id, created, errors, new
 
 
 def default_export_basename(show_archived):
+    """Default filename para sa export - naay date stamp, ug "archived" o
+    "active" depende sa gi-export."""
     return f"assets_{'archived' if show_archived else 'active'}_{datetime.now().strftime('%Y%m%d')}"
 
 
 def resolve_export_columns(show_archived, selected):
+    """Mag-filter sa gi-request nga columns batok sa allowed export set -
+    mo-add ug deleted_at column kung archived assets ang gi-export."""
     available_columns = list(EXPORT_CSV_COLUMNS)
     if show_archived:
         available_columns.append("deleted_at")
@@ -875,6 +905,8 @@ def resolve_export_columns(show_archived, selected):
 
 
 def get_assets_for_export(conn, show_archived):
+    """Kuha'on tanang assets nga i-export (active o archived), naay
+    category name na dungan."""
     where_clause = "assets.deleted_at IS NOT NULL" if show_archived else "assets.deleted_at IS NULL"
     return conn.execute(
         f"""
@@ -888,7 +920,8 @@ def get_assets_for_export(conn, show_archived):
 
 
 def build_assets_export_file(assets, columns, export_format, show_archived):
-    """Returns (file_bytes, content_type, export_format)."""
+    """Mag-build sa actual export file (xlsx o csv). Returns (file_bytes,
+    content_type, export_format)."""
     if export_format == "xlsx":
         wb = Workbook()
         ws = wb.active
@@ -922,7 +955,9 @@ def build_assets_export_file(assets, columns, export_format, show_archived):
 
 
 def save_export_copy(file_bytes, save_dir, filename):
-    """Best-effort server-side copy of an export; returns (saved_path_or_None, warning_or_None)."""
+    """Best-effort server-side copy sa export file - kung mapakyas, dili
+    mag-error total naa may nadownload na ang user. Returns
+    (saved_path_or_None, warning_or_None)."""
     try:
         os.makedirs(save_dir, exist_ok=True)
         saved_path = os.path.join(save_dir, filename)
@@ -935,7 +970,8 @@ def save_export_copy(file_bytes, save_dir, filename):
 
 
 def list_export_subfolders(app_root, requested_path):
-    """Lists subfolders under app_root for the export folder picker; clamped like the save-path."""
+    """Listahan sa subfolders ubos sa app_root para sa export folder
+    picker - clamped gihapon sama sa save-path (dili makagawas sa app_root)."""
     from utils.exports import resolve_within_root
 
     resolved, _ = resolve_within_root(requested_path, app_root)
@@ -961,6 +997,8 @@ def list_export_subfolders(app_root, requested_path):
 
 
 def create_export_subfolder(app_root, requested_path, name):
+    """Mag-himo ug bag-ong subfolder para sa export destination - name
+    validated batok sa safe-filename regex."""
     from utils.exports import resolve_within_root
 
     resolved, _ = resolve_within_root(requested_path, app_root)
@@ -980,6 +1018,8 @@ def create_export_subfolder(app_root, requested_path, name):
 
 
 def get_asset(conn, asset_id):
+    """Single active (non-deleted) asset dungan sa category name - para sa
+    detail view."""
     asset = conn.execute(
         """
         SELECT assets.*, categories.name AS category_name
@@ -996,6 +1036,8 @@ def get_asset(conn, asset_id):
 
 
 def get_asset_for_edit(conn, asset_id):
+    """Asset (bisan deleted na) plus categories dropdown ug additional
+    images - para sa Edit modal, mao ni ang gina-load pag-open sa form."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1005,8 +1047,11 @@ def get_asset_for_edit(conn, asset_id):
 
 
 def update_asset(conn, asset_id, data, image_file, remove_image, additional_image_updates, swap_requested, staff_id):
-    """additional_image_updates: {slot: {"file": FileStorage_or_None, "remove": bool}} from the route.
-    Returns (data, error) where data on success is {"asset": asset_row, "condition": new_condition}."""
+    """Mag-update sa asset - naay dako nga logic para sa barcode change,
+    image replace/remove/swap, ug consumable/serialized status rules.
+    additional_image_updates: {slot: {"file": FileStorage_or_None, "remove":
+    bool}} gikan sa route. Returns (data, error) - data on success kay
+    {"asset": asset_row, "condition": new_condition}."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
 
     if asset is None:
@@ -1288,6 +1333,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
 
 
 def get_asset_for_delete(conn, asset_id):
+    """Asset row (bisan unsay status) para sa delete-confirmation modal."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1295,6 +1341,8 @@ def get_asset_for_delete(conn, asset_id):
 
 
 def delete_asset(conn, asset_id, staff_id):
+    """Soft-delete ra (deleted_at timestamp) - dili tugotan kung borrowed
+    o reserved pa ang asset."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
 
     if asset is None:
@@ -1341,7 +1389,8 @@ def delete_asset(conn, asset_id, staff_id):
 
 
 def undo_delete_asset(conn, asset_id, staff_id):
-    """Undo button on the delete toast; admin/in_charge like delete, no condition prompt needed."""
+    """Undo button sa delete toast - i-unarchive dayon, walay condition
+    prompt kay parehas ra sa delete permission (admin/in_charge)."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
 
     if asset is None:
@@ -1373,7 +1422,8 @@ def undo_delete_asset(conn, asset_id, staff_id):
 
 
 def bulk_delete_assets(conn, ids, staff_id):
-    """Soft-deletes multiple assets; a bad row goes into `skipped` instead of failing the whole batch."""
+    """Soft-delete ug daghang assets dungan - kung naay bad row, mo-adto ra
+    na sa `skipped` list, dili mo-fail ang tibuok batch."""
     deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     deleted, skipped = [], []
 
@@ -1419,7 +1469,9 @@ def bulk_delete_assets(conn, ids, staff_id):
 
 
 def bulk_restore_assets(conn, ids, staff_id):
-    """Restores multiple archived assets, admin-only. Disposed ones are skipped - no per-row condition UI."""
+    """Mag-restore ug daghang archived assets, admin-only. Ang disposed
+    kay laktawan - kinahanglan i-restore isa-isa para makapili ug bag-ong
+    condition."""
     restored, skipped = [], []
 
     for asset_id in ids:
@@ -1467,8 +1519,9 @@ def bulk_restore_assets(conn, ids, staff_id):
 
 
 def bulk_reassign_category(conn, ids, category_id, staff_id):
-    """Moves multiple assets to a different category in one action - same
-    partial-success shape as bulk_delete_assets/bulk_restore_assets."""
+    """Mag-move ug daghang assets ngadto sa laing category sa usa ka
+    action - parehas partial-success shape sa
+    bulk_delete_assets/bulk_restore_assets."""
     error = _validate_category_id(conn, category_id)
     if error:
         return None, _no_ctx(*error)
@@ -1515,10 +1568,11 @@ BULK_STATUS_CHANGE_VALUES = ("available", "maintenance")
 
 
 def bulk_change_status(conn, ids, new_status, staff_id):
-    """Bulk status change - limited to available<->maintenance (the two
-    statuses editable by hand at all; borrowed/reserved are checkout-process-
-    only, see update_asset's own guard). Consumables and anything currently
-    borrowed/reserved are skipped, same reasoning as bulk_delete_assets."""
+    """Bulk status change - limited ra sa available<->maintenance (kining
+    duha ra ang pwede i-edit by hand; borrowed/reserved kay checkout-process
+    ra, tan-awa ang guard sa update_asset). Consumables ug bisan unsay
+    currently borrowed/reserved kay laktawan, parehas rason sa
+    bulk_delete_assets."""
     if new_status not in BULK_STATUS_CHANGE_VALUES:
         return None, _no_ctx(
             {"error": f"status must be one of: {', '.join(BULK_STATUS_CHANGE_VALUES)}"}, 400
@@ -1571,6 +1625,8 @@ def bulk_change_status(conn, ids, new_status, staff_id):
 
 
 def get_asset_for_restore(conn, asset_id):
+    """Deleted asset row para sa Restore modal (naay condition picker kung
+    disposed)."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1580,9 +1636,9 @@ def get_asset_for_restore(conn, asset_id):
 
 
 def restore_asset(conn, asset_id, condition, reason, staff_id):
-    """Admin-only, deliberately tighter than delete_asset (admin/in_charge)
-    - reversing a disposal is a bigger call than making one. Password check
-    happens in the route (it needs g.staff, which is Flask-bound)."""
+    """Admin-only, mas tighter pa sa delete_asset (admin/in_charge ra) -
+    ang pag-undo ug disposal mas dako na desisyon kaysa pag-himo ana.
+    Password check kay sa route na (kinahanglan g.staff, Flask-bound)."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
 
     if asset is None:
@@ -1630,6 +1686,8 @@ def restore_asset(conn, asset_id, condition, reason, staff_id):
 
 
 def get_asset_for_mark_calibrated(conn, asset_id):
+    """Validation-only lookup before mark_calibrated - dili tugotan kung
+    deleted na o consumable (walay calibration date)."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1641,11 +1699,11 @@ def get_asset_for_mark_calibrated(conn, asset_id):
 
 
 def mark_calibrated(conn, asset_id, staff_id):
-    """Sets last_calibrated to today (date-only, matching the Edit form's
-    <input type="date">) and, same as resolve_maintenance, recomputes
-    next_maintenance_due from that fresh date + the global default interval
-    - calibrating an asset resets its preventive-maintenance clock the same
-    way fixing one out of maintenance does."""
+    """Mag-set sa last_calibrated to today, ug parehas sa
+    resolve_maintenance, mag-recompute sa next_maintenance_due base sa
+    bag-ong date + global default interval - ang pag-calibrate mo-reset sa
+    preventive-maintenance clock, parehas ra sa pag-ayo gikan sa
+    maintenance."""
     asset, error = get_asset_for_mark_calibrated(conn, asset_id)
     if error:
         error_payload, status, _ctx = error
@@ -1684,6 +1742,8 @@ def mark_calibrated(conn, asset_id, staff_id):
 
 
 def get_asset_for_mark_maintenance(conn, asset_id):
+    """Validation-only lookup before mark_for_maintenance - dili tugotan
+    kung deleted, consumable, borrowed/reserved, o maintenance na diay."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1701,14 +1761,14 @@ def get_asset_for_mark_maintenance(conn, asset_id):
 
 
 def mark_for_maintenance(conn, asset_id, notes, staff_id):
-    """Quick action: flips a serialized asset straight to status='maintenance'
-    without going through Edit. notes is optional and appended the same way
-    resolve_maintenance appends its own (timestamped, not overwritten).
-    Also sets condition='for_repair' - status='maintenance' with the old
-    condition left untouched (often still "functional") read as a
-    contradiction elsewhere in the UI (e.g. the Inventory table's Condition
-    column), so this keeps the two in sync the same way resolve_maintenance
-    below sets condition back on the way out."""
+    """Quick action: i-flip diretso ang serialized asset ngadto sa
+    status='maintenance' nga dili moagi sa Edit. notes optional ra, gi-
+    append parehas sa gina-himo sa resolve_maintenance (timestamped, dili
+    ma-overwrite). Naa say condition='for_repair' - kung status='maintenance'
+    pero ang condition wala mausab (kanunay "functional" gihapon) daw
+    sukwahi sa uban parts sa UI (e.g. Inventory table's Condition column),
+    mao nga gi-sync ni duha, parehas sa gina-himo sa resolve_maintenance
+    pag-set balik sa condition pagawas sa maintenance."""
     asset, error = get_asset_for_mark_maintenance(conn, asset_id)
     if error:
         error_payload, status, _ctx = error
@@ -1748,6 +1808,8 @@ def mark_for_maintenance(conn, asset_id, notes, staff_id):
 
 
 def get_asset_for_resolve_maintenance(conn, asset_id):
+    """Validation-only lookup before resolve_maintenance - kinahanglan
+    naa gyud sa status='maintenance' para dinhi ma-resolve."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1757,21 +1819,18 @@ def get_asset_for_resolve_maintenance(conn, asset_id):
 
 
 def resolve_maintenance(conn, asset_id, condition, notes, staff_id, next_maintenance_due=None):
-    """Quick action for the common "maintenance is done, put it back into
-    circulation" case, without going through the full Edit modal. Always
-    brings the asset back to status='available' - if it turned out to be
-    unfixable, disposing it is a different, more final action that belongs
-    in Edit, not this shortcut. notes is optional and appended to the
-    asset's existing notes (timestamped) rather than replacing them, so a
-    repair history isn't silently overwritten each time this is used.
+    """Quick action para sa "human na ang maintenance, ibalik sa
+    circulation" case, dili moagi sa full Edit modal. Kanunay mo-balik
+    status='available' - kung dili na maayo, disposal na na, laing action
+    na sa Edit, dili dinhi. notes optional, gi-append sa existing notes
+    (timestamped) dili ma-overwrite aron dili mawala ang repair history.
 
-    checkouts_since_maintenance always resets to 0 here - servicing the
-    asset restarts its interval-based schedule regardless of whether that
-    schedule is even what triggered this particular maintenance cycle.
-    next_maintenance_due is optional and, if given, replaces the stored
-    date-based due date; leaving it blank auto-computes a fresh one (today
-    + the global default interval - migration 0059) rather than clearing it
-    to nothing, so resolving maintenance never silently drops the schedule."""
+    checkouts_since_maintenance kanunay mag-reset to 0 diri - ang pag-
+    service mo-restart sa interval schedule bisan unsa pay nag-trigger
+    ana. next_maintenance_due optional, kung gi-supply mo-replace sa
+    stored due date; kung blank, auto-compute ug bag-o (today + global
+    default interval) dili i-clear to nothing, aron dili mawala ang
+    schedule."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
 
     if asset is None:
@@ -1839,12 +1898,12 @@ def resolve_maintenance(conn, asset_id, condition, notes, staff_id, next_mainten
 
 
 def get_maintenance_due_assets(conn, within_days=None):
-    """Assets due (or nearly due) for maintenance, by whichever trigger
-    applies - date-based (next_maintenance_due within `within_days`, or
-    already past due if within_days is None) or usage-based
-    (checkouts_since_maintenance has reached maintenance_interval_checkouts).
-    Excludes anything already in the reactive maintenance flow (status=
-    'maintenance') and soft-deleted assets - both would be noise here."""
+    """Assets nga due (o hapit na due) para sa maintenance, bisan unsa nga
+    trigger - date-based (next_maintenance_due within `within_days`, o
+    overdue na kung within_days=None) o usage-based
+    (checkouts_since_maintenance na-reach na ang maintenance_interval_
+    checkouts). Wala dinhi ang naa na sa reactive maintenance flow
+    (status='maintenance') ug soft-deleted assets - noise ra na tanan."""
     if within_days is not None:
         date_clause = "assets.next_maintenance_due <= date('now', 'localtime', ? || ' days')"
         date_params = (str(within_days),)
@@ -1877,13 +1936,13 @@ def get_maintenance_due_assets(conn, within_days=None):
 
 
 def adjust_consumable_stock(conn, asset_id, delta, reason, staff_id):
-    """Manual stock correction (restock, spoilage/loss write-off, recount) -
-    distinct from the automatic decrement/increment on checkout/return
-    (services/transaction_service.py). `delta` is signed: positive to add
-    stock, negative to remove some. Guarded the same way the checkout-session
-    CAS pattern guards assets.status elsewhere in this file - the WHERE
-    clause itself prevents going negative under a concurrent adjustment,
-    rather than a read-then-write race."""
+    """Manual stock correction (restock, spoilage/loss write-off, recount)
+    - lahi ni sa automatic decrement/increment sa checkout/return
+    (services/transaction_service.py). `delta` signed: positive mag-dugang
+    stock, negative mag-kuha. Guarded parehas sa checkout-session CAS
+    pattern nga nag-guard sa assets.status - ang WHERE clause mismo ang
+    nag-prevent nga dili maka-negative bisan naay concurrent adjustment,
+    dili read-then-write race."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1921,6 +1980,8 @@ def adjust_consumable_stock(conn, asset_id, delta, reason, staff_id):
 
 
 def get_asset_by_barcode(conn, barcode):
+    """Lookup by barcode_id o rfid_id (naay decimal-scan fallback para sa
+    ubang RFID readers) - para sa scan-to-open flows."""
     # Some readers set to type scans as keyboard input only type the decimal
     # value of an EPC's last 3 bytes, not the full hex ID - the extra
     # `LIKE` branch below also matches on that, harmlessly a no-op (NULL)
@@ -1947,8 +2008,8 @@ def get_asset_by_barcode(conn, barcode):
 
 
 def fetch_asset_history(asset_id, limit, offset, conn):
-    """Shared by the JSON history endpoint and the history modal, so the
-    two never drift out of sync with each other."""
+    """Gina-share sa JSON history endpoint ug sa history modal, aron
+    parehas gyud silang duha, dili mag-drift sa usag-usa."""
     total_count = conn.execute(
         "SELECT COUNT(*) AS cnt FROM transactions WHERE asset_id = ?", (asset_id,)
     ).fetchone()["cnt"]
@@ -1968,6 +2029,8 @@ def fetch_asset_history(asset_id, limit, offset, conn):
 
 
 def get_asset_history(conn, asset_id, limit, offset):
+    """Paginated transaction history sa asset, JSON endpoint version
+    (plain dict lang, walay asset row)."""
     asset = conn.execute("SELECT id FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1982,6 +2045,8 @@ def get_asset_history(conn, asset_id, limit, offset):
 
 
 def get_asset_history_modal_data(conn, asset_id, limit, offset):
+    """Parehas ra sa get_asset_history, pero naay full asset row -
+    gikinahanglan sa History modal template para sa header info."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, _no_ctx({"error": "Asset not found"}, 404)
@@ -1997,18 +2062,13 @@ def get_asset_history_modal_data(conn, asset_id, limit, offset):
 
 
 def find_asset_id_by_barcode(conn, barcode):
-    """Exact-match lookup for the search box's Enter key (a physical barcode
-    scan) - tries barcode_id first, then falls back to rfid_id, so a
-    barcode OR an RFID tag ID typed/scanned into the search box jumps to
-    the same asset through this one endpoint. (The Inventory page used to
-    also have a dedicated "Scan RFID" button wired straight to this same
-    endpoint; that button was removed, this fallback-to-rfid_id behavior
-    was kept since the search box's barcode scan still benefits from it.)
-    Also falls back to decimal_scan_hex_suffix() for readers that type a
-    scan as just the decimal value of an EPC's last 3 bytes rather than
-    the full hex ID - see that function's docstring. Same
-    identifier-agnostic match asset_service's own monitoring-classification
-    query already uses (services/monitoring_service.py's record_rfid_event)."""
+    """Exact-match lookup para sa Enter key sa search box (physical
+    barcode scan) - mag-try sa barcode_id una, fallback sa rfid_id, aron
+    barcode OR RFID tag ID nga na-type/scan diretso mo-jump sa same asset.
+    Naay fallback pud sa decimal_scan_hex_suffix() para sa readers nga
+    mo-type sa decimal value ra sa EPC's last 3 bytes, dili full hex ID.
+    Parehas identifier-agnostic match sa monitoring_service.py's
+    record_rfid_event."""
     row = conn.execute("SELECT id FROM assets WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)).fetchone()
     if row:
         return row["id"]
@@ -2023,7 +2083,8 @@ def find_asset_id_by_barcode(conn, barcode):
 
 
 def get_asset_details(conn, asset_id):
-    """Read-only 'Details' modal snapshot; adds current borrower/due date that the other modals skip."""
+    """Read-only 'Details' modal snapshot - naa say current borrower/due
+    date nga wala sa ubang modals."""
     asset = conn.execute(
         """
         SELECT assets.*, categories.name AS category
