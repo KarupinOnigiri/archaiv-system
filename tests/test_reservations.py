@@ -130,6 +130,64 @@ def test_reserved_asset_can_still_be_checked_out(as_admin, conn, asset_id, membe
     assert finish(client, csrf, session_id).status_code == 201
 
 
+# # # FULFILLMENT LINKAGE (fulfilled_transaction_id) --------------------------
+
+
+def test_checkout_fulfills_matching_reservation(as_admin, conn, asset_id, member_id):
+    """Checking out an asset that the same member has an active 'scheduled'
+    reservation for should auto-mark that reservation 'fulfilled' and link
+    it to the new transaction - services/reservation_service.py's
+    fulfill_matching_reservation()."""
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    reservation_id = client.post(
+        "/api/v1/reservations",
+        json={"asset_id": asset_id, "member_id": member_id, "start_at": START, "end_at": END},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["id"]
+
+    barcode = barcode_of(conn, "members", member_id)
+    session_id = start_session(client, csrf, barcode).get_json()["checkout_session_id"]
+    asset_code = barcode_of(conn, "assets", asset_id)
+    add_item(client, csrf, session_id, asset_code)
+    finish_resp = finish(client, csrf, session_id)
+    assert finish_resp.status_code == 201
+
+    reservation = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
+    assert reservation["status"] == "fulfilled"
+    transaction = conn.execute(
+        "SELECT id FROM transactions WHERE asset_id = ? AND member_id = ? AND status = 'borrowed'",
+        (asset_id, member_id),
+    ).fetchone()
+    assert reservation["fulfilled_transaction_id"] == transaction["id"]
+
+
+def test_checkout_does_not_fulfill_other_members_reservation(as_admin, conn, asset_id, member_id):
+    """Only the reservation for the SAME member gets linked - a different
+    member's booking for the same asset stays 'scheduled'."""
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    same_department_id = conn.execute(
+        "SELECT department_id FROM members WHERE id = ?", (member_id,)
+    ).fetchone()["department_id"]
+    other_member_id = make_member(conn, department_id=same_department_id)
+
+    reservation_id = client.post(
+        "/api/v1/reservations",
+        json={"asset_id": asset_id, "member_id": other_member_id, "start_at": START, "end_at": END},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["id"]
+
+    barcode = barcode_of(conn, "members", member_id)
+    session_id = start_session(client, csrf, barcode).get_json()["checkout_session_id"]
+    asset_code = barcode_of(conn, "assets", asset_id)
+    add_item(client, csrf, session_id, asset_code)
+    finish(client, csrf, session_id)
+
+    reservation = conn.execute("SELECT status FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
+    assert reservation["status"] == "scheduled"
+
+
 # # # ADVISORY-ONLY: CHECKOUT-CART HEADS-UP -----------------------------------
 # Borrow & Return's own checkout cart has no reservations UI of its own (see
 # the project conversation for why that tab stays separate), but scanning a

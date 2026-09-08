@@ -2,7 +2,7 @@
      in, see routes/staff.py's _list_backups()). "Backup Now" reloads the whole
      page rather than swapping this in, so it only renders once per modal open. -->
 {% for b in backups %}
-<div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+<div class="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-backup-filename="{{ b.name }}">
   <div class="min-w-0">
     <p class="font-medium truncate">{{ b.name }}</p>
     <p class="text-xs text-base-content/40">{{ b.created_at | format_date }} &middot; {{ "%.1f"|format(b.size_bytes / 1048576) }} MB</p>

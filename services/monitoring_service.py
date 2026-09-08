@@ -13,7 +13,7 @@ from flask import jsonify
 from database import sqlite3
 from services.settings_service import get_alarm_enabled
 from utils.logger import log_action
-from utils.validators import validate_date_string
+from utils.validators import validate_date_string, escape_like_wildcards
 
 logger = logging.getLogger(__name__)
 
@@ -235,10 +235,11 @@ def build_monitoring_filters(args):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? OR assets.barcode_id LIKE ?"
-            " OR members.first_name LIKE ? OR members.last_name LIKE ? OR members.barcode_id LIKE ?)"
+            "(assets.name LIKE ? ESCAPE '\\' OR assets.barcode_id LIKE ? ESCAPE '\\'"
+            " OR members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\'"
+            " OR members.barcode_id LIKE ? ESCAPE '\\')"
         )
-        like = f"%{q}%"
+        like = f"%{escape_like_wildcards(q)}%"
         params.extend([like, like, like, like, like])
 
     return where_clauses, params, classification_filter, None

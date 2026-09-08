@@ -198,6 +198,18 @@ def validate_lookup_id(conn, table, id_value, field_name, required=False):
     return None
 
 
+def escape_like_wildcards(value):
+    """I-escape ang SQL LIKE wildcards (% ug _) sa usa ka user-typed search
+    term, aron literal ang pagbasa niini (dili treated as wildcard) - e.g.
+    search sa "50%" o "a_b" mo-match ra sa literal nga string, dili
+    unexpected pattern. Gamiton dungan sa `LIKE ... ESCAPE '\\'` sa SQL -
+    kung wala ang ESCAPE clause sa query, way epekto ni siya (mag-search
+    ra sa literal backslash instead).
+
+    Returns: str nga safe i-embed sa gawas sa '%...%' wrapper."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def decimal_scan_hex_suffix(code):
     """Pipila ka UHF reader, kung naka-set mag-type sa scan isip keyboard
     input (USB_HID), dili mag-type sa tibuok hex EPC - ang gina-type kay

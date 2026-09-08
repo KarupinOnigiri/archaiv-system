@@ -120,6 +120,12 @@ async function runBackupNow() {
   btn.disabled = true;
   btn.textContent = 'Backing up...';
 
+  // The backup itself now runs on a background thread server-side (so a
+  // slow SD card / large DB doesn't tie up the request), so this POST
+  // only confirms it STARTED - poll manage-form afterward until the
+  // backup list actually grows, then swap it in.
+  const backupCountBefore = document.querySelectorAll('#backup-file-list [data-backup-filename]').length;
+
   try {
     const res = await fetch('/api/v1/backup-settings/run-now', {
       method: 'POST',
@@ -127,18 +133,47 @@ async function runBackupNow() {
     });
     const result = await res.json();
     if (!res.ok) {
-      showBackupSettingsError(result.error || "Backup failed");
+      showBackupSettingsError(result.error || "Backup failed to start");
+      btn.disabled = false;
+      btn.textContent = originalText;
       return;
     }
-    showToast('Backup completed', 'success');
-    // Full reload, not just an in-place list swap - simplest way to also
-    // refresh the "Last backup" timestamp above the list.
-    window.location.reload();
+    showToast('Backup started - this may take a moment', 'success');
+    pollForBackupCompletion(backupCountBefore, btn, originalText);
   } catch (err) {
-    showBackupSettingsError("Backup failed");
-  } finally {
+    showBackupSettingsError("Backup failed to start");
     btn.disabled = false;
     btn.textContent = originalText;
   }
+}
+
+async function pollForBackupCompletion(countBefore, btn, originalText, attemptsLeft = 20) {
+  // ~2s x 20 = 40s ceiling - generous for a Pi/SD-card backup, but still
+  // gives up rather than polling forever if something went wrong.
+  if (attemptsLeft <= 0) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+    showBackupSettingsError("Backup is taking longer than expected - refresh this page in a bit to check.");
+    return;
+  }
+  setTimeout(async () => {
+    try {
+      const res = await fetch('/api/v1/backup-settings/manage-form');
+      if (!res.ok) throw new Error('poll failed');
+      const html = await res.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const countNow = doc.querySelectorAll('#backup-file-list [data-backup-filename]').length;
+      if (countNow > countBefore) {
+        // Full reload, not just an in-place swap - simplest way to also
+        // refresh the "Last backup" timestamp above the list.
+        window.location.reload();
+        return;
+      }
+      pollForBackupCompletion(countBefore, btn, originalText, attemptsLeft - 1);
+    } catch (err) {
+      pollForBackupCompletion(countBefore, btn, originalText, attemptsLeft - 1);
+    }
+  }, 2000);
 }
 </script>

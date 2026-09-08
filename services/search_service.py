@@ -8,6 +8,7 @@ feature flag niini, o kung dili tugotan sa role sa staff.
 """
 
 from utils.formatters import full_name
+from utils.validators import escape_like_wildcards
 
 MIN_QUERY_LENGTH = 2
 MAX_RESULTS_PER_CATEGORY = 5
@@ -226,7 +227,7 @@ def _search_assets(conn, like):
         SELECT id, name, asset_id, barcode_id, status
         FROM assets
         WHERE deleted_at IS NULL
-          AND (name LIKE ? OR barcode_id LIKE ? OR asset_id LIKE ? OR rfid_id LIKE ?)
+          AND (name LIKE ? ESCAPE '\\' OR barcode_id LIKE ? ESCAPE '\\' OR asset_id LIKE ? ESCAPE '\\' OR rfid_id LIKE ? ESCAPE '\\')
         ORDER BY name
         LIMIT ?
         """,
@@ -248,7 +249,7 @@ def _search_members(conn, like):
         SELECT id, first_name, last_name, middle_name, suffix, barcode_id, member_code, is_restricted
         FROM members
         WHERE is_active = 1
-          AND (first_name LIKE ? OR last_name LIKE ? OR barcode_id LIKE ? OR member_code LIKE ?)
+          AND (first_name LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\' OR barcode_id LIKE ? ESCAPE '\\' OR member_code LIKE ? ESCAPE '\\')
         ORDER BY first_name
         LIMIT ?
         """,
@@ -277,8 +278,8 @@ def _search_staff(conn, like):
         FROM staff
         JOIN members ON staff.member_id = members.id
         WHERE staff.is_active = 1
-          AND (staff.username LIKE ? OR staff.staff_code LIKE ?
-               OR members.first_name LIKE ? OR members.last_name LIKE ?)
+          AND (staff.username LIKE ? ESCAPE '\\' OR staff.staff_code LIKE ? ESCAPE '\\'
+               OR members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\')
         ORDER BY members.first_name
         LIMIT ?
         """,
@@ -311,7 +312,7 @@ def global_search(conn, query, staff, feature_flags):
     if len(query) < MIN_QUERY_LENGTH:
         return result
 
-    like = f"%{query}%"
+    like = f"%{escape_like_wildcards(query)}%"
 
     result["quick_actions"] = _search_quick_actions(query, staff, feature_flags)
     result["settings"] = _search_settings(query, staff, feature_flags)

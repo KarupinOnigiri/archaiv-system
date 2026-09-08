@@ -19,7 +19,7 @@ from services.settings_service import get_member_code_prefix
 from utils.exports import sanitize_export_filename
 from utils.formatters import full_name
 from utils.logger import log_action
-from utils.validators import normalize_barcode_id
+from utils.validators import normalize_barcode_id, escape_like_wildcards
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -108,9 +108,10 @@ def get_members_table_context(conn, args, limit, offset):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(members.first_name LIKE ? OR members.last_name LIKE ? OR members.barcode_id LIKE ? OR members.member_code LIKE ?)"
+            "(members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\'"
+            " OR members.barcode_id LIKE ? ESCAPE '\\' OR members.member_code LIKE ? ESCAPE '\\')"
         )
-        like = f"%{q}%"
+        like = f"%{escape_like_wildcards(q)}%"
         params.extend([like, like, like, like])
 
     department_id = args.get("department_id")

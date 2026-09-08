@@ -89,35 +89,64 @@ def test_update_settings_forbidden_for_tool_keeper(as_tool_keeper):
 
 
 # # # MANUAL RUN - run_backup_now stubbed, backup_database() never executes --
+# The actual backup now runs on a background thread (services/staff_service.py's
+# trigger_manual_backup) so the request doesn't block on a large DB/slow SD
+# card - the route replies "started" immediately, before the thread has
+# necessarily finished. Tests that need to observe the thread's own result
+# poll briefly instead of asserting on it synchronously.
 
 
-def test_run_now_success(as_admin, conn, monkeypatch):
+def _wait_until(predicate, timeout_seconds=2, interval_seconds=0.02):
+    """Polls `predicate()` until it's truthy or `timeout_seconds` elapses -
+    for asserting on background-thread side effects without a fixed sleep."""
+    import time
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval_seconds)
+    return predicate()
+
+
+def test_run_now_starts_backup(as_admin, conn, monkeypatch):
     monkeypatch.setattr(staff_service, "run_backup_now", lambda: True)
     client, csrf, _ = as_admin
     resp = client.post("/api/v1/backup-settings/run-now", headers={"X-CSRF-Token": csrf})
-    assert resp.status_code == 200
-    assert resp.get_json()["message"] == "Backup completed"
+    assert resp.status_code == 202
+    assert resp.get_json()["message"] == "Backup started"
 
 
 def test_run_now_records_last_backup_at(as_admin, conn, monkeypatch):
     """Keeps the real trigger_manual_backup -> run_backup_now -> backup_db.
     backup_database() wiring intact, but swaps backup_database() itself for
     a no-op so nothing actually touches disk - proves _set_last_backup_at
-    still runs off that real chain, not just off a fully-stubbed route."""
+    still runs off that real chain, not just off a fully-stubbed route.
+    Polls since this now happens on a background thread."""
     from services import backup_service
 
     monkeypatch.setattr(backup_db, "backup_database", lambda *a, **k: None)
     client, csrf, _ = as_admin
     resp = client.post("/api/v1/backup-settings/run-now", headers={"X-CSRF-Token": csrf})
-    assert resp.status_code == 200
-    assert backup_service.get_last_backup_at(conn) is not None
+    assert resp.status_code == 202
+    assert _wait_until(lambda: backup_service.get_last_backup_at(conn) is not None)
 
 
-def test_run_now_reports_failure(as_admin, monkeypatch):
+def test_run_now_failure_does_not_record_last_backup_at(as_admin, conn, monkeypatch):
+    """A failed background run must not log 'ran_manual_backup' or advance
+    last_backup_at - the route itself can't report the failure synchronously
+    (the thread hasn't necessarily finished by the time it responds), so
+    this is checked by absence instead of a 500 status."""
+    from services import backup_service
+
     monkeypatch.setattr(staff_service, "run_backup_now", lambda: False)
     client, csrf, _ = as_admin
     resp = client.post("/api/v1/backup-settings/run-now", headers={"X-CSRF-Token": csrf})
-    assert resp.status_code == 500
+    assert resp.status_code == 202
+    # Give the (failing) background thread a moment to have run and NOT
+    # written anything, then confirm it stayed absent.
+    _wait_until(lambda: False, timeout_seconds=0.2)
+    assert backup_service.get_last_backup_at(conn) is None
 
 
 def test_run_now_forbidden_for_in_charge(as_in_charge, monkeypatch):

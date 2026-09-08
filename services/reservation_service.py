@@ -23,10 +23,15 @@ umaabot nga reservation pwede gihapon ma-checkout karong adlawa sa bisan
 kinsa - ang staff makakita ra sa "reserved for" banner
 (templates/assets/_details_modal.html) ug gamiton ang judgment. Mao ni
 ang pinakadako nga risk-reduction decision ani nga feature (wala gi-touch
-ang existing checkout CAS); ang pag-auto-link sa fulfilled reservation
-ngadto sa iyang actual checkout transaction (fulfilled_transaction_id)
-deferred pa sa later pass - naa na ang column para ana pero wala pay
-nagsuwat niini.
+ang existing checkout CAS).
+
+Ang pag-link sa fulfilled reservation ngadto sa iyang actual checkout
+transaction gina-himo sa fulfill_matching_reservation() below - gitawag
+sa transaction_service.finish_checkout_session human ma-borrow ang asset
+(dili consumable). Best-effort/advisory ra gihapon ni - kung asset+member
+match ra ang gina-check, dili strict nga kinahanglan mag-sakto ang
+checkout time sa booked window, kay ang staff man gihapon ang mo-decide
+kung unsa nga checkout ang "para" sa unsa nga booking.
 """
 
 import logging
@@ -38,6 +43,7 @@ from database import sqlite3
 from services.notification_service import create_reservation_cancelled_notification
 from utils.formatters import full_name
 from utils.logger import log_action
+from utils.validators import escape_like_wildcards
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +140,36 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
     )
 
     return {"message": "Reservation created", "id": reservation_id}, None
+
+
+def fulfill_matching_reservation(conn, asset_id, member_id, transaction_id):
+    """Gitawag sa transaction_service.finish_checkout_session human ma-
+    borrow (dili consumable) - kung naay 'scheduled' reservation para ani
+    nga asset+member combo nga wala pa mag-expire, i-mark ni siya
+    'fulfilled' ug i-link ngadto sa bag-ong transaction
+    (fulfilled_transaction_id). Naa nay daghan pero usa ra ang pinakasayo
+    (ORDER BY start_at) ang ma-match. Silent no-op kung wala'y match -
+    dili ni error, kay dili tanang checkout naay preceding reservation.
+
+    Kani na ang gi-implement nga "later pass" nga gi-mention sa module
+    docstring - ang column naa na sukad pa (migration 0057), pero wala
+    pay nagsuwat niini hangtod karon."""
+    row = conn.execute(
+        """
+        SELECT id FROM reservations
+        WHERE asset_id = ? AND member_id = ? AND status = 'scheduled'
+          AND end_at >= datetime('now', 'localtime')
+        ORDER BY start_at
+        LIMIT 1
+        """,
+        (asset_id, member_id),
+    ).fetchone()
+    if row is None:
+        return
+    conn.execute(
+        "UPDATE reservations SET status = 'fulfilled', fulfilled_transaction_id = ? WHERE id = ?",
+        (transaction_id, row["id"]),
+    )
 
 
 def _load_scheduled_reservation(conn, reservation_id):
@@ -289,6 +325,7 @@ def search_reservable_assets(conn, q, limit=30):
     Returns: list[dict] {id, asset_id, name, category, status}."""
     q = (q or "").strip()
     if q:
+        like = f"%{escape_like_wildcards(q.upper())}%"
         rows = conn.execute(
             """
             SELECT assets.id, assets.asset_id, assets.name, assets.status,
@@ -297,14 +334,14 @@ def search_reservable_assets(conn, q, limit=30):
             LEFT JOIN categories ON categories.id = assets.category_id
             WHERE assets.deleted_at IS NULL AND assets.asset_type != 'consumable'
               AND (
-                  assets.name LIKE '%' || ? || '%'
-                  OR UPPER(assets.asset_id) LIKE '%' || UPPER(?) || '%'
-                  OR UPPER(assets.barcode_id) LIKE '%' || UPPER(?) || '%'
+                  UPPER(assets.name) LIKE ? ESCAPE '\\'
+                  OR UPPER(assets.asset_id) LIKE ? ESCAPE '\\'
+                  OR UPPER(assets.barcode_id) LIKE ? ESCAPE '\\'
               )
             ORDER BY assets.name
             LIMIT ?
             """,
-            (q, q, q, limit),
+            (like, like, like, limit),
         ).fetchall()
     else:
         rows = conn.execute(

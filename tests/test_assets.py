@@ -59,6 +59,22 @@ def test_asset_by_barcode_search_box_matches_decimal_scan(as_admin, conn, catego
     assert str(asset_id) in resp.get_data(as_text=True)
 
 
+def test_search_with_literal_percent_does_not_match_everything(conn, category_id):
+    """A search term containing a literal '%' must be treated as a literal
+    character, not a SQL LIKE wildcard - regression test for the ESCAPE
+    clause added to get_assets_table_context's search query."""
+    make_asset(conn, category_id, name="Drill 50% Off")
+    make_asset(conn, category_id, name="Impact Wrench")
+
+    results, error = asset_service.get_assets_table_context(
+        conn, {"q": "50%"}, limit=20, offset=0
+    )
+    assert error is None
+    names = [a["name"] for a in results["assets"]]
+    assert "Drill 50% Off" in names
+    assert "Impact Wrench" not in names
+
+
 # # # CREATE --------------------------------------------------------------
 
 

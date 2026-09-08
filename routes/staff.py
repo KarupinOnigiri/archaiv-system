@@ -1800,11 +1800,14 @@ def update_backup_settings():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def run_backup_now_route():
-    """POST - manual backup; mo-run gyud unconditionally, bisan unsa ang enabled toggle o schedule interval."""
+    """POST - manual backup; mo-run gyud unconditionally, bisan unsa ang
+    enabled toggle o schedule interval. Runs sa background thread, so
+    202 dayon ang response (backup pa lang na-start, wala pa nahuman) -
+    frontend mag-poll sa manage-form para makita kung human na."""
     result, error_msg = staff_service.trigger_manual_backup(g.staff["id"])
     if error_msg:
         return jsonify({"error": error_msg}), 500
-    return jsonify(result)
+    return jsonify(result), 202
 
 
 @staff_bp.route("/backup-settings/download/<filename>")

@@ -19,10 +19,10 @@ from services.loan_service import (
     check_and_restrict_damaged_returns,
 )
 from services.settings_service import get_checkout_session_stale_minutes, is_feature_enabled
-from services.reservation_service import get_upcoming_reservations_for_asset
+from services.reservation_service import get_upcoming_reservations_for_asset, fulfill_matching_reservation
 from utils.formatters import full_name
 from utils.logger import log_action
-from utils.validators import validate_date_string, decimal_scan_hex_suffix
+from utils.validators import validate_date_string, decimal_scan_hex_suffix, escape_like_wildcards
 
 # Fallback only - real default lives in app_settings (settings_service.get_default_loan_days)
 DEFAULT_LOAN_DAYS = 2
@@ -302,10 +302,10 @@ def build_transactions_filters(args):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? OR assets.asset_id LIKE ? OR members.first_name LIKE ?"
-            " OR members.last_name LIKE ? OR members.barcode_id LIKE ?)"
+            "(assets.name LIKE ? ESCAPE '\\' OR assets.asset_id LIKE ? ESCAPE '\\' OR members.first_name LIKE ? ESCAPE '\\'"
+            " OR members.last_name LIKE ? ESCAPE '\\' OR members.barcode_id LIKE ? ESCAPE '\\')"
         )
-        like = f"%{q}%"
+        like = f"%{escape_like_wildcards(q)}%"
         params.extend([like, like, like, like, like])
 
     # "overdue" is a virtual status (borrowed + past due); keep in sync with is_overdue below.
@@ -1699,7 +1699,7 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
                 (item["asset_id"],),
             )
 
-            conn.execute(
+            new_txn_cursor = conn.execute(
                 """
                 INSERT INTO transactions
                     (checkout_session_id, asset_id, member_id, borrowed_by_staff_id, due_date, condition_out, status)
@@ -1714,6 +1714,15 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
                     asset["condition"],
                 ),
             )
+
+            # Auto-link this checkout to whatever reservation it fulfills
+            # (advisory only - see reservation_service's module docstring).
+            # Feature-flag-gated since a 'scheduled' row can only exist at
+            # all while reservations is turned on.
+            if is_feature_enabled("reservations", conn):
+                fulfill_matching_reservation(
+                    conn, item["asset_id"], member["id"], new_txn_cursor.lastrowid
+                )
 
         if race_conflict_asset_id is not None:
             conn.rollback()

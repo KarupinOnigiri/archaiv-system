@@ -15,6 +15,7 @@ import io
 import logging
 import os
 import re
+import threading
 from datetime import datetime, timedelta
 
 from openpyxl import Workbook
@@ -59,7 +60,7 @@ from services.settings_service import (
 from utils.formatters import full_name
 from utils.logger import log_action
 from utils.uploads import save_staff_photo, delete_staff_photo
-from utils.validators import validate_date_string, parse_pagination_params
+from utils.validators import validate_date_string, parse_pagination_params, escape_like_wildcards
 
 logger = logging.getLogger(__name__)
 
@@ -209,9 +210,10 @@ def get_staff_table_context(conn, args, limit, offset):
     params = []
     if q:
         where.append(
-            "(staff.username LIKE ? OR staff.staff_code LIKE ? OR members.first_name LIKE ? OR members.last_name LIKE ?)"
+            "(staff.username LIKE ? ESCAPE '\\' OR staff.staff_code LIKE ? ESCAPE '\\'"
+            " OR members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\')"
         )
-        like = f"%{q}%"
+        like = f"%{escape_like_wildcards(q)}%"
         params.extend([like, like, like, like])
     if role:
         where.append("staff.role = ?")
@@ -523,7 +525,7 @@ def search_eligible_members(conn, q, browse_all, offset, page_size):
             "next_offset": next_offset,
         }
 
-    like = f"%{q}%"
+    like = f"%{escape_like_wildcards(q)}%"
     results = conn.execute(
         """
         SELECT members.id, members.first_name, members.last_name, members.middle_name,
@@ -534,8 +536,8 @@ def search_eligible_members(conn, q, browse_all, offset, page_size):
         WHERE members.is_active = 1
           AND members.id NOT IN (SELECT member_id FROM staff)
           AND (
-            members.first_name LIKE ? OR members.last_name LIKE ?
-            OR members.member_code LIKE ? OR members.barcode_id LIKE ?
+            members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\'
+            OR members.member_code LIKE ? ESCAPE '\\' OR members.barcode_id LIKE ? ESCAPE '\\'
           )
         ORDER BY members.last_name, members.first_name
         LIMIT 8
@@ -2636,18 +2638,26 @@ def update_backup_settings(conn, data, acting_staff_id):
 
 def trigger_manual_backup(acting_staff_id):
     """Manual backup; mo-run gyud unconditionally regardless sa enabled
-    toggle or sa schedule interval."""
-    ok = run_backup_now()
-    if not ok:
-        return None, "Backup failed - check the server log for details."
+    toggle or sa schedule interval. Mo-run sa background thread (dili
+    mo-block sa request) - naay dakong DB o hinay nga SD card mahimong
+    modugay pa gyud ang backup, so dili maayo hulaton dayon sa parehas nga
+    request/thread. Mo-balik dayon "started"; ang frontend mag-poll sa
+    manage-form endpoint para makita kung human na (last_backup_at
+    nausab)."""
+    def _run_in_background():
+        ok = run_backup_now()
+        if ok:
+            log_action(
+                staff_id=acting_staff_id,
+                action="ran_manual_backup",
+                target_table="app_settings",
+                details="Triggered an on-demand database backup from the System page",
+            )
+        else:
+            logger.warning(f"Manual backup (triggered by staff_id={acting_staff_id}) failed.")
 
-    log_action(
-        staff_id=acting_staff_id,
-        action="ran_manual_backup",
-        target_table="app_settings",
-        details="Triggered an on-demand database backup from the System page",
-    )
-    return {"message": "Backup completed", "backups": list_backups()}, None
+    threading.Thread(target=_run_in_background, daemon=True).start()
+    return {"message": "Backup started", "started": True}, None
 
 
 def resolve_backup_path(filename):

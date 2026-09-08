@@ -30,7 +30,7 @@ from services.settings_service import (
 )
 from utils.logger import log_action
 from utils.uploads import save_asset_image, delete_asset_image, validate_image_upload
-from utils.validators import validate_date_fields, normalize_barcode_id, decimal_scan_hex_suffix
+from utils.validators import validate_date_fields, normalize_barcode_id, decimal_scan_hex_suffix, escape_like_wildcards
 
 logger = logging.getLogger(__name__)
 
@@ -250,9 +250,10 @@ def get_assets_table_context(conn, args, limit, offset):
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? OR assets.barcode_id LIKE ? OR assets.asset_id LIKE ? OR assets.rfid_id LIKE ?)"
+            "(assets.name LIKE ? ESCAPE '\\' OR assets.barcode_id LIKE ? ESCAPE '\\'"
+            " OR assets.asset_id LIKE ? ESCAPE '\\' OR assets.rfid_id LIKE ? ESCAPE '\\')"
         )
-        like = f"%{q}%"
+        like = f"%{escape_like_wildcards(q)}%"
         params.extend([like, like, like, like])
 
     category_id = args.get("category_id")
