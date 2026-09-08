@@ -635,14 +635,38 @@ def test_sidebar_nav_has_tightened_spacing_for_no_scrollbar(as_admin):
 def test_sidebar_collapsed_links_are_centered_squares(as_admin):
     """Regression test for the collapsed-rail active highlight being an
     off-center, disproportionate box (shrink-to-content width) instead of
-    a centered square matching the icon column - see the CSS rule fixing
-    it (fixed width + auto margins + justify-content:center)."""
+    a centered square matching the icon column. The original fix (fixed
+    width + margin:auto centering) reintroduced a DIFFERENT bug later
+    (see test_sidebar_collapsed_icon_position_is_fixed_not_centered) - it
+    recalculated against #sidebar's own still-animating width on every
+    frame of the 200ms collapse transition, making the icon visibly slide
+    before settling. width:100% + a constant left padding replaced it -
+    still a proportional square at rest (nav's own content area is
+    exactly the same 2.75rem at collapsed rest, so the two are visually
+    identical once settled), just without anything to recalculate
+    mid-transition."""
     client, csrf, _ = as_admin
     resp = client.get("/")
     html = resp.get_data(as_text=True)
     assert "#sidebar.collapsed .sidebar-link," in html
-    assert "width: 2.75rem;" in html
-    assert "justify-content: center;" in html
+    assert "width: 100%;" in html
+    assert "padding-left: 12px;" in html
+
+
+def test_sidebar_collapsed_icon_position_is_fixed_not_centered(as_admin):
+    """Regression test for the collapsed-rail icon visibly sliding during
+    the sidebar's own 200ms open/close transition - width:2.75rem +
+    margin-left/right:auto centered the link against #sidebar's CURRENT
+    (still-animating) width on every frame, not just the final settled
+    one, so the icon slid several tens of pixels before landing in place.
+    justify-content is now flex-start (constant left-alignment, nothing
+    to recalculate against a moving container) rather than center."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "#sidebar.collapsed .sidebar-link," in html
+    assert "justify-content: flex-start;" in html
+    assert "margin-left: auto;" not in html
 
 
 def test_sidebar_link_height_increased_10_percent_and_fixed(as_admin):
@@ -714,3 +738,109 @@ def test_transactions_date_quick_filter_uses_shared_soft_tint_highlight(as_admin
     assert "bg-primary/10" in body
     assert "text-primary" in body and "text-primary-content" not in body
     assert "'bg-primary'" not in body
+
+
+def test_modern_dark_theme_fully_removed(as_admin):
+    """Regression test: Modern Dark (a 4th theme mode, tesda-modern) was
+    removed per explicit feedback to go back to three modes (Mixed/Light/
+    Dark) - its own theme block, elevation-shadow CSS, sidebar dropdown
+    menu option, and every data-theme="tesda-modern" selector should be
+    gone from the rendered page, not just hidden."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "tesda-modern" not in html
+    assert "Modern Dark" not in html
+    assert "setThemeMode('modern')" not in html
+
+
+def test_toggle_checked_state_color_not_overridden_by_contrast_fix(as_admin):
+    """Regression test for the actual root cause behind several "toggle
+    knob doesn't change color when enabled" reports: a light-mode-only
+    contrast fix (html[data-theme="tesda"] .toggle { --input-color: ... })
+    had higher CSS specificity (element + attribute + class) than
+    daisyUI's own .toggle-primary:checked / .toggle-warning:checked
+    (class + pseudo-class only), so it silently won the cascade even once
+    a toggle was checked - every "on" toggle rendered as this same muted
+    resting gray regardless of its color class. Scoped to :not(:checked)
+    so it only ever touches the off state, which is all it was meant to
+    fix in the first place. This lives in static/css/input.css (compiled
+    into output.css), not inline in base.html's own <style> block, so it
+    doesn't appear in "/" 's own response HTML at all - read the compiled
+    stylesheet directly instead."""
+    import pathlib
+
+    css_path = pathlib.Path(__file__).resolve().parent.parent / "static" / "css" / "output.css"
+    css = css_path.read_text(encoding="utf-8")
+    assert '.toggle:not(:checked)' in css
+    assert 'html[data-theme="tesda"] .toggle {' not in css
+
+
+def test_content_card_and_stat_cards_use_dedicated_panel_border(as_admin):
+    """Regression test: stat cards/dashboard widgets used border-base-300,
+    the same token as literal table dividers - #eceef2 (--color-panel-
+    border / .border-panel) is a dedicated, much lighter default border
+    for card/panel chrome specifically, per explicit feedback, without
+    touching border-base-300 itself (still needed at full contrast for
+    actual dividing lines elsewhere)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "--color-panel-border" not in html  # lives in input.css, not inline
+    # At least one dashboard stat card should carry the new class.
+    assert "border-panel" in html
+
+
+def test_staff_and_members_profile_sheet_detected_by_page_isModalOpen(as_admin):
+    """Regression test: members.html/staff.html/assets.html's own
+    isModalOpen() only recognized daisyUI's <dialog class="modal">, not
+    the plain .fixed.inset-0 sheet-panel pattern the profile/details
+    modals actually use - meaning the page's own shortcuts (1-4, /, `,
+    arrows, Escape) could fire right through an open profile sheet."""
+    client, csrf, _ = as_admin
+    for path, needle in [
+        ("/members", "function isModalOpen"),
+        ("/staff", "function isModalOpen"),
+        ("/assets", "function isModalOpen"),
+    ]:
+        resp = client.get(path)
+        html = resp.get_data(as_text=True)
+        start = html.index(needle)
+        body = html[start : start + 400]
+        assert ":scope > .fixed.inset-0" in body
+
+
+def test_reports_page_has_no_asset_valuation_widget(as_admin):
+    """Regression test: the Asset Valuation widget was removed from
+    Reports per explicit feedback - its markup, fetch function, and
+    export-widget-map entry should all be gone from the rendered page."""
+    client, csrf, _ = as_admin
+    resp = client.get("/reports")
+    html = resp.get_data(as_text=True)
+    assert "asset_valuation" not in html
+    assert "Asset Valuation" not in html
+    assert "fetchAssetValuation" not in html
+
+
+def test_system_search_bar_is_wider_and_inits_rounded_corner_on_load(as_admin):
+    """Regression test: System's search box used to be w-64 (narrower than
+    warranted, since nothing else crowds this row unlike Inventory's) and
+    never called its own filterSystemCards('') once on load, so its right
+    corner started square (owned by the hidden clear button) instead of
+    rounded until the user typed and cleared something once."""
+    client, csrf, _ = as_admin
+    resp = client.get("/system")
+    html = resp.get_data(as_text=True)
+    assert 'id="system-search-wrap" class="join w-96' in html
+    assert "\nfilterSystemCards('');" in html
+
+
+def test_sidebar_group_label_is_dimmer(as_admin):
+    """Regression test: sidebar category titles (OPERATIONS/PEOPLE/...)
+    were text-base-content/40 - dimmed further to /30 per feedback so
+    they read as a quiet section label rather than competing with the
+    actual tab names below them."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'sidebar-label text-[10px] font-semibold tracking-wider text-base-content/30' in html

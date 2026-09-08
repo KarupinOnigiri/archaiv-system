@@ -91,7 +91,7 @@
   </div>
 
   <!-- Toolbar + table -->
-  <div id="assets-card" class="bg-base-100 rounded-xl border p-5 transition-colors {% if show_archived %}border-warning/70{% else %}border-base-300{% endif %}">
+  <div id="assets-card" class="bg-base-100 rounded-xl border p-5 transition-colors {% if show_archived %}border-warning/70{% else %}border-panel{% endif %}">
 
     <div class="relative mb-5" style="position: relative;">
 
@@ -245,10 +245,22 @@
       <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
 
       <label id="archived-toggle-label" data-tooltip="Toggle show archived (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+        <!-- --input-color driven directly on change, not just toggle-warning
+             (see templates/staff/_feature_flags_modal.html's own comment for
+             why) - this toggle's hx-get only swaps #asset-table-container,
+             never this label/input itself, so the class Jinja renders here
+             stays frozen at whatever show_archived was on the last full page
+             load while the checkbox's own native checked state flips
+             instantly on click - toggle-warning:checked wouldn't match once
+             those two drift apart, leaving the knob gray even when now
+             checked. Driving the CSS variable directly in onchange keeps it
+             in sync with the actual state instead of the class. -->
         <input type="checkbox" id="show-archived-toggle" name="show_archived"
                value="1"
-               class="toggle toggle-sm {% if show_archived %}toggle-warning{% endif %}"
+               class="toggle toggle-sm"
+               style="{% if show_archived %}--input-color: var(--color-warning);{% endif %}"
                {% if show_archived %}checked{% endif %}
+               onchange="this.style.setProperty('--input-color', this.checked ? 'var(--color-warning)' : '')"
                hx-get="/api/v1/assets"
                hx-trigger="change"
                hx-target="#asset-table-container"
@@ -710,7 +722,7 @@ document.getElementById('show-archived-toggle').addEventListener('change', funct
 
   const card = document.getElementById('assets-card');
   card.classList.toggle('border-warning/70', isArchived);
-  card.classList.toggle('border-base-300', !isArchived);
+  card.classList.toggle('border-panel', !isArchived);
 
   updateFilterUI();
 });</script>
@@ -932,7 +944,12 @@ function isTypingTarget(el) {
 
 function isModalOpen() {
   const container = document.getElementById('modal-container');
-  if (container && container.querySelector(':scope > .modal')) return true;
+  // :scope > .fixed.inset-0 also matches - the asset details sheet
+  // (assets/_details_modal.html) isn't a daisyUI <dialog class="modal">,
+  // it's a plain .fixed.inset-0 overlay, so it was invisible to this
+  // check entirely - same gap fixed in members.html/staff.html's own
+  // isModalOpen for their equivalent profile sheets.
+  if (container && container.querySelector(':scope > .modal, :scope > .fixed.inset-0')) return true;
   const folderBrowser = document.getElementById('export-folder-browser');
   return !!(folderBrowser && !folderBrowser.classList.contains('hidden'));
 }

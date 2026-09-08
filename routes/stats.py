@@ -72,31 +72,12 @@ def least_borrowed_assets():
     return jsonify(result)
 
 
-@stats_bp.route("/stats/assets/valuation")
-@roles_required("admin", "in_charge")
-@limiter.limit("20 per minute")
-def asset_valuation():
-    """GET - current book value snapshot, dili date-ranged - see
-    asset_valuation_summary's docstring sa service."""
-    limit, offset, error = parse_pagination_params(request.args)
-    if error:
-        return error
-
-    conn = get_db_connection()
-    try:
-        result = stats_service.asset_valuation_table(conn, limit, offset)
-    finally:
-        conn.close()
-
-    return jsonify(result)
-
-
 @stats_bp.route("/stats/assets/maintenance-schedule")
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def maintenance_schedule():
-    """GET - upcoming/overdue preventive maintenance, dili date-ranged, same
-    current-state-snapshot reasoning sa asset_valuation() above."""
+    """GET - upcoming/overdue preventive maintenance, dili date-ranged, a
+    current-state snapshot rather than a historical range."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error

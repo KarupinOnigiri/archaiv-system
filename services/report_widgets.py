@@ -62,13 +62,6 @@ WIDGETS = [
         "type": "table",
         "roles": ("admin",),
     },
-    # Financial data - excluded from tool_keeper, same reasoning as staff_activity.
-    {
-        "id": "asset_valuation",
-        "title": "Asset Valuation",
-        "type": "table",
-        "roles": ADMIN_IN_CHARGE,
-    },
     {
         "id": "maintenance_schedule",
         "title": "Maintenance Schedule",

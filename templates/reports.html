@@ -23,7 +23,7 @@
   </div>
 
   <!-- Shared date range -->
-  <div class="bg-base-100 rounded-xl border border-base-300 p-4 flex flex-wrap items-center gap-3">
+  <div class="bg-base-100 rounded-xl border border-panel p-4 flex flex-wrap items-center gap-3">
     <span class="text-xs font-semibold text-base-content/50 tracking-wide">DATE RANGE</span>
     <!-- Same plain-bordered join-item convention as every other tab's date
          quick-filters (transactions/monitoring/audit_log/notifications) -
@@ -58,7 +58,7 @@
     <!-- Summary KPIs -->
     <div class="report-widget xl:col-span-2" data-widget-id="summary">
       <div id="reports-kpi-row" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">TOTAL CHECKOUTS</p>
             <p id="kpi-total-checkouts" class="text-2xl font-bold mt-1">-</p>
@@ -67,7 +67,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
           </div>
         </div>
-        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">ASSETS BORROWED</p>
             <p id="kpi-unique-assets" class="text-2xl font-bold mt-1">-</p>
@@ -76,7 +76,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
           </div>
         </div>
-        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">BORROWERS</p>
             <p id="kpi-unique-borrowers" class="text-2xl font-bold mt-1">-</p>
@@ -85,7 +85,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
           </div>
         </div>
-        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">OVERDUE RATE</p>
             <p id="kpi-overdue-rate" class="text-2xl font-bold mt-1">-</p>
@@ -94,7 +94,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
           </div>
         </div>
-        <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-error/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-error/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
           <div>
             <p class="text-xs font-semibold text-base-content/50 tracking-wide">DAMAGE RATE</p>
             <p id="kpi-damage-rate" class="text-2xl font-bold mt-1">-</p>
@@ -108,7 +108,7 @@
 
     <!-- Most Borrowed Assets -->
     <div class="report-widget" data-widget-id="most_borrowed_assets">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
@@ -127,7 +127,7 @@
 
     <!-- Most Borrowed Categories -->
     <div class="report-widget" data-widget-id="most_borrowed_categories">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
@@ -146,7 +146,7 @@
 
     <!-- Least Borrowed Assets -->
     <div class="report-widget" data-widget-id="least_borrowed_assets">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-base-300 text-base-content/50 flex items-center justify-center shrink-0">
@@ -163,28 +163,9 @@
       </div>
     </div>
 
-    <!-- Asset Valuation -->
-    <div class="report-widget" data-widget-id="asset_valuation">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
-        <div class="widget-header flex items-center justify-between mb-0.5">
-          <div class="flex items-center gap-2.5">
-            <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 3"/></svg>
-            </span>
-            <h3 class="font-semibold">Asset Valuation</h3>
-          </div>
-          <button type="button" class="widget-export-btn btn btn-ghost btn-xs btn-circle" onclick="openExportModal(['asset_valuation'])" data-tooltip="Export this widget" aria-label="Export this widget">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-          </button>
-        </div>
-        <p class="text-xs text-base-content/50 mb-3">Current book value of priced assets on hand.</p>
-        <div id="report-asset-valuation" class="report-body min-h-[8rem]"></div>
-      </div>
-    </div>
-
     <!-- Maintenance Schedule -->
     <div class="report-widget" data-widget-id="maintenance_schedule">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
@@ -208,7 +189,7 @@
          entirely (server-side) whenever the "monitoring" feature is off -
          see routes/stats.py's _feature_disabled_widget_ids. -->
     <div class="report-widget" data-widget-id="monitoring_activity">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-error/25 to-error/5 text-error flex items-center justify-center shrink-0">
@@ -227,7 +208,7 @@
 
     <!-- Average Loan Duration -->
     <div class="report-widget" data-widget-id="avg_loan_duration">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
@@ -252,7 +233,7 @@
 
     <!-- Top Borrowers -->
     <div class="report-widget" data-widget-id="top_borrowers">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
@@ -271,7 +252,7 @@
 
     <!-- Overdue Frequency -->
     <div class="report-widget" data-widget-id="overdue_frequency">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
@@ -290,7 +271,7 @@
 
     <!-- Condition Changes -->
     <div class="report-widget xl:col-span-2" data-widget-id="condition_changes">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-error/25 to-error/5 text-error flex items-center justify-center shrink-0">
@@ -317,7 +298,7 @@
          not a Jinja check). A plain table, sorted alphabetically not by count --
          workload visibility, not a leaderboard. -->
     <div class="report-widget xl:col-span-2" data-widget-id="staff_activity">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-secondary/25 to-secondary/5 text-secondary flex items-center justify-center shrink-0">
@@ -337,7 +318,7 @@
     <!-- Tool Keeper's "own activity only" widgets - never shown to admin/in_charge,
          and every query filters to the requesting staff member's own id server-side. -->
     <div class="report-widget" data-widget-id="my_checkouts">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
@@ -355,7 +336,7 @@
     </div>
 
     <div class="report-widget" data-widget-id="my_returns">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-success/25 to-success/5 text-success flex items-center justify-center shrink-0">
@@ -373,7 +354,7 @@
     </div>
 
     <div class="report-widget" data-widget-id="my_overdue_handled">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center justify-between mb-0.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
@@ -724,21 +705,9 @@ function fetchLeastBorrowedAssets() {
   });
 }
 
-function fetchAssetValuation() {
-  if (isWidgetHiddenForRole('asset_valuation')) return;
-  // Not date-ranged (current book value snapshot) - deliberately no reportsDateParams() here.
-  fetchReport('report-asset-valuation', '/api/v1/stats/assets/valuation', new URLSearchParams({ limit: 10, offset: 0 }), function (rows) {
-    renderTable('report-asset-valuation', rows, [
-      { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')} &middot; ${escapeHtml(r.barcode_id)}</div>` },
-      { header: 'STATUS', render: (r) => escapeHtml(r.status) },
-      { header: 'COST', headCls: 'text-right', cls: 'text-right', render: (r) => Number(r.purchase_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-    ], { onClick: (r) => openAssetDetails(r.id) });
-  });
-}
-
 function fetchMaintenanceSchedule() {
   if (isWidgetHiddenForRole('maintenance_schedule')) return;
-  // Not date-ranged (current schedule snapshot) - same reasoning as fetchAssetValuation.
+  // Not date-ranged - a current schedule snapshot, not a historical range.
   fetchReport('report-maintenance-schedule', '/api/v1/stats/assets/maintenance-schedule', new URLSearchParams({ limit: 10, offset: 0 }), function (rows) {
     renderTable('report-maintenance-schedule', rows, [
       { header: 'ASSET', render: (r) => `<div class="font-medium">${escapeHtml(r.name)}</div><div class="text-xs text-base-content/40">${escapeHtml(r.category || 'Uncategorized')} &middot; ${escapeHtml(r.barcode_id)}</div>` },
@@ -920,7 +889,6 @@ function fetchAllReports() {
   fetchMostBorrowedAssets();
   fetchMostBorrowedCategories();
   fetchLeastBorrowedAssets();
-  fetchAssetValuation();
   fetchMaintenanceSchedule();
   fetchMonitoringActivity();
   fetchLoanDuration();
@@ -1245,11 +1213,6 @@ var EXPORT_WIDGET_MAP = {
     kind: 'table', el: 'report-least-borrowed-assets', title: 'Least Borrowed Assets',
     columns: ['Asset', 'Barcode', 'Category', 'Borrows'],
     row: (r) => [r.name, r.barcode_id, r.category || 'Uncategorized', r.borrow_count],
-  },
-  asset_valuation: {
-    kind: 'table', el: 'report-asset-valuation', title: 'Asset Valuation',
-    columns: ['Asset', 'Barcode', 'Status', 'Purchase Cost'],
-    row: (r) => [r.name, r.barcode_id, r.status, r.purchase_cost],
   },
   maintenance_schedule: {
     kind: 'table', el: 'report-maintenance-schedule', title: 'Maintenance Schedule',

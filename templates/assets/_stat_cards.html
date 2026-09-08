@@ -1,4 +1,4 @@
-    <div id="stat-card-all" data-status="" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-primary/30 stat-card-glow"
+    <div id="stat-card-all" data-status="" class="bg-base-100 rounded-xl border border-panel p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-primary/30 stat-card-glow"
          style="--stat-glow: var(--color-primary)"
          role="button" tabindex="0" aria-label="Show all inventory" data-tooltip="Show all inventory (1)"
          onclick="filterByStatus('')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStatus('');}">
@@ -11,7 +11,7 @@
       </div>
     </div>
 
-    <div id="stat-card-available" data-status="available" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-success/30 stat-card-glow"
+    <div id="stat-card-available" data-status="available" class="bg-base-100 rounded-xl border border-panel p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-success/30 stat-card-glow"
          style="--stat-glow: var(--color-success)"
          role="button" tabindex="0" aria-label="Filter by available" data-tooltip="Filter by available (2)"
          onclick="filterByStatus('available')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStatus('available');}">
@@ -24,7 +24,7 @@
       </div>
     </div>
 
-    <div id="stat-card-borrowed" data-status="borrowed" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-info/30 stat-card-glow"
+    <div id="stat-card-borrowed" data-status="borrowed" class="bg-base-100 rounded-xl border border-panel p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-info/30 stat-card-glow"
          style="--stat-glow: var(--color-info)"
          role="button" tabindex="0" aria-label="Filter by currently borrowed" data-tooltip="Filter by currently borrowed (3)"
          onclick="filterByStatus('borrowed')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStatus('borrowed');}">
@@ -37,7 +37,7 @@
       </div>
     </div>
 
-    <div id="stat-card-maintenance" data-status="maintenance" class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-error/30 stat-card-glow"
+    <div id="stat-card-maintenance" data-status="maintenance" class="bg-base-100 rounded-xl border border-panel p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md hover:border-error/30 stat-card-glow"
          style="--stat-glow: var(--color-error)"
          role="button" tabindex="0" aria-label="Filter by needs attention" data-tooltip="Filter by needs attention (4)"
          onclick="filterByStatus('maintenance')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterByStatus('maintenance');}">

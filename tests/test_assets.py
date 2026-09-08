@@ -881,6 +881,26 @@ def test_inventory_page_import_export_icons_not_swapped_back(as_admin):
     assert "M17 8l-5-5-5 5" in export_block  # upward chevron
 
 
+def test_show_archived_toggle_drives_input_color_inline(as_admin):
+    """Regression test: the "Show archived" toggle's knob color relied on
+    a conditionally-rendered toggle-warning class, but this toggle's own
+    hx-get only swaps #asset-table-container, never the label/input
+    themselves - so a client-side click flips the checkbox's native
+    checked state instantly while the class stays frozen at whatever
+    show_archived was on the last full page load, and toggle-warning:
+    checked stops matching the moment those two drift apart (immediately,
+    on the very first click). Driving --input-color directly in onchange
+    keeps it in sync with the actual state instead of a class."""
+    client, csrf, _ = as_admin
+    resp = client.get("/assets")
+    html = resp.get_data(as_text=True)
+    assert 'id="show-archived-toggle"' in html
+    start = html.index('id="show-archived-toggle"')
+    tag = html[start : start + 700]
+    assert "--input-color" in tag
+    assert "setProperty('--input-color'" in tag
+
+
 def test_inventory_page_overflow_menu_is_squircle_not_circle(as_admin):
     """The "More actions" button became a rounded-square (squircle) icon
     button instead of a perfect circle, to match "Add New Item"'s own

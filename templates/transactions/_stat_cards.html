@@ -1,6 +1,6 @@
 {% macro stat_card(label, count, status, icon_classes, hover_border, icon_svg, hotkey, glow) %}
 <div id="stat-card-{{ status or 'all' }}" data-status="{{ status }}"
-     class="bg-base-100 rounded-xl border border-base-300 p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md {{ hover_border }} stat-card-glow"
+     class="bg-base-100 rounded-xl border border-panel p-5 flex items-start justify-between cursor-pointer transition-all hover:shadow-md {{ hover_border }} stat-card-glow"
      style="--stat-glow: var(--color-{{ glow }})"
      role="button" tabindex="0"
      aria-label="Filter by {{ label }}"

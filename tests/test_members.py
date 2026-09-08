@@ -61,6 +61,25 @@ def test_get_member_profile(as_admin, member_id):
     assert resp.status_code == 200
 
 
+def test_member_profile_modal_shortcut_topmost_check_ignores_trailing_script(
+    as_admin, member_id
+):
+    """Regression test: same bug and fix as staff/_profile_modal.html's
+    equivalent test - this modal's own E/D/R shortcuts never fired
+    because its "am I still topmost" guard required
+    modal.parentElement.lastElementChild === modal, but this modal's own
+    trailing lazy-history <script> (hx-swap="beforeend" appends it as a
+    SIBLING, not a child, of the modal div) was always the real
+    lastElementChild instead."""
+    client, csrf, _ = as_admin
+    resp = client.get(f"/api/v1/members/{member_id}/profile")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "modal.parentElement.lastElementChild !== modal" not in html
+    assert "hasLaterModal" in html
+    assert "nextElementSibling" in html
+
+
 def test_edit_member_success(as_admin, member_id):
     client, csrf, _ = as_admin
     resp = client.post(
@@ -639,3 +658,19 @@ def test_members_page_header_has_overflow_menu_and_single_primary_button(as_admi
     assert 'id="import-members-btn"' in html
     assert 'id="export-members-btn"' in html
     assert 'id="add-member-btn"' in html
+
+
+def test_show_inactive_toggle_drives_input_color_inline(as_admin):
+    """Regression test: same fix as Inventory's show-archived-toggle - see
+    test_assets.py::test_show_archived_toggle_drives_input_color_inline
+    for the full reasoning. Unlike Inventory's inline onchange, this one
+    drives --input-color from the page's existing separate change
+    listener (which only appears in the HTML unconditionally, unlike the
+    tag's own style= attribute - that's empty whenever show_inactive is
+    false, i.e. the default state this test's own client hits)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/members")
+    html = resp.get_data(as_text=True)
+    assert 'id="show-inactive-toggle"' in html
+    assert "setProperty('--input-color', isInactive" in html
+    assert "setProperty('--input-color', isInactiveView" in html

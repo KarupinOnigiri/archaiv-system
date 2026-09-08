@@ -193,7 +193,6 @@ _ACCOUNT_ACTIONS = [
     {"label": "Light Mode", "onclick_js": "setThemeMode('light')"},
     {"label": "Dark Mode", "onclick_js": "setThemeMode('dark')"},
     {"label": "Mixed Mode", "onclick_js": "setThemeMode('mixed')"},
-    {"label": "Modern Dark Mode", "onclick_js": "setThemeMode('modern')"},
     {"label": "Log Out", "onclick_js": "document.getElementById('logout-confirm-modal').showModal()"},
 ]
 

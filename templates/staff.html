@@ -51,7 +51,7 @@
   </div>
 
   <!-- Toolbar + table -->
-  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+  <div class="bg-base-100 rounded-xl border border-panel p-5">
 
     <div class="relative mb-5" style="position: relative;">
 
@@ -135,9 +135,13 @@
       <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
 
       <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+        <!-- --input-color driven directly (in the change listener further
+             down this file), not just toggle-warning - see assets.html's
+             show-archived-toggle for why. -->
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
-               class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"
+               class="toggle toggle-sm"
+               style="{% if show_inactive %}--input-color: var(--color-warning);{% endif %}"
                {% if show_inactive %}checked{% endif %}
                hx-get="/api/v1/staff"
                hx-trigger="change"
@@ -603,7 +607,7 @@ function updateShowInactivePillUI(isInactive) {
   const toggle = document.getElementById('show-inactive-toggle');
   const toggleLabel = document.getElementById('inactive-toggle-label');
   const toggleText = document.getElementById('inactive-toggle-text');
-  toggle.classList.toggle('toggle-warning', isInactive);
+  toggle.style.setProperty('--input-color', isInactive ? 'var(--color-warning)' : '');
   toggleLabel.classList.toggle('text-warning', isInactive);
   toggleLabel.classList.toggle('font-semibold', isInactive);
   toggleLabel.classList.toggle('bg-warning/10', isInactive);
@@ -725,7 +729,13 @@ function isTypingTarget(el) {
 
 function isModalOpen() {
   const container = document.getElementById('modal-container');
-  return !!(container && container.querySelector(':scope > .modal'));
+  // :scope > .fixed.inset-0 also matches - the staff profile sheet
+  // (staff/_profile_modal.html) isn't a daisyUI <dialog class="modal">,
+  // it's a plain .fixed.inset-0 overlay, so it was invisible to this
+  // check entirely - the page's own shortcuts (1-4, /, `, arrows, Escape)
+  // could fire right through it while it was open, on top of whatever
+  // the profile sheet's own shortcuts were doing.
+  return !!(container && container.querySelector(':scope > .modal, :scope > .fixed.inset-0'));
 }
 
 // Barcode-scan shortcut - see assets.html's identical block for the full

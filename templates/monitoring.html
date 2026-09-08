@@ -43,7 +43,7 @@
   </div>
 
   <!-- Toolbar + table -->
-  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+  <div class="bg-base-100 rounded-xl border border-panel p-5">
 
     <div class="relative mb-5">
       <div id="filter-row" class="flex flex-wrap items-center gap-3">
@@ -189,7 +189,7 @@
     <!-- Alarm response-time KPIs - same kpi-card shape as reports.html's
          "At-a-glance summary" row (gradient tint, icon badge, hover shadow). -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
         <div>
           <p class="text-xs font-semibold text-base-content/50 tracking-wide">ALARMS CLEARED</p>
           <p id="trend-response-count" class="text-2xl font-bold mt-1">-</p>
@@ -198,7 +198,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         </div>
       </div>
-      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
         <div>
           <p class="text-xs font-semibold text-base-content/50 tracking-wide">AVG RESPONSE</p>
           <p id="trend-response-avg" class="text-2xl font-bold mt-1">-</p>
@@ -207,7 +207,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         </div>
       </div>
-      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-success/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
         <div>
           <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEDIAN RESPONSE</p>
           <p id="trend-response-median" class="text-2xl font-bold mt-1">-</p>
@@ -216,7 +216,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
         </div>
       </div>
-      <div class="kpi-card relative overflow-hidden rounded-xl border border-base-300 p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
         <div>
           <p class="text-xs font-semibold text-base-content/50 tracking-wide">P90 RESPONSE</p>
           <p id="trend-response-p90" class="text-2xl font-bold mt-1">-</p>
@@ -231,7 +231,7 @@
          chart/table widgets (icon badge + title in the header, no export
          button here since these aren't part of the report export catalog). -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center gap-2.5 mb-3">
           <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
@@ -240,7 +240,7 @@
         </div>
         <div style="height: 220px"><canvas id="trend-daily-volume-canvas"></canvas></div>
       </div>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center gap-2.5 mb-3">
           <span class="w-8 h-8 rounded-full bg-gradient-to-br from-info/25 to-info/5 text-info flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -249,7 +249,7 @@
         </div>
         <div style="height: 220px"><canvas id="trend-hourly-canvas"></canvas></div>
       </div>
-      <div class="lg:col-span-2 bg-base-100 rounded-xl border border-base-300 p-5 h-full">
+      <div class="lg:col-span-2 bg-base-100 rounded-xl border border-panel p-5 h-full">
         <div class="widget-header flex items-center gap-2.5 mb-3">
           <span class="w-8 h-8 rounded-full bg-gradient-to-br from-warning/25 to-warning/5 text-warning flex items-center justify-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>

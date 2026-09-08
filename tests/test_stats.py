@@ -21,7 +21,6 @@ WIDGET_ROUTES_ADMIN_IN_CHARGE = [
     "/api/v1/stats/members/overdue-frequency",
     "/api/v1/stats/assets/condition-changes",
     "/api/v1/stats/summary",
-    "/api/v1/stats/assets/valuation",
 ]
 
 MY_ACTIVITY_ROUTES = [
@@ -296,34 +295,12 @@ def test_export_forbidden_widget_id_is_dropped_for_tool_keeper(as_tool_keeper):
     assert "No exportable sections" in resp.get_json()["error"]
 
 
-# # # ASSET VALUATION ------------------------------------------------------
-
-
-def test_asset_valuation_summary_none_when_no_asset_priced(conn, category_id):
-    make_asset(conn, category_id, name="Unpriced Drill")
-    assert stats_service.asset_valuation_summary(conn) is None
-
-
-def test_asset_valuation_summary_totals(conn, category_id):
-    make_asset(conn, category_id, name="Priced A", purchase_cost=100)
-    make_asset(conn, category_id, name="Priced B", purchase_cost=50)
-    make_asset(conn, category_id, name="Unpriced")
-
-    summary = stats_service.asset_valuation_summary(conn)
-    assert summary["total_value"] == 150
-    assert summary["priced_count"] == 2
-    assert summary["value_checked_out"] == 0
-
-
-def test_asset_valuation_excludes_soft_deleted(conn, category_id):
-    deleted_id = make_asset(conn, category_id, name="Priced then deleted", purchase_cost=500)
-    conn.execute("UPDATE assets SET deleted_at = datetime('now') WHERE id = ?", (deleted_id,))
-    conn.commit()
-    make_asset(conn, category_id, name="Still around", purchase_cost=25)
-
-    summary = stats_service.asset_valuation_summary(conn)
-    assert summary["total_value"] == 25
-    assert summary["priced_count"] == 1
+# # # PURCHASE COST VALIDATION ---------------------------------------------
+# The Asset Valuation report widget (and its route/service functions -
+# asset_valuation_table, asset_valuation_summary, _section_asset_valuation)
+# was removed per explicit feedback along with its own tests here - this one
+# survives because it's really testing create_asset's own purchase_cost
+# validation, unrelated to that widget beyond sharing the same field.
 
 
 def test_asset_valuation_rejects_negative_cost(conn, category_id):
@@ -334,24 +311,3 @@ def test_asset_valuation_rejects_negative_cost(conn, category_id):
     )
     assert error is not None
     assert error[1] == 400
-
-
-def test_asset_valuation_route_returns_priced_assets_only(as_admin, conn, category_id):
-    client, csrf, _ = as_admin
-    make_asset(conn, category_id, name="Priced", purchase_cost=200)
-    make_asset(conn, category_id, name="Unpriced")
-
-    resp = client.get("/api/v1/stats/assets/valuation")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["total_count"] == 1
-    assert data["summary"]["total_value"] == 200
-    assert len(data["results"]) == 1
-    assert data["results"][0]["name"] == "Priced"
-
-
-def test_asset_valuation_widget_forbidden_for_tool_keeper(as_tool_keeper):
-    client, csrf, _ = as_tool_keeper
-    resp = client.get("/api/v1/stats/export?sections=asset_valuation&format=csv")
-    assert resp.status_code == 400
-    assert "No exportable sections" in resp.get_json()["error"]

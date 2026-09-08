@@ -1066,86 +1066,6 @@ def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
     return builder
 
 
-def asset_valuation_table(conn, limit, offset):
-    """Paginated live-view nga naa sa luyo sa GET /stats/assets/valuation -
-    ang _section_asset_valuation ang naga-cover sa parehas nga data para
-    sa download.
-
-    Returns: dict {total_count, limit, offset, summary, results}."""
-    total_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND purchase_cost IS NOT NULL"
-    ).fetchone()["cnt"]
-
-    rows = conn.execute(
-        """
-        SELECT assets.id, assets.asset_id, assets.barcode_id, assets.name, categories.name AS category,
-               assets.status, assets.purchase_cost
-        FROM assets
-        LEFT JOIN categories ON assets.category_id = categories.id
-        WHERE assets.deleted_at IS NULL AND assets.purchase_cost IS NOT NULL
-        ORDER BY assets.purchase_cost DESC
-        LIMIT ? OFFSET ?
-        """,
-        (limit, offset),
-    ).fetchall()
-
-    return {
-        "total_count": total_count,
-        "limit": limit,
-        "offset": offset,
-        "summary": asset_valuation_summary(conn),
-        "results": [dict(row) for row in rows],
-    }
-
-
-def asset_valuation_summary(conn):
-    """Point-in-time snapshot (dili date-ranged pareho sa stats_summary -
-    walay "value acquired between X and Y" nga makahulugan kung walay
-    acquisition-cost ledger, book value ra karon). Mobalik ug None kung
-    walay asset nga naay purchase_cost pa, para skip ra sa caller ang
-    pag-render sa section imbes mopakita og misleading $0."""
-    row = conn.execute(
-        """
-        SELECT
-            SUM(purchase_cost) AS total_value,
-            SUM(CASE WHEN status = 'borrowed' THEN purchase_cost ELSE 0 END) AS value_checked_out,
-            SUM(CASE WHEN status = 'maintenance' THEN purchase_cost ELSE 0 END) AS value_in_maintenance,
-            COUNT(CASE WHEN purchase_cost IS NOT NULL THEN 1 END) AS priced_count
-        FROM assets
-        WHERE deleted_at IS NULL
-        """
-    ).fetchone()
-    if not row["priced_count"]:
-        return None
-    return {
-        "total_value": row["total_value"] or 0,
-        "value_checked_out": row["value_checked_out"] or 0,
-        "value_in_maintenance": row["value_in_maintenance"] or 0,
-        "priced_count": row["priced_count"],
-    }
-
-
-def _section_asset_valuation(conn, ctx):
-    """Export-ready nga bersyon sa asset_valuation_table()."""
-    rows = conn.execute(
-        """
-        SELECT assets.asset_id, assets.barcode_id, assets.name, COALESCE(categories.name, 'Uncategorized') AS category,
-               assets.status, assets.purchase_cost
-        FROM assets
-        LEFT JOIN categories ON assets.category_id = categories.id
-        WHERE assets.deleted_at IS NULL AND assets.purchase_cost IS NOT NULL
-        ORDER BY assets.purchase_cost DESC
-        LIMIT ?
-        """,
-        (EXPORT_ROW_LIMIT,),
-    ).fetchall()
-    return (
-        "Asset Valuation",
-        ["Asset Code", "Barcode", "Name", "Category", "Status", "Purchase Cost"],
-        [[r["asset_id"], r["barcode_id"], r["name"], r["category"], r["status"], r["purchase_cost"]] for r in rows],
-    )
-
-
 def maintenance_schedule_table(conn, limit, offset):
     """Paginated live-view nga naa sa luyo sa GET
     /stats/assets/maintenance-schedule - ang _section_maintenance_schedule
@@ -1228,7 +1148,6 @@ def _section_monitoring_activity(conn, ctx):
 
 SECTION_BUILDERS = {
     "summary": _section_summary,
-    "asset_valuation": _section_asset_valuation,
     "maintenance_schedule": _section_maintenance_schedule,
     "monitoring_activity": _section_monitoring_activity,
     "most_borrowed_assets": _section_most_borrowed_assets,

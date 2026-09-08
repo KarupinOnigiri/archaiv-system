@@ -1477,35 +1477,29 @@ function setNotifTab(tab) {
   document.getElementById('notif-empty-unread').classList.toggle('hidden', tab !== 'unread' || visibleCount > 0);
 }
 
-// Four modes now - see the head boot script's comment at the top of
+// Three modes - see the head boot script's comment at the top of
 // this file for the full reasoning. Mixed and Light share
 // data-theme="tesda" (same color tokens throughout) and differ only in
 // data-sidebar, which the CSS overrides further up this file key off
-// of. Dark and Modern Dark are two fully separate themes
-// (data-theme="tesda-dark" / "tesda-modern") - Modern Dark isn't a
-// variant of Dark, it has its own deeper surfaces/shadows defined in
-// static/css/input.css. Cycling order (Mixed -> Light -> Dark -> Modern
-// Dark -> Mixed -> ...) keeps the old default first and Dark right
-// after it, so an existing saved "tesda"/"tesda-dark" preference (mapped
-// to 'mixed'/'dark' below) lands in the exact same visual spot it always
-// has - Modern Dark is purely additive at the end of the cycle.
-const THEME_MODES = ['mixed', 'light', 'dark', 'modern'];
+// of. Dark is a fully separate theme (data-theme="tesda-dark"). Cycling
+// order (Mixed -> Light -> Dark -> Mixed -> ...) keeps the old default
+// first and Dark right after it, so an existing saved "tesda"/"tesda-dark"
+// preference (mapped to 'mixed'/'dark' below) lands in the exact same
+// visual spot it always has. (Modern Dark, a former 4th mode, was
+// removed per feedback.)
+const THEME_MODES = ['mixed', 'light', 'dark'];
 const THEME_MODE_ATTRS = {
   mixed: { theme: 'tesda', sidebar: 'dark' },
   light: { theme: 'tesda', sidebar: 'light' },
   dark: { theme: 'tesda-dark', sidebar: 'dark' },
-  modern: { theme: 'tesda-modern', sidebar: 'dark' },
 };
-const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode', modern: 'Modern Dark' };
+const THEME_MODE_LABELS = { mixed: 'Mixed Mode', light: 'Light Mode', dark: 'Dark Mode' };
 const THEME_MODE_ICONS = {
   // Contrast glyph (half-filled circle) - distinct from the plain sun/moon
   // below, reads as "part light, part dark" at a glance.
   mixed: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>',
   light: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
-  // Moon + sparkle - distinct from plain Dark's bare crescent, reads as
-  // "dark, plus something extra" at a glance.
-  modern: '<svg xmlns="http://www.w3.org/2000/svg" class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12.79A9 9 0 1110.21 3a7 7 0 008.79 9.79z" fill="currentColor" stroke="none"/><path d="M19 3v4M17 5h4"/></svg>',
 };
 
 const STAFF_KEY = window.APP_CONFIG.staffKey;
@@ -1514,7 +1508,6 @@ function currentThemeMode() {
   const theme = document.documentElement.getAttribute('data-theme');
   const sidebar = document.documentElement.getAttribute('data-sidebar');
   if (theme === 'tesda-dark') return 'dark';
-  if (theme === 'tesda-modern') return 'modern';
   if (theme === 'tesda' && sidebar === 'light') return 'light';
   return 'mixed';
 }
@@ -1533,7 +1526,7 @@ const FAVICON_HREFS = {
 function setFaviconForTheme(theme) {
   const link = document.getElementById('favicon-link');
   if (!link) return;
-  const isDark = theme === 'tesda-dark' || theme === 'tesda-modern';
+  const isDark = theme === 'tesda-dark';
   link.href = isDark ? FAVICON_HREFS.dark : FAVICON_HREFS.light;
 }
 

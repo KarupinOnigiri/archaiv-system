@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <script>
     try {
-      // Four modes now - Mixed (dark sidebar/main-shell, light content
+      // Three modes - Mixed (dark sidebar/main-shell, light content
       // card - this is what "tesda" alone always looked like) is still
       // the app-wide default, unchanged. Light is the same "tesda" color
       // tokens, but the sidebar stays light too instead of being forced
       // dark - toggled by data-sidebar, independent of data-theme, since
       // Mixed and Light share the exact same palette and only differ in
       // whether that one override applies (see the data-sidebar CSS rules
-      // further down). Dark is the native dark theme, unchanged. Modern
-      // Dark is a distinct 4th theme (data-theme="tesda-modern", see
-      // static/css/input.css) with its own deeper, tonal-elevation
-      // surfaces and real shadows - not a re-skin of Dark. Read this
+      // further down). Dark is the native dark theme. Read this
       // early, before <body>, so there's no flash of the wrong look on
-      // load.
+      // load. (A former 4th theme mode - a tonal-elevation "sleek dark"
+      // variant distinct from this Dark - was removed per feedback; its
+      // own theme block and everything that branched on it were dropped
+      // rather than left as dead code.)
       var staffKey = {{ (staff.username if staff is defined and staff else 'guest') | tojson }};
       var savedMode = localStorage.getItem('app-theme:' + staffKey);
       // Back-compat: earlier versions stored the raw data-theme value here
@@ -30,8 +30,6 @@
         document.documentElement.setAttribute('data-sidebar', 'light');
       } else if (savedMode === 'dark') {
         document.documentElement.setAttribute('data-theme', 'tesda-dark');
-      } else if (savedMode === 'modern') {
-        document.documentElement.setAttribute('data-theme', 'tesda-modern');
       }
     } catch (e) {
     }
@@ -76,7 +74,7 @@
   <script>
     // Same light/dark logo asset pairing as the sidebar wordmark
     // (.logo-theme-light/.logo-theme-dark further down this file) -
-    // tesda-dark/tesda-modern get the dark-logo asset, everything else
+    // tesda-dark gets the dark-logo asset, everything else
     // (tesda, i.e. Mixed or Light mode) gets the light-logo asset. Runs
     // right after the theme-detection script above (which has already set
     // data-theme on <html> by this point, synchronously) so the tab icon
@@ -85,9 +83,9 @@
     // mode dropdown changes it without a reload.
     (function () {
       var theme = document.documentElement.getAttribute('data-theme');
-      var isDark = theme === 'tesda-dark' || theme === 'tesda-modern';
+      var isDark = theme === 'tesda-dark';
       // "Mixed" (data-theme="tesda") is this app's untouched default, not
-      // itself a dark or light choice the way Dark/Modern Dark/Light are -
+      // itself a dark or light choice the way Dark/Light are -
       // so ONLY here, and only when the staff member has never explicitly
       // picked a Theme mode at all (no localStorage key yet, same variable
       // the theme-detection script above already read), the tab icon
@@ -250,12 +248,10 @@
   .logo-theme-dark {
     display: none;
   }
-  html[data-theme="tesda-dark"] .logo-theme-light,
-  html[data-theme="tesda-modern"] .logo-theme-light {
+  html[data-theme="tesda-dark"] .logo-theme-light {
     display: none;
   }
-  html[data-theme="tesda-dark"] .logo-theme-dark,
-  html[data-theme="tesda-modern"] .logo-theme-dark {
+  html[data-theme="tesda-dark"] .logo-theme-dark {
     display: inline-block;
   }
 
@@ -368,15 +364,14 @@
      .sidebar-link-active's own comment gives for using a fixed color
      instead of a --color-primary remap. That includes Mixed mode's dark
      sidebar (data-sidebar="dark", still data-theme="tesda" overall) as
-     well as the fully dark themes - the sidebar itself is dark there too,
-     same as Dark/Modern Dark, even though the rest of the page stays
+     well as the fully dark theme - the sidebar itself is dark there too,
+     same as Dark, even though the rest of the page stays
      light. */
   .sidebar-link-inactive {
     color: var(--color-base-content);
   }
   html[data-theme="tesda"][data-sidebar="dark"] .sidebar-link-inactive,
-  html[data-theme="tesda-dark"] .sidebar-link-inactive,
-  html[data-theme="tesda-modern"] .sidebar-link-inactive {
+  html[data-theme="tesda-dark"] .sidebar-link-inactive {
     color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
   }
 
@@ -414,38 +409,6 @@
     --color-base-100: #2a2a30;
     --color-base-200: #323238;
     --color-base-300: #3a3a41;
-    --color-base-content: #e8e8e8;
-  }
-
-  /* ======================================================================
-     "Modern Dark" (tesda-modern) - its own elevation ramp, separate from
-     tesda-dark above, one full tier deeper (sidebar is the *backmost*
-     MD3 layer here, in front of nothing, so it should read as the
-     darkest thing on screen) with the content card, popups, and modals
-     each a further step lighter - a real 4-tier ramp instead of
-     everything competing at similar darkness. The content card also
-     gets a real shadow (Dark's doesn't) - input.css's matching
-     elevation-shadow section covers modals/dropdowns/.sheet-panel for
-     this theme, but #content-card is a plain always-visible div, not
-     one of those, so it needs its own here.
-     ====================================================================== */
-  html[data-theme="tesda-modern"] #sidebar,
-  html[data-theme="tesda-modern"] #main-shell {
-    --color-base-100: #0c0d0e;
-    --color-base-200: #141518;
-    --color-base-300: #1c1d20;
-  }
-  html[data-theme="tesda-modern"] #content-card {
-    --color-base-100: #1a1b1e;
-    --color-base-200: #232427;
-    --color-base-300: #2c2d31;
-    --color-base-content: #e8e8e8;
-    box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.55);
-  }
-  html[data-theme="tesda-modern"] #sidebar .dropdown-content {
-    --color-base-100: #26272b;
-    --color-base-200: #303136;
-    --color-base-300: #3a3b40;
     --color-base-content: #e8e8e8;
   }
 
@@ -532,15 +495,29 @@
      shrink-to-content sizing - previously the highlight only wrapped the
      icon's own narrow content box, off-center and disproportionate
      against the wider collapsed rail around it (reported UI feedback).
-     2.75rem matches the rail's own icon column width. */
+     2.75rem matches the rail's own icon column width.
+
+     width/margin-auto centering was reverted in favor of just a plain
+     100% width (nav's own content area is exactly 2.75rem once
+     collapsed, so the two are numerically identical at rest) - the
+     margin:auto version recalculated against #sidebar's WIDTH on every
+     frame of its own 200ms open/close transition (that width is what's
+     actually animating, this rule's styles apply the instant .collapsed
+     toggles, not gradually), so a still-mid-transition nav width fed a
+     wrong, wider centering calculation and the icon visibly slid several
+     tens of pixels left before settling - reported as the icon "going
+     with the flow" of the collapse instead of staying put. width: 100%
+     has nothing to recalculate against a moving container - the icon's
+     inset from .sidebar-link's own left edge (this rule's padding-left,
+     unconditional in both states) never changes, so it never moves,
+     confirmed by sampling its getBoundingClientRect mid-transition (not
+     just before/after) rather than only at the two settled endpoints. */
   #sidebar.collapsed .sidebar-link,
   html.sidebar-collapsed-init #sidebar .sidebar-link {
-    width: 2.75rem;
-    padding-left: 0;
-    padding-right: 0;
-    margin-left: auto;
-    margin-right: auto;
-    justify-content: center;
+    width: 100%;
+    padding-left: 12px;
+    padding-right: 12px;
+    justify-content: flex-start;
   }
 
   /* Stat card hover glow - shared across every stat-card partial
@@ -798,7 +775,11 @@
              with it. items-end + the label's own pb-1 keeps the same
              visual baseline this used to get from plain div padding. -->
         <div class="nav-group-label {% if text != "Operations" %}border-t border-base-200{% endif %} px-3 flex items-end">
-          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/40 uppercase leading-none pb-1">{{ text }}</p>
+          <!-- text-base-content/30, dimmer than the /40 this used to be
+               (still readable, but reads as a quiet section label rather
+               than competing with the actual tab names below it) - per
+               feedback. -->
+          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/30 uppercase leading-none pb-1">{{ text }}</p>
         </div>
         {% endmacro %}
 
@@ -1061,7 +1042,7 @@
            content has depth against it, but the top bar reads as part of
            the app chrome rather than "page content" and stays on the same
            base-100 surface as the widgets/cards below it, in every theme. -->
-      <div id="content-header" hx-swap-oob="true" class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
+      <div id="content-header" hx-swap-oob="true" class="shrink-0 bg-base-100 border-b border-panel px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
         <div class="min-w-0">
@@ -1770,11 +1751,6 @@
                 <span class="flex-1 text-sm text-base-content">Dark Mode</span>
                 <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
               </button>
-              <button type="button" class="theme-mode-option w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors" data-mode="modern" onclick="setThemeMode('modern')">
-                <span class="w-4 h-4 text-base-content/70 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12.79A9 9 0 1110.21 3a7 7 0 008.79 9.79z" fill="currentColor" stroke="none"/><path d="M19 3v4M17 5h4"/></svg></span>
-                <span class="flex-1 text-sm text-base-content">Modern Dark</span>
-                <svg class="theme-mode-check w-4 h-4 text-primary hidden shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-              </button>
             </div>
 
             <button type="button" id="toast-style-toggle-btn" onclick="toggleInlineDropdown('toast-style-menu', 'toast-style-chevron')"
@@ -2041,7 +2017,7 @@
         {% endif %}
       {% endmacro %}
       {% macro shortcut_category(title, icon) %}
-        <div class="shortcut-category rounded-xl border border-base-300 p-3.5" data-category-name="{{ title|lower }}">
+        <div class="shortcut-category rounded-xl border border-panel p-3.5" data-category-name="{{ title|lower }}">
           <div class="flex items-center gap-2 mb-2 pb-2 border-b border-base-200">
             <span class="text-base-content/40 shrink-0">{{ cat_icon(icon) }}</span>
             <p class="text-xs font-semibold text-base-content/80">{{ title }}</p>

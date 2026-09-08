@@ -67,7 +67,7 @@
   </div>
 
   <!-- Toolbar + table -->
-  <div class="bg-base-100 rounded-xl border border-base-300 p-5">
+  <div class="bg-base-100 rounded-xl border border-panel p-5">
 
     <div class="relative mb-5" style="position: relative;">
 
@@ -154,9 +154,16 @@
       <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
 
       <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+        <!-- --input-color driven directly (in the change listener further
+             down this file), not just toggle-warning - see assets.html's
+             show-archived-toggle for why: the class this renders here is
+             frozen at page-load state while the checkbox's own checked
+             flips instantly on click, and toggle-warning:checked stops
+             matching once those drift apart. -->
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
-               class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"
+               class="toggle toggle-sm"
+               style="{% if show_inactive %}--input-color: var(--color-warning);{% endif %}"
                {% if show_inactive %}checked{% endif %}
                hx-get="/api/v1/members"
                hx-trigger="change"
@@ -474,7 +481,7 @@ document.getElementById('show-inactive-toggle').addEventListener('change', funct
   // the more honest read of "show inactive" than leaving no card lit.
   currentStandingFilter = isInactive ? 'inactive' : '';
 
-  e.target.classList.toggle('toggle-warning', isInactive);
+  e.target.style.setProperty('--input-color', isInactive ? 'var(--color-warning)' : '');
 
   const toggleLabel = document.getElementById('inactive-toggle-label');
   toggleLabel.classList.toggle('text-warning', isInactive);
@@ -715,7 +722,7 @@ function filterByStanding(standing) {
   // styling here instead - avoids that listener resetting
   // currentStandingFilter right after this function just set it.
   const isInactiveView = inactiveToggle.checked;
-  inactiveToggle.classList.toggle('toggle-warning', isInactiveView);
+  inactiveToggle.style.setProperty('--input-color', isInactiveView ? 'var(--color-warning)' : '');
   inactiveToggleLabel.classList.toggle('text-warning', isInactiveView);
   inactiveToggleLabel.classList.toggle('font-semibold', isInactiveView);
   inactiveToggleLabel.classList.toggle('bg-warning/10', isInactiveView);
@@ -809,7 +816,13 @@ function isTypingTarget(el) {
 
 function isModalOpen() {
   const container = document.getElementById('modal-container');
-  return !!(container && container.querySelector(':scope > .modal'));
+  // :scope > .fixed.inset-0 also matches - the member profile sheet
+  // (members/_profile_modal.html) isn't a daisyUI <dialog class="modal">,
+  // it's a plain .fixed.inset-0 overlay, so it was invisible to this
+  // check entirely - the page's own shortcuts (1-4, /, `, arrows, Escape)
+  // could fire right through it while it was open, on top of whatever
+  // the profile sheet's own shortcuts were doing.
+  return !!(container && container.querySelector(':scope > .modal, :scope > .fixed.inset-0'));
 }
 
 // Barcode-scan shortcut - see templates/assets.html's identical block

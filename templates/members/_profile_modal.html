@@ -28,7 +28,21 @@
         document.removeEventListener('keydown', profileShortcuts);
         return;
       }
-      if (modal.parentElement && modal.parentElement.lastElementChild !== modal) return;
+      // A later sibling that's a real stacked modal (not this modal's own
+      // trailing lazy-history <script> below, appended as a SIBLING of
+      // this div by hx-swap="beforeend" - #modal-container ends up with
+      // [this div, that script] as direct children) means something's
+      // open on top of this one - stand down. Requiring this modal to
+      // literally be parentElement.lastElementChild (the original check)
+      // was always false once that trailing script existed, so this
+      // handler could never fire at all, not just while something was
+      // stacked on top - same bug as staff/_profile_modal.html's
+      // identical pattern, fixed the same way there.
+      let hasLaterModal = false;
+      for (let n = modal.nextElementSibling; n; n = n.nextElementSibling) {
+        if (n.tagName !== 'SCRIPT') { hasLaterModal = true; break; }
+      }
+      if (hasLaterModal) return;
       const target = e.target;
       const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
       if (isTyping) return;

@@ -20,7 +20,7 @@
        the Keyboard Shortcuts modal's own search (base.html). Same
        icon-box + input + clear-button "join" convention as Inventory's
        own search (templates/assets.html) rather than a one-off style. -->
-  <div id="system-search-wrap" class="join w-64 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
+  <div id="system-search-wrap" class="join w-96 shrink-0 rounded-lg transition-shadow" data-tooltip="Search">
     <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
     </div>
@@ -445,6 +445,17 @@ function clearSystemSearch() {
   filterSystemCards('');
   input.focus();
 }
+
+// Run once on load (also re-runs on every boosted nav back to this page,
+// same as every other per-page init block in this app) - without this the
+// search input's right corner started square instead of rounded (the
+// hidden clear button owns that corner by default, see filterSystemCards'
+// own rounded-r-(--radius-field) toggle below) until the user typed and
+// cleared something once. Inventory's equivalent search box doesn't have
+// this bug because its own filter-UI sync function is already called once
+// unconditionally on load - this brings System's search box in line with
+// that same "other tabs" convention (reported UI feedback).
+filterSystemCards('');
 
 // # # # "last backup ... ago" - computed client-side so it stays accurate
 // without a page reload, same reasoning/format as home.html's dashRelativeTime. ---

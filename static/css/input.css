@@ -45,6 +45,17 @@
      card - explicit per-tab feedback on the previous flat base-200 grey. */
   --color-page-bg: #f7f8fa;
 
+  /* Default (non-active) card/panel border - a dedicated token, NOT
+     base-300, on purpose: base-300 is also every literal dividing line
+     (table cell borders, .divide-y separators) and needs real contrast
+     to read as one at all - #eceef2 is close enough to base-100's white
+     that it would defeat that purpose there. But for a card/panel's own
+     OUTER edge (stat cards, dashboard widgets, the Inventory table
+     panel, the top bar's own bottom border) a much fainter line reads as
+     "quiet structure" rather than a hard outline - explicit feedback
+     asking for this specific, lighter value on exactly those elements. */
+  --color-panel-border: #eceef2;
+
   /* Status colors: full-saturation MD swatches so alerts/notifications
      read clearly at a glance instead of the earlier muted, desaturated
      versions, which looked flat next to a solid blue primary. */
@@ -64,10 +75,7 @@
    screens despite matching MD spec exactly. Grey secondary/accent are
    likewise lightened a step so they don't disappear against the surface,
    and status colors are full-saturation rather than muted so
-   notifications/alerts stay legible and easy to tell apart. Unchanged by
-   the "Modern Dark" addition below -- that's a distinct 4th theme/mode,
-   not a replacement of this one, so anyone already on Dark keeps the
-   exact look they had. */
+   notifications/alerts stay legible and easy to tell apart. */
 @plugin "../../daisyui-theme.mjs" {
   name: "tesda-dark";
   default: false;
@@ -94,63 +102,13 @@
      every theme; nothing about how Dark actually looks changes. */
   --color-page-bg: #242428;
 
-  --color-info: #29b6f6;
-  --color-info-content: #00293b;
-  --color-success: #66bb6a;
-  --color-success-content: #0b2e0d;
-  --color-warning: #ffa726;
-  --color-warning-content: #3d2600;
-  --color-error: #ef5350;
-  --color-error-content: #380a09;
-}
-
-/* "Modern Dark" -- a 4th, distinct theme/mode (Mixed / Light / Dark /
-   Modern Dark), not a re-skin of Dark above. Built to match the tonal-
-   elevation style of YouTube/Gmail/Gemini/Facebook's dark UIs -- and
-   Material Design 3's own "surface + surface-container-
-   {low,high,highest}" model -- rather than Dark's flat single-color
-   surfaces: a true near-black backdrop, with each layer that should
-   read as "in front of" the one behind it (sidebar -> content card ->
-   popups -> modals) getting progressively lighter instead of relying on
-   borders/contrast alone. See the #sidebar/#content-card/
-   .dropdown-content/.modal-box overrides further down this file (all
-   scoped to [data-theme="tesda-modern"]) for the rest of that ramp and
-   the real elevation shadows that go with it -- these are just this
-   tier's base values. Primary/secondary/accent/status hues match Dark's
-   exactly (same brand blue, same Material status swatches) -- the
-   "modern/sleek" difference this theme is for is the surfaces and
-   shadows, not a different accent palette. */
-@plugin "../../daisyui-theme.mjs" {
-  name: "tesda-modern";
-  default: false;
-  prefersdark: false;
-  color-scheme: dark;
-
-  --color-primary: #1565c0;
-  --color-primary-content: #ffffff;
-  --color-secondary: #b3b3b3;
-  --color-secondary-content: #16171a;
-  --color-accent: #8f8f8f;
-  --color-accent-content: #ffffff;
-  --color-neutral: #18181a;
-  --color-neutral-content: #e8e8e8;
-
-  /* Deeper than Dark's #1B1B1E/#242428/#2F2F34 -- still lifted off true
-     black (#0d0d0e, not #000), but closer to the near-black canvas real
-     dark-mode web apps actually use, which only reads right because the
-     elevation ramp on top of it (sidebar/content-card/popups/modals,
-     all overridden further down) gives it somewhere lighter to stand
-     out *against*. */
-  --color-base-100: #16171a;
-  --color-base-200: #1e1f22;
-  --color-base-300: #292a2e;
-  --color-base-content: #e8e8e8;
-
-  /* Same value base-200 already had - see Dark theme's identical comment
-     above; Modern Dark's page-vs-card-vs-popup elevation ramp was
-     already the whole point of this theme, so it already has depth/
-     contrast without needing a different value here. */
-  --color-page-bg: #1e1f22;
+  /* Dark's own equivalent of the light theme's --color-panel-border - see
+     that token's comment under the "tesda" theme block above. Same
+     relationship to this theme's own base-100/200/300 as the light
+     value has to its (a touch lighter than base-200, well short of
+     base-300's stronger divider contrast), rather than reusing base-300
+     itself for card/panel edges here too. */
+  --color-panel-border: #2a2a2f;
 
   --color-info: #29b6f6;
   --color-info-content: #00293b;
@@ -176,6 +134,13 @@ body {
    dedicated token rather than reusing bg-base-200). */
 .bg-page {
   background-color: var(--color-page-bg);
+}
+
+/* Default (non-active) card/panel border - see --color-panel-border's own
+   comment under the "tesda" theme block in this file for why this is a
+   dedicated token/class rather than reusing border-base-300 everywhere. */
+.border-panel {
+  border-color: var(--color-panel-border);
 }
 
 /* Hide native browser password icons so only our custom eye toggle shows */
@@ -269,8 +234,22 @@ html[data-theme="tesda"] .textarea {
    etc.) matched to the text-field border above, then eased back --
    originally 20% (44%), revised to 15% per follow-up feedback
    (55% * 0.85 = 46.75%) -- close enough to read as the same family of
-   control without being quite as heavy as a search box's outline. */
-html[data-theme="tesda"] .toggle {
+   control without being quite as heavy as a search box's outline.
+
+   :not(:checked) added per a real bug this surfaced -- this selector's
+   specificity (element + attribute + class) is HIGHER than daisyUI's own
+   .toggle-primary:checked / .toggle-warning:checked (two classes, no
+   element), so unqualified it was winning the cascade even once checked,
+   silently discarding whatever color a toggle-{color} class was supposed
+   to apply the instant it turned on -- every "on" toggle in the app read
+   as this same muted resting gray no matter what. This rule was only
+   ever meant to fix the OFF-state's contrast, so it now only applies
+   there; several toggles had already grown their own inline
+   --input-color-setting JS as a workaround before this was traced back
+   to its actual cause (see e.g. templates/staff/_feature_flags_modal.html's
+   own comment) -- those are harmless now, just no longer the only thing
+   making an "on" toggle show its color. */
+html[data-theme="tesda"] .toggle:not(:checked) {
   --input-color: color-mix(in oklab, var(--color-base-content) 46.75%, transparent);
 }
 
@@ -311,89 +290,3 @@ html[data-theme="tesda"] .hover\:bg-base-200\/40:hover {
   background-color: color-mix(in oklab, var(--color-base-200) 48%, transparent);
 }
 
-/* ==========================================================================
-   Modern Dark: MD3-style elevation shadows + a fixed modal surface tier
-   ==========================================================================
-   Real Material Design 3 elevation is tonal shift AND a shadow together --
-   this app's dark theme already had the tonal half (base.html's #sidebar/
-   #content-card/.dropdown-content overrides give each layer a lighter
-   surface than the one behind it), but no shadow at all, which is most of
-   why it read as flat/dated rather than like a modern dark-mode web app.
-   Added here rather than per-component in every template: every dialog's
-   .modal-box (daisyUI's own class, used by every <dialog class="modal">
-   in the app) and every .dropdown-content popup gets a real shadow now,
-   app-wide, with no template changes needed.
-
-   .modal-box also gets a FIXED surface color here (not just a shadow) --
-   unlike sidebar/content-card popups, modals mount in three different
-   places depending on which one opened them (a page's own #modal-
-   container, nested inside #content-card and inheriting its tint; or
-   #global-modal-container/#checkout-modal-container, siblings of
-   #main-shell that only ever see the theme's bare defaults) -- see
-   base.html for exactly where each container lives. Without a fixed
-   color a modal's exact shade depended on which container happened to
-   render it, which is the kind of inconsistency that reads as
-   unpolished. Pinning it here means every modal, regardless of which
-   container opened it, gets the same topmost "surface-container-
-   highest" tone -- lighter than the content card behind it, same
-   elevation logic base.html already uses, just guaranteed instead of
-   incidental. */
-html[data-theme="tesda-modern"] .modal-box {
-  background-color: #303136;
-  color: #e8e8e8;
-  box-shadow:
-    0 12px 36px -6px rgba(0, 0, 0, 0.65),
-    0 4px 12px -2px rgba(0, 0, 0, 0.5);
-}
-html[data-theme="tesda-modern"] .dropdown-content {
-  box-shadow:
-    0 10px 28px -6px rgba(0, 0, 0, 0.6),
-    0 3px 10px -2px rgba(0, 0, 0, 0.45);
-}
-/* .modal-box's own default border/backdrop styling for the (also
-   dark-themed) content-card-nested case -- gives the sheet-style panel
-   used by staff/member/asset "profile" views (a plain .fixed.inset-0
-   overlay, not a <dialog>, see e.g. staff/_profile_modal.html) the same
-   elevated tone + shadow treatment as every <dialog>-based modal, so the
-   two modal patterns this app uses don't look like two different eras
-   of the UI. */
-html[data-theme="tesda-modern"] .sheet-panel {
-  background-color: #303136;
-  box-shadow:
-    -12px 0 36px -6px rgba(0, 0, 0, 0.65),
-    -4px 0 12px -2px rgba(0, 0, 0, 0.5);
-}
-
-/* Slim, low-contrast scrollbars in dark mode -- the default OS scrollbar
-   (light gray track/thumb on Windows/most browsers) looks jarring
-   against a near-black surface and is the single most obvious "this
-   isn't a polished dark theme" tell; every reference app named in the
-   request (YouTube, Gmail/Gemini, Facebook) ships a custom slim dark
-   scrollbar for exactly this reason. Applies app-wide in dark mode --
-   every internally-scrolling panel (table containers, dashboard list
-   widgets, modal bodies) picks this up with no per-element change. Not
-   applied in light mode: the default scrollbar already reads fine
-   against light surfaces, and firefox's `scrollbar-color` there would
-   need its own separate light-mode tuning this change isn't trying to
-   do. */
-html[data-theme="tesda-modern"] {
-  scrollbar-width: thin;
-  scrollbar-color: #4a4b52 transparent;
-}
-html[data-theme="tesda-modern"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-html[data-theme="tesda-modern"] ::-webkit-scrollbar-track {
-  background: transparent;
-}
-html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb {
-  background-color: #4a4b52;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb:hover {
-  background-color: #5a5b63;
-  background-clip: content-box;
-}

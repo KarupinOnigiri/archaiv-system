@@ -555,3 +555,42 @@ def test_full_activity_modal_date_presets_use_shared_soft_tint_highlight(
     assert "border-primary" in body
     assert "bg-primary/10" in body
     assert "'btn-primary'" not in body
+
+
+def test_staff_profile_modal_shortcut_topmost_check_ignores_trailing_script(
+    as_admin, conn, department_id
+):
+    """Regression test: this modal's own E/L/P/D/U keyboard shortcuts
+    never fired at all, reported as "all of the shortcuts...doesn't
+    work". Root cause - the modal's "am I still the topmost thing open"
+    guard required `modal.parentElement.lastElementChild === modal`, but
+    this modal (loaded via hx-swap="beforeend") always lands with its own
+    trailing lazy-activity <script> as a SIBLING after it under
+    #modal-container, meaning that script - not the modal div - was
+    always the real lastElementChild. The check now walks
+    modal.nextElementSibling and only bails on a non-SCRIPT sibling
+    (an actual later modal stacked on top)."""
+    other_admin_id = make_staff(conn, department_id, "admin", "shortcut_check_target")
+    client, csrf, _ = as_admin
+    resp = client.get(f"/api/v1/staff/{other_admin_id}/profile")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "modal.parentElement.lastElementChild !== modal" not in html
+    assert "hasLaterModal" in html
+    assert "nextElementSibling" in html
+
+
+def test_show_inactive_toggle_drives_input_color_inline(as_admin):
+    """Regression test: same fix as Inventory's show-archived-toggle - see
+    test_assets.py::test_show_archived_toggle_drives_input_color_inline
+    for the full reasoning. Unlike Inventory's inline onchange, this one
+    drives --input-color from updateShowInactivePillUI(), the page's
+    existing shared sync function (which only appears in the HTML
+    unconditionally, unlike the tag's own style= attribute - that's empty
+    whenever show_inactive is false, i.e. the default state this test's
+    own client hits)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/staff")
+    html = resp.get_data(as_text=True)
+    assert 'id="show-inactive-toggle"' in html
+    assert "setProperty('--input-color', isInactive" in html

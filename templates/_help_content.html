@@ -46,7 +46,7 @@
 
     <section id="getting-started" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Getting Started</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p><strong class="text-base-content">Signing in.</strong> Use your username (or barcode ID) and password. If you've turned on <strong class="text-base-content">Barcode + PIN login</strong> (Account &amp; Security, below), you can instead scan your barcode at the login screen and enter your PIN - available to every role, not just admins.</p>
         <p><strong class="text-base-content">Your role.</strong> What you see in the sidebar and what buttons are available depends on your role: <span class="font-medium">Admin</span> (full access), <span class="font-medium">In Charge</span> (day-to-day operations plus most settings), and <span class="font-medium">Tool Keeper</span> (checkout/return and inventory viewing, plus filing unrestriction requests instead of acting directly). If a button or tab you'd expect isn't visible, it's almost always because your role doesn't have it - ask an admin rather than assuming something's broken.</p>
         <p><strong class="text-base-content">Locked out of a tab?</strong> An admin can turn any tab off app-wide from System → Feature Access. If a tab you normally use has vanished for everyone, that's likely why - and if you're expecting to see Reservations and don't, it may simply not be turned on yet (it defaults off).</p>
@@ -56,7 +56,7 @@
 
     <section id="dashboard" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Dashboard</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Your landing page - an overview of what's happening right now: total/available assets, active and overdue loans, a recent-activity feed, currently-online staff{% if feature_flags.monitoring %}, live Monitoring status{% endif %}, asset status breakdown, top-borrowed items, a Due Soon to-do list, and a Maintenance Due list{% if feature_flags.reservations %} (plus Upcoming Reservations){% endif %} - each widget's "View all" jumps straight to the matching filtered view on its own tab. The page scrolls if your screen isn't tall enough to show it all at once, but each list still caps its own height and scrolls internally so nothing runs on forever.</p>
         <p><strong class="text-base-content">Quick Actions</strong> lets you jump straight into a checkout, a return, or (for Admin/In Charge) adding a new member or asset, without navigating to that tab first.</p>
         {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
@@ -68,7 +68,7 @@
     {% if feature_flags.assets %}
     <section id="inventory" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Inventory</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>The full list of physical assets - tools, equipment, instruments. Search, filter by status/condition/category, and sort any column by clicking its header.</p>
         <p><strong class="text-base-content">Scanning.</strong> Click the search box and scan a barcode (or type it and hit Enter) to jump straight to that item's details, from anywhere on the page.</p>
         <p><strong class="text-base-content">Serialized vs. Consumable.</strong> Most assets are Serialized - one physical item, one status (Available/Borrowed/Maintenance/Reserved); the QTY column just shows "1" for these, since there's only ever the one unit. A Consumable (screws, sandpaper, disposable supplies - anything tracked by count rather than one unique unit) has no status of its own; it always stays "available" and instead tracks a Quantity, with an optional low-stock Reorder Threshold. QTY is colored green/amber/red (in stock / low / out), and the Status column mirrors that as "In Stock" / "Low" / "Out of Stock" text - a consumable is flagged Low once its quantity drops under 5, or at/below its own Reorder Threshold if that's set higher. Checking one out decreases its quantity instead of flipping a status, and it never goes through the return flow. Adjust a consumable's stock (add / deduct / set to an exact count) directly from its Details panel or the row's Adjust Stock action.</p>
@@ -85,7 +85,7 @@
     {% if feature_flags.members %}
     <section id="members" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Members</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Everyone who can borrow tools - trainees and trainers. Same search/filter/sort/scan conventions as Inventory.</p>
         <p><strong class="text-base-content">Restrictions.</strong> A member's account can be flagged restricted (blocks new checkouts) either automatically - after too many items are returned damaged, see Damage Restriction in System - or manually{% if staff.role in ["admin", "in_charge"] %} by an Admin/In Charge account{% endif %}.</p>
         <p><strong class="text-base-content">Lifting a restriction.</strong> {% if staff.role == "tool_keeper" %}As a Tool Keeper, you can't lift a restriction directly - file an unrestriction request instead (from the member's row), and an Admin or In Charge account reviews it from the Approvals tab.{% else %}Admin/In Charge can lift a restriction directly, or review a Tool Keeper's unrestriction request from the Approvals tab.{% endif %}</p>
@@ -98,7 +98,7 @@
     {% if feature_flags.transactions %}
     <section id="borrow-return" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Borrow &amp; Return</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p><strong class="text-base-content">New Checkout</strong> walks you through picking a borrower, then adding assets by scanning or searching, and confirms with a due date (defaults to the app-wide Loan Duration setting, but you can change it per checkout).</p>
         <p><strong class="text-base-content">Return Items</strong> scans or searches for the loan, lets you record the returned condition, and note any remarks. Marking anything other than Functional automatically puts that asset into Maintenance; marking it Disposed removes it from circulation.</p>
         <p><strong class="text-base-content">Batch return</strong> handles multiple items borrowed by the same person in one go, applying the same condition/remarks to all of them.</p>
@@ -111,7 +111,7 @@
     {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
     <section id="reservations" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Reservations</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Advance bookings for a serialized asset - "book it for Tuesday" instead of walking up on the day and hoping it's free. Start one either from this page's own <strong class="text-base-content">"New Reservation"</strong> button (search/pick the asset first) or from that asset's Details panel (the "Reserve" button, when you already have the asset open). This page is the list of everything currently scheduled, fulfilled, cancelled, or expired, filterable by status{% if staff.role in ["admin", "in_charge"] %} and, with "Only mine", to just your own bookings{% endif %}.</p>
         <p><strong class="text-base-content">Advisory, not enforced.</strong> A reservation doesn't lock the asset - it can still be checked out by anyone today even with an upcoming booking on it. Staff see a "Reserved for" banner on the asset's Details panel and use their own judgment; nothing in the checkout flow blocks it. An asset currently in maintenance can't be reserved at all - it won't show up in the "New Reservation" picker.</p>
         <p><strong class="text-base-content">Click any row</strong> in the table for that reservation's full details (member, notes, who booked/cancelled it). Cancelling is available from there or from the asset's own Details panel. The table refreshes itself automatically whenever a reservation is made or cancelled - use the <span class="whitespace-nowrap">↻ refresh</span> button if you want to check for changes made elsewhere.</p>
@@ -124,7 +124,7 @@
     {% if feature_flags.requests %}
     <section id="approvals" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Approvals</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p><strong class="text-base-content">Unrestriction requests</strong> - filed by a Tool Keeper on a restricted member's behalf, reviewed (approved/denied) by Admin or In Charge.</p>
         <p><strong class="text-base-content">Admin deactivation requests</strong> - deactivating an admin account isn't a single click, on purpose. Any active In Charge or Tool Keeper account can vote to approve or deny it (every in_charge/tool_keeper is notified the moment one's filed). Normally that needs 4 approvals with at least 2 from In Charge accounts; if there aren't enough In Charge/Tool Keeper staff around for that, it scales down to 3 approvals (1+ In Charge) or 2 (1+ In Charge) depending on how many actually exist. Votes don't do anything by themselves, though - reaching the required count doesn't auto-deactivate anyone, and a single denial doesn't cancel the request either. The admin who filed it has the final say: they can open "View reviews" to see every vote and its reason, then either Finalize (once enough approvals are in) or Cancel at any time regardless of vote counts.</p>
         <p class="text-xs text-base-content/50">Each tab remembers its own filter/status and page position in the URL, so a bookmarked or refreshed link reopens exactly where you left it.</p>
@@ -134,7 +134,7 @@
 
     <section id="notifications" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Notifications</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Alerts land here for loans you're tracking nearing their due date ("due soon"), loans that have gone overdue, and (if enabled) unrestriction request updates. The bell icon in the header shows your unread count and a quick-view dropdown.</p>
         <p><strong class="text-base-content">What counts as "due soon"</strong> is an app-wide threshold {% if staff.role in ["admin", "in_charge"] %}an admin sets from System → Notification Settings{% else %}an admin controls{% endif %} - how many hours before the due date the alert fires.</p>
         <p><strong class="text-base-content">Which alerts reach you personally</strong> is controlled per-account from the account menu's "Settings &amp; privacy" - due-soon reminders, overdue alerts, and unrestriction-request updates can each be turned on or off independently, without affecting anyone else.</p>
@@ -144,7 +144,7 @@
     {% if staff.role == "admin" %}
     <section id="staff" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Staff</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Admin-only. Manage every staff account: create new ones (grants system access to an existing member), edit role/assignment window/RFID card, lock/unlock, reset a forgotten password, deactivate/reactivate.</p>
         <p><strong class="text-base-content">Roles</strong> - Admin, In Charge, Tool Keeper - are set here. A Tool Keeper account needs both an assigned start and end date to be able to sign in at all; the other two roles don't require it. <strong class="text-base-content">Reassign Usage</strong> (on a Tool Keeper's row) is the fast way to set that window - the quick-extend buttons always count from the start date, filling it in with today's date first if it's blank, and Clear wipes both dates back out.</p>
         <p><strong class="text-base-content">Handing out admin access</strong> is a direct action here (unlike <em>removing</em> it, which routes through peer approval on the Approvals tab) - creating a new account with the Admin role, or promoting an existing one, takes effect immediately.</p>
@@ -156,7 +156,7 @@
     {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
     <section id="monitoring" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Monitoring</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Live exit monitoring for RFID-tagged tools: an antenna at the door reports every tag it sees to the Pi listener, which flags anything leaving without a matching active checkout.</p>
         <p><strong class="text-base-content">Alarm banner</strong> shows in real time whenever an unauthorized or unrecognized tag is detected walking out, from any page in the app - not just this tab. It only clears with the Admin's physical Master Key Card tap at the tool room's reader{% if staff.role == "admin" %}, or can be muted app-wide from System → Alarm Settings if it needs to stay quiet for a while - the events themselves still get recorded either way{% endif %}.</p>
         <p><strong class="text-base-content">Log</strong> is a running history of every tag event the listener has reported, searchable and filterable the same way as Inventory/Activity Log.</p>
@@ -168,9 +168,9 @@
     {% if feature_flags.reports %}
     <section id="reports" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Reports</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Charts and tables built from your actual data - most/least-borrowed assets, borrowed-by-category, loan duration trends, top borrowers, overdue frequency, condition changes, staff activity, asset valuation, maintenance schedule{% if staff and staff.role in ["admin", "in_charge"] and feature_flags.monitoring %}, and monitoring activity{% endif %}.{% if staff.role == "tool_keeper" %} As a Tool Keeper you see a smaller set, scoped only to your own activity - never other staff's or an all-borrowers view.{% endif %}</p>
-        <p><strong class="text-base-content">Asset Valuation</strong> and <strong class="text-base-content">Maintenance Schedule</strong> are current-state snapshots (not date-ranged like the rest) - total book value of priced assets on hand, and what's due or nearly due for service.{% if staff and staff.role in ["admin", "in_charge"] and feature_flags.monitoring %} <strong class="text-base-content">Monitoring Activity</strong> summarizes the RFID exit log for the selected date range - event counts by classification and alarm response times - a printable/exportable companion to Monitoring's own Trends tab, hidden here if Monitoring is turned off.{% endif %}</p>
+        <p><strong class="text-base-content">Maintenance Schedule</strong> is a current-state snapshot (not date-ranged like the rest) - what's due or nearly due for service.{% if staff and staff.role in ["admin", "in_charge"] and feature_flags.monitoring %} <strong class="text-base-content">Monitoring Activity</strong> summarizes the RFID exit log for the selected date range - event counts by classification and alarm response times - a printable/exportable companion to Monitoring's own Trends tab, hidden here if Monitoring is turned off.{% endif %}</p>
         <p><strong class="text-base-content">Date range</strong> applies to every widget at once - pick a preset or a custom range at the top of the page.</p>
         <p><strong class="text-base-content">Customize</strong> lets you show/hide and reorder individual widgets. <strong class="text-base-content">Export</strong> downloads the current view.</p>
       </div>
@@ -180,7 +180,7 @@
     {% if staff.role in ["admin", "in_charge", "tool_keeper"] %}
     <section id="activity-log" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Activity Log</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>A running audit trail of every meaningful action taken in the app - who did what, to what, and when. Filter by staff member, action type, or date range. Useful for tracing back "who deleted this" or "when did this get approved."</p>
       </div>
     </section>
@@ -189,7 +189,7 @@
     {% if staff.role in ["admin", "in_charge"] %}
     <section id="system" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">System</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>App-wide policy knobs, one card per setting. {% if staff.role == "admin" %}As an admin you see every card below; In Charge sees the operational ones only (Session Settings, Account Security, Alarm Settings, Barcode ID Prefixes, Feature Access, and Database Backups/Auto-Delete are admin-only - they're infrastructure/security controls, not day-to-day policy).{% else %}You see the operational settings - Loan Limits, Notification Settings, Loan Duration, Checkout Session Timeout, Damage Restriction, Maintenance Settings, and Barcode Labels. Session Settings, Account Security, Alarm Settings, Barcode ID Prefixes, Feature Access, Database Backups, and Auto-Delete are admin-only.{% endif %}</p>
         <ul class="list-disc pl-5 space-y-1">
           {% if staff.role == "admin" %}
@@ -218,7 +218,7 @@
 
     <section id="barcodes" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Barcode Labels</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Pick from every currently-active asset and/or member, preview the generated CODE128 barcodes, and download a print-ready PDF sized to common label sheets. Only reachable from the System page card above - there's deliberately no separate sidebar tab for it, but <kbd class="kbd kbd-xs">Alt+B</kbd> jumps back to System from here.</p>
       </div>
     </section>
@@ -226,13 +226,13 @@
 
     <section id="account" class="scroll-mt-6">
       <h2 class="text-lg font-bold mb-2">Account &amp; Security</h2>
-      <div class="bg-base-100 rounded-xl border border-base-300 p-5 space-y-3 text-sm text-base-content/70">
+      <div class="bg-base-100 rounded-xl border border-panel p-5 space-y-3 text-sm text-base-content/70">
         <p>Everything below lives in the account menu (click your name/avatar in the sidebar):</p>
         <ul class="list-disc pl-5 space-y-1">
           <li><strong class="text-base-content">My Account</strong> - your profile photo and name.</li>
           <li><strong class="text-base-content">Change password</strong> - you'll stay signed in on this device; any other active sessions on your account are signed out.</li>
           <li><strong class="text-base-content">Barcode + PIN login</strong> - available to every role, not just admins. Off by default; enable it to sign in with a barcode scan and a 6-digit PIN instead of your username and password. You can change the PIN or turn it back off any time - each of those requires your current password to confirm, not your current PIN.</li>
-          <li><strong class="text-base-content">Display &amp; accessibility</strong> - Theme mode (Mixed/Light/Dark/Modern Dark) and Notification style (Light/Dark/Material Design), both picked from a dropdown and applied immediately, saved to this account on this browser.</li>
+          <li><strong class="text-base-content">Display &amp; accessibility</strong> - Theme mode (Mixed/Light/Dark) and Notification style (Light/Dark/Material Design), both picked from a dropdown and applied immediately, saved to this account on this browser.</li>
           <li><strong class="text-base-content">Settings &amp; privacy</strong> - which alert types land in your own notification bell.</li>
           <li><strong class="text-base-content">Give feedback</strong> - send a bug report or idea straight to admins, with optional screenshots, without leaving the app.</li>
           <li><strong class="text-base-content">Log out</strong> - asks you to confirm by name before signing out.</li>
