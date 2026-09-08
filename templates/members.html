@@ -9,30 +9,39 @@
       <!--  <p class="text-sm text-base-content/50 mt-1">Everyone who can borrow tools - trainees, trainers, and their current standing.</p>-->
     </div>
     <div class="flex items-center gap-2">
-      {% if staff.role in ["admin", "in_charge"] %}
-      <button type="button" id="manage-departments-btn" class="btn btn-outline btn-sm" data-tooltip="Manage departments (Alt+M)"
-              hx-get="/api/v1/departments/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Manage Departments
-      </button>
-      <button type="button" id="import-members-btn" class="btn btn-outline btn-sm"
-              hx-get="/api/v1/members/import-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        Import CSV
-      </button>
-      {% endif %}
-      <button type="button" id="export-members-btn" class="btn btn-outline btn-sm"
-              hx-get="/api/v1/members/export-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML"
-              hx-include="#show-inactive-toggle">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-        Export Data
-      </button>
+      <!-- Same header consolidation as Inventory: one primary action (Add
+           New Member) + everything else in this overflow menu, instead of
+           3-4 same-weight buttons in a row. -->
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-outline btn-sm btn-square rounded-xl" role="button" data-tooltip="More actions" aria-label="More member actions">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </label>
+        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-56 p-2 z-50">
+          {% if staff.role in ["admin", "in_charge"] %}
+          <li>
+            <a id="manage-departments-btn" class="flex items-center gap-2" data-tooltip="Manage departments (Alt+M)"
+               hx-get="/api/v1/departments/manage-form" hx-target="#modal-container" hx-swap="innerHTML">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Manage Departments
+            </a>
+          </li>
+          <li>
+            <a id="import-members-btn" class="flex items-center gap-2"
+               hx-get="/api/v1/members/import-form" hx-target="#modal-container" hx-swap="innerHTML">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Import CSV
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a id="export-members-btn" class="flex items-center gap-2"
+               hx-get="/api/v1/members/export-form" hx-target="#modal-container" hx-swap="innerHTML" hx-include="#show-inactive-toggle">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              Export Data
+            </a>
+          </li>
+        </ul>
+      </div>
       {% if staff.role in ["admin", "in_charge"] %}
       <button type="button" id="add-member-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="Add new member (Alt+N)"
               hx-get="/api/v1/members/add-form"
@@ -141,7 +150,10 @@
         <span id="clear-member-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
       </button>
 
-      <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+      <!-- Same divider Inventory uses before its own "Show archived" toggle. -->
+      <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
+
+      <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
                class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"

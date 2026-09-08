@@ -512,3 +512,19 @@ def test_import_forbidden_for_tool_keeper(as_tool_keeper):
     client, csrf, _ = as_tool_keeper
     resp = csv_upload(client, csrf, f"member_identifier,username,password,role\nX,x,{TEST_PASSWORD},tool_keeper\n")
     assert resp.status_code == 403
+
+
+# # # HEADER OVERFLOW MENU (matches Inventory/Members' own consolidation) ----
+
+
+def test_staff_page_header_has_overflow_menu_and_single_primary_button(as_admin):
+    """Import/Export got tucked into one overflow menu (squircle, not
+    circle) next to the single primary "Add New Staff" button, same
+    consolidation as Inventory's/Members' own headers."""
+    client, csrf, _ = as_admin
+    resp = client.get("/staff")
+    html = resp.get_data(as_text=True)
+    assert "btn-square rounded-xl" in html
+    assert 'id="import-staff-btn"' in html
+    assert 'id="export-staff-btn"' in html
+    assert 'id="add-staff-btn"' in html

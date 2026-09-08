@@ -10,21 +10,29 @@
     </div>
     <div class="flex items-center gap-2">
       {% if staff.role == "admin" %}
-      <button type="button" id="import-staff-btn" class="btn btn-outline btn-sm"
-              hx-get="/api/v1/staff/import-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        Import CSV
-      </button>
-      <button type="button" id="export-staff-btn" class="btn btn-outline btn-sm"
-              hx-get="/api/v1/staff/export-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML"
-              hx-include="#show-inactive-toggle">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-        Export Data
-      </button>
+      <!-- Same header consolidation as Inventory/Members: one primary
+           action (Add New Staff) + everything else in this overflow menu. -->
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-outline btn-sm btn-square rounded-xl" role="button" data-tooltip="More actions" aria-label="More staff actions">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </label>
+        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-56 p-2 z-50">
+          <li>
+            <a id="import-staff-btn" class="flex items-center gap-2"
+               hx-get="/api/v1/staff/import-form" hx-target="#modal-container" hx-swap="innerHTML">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Import CSV
+            </a>
+          </li>
+          <li>
+            <a id="export-staff-btn" class="flex items-center gap-2"
+               hx-get="/api/v1/staff/export-form" hx-target="#modal-container" hx-swap="innerHTML" hx-include="#show-inactive-toggle">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              Export Data
+            </a>
+          </li>
+        </ul>
+      </div>
       <button type="button" id="add-staff-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="Add new staff (Alt+N)"
               hx-get="/api/v1/staff/add-form"
               hx-target="#modal-container"
@@ -123,7 +131,10 @@
         <span id="clear-staff-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
       </button>
 
-      <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+      <!-- Same divider Inventory/Members use before their own "Show archived"/"Show inactive" toggle. -->
+      <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
+
+      <label id="inactive-toggle-label" data-tooltip="Toggle show inactive (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_inactive %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-inactive-toggle" name="show_inactive"
                value="1"
                class="toggle toggle-sm {% if show_inactive %}toggle-warning{% endif %}"

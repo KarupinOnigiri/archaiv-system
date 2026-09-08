@@ -622,3 +622,20 @@ def test_restriction_history_reflects_a_real_restriction(as_admin, conn, member_
     )
     resp = client.get(f"/api/v1/members/{member_id}/restriction-history")
     assert resp.status_code == 200
+
+
+# # # HEADER OVERFLOW MENU (matches Inventory's own consolidation) -----------
+
+
+def test_members_page_header_has_overflow_menu_and_single_primary_button(as_admin):
+    """Manage Departments/Import/Export got tucked into one overflow menu
+    (squircle, not circle) next to the single primary "Add New Member"
+    button, same consolidation as Inventory's own header."""
+    client, csrf, _ = as_admin
+    resp = client.get("/members")
+    html = resp.get_data(as_text=True)
+    assert "btn-square rounded-xl" in html
+    assert 'id="manage-departments-btn"' in html
+    assert 'id="import-members-btn"' in html
+    assert 'id="export-members-btn"' in html
+    assert 'id="add-member-btn"' in html
