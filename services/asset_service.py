@@ -49,6 +49,7 @@ SORTABLE_COLUMNS = {
     "asset_id": "assets.asset_id",
     "name": "assets.name",
     "category": "categories.name",
+    "quantity": "assets.quantity",
     "status": "assets.status",
     "deleted_at": "assets.deleted_at",
     "condition": "assets.condition",

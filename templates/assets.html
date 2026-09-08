@@ -9,30 +9,46 @@
     <!--   <p class="text-sm text-base-content/50 mt-1">Every tool in the shop - what's available, what's out, and what needs attention.</p> -->
     </div>
     <div class="flex items-center gap-2">
-      {% if staff.role in ["admin", "in_charge"] %}
-      <button type="button" id="manage-categories-btn" class="btn btn-outline btn-sm" data-tooltip="Manage categories (Alt+M)"
-              hx-get="/api/v1/categories/manage-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
-        Manage Categories
-      </button>
-      <button type="button" id="import-csv-btn" class="btn btn-outline btn-sm" data-tooltip="Import CSV (Alt+I)"
-              hx-get="/api/v1/assets/import-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        Import CSV
-      </button>
-      {% endif %}
-      <button type="button" id="export-data-btn" class="btn btn-outline btn-sm" data-tooltip="Export data (Alt+E)"
-              hx-get="/api/v1/assets/export-form"
-              hx-target="#modal-container"
-              hx-swap="innerHTML"
-              hx-include="#show-archived-toggle">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-        Export Data
-      </button>
+      <!-- Was 4 same-weight buttons in a row (Manage Categories/Import/
+           Export/Add New Item), which buried the one action people reach
+           for most under equal-weight clutter. Now: one primary action
+           (Add New Item) + everything else tucked into this overflow
+           menu, same dropdown/kebab convention the table's own row
+           actions already use (assets/_table.html). Import/Export icons
+           below are swapped from before too - Import now shows an
+           upload-into-the-app arrow, Export a download-out-of-the-app
+           arrow, matching the more common convention for those two words
+           (they'd ended up backwards). -->
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-outline btn-sm btn-circle" role="button" data-tooltip="More actions" aria-label="More inventory actions">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </label>
+        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-56 p-2 z-50">
+          {% if staff.role in ["admin", "in_charge"] %}
+          <li>
+            <a id="manage-categories-btn" class="flex items-center gap-2" data-tooltip="Manage categories (Alt+M)"
+               hx-get="/api/v1/categories/manage-form" hx-target="#modal-container" hx-swap="innerHTML">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41L11.17 22.83a2 2 0 01-2.83 0L2 16.5V2h14.5l6.09 6.09a2 2 0 010 2.83z"/><circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none"/></svg>
+              Manage Categories
+            </a>
+          </li>
+          <li>
+            <a id="import-csv-btn" class="flex items-center gap-2" data-tooltip="Import CSV (Alt+I)"
+               hx-get="/api/v1/assets/import-form" hx-target="#modal-container" hx-swap="innerHTML">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              Import CSV
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a id="export-data-btn" class="flex items-center gap-2" data-tooltip="Export data (Alt+E)"
+               hx-get="/api/v1/assets/export-form" hx-target="#modal-container" hx-swap="innerHTML" hx-include="#show-archived-toggle">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              Export Data
+            </a>
+          </li>
+        </ul>
+      </div>
       {% if staff.role in ["admin", "in_charge"] %}
       <button type="button" id="add-new-item-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="Add new item (Alt+N)"
               hx-get="/api/v1/assets/add-form"
@@ -137,9 +153,13 @@
       </div>
 
       <div id="condition-filter-wrap" class="join rounded-lg transition-shadow" data-tooltip="Condition">
+        <!-- Wrench icon, not a gear - a gear reads as "settings", which
+             this filter (asset condition) isn't. Same wrench glyph the
+             table's own "Mark Calibrated" row action already uses, for
+             consistency. -->
         <button type="button" id="condition-filter-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
                 onclick="clearConditionFilter()" aria-label="Clear condition filter" data-tooltip="Clear condition filter" disabled>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
         </button>
         <select id="condition-filter" name="condition"
                 aria-label="Filter by condition"
@@ -217,7 +237,11 @@
         <span id="clear-filters-count" class="absolute -top-1 -right-1 bg-error text-error-content text-[10px] font-semibold rounded-full w-4 h-4 flex items-center justify-center leading-none">0</span>
       </button>
 
-      <label id="archived-toggle-label" data-tooltip="Toggle show archived (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none ml-auto px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
+      <!-- Thin divider so "Show archived" reads as part of this filter
+           row instead of floating alone in the open space to its left. -->
+      <div class="w-px h-6 bg-base-300 ml-auto" aria-hidden="true"></div>
+
+      <label id="archived-toggle-label" data-tooltip="Toggle show archived (`)" class="flex items-center gap-2 text-sm cursor-pointer select-none px-2.5 py-1 rounded-full transition-colors {% if show_archived %}text-warning font-semibold bg-warning/10{% else %}text-base-content/70{% endif %}">
         <input type="checkbox" id="show-archived-toggle" name="show_archived"
                value="1"
                class="toggle toggle-sm {% if show_archived %}toggle-warning{% endif %}"

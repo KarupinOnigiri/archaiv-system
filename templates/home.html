@@ -8,45 +8,14 @@
      rather than stretching the whole page into one giant list. -->
 <div class="flex flex-col gap-6 pt-6 pr-[1.875rem] pb-6 pl-6">
 
-  <!-- Greeting strip - solid #1565c0 (the app's own --color-primary, same
-       blue as Add New Item/the sidebar's active-tab highlight) in every
-       theme; a lighter tint was tried here before but only actually looked
-       right against a light page background - in a dark theme a
-       mixed-toward-white pastel card floating in an otherwise all-dark UI
-       stood out badly instead of blending in. Text is a fixed white in
-       every theme (not var(--color-primary-content) - that happens to
-       already be white in all three themes today, but this card wants
-       white specifically, not "whatever the theme's contrast token
-       resolves to" if a theme ever changed it).
-       Slimmer than before (py-3, not py-4) and the subtitle is no longer
-       static filler ("Here's what's happening...") - it now surfaces the
-       actual thing that needs attention (overdue loans / pending
-       approvals) when there is one, so the stat cards below aren't just
-       repeating a header that already said nothing. Falls back to a plain
-       "All caught up" when there's genuinely nothing to flag. -->
-  {% set show_overdue_msg = feature_flags.transactions and dash_loans_overdue %}
-  {% set show_approvals_msg = staff.role in ["admin", "in_charge"] and pending_approvals_count %}
-  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl px-6 py-3 bg-primary">
-    <div class="min-w-0">
-      <h2 id="dash-greeting" class="text-lg font-bold truncate text-white">Welcome back</h2>
-      <p class="text-sm text-white/80 mt-0.5">
-        {% if show_overdue_msg and show_approvals_msg %}
-        <a href="/transactions?status=overdue" class="hover:underline">{{ dash_loans_overdue }} overdue loan{{ 's' if dash_loans_overdue != 1 }}</a> and
-        <a href="/requests" class="hover:underline">{{ pending_approvals_count }} pending approval{{ 's' if pending_approvals_count != 1 }}</a> need attention.
-        {% elif show_overdue_msg %}
-        <a href="/transactions?status=overdue" class="hover:underline font-medium">{{ dash_loans_overdue }} overdue loan{{ 's' if dash_loans_overdue != 1 }}</a> need{{ 's' if dash_loans_overdue == 1 }} attention.
-        {% elif show_approvals_msg %}
-        <a href="/requests" class="hover:underline font-medium">{{ pending_approvals_count }} pending approval{{ 's' if pending_approvals_count != 1 }}</a> waiting on you.
-        {% else %}
-        All caught up - nothing needs attention right now.
-        {% endif %}
-      </p>
-    </div>
-    <div class="text-right shrink-0">
-      <p id="dash-clock" class="text-xl font-bold tabular-nums leading-none text-white"></p>
-      <p id="dash-date" class="text-xs text-white/70 mt-1"></p>
-    </div>
-  </div>
+  <!-- The big blue greeting banner used to live here (name + "Here's
+       what's happening..." + date/time) - removed entirely. It and the
+       top bar right above it read as two headers stacked before any real
+       content showed up. The date/time survives, moved into a small
+       subtitle under "Dashboard" in the top bar itself (base.html's
+       #content-header) - see that template for the actual clock. Nothing
+       else took its place; the stat cards below now start right after
+       the top bar instead of after a full-width banner. -->
 
   <!-- KPI row - 3 columns (2 rows) below 2xl (1536px) rather than a flat 6,
        since 6 equal columns at the app's supported minimum width (lg, 1024px)
@@ -218,9 +187,20 @@
               <span class="font-semibold shrink-0">{{ dash_assets_available }}</span>
             </div>
             <div class="flex items-center justify-between gap-2">
+              <!-- "Borrowed" here is on-time borrowed only (total borrowed
+                   minus overdue) - Overdue gets its own slice right below
+                   rather than being silently folded into this count, so the
+                   two numbers plus every other slice still add up to the
+                   asset total instead of double-counting. -->
               <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-info shrink-0"></span>Borrowed</span>
-              <span class="font-semibold shrink-0">{{ dash_assets_borrowed }}</span>
+              <span class="font-semibold shrink-0">{{ dash_assets_borrowed - dash_loans_overdue }}</span>
             </div>
+            {% if feature_flags.transactions %}
+            <div class="flex items-center justify-between gap-2">
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-error shrink-0"></span>Overdue</span>
+              <span class="font-semibold shrink-0">{{ dash_loans_overdue }}</span>
+            </div>
+            {% endif %}
             <div class="flex items-center justify-between gap-2">
               <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-warning shrink-0"></span>Reserved</span>
               <span class="font-semibold shrink-0">{{ dash_assets_reserved }}</span>
@@ -500,23 +480,6 @@
 
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
 <script>
-// # # # Greeting + live clock -------------------------------------------
-function dashUpdateClock() {
-  const now = new Date();
-  const hour = now.getHours();
-  const greetingWord = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const name = {{ (staff_first_name or 'there') | tojson }};
-  const greetingEl = document.getElementById('dash-greeting');
-  if (greetingEl) greetingEl.textContent = `${greetingWord}, ${name}`;
-
-  const clockEl = document.getElementById('dash-clock');
-  if (clockEl) clockEl.textContent = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  const dateEl = document.getElementById('dash-date');
-  if (dateEl) dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-}
-dashUpdateClock();
-setInterval(dashUpdateClock, 30000);
-
 // # # # Relative timestamps for the Recent Activity feed -----------------
 // Formatted client-side ("5m ago" etc.) rather than fixed server-side, so it
 // stays accurate without a page reload.
@@ -576,9 +539,17 @@ function dashRenderStatusChart() {
   if (window.__dashStatusChart) {
     window.__dashStatusChart.destroy();
   }
+  // "Borrowed" is split into on-time + Overdue rather than adding Overdue
+  // as an extra slice on top - an overdue loan's asset is already counted
+  // once in dash_assets_borrowed, so folding it in unsplit would inflate
+  // the ring past 100% of the actual asset total. This keeps every slice
+  // mutually exclusive, same invariant the legend numbers rely on.
+  const overdue = {{ dash_loans_overdue }};
+  const borrowedOnTime = Math.max(0, {{ dash_assets_borrowed }} - overdue);
   const data = [
     {{ dash_assets_available }},
-    {{ dash_assets_borrowed }},
+    borrowedOnTime,
+    overdue,
     {{ dash_assets_reserved }},
     {{ dash_assets_maintenance }},
   ];
@@ -590,23 +561,24 @@ function dashRenderStatusChart() {
   const total = data.reduce((sum, n) => sum + n, 0);
   const chartData = total === 0 ? [1] : data;
   // Maintenance uses a fixed neutral gray, not --color-error (red) - red is
-  // reserved for the Overdue signal elsewhere on this dashboard (the
-  // OVERDUE stat card), and 3 assets sitting in routine maintenance isn't
-  // actually a warning/error state the way that color reads as. Hardcoded
-  // rather than a theme var since it's deliberately neutral across every
-  // theme, not meant to track the semantic palette the other 3 slices do.
+  // reserved for the Overdue slice right next to it, so color still tracks
+  // actual severity (3 assets sitting in routine maintenance isn't a
+  // warning the way overdue loans are). Hardcoded rather than a theme var
+  // since it's deliberately neutral across every theme, not meant to track
+  // the semantic palette the other slices do.
   const colors = total === 0
     ? [dashThemeColor('--color-base-300')]
     : [
         dashThemeColor('--color-success'),
         dashThemeColor('--color-info'),
+        dashThemeColor('--color-error'),
         dashThemeColor('--color-warning'),
         '#9ca3af',
       ];
   window.__dashStatusChart = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: total === 0 ? ['No assets yet'] : ['Available', 'Borrowed', 'Reserved', 'Maintenance'],
+      labels: total === 0 ? ['No assets yet'] : ['Available', 'Borrowed', 'Overdue', 'Reserved', 'Maintenance'],
       datasets: [{ data: chartData, backgroundColor: colors, borderWidth: 0 }],
     },
     options: {

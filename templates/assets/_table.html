@@ -60,10 +60,12 @@
       {{ sort_header("ASSET ID", "asset_id") }}
       {{ sort_header("NAME", "name") }}
       {{ sort_header("CATEGORY", "category") }}
-      <!-- Not sortable - most rows (serialized assets) have no quantity at
-           all, so sorting by it would mostly just group all the dashes
-           together rather than mean anything. -->
-      <th class="py-2 font-semibold sticky top-0 z-10 bg-base-100 border-b border-base-300">QTY</th>
+      <!-- NULL for every serialized asset (only consumables carry a real
+           quantity) - sorting still clusters those together at one end
+           and orders consumables by stock within the other, which is
+           genuinely useful for finding the lowest-stock consumable fast,
+           so this got a real sort instead of a decorative-only chevron. -->
+      {{ sort_header("QTY", "quantity") }}
       {% if show_archived %}
       {{ sort_header("DELETED", "deleted_at") }}
       {% else %}
@@ -89,17 +91,21 @@
         {% endif %}
       </td>
       <td class="py-2">
+        <!-- rounded-full for both states (filled photo AND the empty
+             upload-prompt icon) - was rounded-lg (a rounded square) on
+             both before, which read as two different shapes once a real
+             circular avatar convention was expected elsewhere in the app. -->
         {% if asset.image_path %}
-        <div class="w-6 h-6 rounded-lg border border-base-300 overflow-hidden shrink-0 relative">
+        <div class="w-6 h-6 rounded-full border border-base-300 overflow-hidden shrink-0 relative">
           <img src="{{ url_for('static', filename=asset.image_path) }}" alt="{{ asset.name }}"
                class="w-full h-full object-cover block"
                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-          <div class="w-6 h-6 rounded-lg bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
+          <div class="w-6 h-6 rounded-full bg-base-200 items-center justify-center border border-base-300 absolute inset-0" style="display:none;">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
           </div>
         </div>
         {% else %}
-        <div class="w-6 h-6 rounded-lg bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
+        <div class="w-6 h-6 rounded-full bg-base-200 flex items-center justify-center border border-base-300 shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
         </div>
         {% endif %}

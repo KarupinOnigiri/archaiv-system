@@ -8194,6 +8194,9 @@
   .w-full {
     width: 100%;
   }
+  .w-px {
+    width: 1px;
+  }
   .max-w-2xl {
     max-width: var(--container-2xl);
   }

@@ -75,6 +75,20 @@ def test_search_with_literal_percent_does_not_match_everything(conn, category_id
     assert "Impact Wrench" not in names
 
 
+def test_inventory_table_sortable_by_quantity(as_admin, conn, category_id):
+    """QTY became a real sortable column (was display-only before) -
+    regression test for the "quantity" entry in SORTABLE_COLUMNS and the
+    sort_header wired up in assets/_table.html."""
+    client, csrf, _ = as_admin
+    make_asset(conn, category_id, name="Low Stock Gloves", asset_type="consumable", quantity=2, reorder_threshold=5)
+    make_asset(conn, category_id, name="High Stock Gloves", asset_type="consumable", quantity=50, reorder_threshold=5)
+
+    resp = client.get("/api/v1/assets?sort_by=quantity&sort_dir=asc")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert html.index("Low Stock Gloves") < html.index("High Stock Gloves")
+
+
 # # # CREATE --------------------------------------------------------------
 
 

@@ -567,3 +567,45 @@ def test_account_panel_shows_member_barcode_not_staff_code(as_admin, conn, admin
     html = resp.get_data(as_text=True)
     assert row["barcode_id"] in html
     assert row["staff_code"] not in html
+
+
+def test_sidebar_renders_grouped_sections_not_notifications_row(as_admin):
+    """The 12/13-item flat nav column was regrouped into labeled sections
+    (Operations/People/Insights/General), and "Notifications" was dropped
+    as its own row (duplicated the top-bar bell) - regression test for
+    both, admin sees every group."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    # Label text renders mixed-case in the DOM ("Operations") - the
+    # all-caps look is CSS text-transform:uppercase, not literal text.
+    for group in ("Operations", "People", "Insights", "General"):
+        assert group in html
+    assert 'aria-label="Notifications"' not in html
+    # The bell (not a sidebar row) is still the one notification entry point.
+    assert "/notifications" in html
+
+
+def test_dashboard_has_no_greeting_banner_but_has_header_subtitle(as_admin):
+    """The big blue greeting banner ("Good afternoon, ... - Here's what's
+    happening...") was removed entirely; its date/time moved into a small
+    subtitle under the "Dashboard" title in the top bar instead."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "Here's what's happening" not in html
+    assert "Good afternoon" not in html and "Good morning" not in html and "Good evening" not in html
+    assert 'id="dash-header-subtitle"' in html
+
+
+def test_dashboard_asset_status_includes_overdue(as_admin):
+    """Asset Status donut/legend now includes an Overdue row (split out of
+    Borrowed, not double-counted) - previously overdue loans had no
+    representation in this chart at all."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    # The Asset Status widget's own legend row specifically (not just the
+    # unrelated OVERDUE stat card, which already said "Overdue" before).
+    assert 'bg-error shrink-0"></span>Overdue' in html
+    assert "['Available', 'Borrowed', 'Overdue', 'Reserved', 'Maintenance']" in html

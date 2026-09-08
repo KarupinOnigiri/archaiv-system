@@ -645,6 +645,8 @@
   {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
   {# People group can theoretically be empty (Members/Requests flags both off, non-admin role) - only show its label/divider when at least one item under it will render. #}
   {% set show_people_group = feature_flags.members or feature_flags.requests or (staff and staff.role == "admin") %}
+  {# General (Feedback/System) is admin/in_charge-only - empty for tool_keeper, so gate its label the same way. #}
+  {% set show_general_group = (staff and staff.role == "admin") or (staff and staff.role in ("admin", "in_charge")) %}
   <!-- Barcode Labels has no sidebar tab of its own (System is its only entry point), so it gets a 3-level breadcrumb instead of the usual 2. -->
   {% if request.path == '/barcodes' %}
     {% set ns.current_label = "Barcode Labels" %}
@@ -711,16 +713,23 @@
              stopping points even icon-only) + a label that hides itself
              along with every other .sidebar-label when collapsed. first
              group skips the top divider/margin - nothing above it to
-             separate from. -->
-        <div class="{% if text != "Operations" %}border-t border-base-200 mt-2 pt-2{% endif %} px-3 pb-1">
-          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/40 uppercase">{{ text }}</p>
+             separate from.
+             Fixed h-7 on the wrapper (not padding-derived height) is
+             deliberate: hiding the label text via display:none must NOT
+             shrink this row, or every group below it creeps upward on
+             collapse - the nav icons need to land in the exact same
+             vertical position whether the sidebar is expanded or
+             collapsed. items-end + the label's own pb-1 keeps the same
+             visual baseline this used to get from plain div padding. -->
+        <div class="{% if text != "Operations" %}border-t border-base-200 mt-2{% endif %} h-7 px-3 flex items-end">
+          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/40 uppercase leading-none pb-1">{{ text }}</p>
         </div>
         {% endmacro %}
 
         {{ nav_group_label("Operations") }}
         {% for label, href, icon in nav_items %}
         {% if label == "Members" %}{{ nav_group_label("People") if show_people_group else "" }}{% endif %}
-        {% if label == "Reports" %}{{ nav_group_label("Admin") }}{% endif %}
+        {% if label == "Reports" %}{{ nav_group_label("Insights") }}{% endif %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
         {% if href != "/assets" or feature_flags.assets %}
         {% if href != "/members" or feature_flags.members %}
@@ -805,6 +814,8 @@
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Activity Log</span>
         </a>
         {% endif %}
+
+        {% if show_general_group %}{{ nav_group_label("General") }}{% endif %}
 
         {% if staff and staff.role == "admin" %}
         <a href="/feedback" data-tooltip="{{ tab_tooltip('Feedback') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Feedback'] }}" aria-label="Feedback"
@@ -966,7 +977,33 @@
       <div id="content-header" hx-swap-oob="true" class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
-        <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
+        <div class="min-w-0">
+          <h1 class="text-lg font-semibold text-base-content truncate min-w-0">Dashboard</h1>
+          <!-- Date/time that used to live in the big blue greeting banner
+               (removed - it and the top bar right below it read as two
+               headers stacked before any real content). This one line is
+               all that survives of it, folded into the page title itself
+               so the stat cards start right after the top bar. Re-runs on
+               every boosted nav into "/" since this whole block re-swaps
+               via #content-header's own hx-swap-oob, same as home.html's
+               old inline script did for the banner. -->
+          <p id="dash-header-subtitle" class="text-xs text-base-content/50 truncate"></p>
+          <script>
+          (function () {
+            function updateDashHeaderSubtitle() {
+              var el = document.getElementById('dash-header-subtitle');
+              if (!el) return;
+              var now = new Date();
+              var dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+              var timeStr = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+              el.textContent = dateStr + ' · ' + timeStr;
+            }
+            updateDashHeaderSubtitle();
+            if (window.__dashHeaderSubtitleInterval) clearInterval(window.__dashHeaderSubtitleInterval);
+            window.__dashHeaderSubtitleInterval = setInterval(updateDashHeaderSubtitle, 30000);
+          })();
+          </script>
+        </div>
         {% else %}
         <div class="flex items-center gap-1.5 min-w-0">
           <a href="/" class="flex items-center gap-1.5 text-sm text-base-content/50 hover:text-base-content transition-colors shrink-0">
