@@ -13,7 +13,8 @@ dashboard_bp = Blueprint("dashboard", __name__)
 @dashboard_bp.route("/dashboard/top-borrowed")
 @login_required
 def view_top_borrowed():
-    """htmx partial for the Top Borrowed filter, using the same query as page load."""
+    """GET - htmx partial para sa Top Borrowed filter sa dashboard, same query
+    ra ni sa page load. Delegates to dashboard_service.get_top_borrowed()."""
     range_key = request.args.get("range", "30d")
     if range_key not in TOP_BORROWED_RANGES:
         return jsonify({"error": f"range must be one of: {', '.join(TOP_BORROWED_RANGES)}"}), 400

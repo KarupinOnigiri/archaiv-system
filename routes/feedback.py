@@ -1,3 +1,6 @@
+"""Thin HTTP layer para sa /feedback/* endpoints - validation ug business
+logic naa sa services/feedback_service.py."""
+
 from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required, roles_required
@@ -10,7 +13,8 @@ _CATEGORIES = feedback_service.CATEGORIES
 
 
 def get_open_feedback_count(conn=None):
-    """Re-exported here because app.py imports it directly from routes.feedback."""
+    """Re-export ra ni diri kay app.py mo-import direkta gikan sa
+    routes.feedback, dili sa feedback_service."""
     return feedback_service.get_open_feedback_count(conn)
 
 
@@ -21,7 +25,9 @@ def get_open_feedback_count(conn=None):
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def submit_feedback():
-    """Handles 'Give feedback'; open to every role. Multipart form, not JSON, since it takes screenshots."""
+    """POST - handle sa 'Give feedback' form, open ni sa tanan role. Multipart
+    form gamit dili JSON kay naay screenshot uploads. Delegates to
+    feedback_service.submit_feedback()."""
     category = request.form.get("category")
     message = (request.form.get("message") or "").strip()
     page_path = (request.form.get("page_path") or "").strip()[:200]
@@ -43,6 +49,9 @@ def submit_feedback():
 
 
 def get_feedback_table_context(args):
+    """Helper nga mag-open/close sa conn ug tawagon ang
+    feedback_service.get_feedback_table_context() - gamit sa route below ug
+    sa pages.py para sa initial page load."""
     conn = get_db_connection()
     try:
         return feedback_service.get_feedback_table_context(conn, args)
@@ -53,6 +62,7 @@ def get_feedback_table_context(args):
 @feedback_bp.route("/feedback/table")
 @roles_required("admin")
 def view_feedback_table():
+    """GET - admin-only, htmx partial sa feedback list table."""
     context, error = get_feedback_table_context(request.args)
     if error:
         return error
@@ -62,7 +72,9 @@ def view_feedback_table():
 @feedback_bp.route("/feedback/<int:id>/resolve", methods=["POST"])
 @roles_required("admin")
 def resolve_feedback(id):
-    """Resolving requires an actual reply, not a silent status flip."""
+    """POST - admin-only, mag-resolve ug feedback entry. Kinahanglan gyud
+    naay actual response text, dili pwede silent status flip lang.
+    Delegates to feedback_service.resolve_feedback()."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -86,6 +98,8 @@ def resolve_feedback(id):
 @feedback_bp.route("/feedback/<int:id>/reopen", methods=["POST"])
 @roles_required("admin")
 def reopen_feedback(id):
+    """POST - admin-only, i-reopen balik ang resolved feedback. Delegates to
+    feedback_service.reopen_feedback()."""
     conn = get_db_connection()
     try:
         result, error = feedback_service.reopen_feedback(conn, id, g.staff)

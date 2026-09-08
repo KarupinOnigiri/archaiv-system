@@ -32,6 +32,10 @@ from werkzeug.security import check_password_hash
 from utils.exports import sanitize_export_filename, default_export_dir, resolve_export_dir
 from extensions import limiter
 
+"""Thin HTTP layer para sa /staff/*, /audit-log, /admin-deactivation-requests
+ug system-settings endpoints - validation ug business logic naa sa
+services/staff_service.py."""
+
 staff_bp = Blueprint("staff", __name__)
 VALID_ROLES = staff_service.VALID_ROLES
 MAX_MANUAL_LOCK_MINUTES = staff_service.MAX_MANUAL_LOCK_MINUTES
@@ -41,7 +45,7 @@ MAX_MANUAL_LOCK_MINUTES = staff_service.MAX_MANUAL_LOCK_MINUTES
 
 
 def get_staff_table_context(args):
-    """Opens its own connection; shared by view_staff() here and staff_page() in routes/pages.py."""
+    """Mag-open ug kaugalingong connection; gi-share ni sa view_staff() diri ug sa staff_page() sa routes/pages.py."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -56,6 +60,7 @@ def get_staff_table_context(args):
 @staff_bp.route("/staff")
 @roles_required("admin")
 def view_staff():
+    """GET - main Staff table, htmx partial or JSON depending sa HX-Request header."""
     context, error = get_staff_table_context(request.args)
     if error:
         return error
@@ -77,6 +82,7 @@ def view_staff():
 @staff_bp.route("/staff/<int:id>")
 @login_required
 def get_staff_by_id(id):
+    """GET - single staff record as JSON. Delegates to staff_service.get_staff_by_id()."""
     conn = get_db_connection()
     try:
         staff, error = staff_service.get_staff_by_id(conn, id)
@@ -91,7 +97,7 @@ def get_staff_by_id(id):
 @staff_bp.route("/staff/by-barcode/<string:barcode>")
 @login_required
 def staff_by_barcode(barcode):
-    """Exact-match barcode lookup for the search box's Enter key, via the linked member's barcode."""
+    """GET - exact-match barcode lookup para sa search box's Enter key, via the linked member's barcode."""
     conn = get_db_connection()
     try:
         staff_id = staff_service.find_staff_id_by_barcode(conn, barcode)
@@ -105,7 +111,7 @@ def staff_by_barcode(barcode):
 @staff_bp.route("/staff/<int:id>/profile")
 @login_required
 def staff_profile(id):
-    """Read-only profile modal; Activity tab is admin-only since audit-log only filters by staff_id for admins."""
+    """GET - read-only profile modal; ang Activity tab admin-only ra kay ang audit-log naga-filter by staff_id sa admins ra."""
     conn = get_db_connection()
     try:
         result, error = staff_service.get_staff_profile(conn, id)
@@ -128,7 +134,7 @@ def staff_profile(id):
 @staff_bp.route("/staff/<int:id>/full-activity-modal")
 @roles_required("admin")
 def staff_full_activity_modal(id):
-    """Paginated "Full Activity" popup stacking on the profile modal, admin-only like the tab itself."""
+    """GET - paginated "Full Activity" popup nga naga-stack sa profile modal, admin-only ra pareho sa tab."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_full_activity(conn, id)
@@ -141,6 +147,7 @@ def staff_full_activity_modal(id):
 
 
 def get_audit_log_context(args, staff):
+    """Mag-open ug kaugalingong connection; gi-share sa view_audit_log() ug view_audit_log_table()."""
     conn = get_db_connection()
     try:
         return staff_service.get_audit_log_context(conn, args, staff)
@@ -151,6 +158,7 @@ def get_audit_log_context(args, staff):
 @staff_bp.route("/audit-log")
 @login_required
 def view_audit_log():
+    """GET - audit log entries as JSON. Delegates to get_audit_log_context() sa taas."""
     context, error = get_audit_log_context(request.args, g.staff)
     if error:
         return error
@@ -168,8 +176,8 @@ def view_audit_log():
 @staff_bp.route("/audit-log/table")
 @login_required
 def view_audit_log_table():
-    """htmx partial - just the table + pagination footer, so filtering/paging
-    doesn't re-render the whole page."""
+    """GET - htmx partial, table + pagination footer ra, para dili na
+    kinahanglan i-re-render ang whole page every filter/page."""
     context, error = get_audit_log_context(request.args, g.staff)
     if error:
         return error
@@ -182,14 +190,14 @@ def view_audit_log_table():
 @staff_bp.route("/staff/add-form")
 @roles_required("admin")
 def add_staff_form():
-    """"Add New Staff" modal; grants access to an existing member, so a type-ahead picker replaces a dropdown."""
+    """GET - opens ang "Add New Staff" modal; naga-grant access sa existing member ra, mao naay type-ahead picker imbes dropdown."""
     return render_template("staff/_add_modal.html")
 
 
 @staff_bp.route("/staff/eligible-members-search")
 @roles_required("admin")
 def eligible_members_search():
-    """Add Staff's member picker; matches name/code/barcode for active non-staff members, capped results."""
+    """GET - Add Staff's member picker; naga-match sa name/code/barcode para sa active non-staff members, capped ang results."""
     BROWSE_PAGE_SIZE = 50
 
     q = request.args.get("q", "").strip()
@@ -232,6 +240,7 @@ def eligible_members_search():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def add_staff_submit():
+    """POST - mag-create ug new staff account gikan sa existing member. Delegates sa staff_service.create_staff()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -271,7 +280,7 @@ def add_staff_submit():
 @staff_bp.route("/staff/<int:id>/edit-form")
 @roles_required("admin")
 def edit_staff_form(id):
-    """"Edit Staff" modal; only role and assigned_start/end are editable, the rest is read-only context."""
+    """GET - opens ang "Edit Staff" modal; role ug assigned_start/end ra ang editable, ang uban read-only context ra."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_edit(conn, id)
@@ -286,7 +295,7 @@ def edit_staff_form(id):
 @staff_bp.route("/staff/<int:id>/reassign-form")
 @roles_required("admin")
 def reassign_usage_form(id):
-    """Quick "Reassign Usage" modal to extend/shorten an assignment window; posts to the same edit endpoint."""
+    """GET - quick "Reassign Usage" modal para i-extend/shorten ang assignment window; nag-post ra ni sa same edit endpoint."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_reassign(conn, id)
@@ -302,6 +311,7 @@ def reassign_usage_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def edit_staff_submit(id):
+    """POST - i-update ang role/assignment window/rfid_pin sa staff. Delegates sa staff_service.update_staff()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -338,7 +348,7 @@ def edit_staff_submit(id):
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def change_password_submit():
-    """Self-service password change; requires the current password to prove it's not a hijacked session."""
+    """POST - self-service password change; kinahanglan ang current password para ma-prove nga dili ni hijacked session."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -371,7 +381,7 @@ def change_password_submit():
 @roles_required("admin")
 @limiter.limit("10 per minute; 30 per hour")
 def change_rfid_pin_submit():
-    """Self-service RFID PIN change, admin-only; confirms with the password since it's the stronger secret."""
+    """POST - self-service RFID PIN change, admin-only ni; naga-confirm with the password kay mas strong secret na siya."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -407,10 +417,10 @@ def change_rfid_pin_submit():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def enable_barcode_pin_login_submit():
-    """Turns barcode + PIN login on for the calling staff member and sets
-    the PIN in one step - unlike change-rfid-pin above, open to every role
-    (see 0051_add_staff_barcode_pin_enabled.sql: this is the general
-    opt-in toggle, not the admin-only RFID+PIN flow it replaces at login)."""
+    """POST - i-turn on ang barcode + PIN login para sa calling staff ug i-set
+    ang PIN one step ra - unlike sa change-rfid-pin sa taas, open ni sa tanan
+    role (tan-awa 0051_add_staff_barcode_pin_enabled.sql: general opt-in
+    toggle ni, dili ang admin-only RFID+PIN flow nga gi-replace ni sa login)."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -443,10 +453,10 @@ def enable_barcode_pin_login_submit():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def disable_barcode_pin_login_submit():
-    """Turns barcode + PIN login back off. Confirms with the password same
-    as every other credential change here, even though this direction only
-    ever *removes* a way in, not adds one - consistent > clever, and it
-    stops someone else at an unlocked, still-logged-in session from doing it."""
+    """POST - i-turn off ang barcode + PIN login. Naga-confirm with the
+    password same sa uban credential changes diri, bisan kung *remove* ra ni
+    ug way in, dili mag-add - consistent > clever, ug para dili ma-abuse
+    kung naay laing tao naka-unlocked pa'ng session sa staff."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -471,8 +481,8 @@ def disable_barcode_pin_login_submit():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def change_barcode_pin_submit():
-    """Self-service PIN change once barcode + PIN login is already enabled --
-    same shape as change-rfid-pin above, just open to every role."""
+    """POST - self-service PIN change kung naka-enable na ang barcode + PIN
+    login - same shape ra sa change-rfid-pin sa taas, open lang sa tanan role."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -510,7 +520,7 @@ def change_barcode_pin_submit():
 @staff_bp.route("/staff/notification-prefs", methods=["POST"])
 @login_required
 def update_own_notification_prefs():
-    """Handles the notify_* toggles and toast duration; personal prefs, so it's self-service, not admin."""
+    """POST - naga-handle sa notify_* toggles ug toast duration; personal prefs ni, mao self-service ra, dili admin task."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -535,7 +545,7 @@ def update_own_notification_prefs():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def upload_own_photo():
-    """Self-service photo upload; deletes the old file only after commit, so a failure never orphans it."""
+    """POST - self-service photo upload; i-delete ang old file after commit ra, para dili ma-orphan kung mag-fail."""
     photo_file = request.files.get("photo") if request.files else None
     img_error = validate_image_upload(photo_file)
     if img_error:
@@ -559,7 +569,7 @@ def upload_own_photo():
 @login_required
 @limiter.limit("10 per minute; 30 per hour")
 def remove_own_photo():
-    """Self-service photo removal, reverts to initials; no-ops (still 200) if there was no photo."""
+    """DELETE - self-service photo removal, mo-revert sa initials; no-op ra (still 200) kung wala man gyu'y photo."""
     conn = get_db_connection()
     try:
         result = staff_service.remove_own_photo(conn, g.staff)
@@ -571,8 +581,8 @@ def remove_own_photo():
 @staff_bp.route("/staff/<int:id>/reset-password-form")
 @roles_required("admin")
 def reset_password_form(id):
-    """Confirm-before-reset modal. Mirrors lock_staff_form's shape; the actual
-    reset happens in reset_password_submit below."""
+    """GET - confirm-before-reset modal. Mirrors lock_staff_form's shape; ang
+    actual reset naa sa reset_password_submit sa ubos."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_reset_password(conn, id)
@@ -588,7 +598,7 @@ def reset_password_form(id):
 @roles_required("admin")
 @limiter.limit("10 per minute; 30 per hour")
 def reset_password_submit(id):
-    """Admin-initiated reset; generates a random password, shown once, and kills existing sessions."""
+    """POST - admin-initiated reset; mag-generate ug random password (shown once ra) ug mag-kill sa existing sessions."""
     conn = get_db_connection()
     try:
         result, error = staff_service.reset_staff_password(conn, id, g.staff["id"])
@@ -604,8 +614,8 @@ def reset_password_submit(id):
 @staff_bp.route("/staff/<int:id>/lock-form")
 @roles_required("admin")
 def lock_staff_form(id):
-    """Manual-lock modal - duration presets, custom minutes field, and an
-    indefinite option. Mirrors delete_staff_form's shape."""
+    """GET - manual-lock modal - naay duration presets, custom minutes field,
+    ug indefinite option. Mirrors delete_staff_form's shape."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_lock(conn, id, g.staff["id"])
@@ -621,7 +631,7 @@ def lock_staff_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def lock_staff(id):
-    """Manually locks an account, writing the same locked_until column auto-lockout uses."""
+    """POST - manual lock sa account, naga-write sa same locked_until column nga gigamit sa auto-lockout."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -662,7 +672,7 @@ def lock_staff(id):
 @staff_bp.route("/staff/<int:id>/unlock-form")
 @roles_required("admin")
 def unlock_staff_form(id):
-    """Confirm-before-unlock modal, replacing a plain browser confirm(); mirrors lock_staff_form."""
+    """GET - confirm-before-unlock modal, puli sa plain browser confirm(); mirrors lock_staff_form."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_unlock(conn, id)
@@ -678,7 +688,7 @@ def unlock_staff_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def unlock_staff(id):
-    """Manually clears a lockout early; no self-service recovery exists in this offline deployment."""
+    """POST - manual clear sa lockout before its time; walay self-service recovery kay offline deployment ni."""
     conn = get_db_connection()
     try:
         result, error = staff_service.unlock_staff(conn, id, g.staff["id"])
@@ -697,7 +707,7 @@ def unlock_staff(id):
 @staff_bp.route("/staff/<int:id>/delete-confirm")
 @roles_required("admin")
 def delete_staff_form(id):
-    """Deactivate-confirmation modal; repeats delete_staff()'s admin guard against a direct URL hit."""
+    """GET - deactivate-confirmation modal; gi-repeat diri ang admin guard sa delete_staff() in case naay direct URL hit."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_delete(conn, id)
@@ -713,6 +723,7 @@ def delete_staff_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def delete_staff(id):
+    """POST - i-deactivate ang staff account (dili hard-delete). Delegates sa staff_service.deactivate_staff()."""
     conn = get_db_connection()
     try:
         result, error = staff_service.deactivate_staff(conn, id, g.staff["id"])
@@ -728,7 +739,7 @@ def delete_staff(id):
 @staff_bp.route("/staff/<int:id>/reactivate-confirm")
 @roles_required("admin")
 def reactivate_staff_form(id):
-    """Reactivate-confirmation modal, replacing a native confirm() to match the other staff actions."""
+    """GET - reactivate-confirmation modal, puli sa native confirm() para mo-match sa uban staff actions."""
     conn = get_db_connection()
     try:
         staff_member, error = staff_service.get_staff_for_reactivate(conn, id)
@@ -744,7 +755,7 @@ def reactivate_staff_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def reactivate_staff(id):
-    """Reactivating any staff role requires the acting admin's own password plus a logged reason."""
+    """POST - pag-reactivate ug bisan unsa nga role, kinahanglan ang acting admin's own password plus a logged reason."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -775,7 +786,7 @@ def reactivate_staff(id):
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def bulk_deactivate_staff():
-    """Bulk deactivate staff; admin accounts are skipped, since those only leave via peer-approval."""
+    """POST - bulk deactivate ug daghang staff; admin accounts, i-skip, kay peer-approval ra ang way pag-leave para nila."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -802,7 +813,7 @@ def bulk_deactivate_staff():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def bulk_reactivate_staff():
-    """Bulk reactivate staff; no admin guard needed since reactivating never routes through peer approval."""
+    """POST - bulk reactivate ug daghang staff; walay admin guard needed kay walay peer-approval sa reactivate."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -832,6 +843,7 @@ def bulk_reactivate_staff():
 @login_required
 @limiter.limit("40 per minute")
 def get_staff_by_barcode(barcode):
+    """GET - staff lookup by barcode para sa login flow. Delegates to staff_service.get_staff_by_barcode()."""
     conn = get_db_connection()
     try:
         result, error = staff_service.get_staff_by_barcode(conn, barcode)
@@ -849,7 +861,7 @@ def get_staff_by_barcode(barcode):
 @staff_bp.route("/staff/<int:id>/request-deactivation-form")
 @roles_required("admin")
 def request_deactivation_form(id):
-    """Peer-approval deactivation-request modal; repeats the same guards the submit route enforces."""
+    """GET - peer-approval deactivation-request modal; gi-repeat diri ang same guards nga gina-enforce sa submit route."""
     conn = get_db_connection()
     try:
         result, error = staff_service.get_staff_for_deactivation_request(conn, id, g.staff["id"])
@@ -871,7 +883,7 @@ def request_deactivation_form(id):
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def request_admin_deactivation(id):
-    """Requests deactivation of a fellow admin instead of doing it unilaterally; needs approvals first."""
+    """POST - mag-request ug deactivation sa laing admin instead of unilateral action; kinahanglan pa ug approvals."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -896,6 +908,7 @@ def request_admin_deactivation(id):
 @login_required
 @limiter.limit("20 per minute")
 def approve_admin_deactivation(id):
+    """POST - mag-cast ug approve vote sa deactivation request. Delegates sa staff_service.approve_admin_deactivation()."""
     data, error = get_json_or_error()
     reason = data.get("reason") if not error else None
     if not reason:
@@ -917,7 +930,7 @@ def approve_admin_deactivation(id):
 @login_required
 @limiter.limit("20 per minute")
 def deny_admin_deactivation(id):
-    """A denial is just a recorded vote; only the requester finalizing or cancelling actually resolves it."""
+    """POST - recorded vote ra ni nga deny; ang requester ra ang makagpa-resolve gyud, either finalize or cancel."""
     data, error = get_json_or_error()
     denial_reason = data.get("denial_reason") if not error else None
 
@@ -937,7 +950,7 @@ def deny_admin_deactivation(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def finalize_admin_deactivation_route(id):
-    """The requester's own final say; deactivates the target, but only when they pull the trigger."""
+    """POST - ang requester's own final say; i-deactivate ang target, pero kung sila ra gyud ang mag-pull trigger."""
     conn = get_db_connection()
     try:
         result, error = staff_service.finalize_admin_deactivation_request(conn, id, g.staff["id"])
@@ -953,7 +966,7 @@ def finalize_admin_deactivation_route(id):
 @staff_bp.route("/admin-deactivation-requests/<int:id>/reviews")
 @roles_required("admin")
 def list_admin_deactivation_reviews(id):
-    """Every vote on a request with who cast it and why, admin-only; others just see aggregate counts."""
+    """GET - tanang votes sa usa ka request, kinsa ug ngano, admin-only ni; ang uban roles aggregate counts ra makita."""
     conn = get_db_connection()
     try:
         result, error = staff_service.get_admin_deactivation_reviews(conn, id)
@@ -973,7 +986,7 @@ def list_admin_deactivation_reviews(id):
 @staff_bp.route("/admin-deactivation-requests")
 @login_required
 def list_admin_deactivation_requests():
-    """Every role sees every request now; tiers gate who can vote, not who can see the list."""
+    """GET - tanang roles makakita sa tanang requests karon; ang tiers naga-gate lang kinsa pwede mo-vote, dili kinsa makakita."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -1007,6 +1020,7 @@ def list_admin_deactivation_requests():
 @staff_bp.route("/loan-limits/manage-form")
 @roles_required("admin", "in_charge")
 def manage_loan_limits_form():
+    """GET - opens ang Loan Limits modal, current per-member-type caps."""
     conn = get_db_connection()
     try:
         limits = staff_service.get_loan_limits(conn)
@@ -1019,7 +1033,7 @@ def manage_loan_limits_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_loan_limits():
-    """Updates the per-member-type loan caps get_max_concurrent_loans() reads; both types save together."""
+    """POST - i-update ang per-member-type loan caps nga gina-basa sa get_max_concurrent_loans(); pareho ka type i-save dungan."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1057,12 +1071,13 @@ def update_loan_limits():
 @staff_bp.route("/staff/import-form")
 @roles_required("admin")
 def import_staff_form():
+    """GET - opens ang CSV import modal para sa staff."""
     return render_template("staff/_import_modal.html", error=None)
 
 
 def _staff_import_error_response(error_msg, status):
-    """Mirrors assets.py's _import_error_response - see that function's
-    docstring for why HX-Retarget/HX-Reswap are needed."""
+    """Mirrors assets.py's _import_error_response - tan-awa didto's docstring
+    kung ngano gikinahanglan ang HX-Retarget/HX-Reswap."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     response = make_response(render_template("staff/_import_modal.html", error=error_msg), 200)
@@ -1075,7 +1090,7 @@ def _staff_import_error_response(error_msg, status):
 @roles_required("admin")
 @limiter.limit("5 per minute")
 def import_staff_csv():
-    """Bulk-creates staff from CSV; each row must reference an existing eligible member, not a new one."""
+    """POST - bulk-create ug staff gikan sa CSV; kada row kinahanglan mag-reference sa existing eligible member, dili bag-o."""
     if "file" not in request.files:
         return _staff_import_error_response("Missing file upload (field name: 'file')", 400)
 
@@ -1128,7 +1143,7 @@ def import_staff_csv():
 @staff_bp.route("/staff/export-form")
 @roles_required("admin")
 def export_staff_form():
-    """admin-only, matching every other mutation on this page and the Staff tab itself."""
+    """GET - opens ang export modal; admin-only ni, mo-match sa uban mutations sa page ug sa Staff tab itself."""
     show_inactive = request.args.get("show_inactive") == "1"
     return render_template(
         "staff/_export_modal.html",
@@ -1142,7 +1157,7 @@ def export_staff_form():
 @staff_bp.route("/staff/export", methods=["GET", "POST"])
 @roles_required("admin")
 def export_staff():
-    """Mirrors export_assets/export_members; admin-only here, unlike those two's login_required."""
+    """GET/POST - mirrors export_assets/export_members; admin-only diri, unlike sa duha nga login_required ra."""
     show_inactive = request.values.get("show_inactive") == "1"
     export_format = request.values.get("format", "csv").lower()
     if export_format not in ("csv", "xlsx"):
@@ -1191,6 +1206,7 @@ def export_staff():
 @staff_bp.route("/session-settings/manage-form")
 @roles_required("admin")
 def manage_session_settings_form():
+    """GET - opens ang Session Settings modal, current idle/absolute timeout values."""
     return render_template(
         "staff/_session_settings_modal.html",
         session_idle_minutes=get_session_idle_minutes(),
@@ -1203,7 +1219,7 @@ def manage_session_settings_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_session_settings():
-    """Updates the idle-timeout and absolute session-lifetime values require_session() reads at runtime."""
+    """POST - i-update ang idle-timeout ug absolute session-lifetime values nga gina-basa sa require_session() at runtime."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1243,6 +1259,7 @@ def update_session_settings():
 @staff_bp.route("/account-security/manage-form")
 @roles_required("admin")
 def manage_account_security_form():
+    """GET - opens ang Account Security modal, current failed-attempt threshold ug lockout duration."""
     return render_template(
         "staff/_account_security_modal.html",
         max_failed_attempts=get_max_failed_attempts(),
@@ -1255,7 +1272,7 @@ def manage_account_security_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_account_security():
-    """Updates the failed-attempt threshold and lockout duration login() reads at runtime."""
+    """POST - i-update ang failed-attempt threshold ug lockout duration nga gina-basa sa login() at runtime."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1295,6 +1312,7 @@ def update_account_security():
 @staff_bp.route("/notification-settings/manage-form")
 @roles_required("admin", "in_charge")
 def manage_notification_settings_form():
+    """GET - opens ang Notification Settings modal, current due-soon threshold."""
     return render_template(
         "staff/_notification_settings_modal.html", due_soon_hours=get_due_soon_hours(), error=None
     )
@@ -1304,7 +1322,7 @@ def manage_notification_settings_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_notification_settings():
-    """Updates the due-soon threshold sync_loan_notifications() reads to time its 'due_soon' alert."""
+    """POST - i-update ang due-soon threshold nga gina-basa sa sync_loan_notifications() para i-time ang 'due_soon' alert."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1340,6 +1358,7 @@ def update_notification_settings():
 @staff_bp.route("/loan-duration/manage-form")
 @roles_required("admin", "in_charge")
 def manage_loan_duration_form():
+    """GET - opens ang Loan Duration modal, current default loan days."""
     return render_template(
         "staff/_loan_duration_modal.html", default_loan_days=get_default_loan_days(), error=None
     )
@@ -1349,7 +1368,7 @@ def manage_loan_duration_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_loan_duration():
-    """Updates the fallback due-date length used when a checkout has no due date explicitly picked."""
+    """POST - i-update ang fallback due-date length nga gigamit kung walay due date na-pick sa checkout."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1386,6 +1405,7 @@ def update_loan_duration():
 @staff_bp.route("/checkout-session-settings/manage-form")
 @roles_required("admin", "in_charge")
 def manage_checkout_session_settings_form():
+    """GET - opens ang Checkout Session Timeout modal, current stale-minutes value."""
     return render_template(
         "staff/_checkout_session_settings_modal.html",
         checkout_session_stale_minutes=get_checkout_session_stale_minutes(),
@@ -1397,8 +1417,8 @@ def manage_checkout_session_settings_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_checkout_session_settings():
-    """Updates how long an in-progress checkout cart can sit untouched before
-    it's auto-cancelled and its reserved assets released back to available."""
+    """POST - i-update kung unsa kadugay pwede mag-sit untouched ang in-progress
+    checkout cart before ma-auto-cancel ug ma-release balik ang reserved assets."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1437,6 +1457,7 @@ def update_checkout_session_settings():
 @staff_bp.route("/maintenance-settings/manage-form")
 @roles_required("admin", "in_charge")
 def manage_maintenance_settings_form():
+    """GET - opens ang Maintenance Settings modal, current interval ug reminder-lead-days."""
     return render_template(
         "staff/_maintenance_settings_modal.html",
         default_maintenance_interval_days=get_default_maintenance_interval_days(),
@@ -1449,10 +1470,9 @@ def manage_maintenance_settings_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_maintenance_settings():
-    """Updates the two app-wide preventive-maintenance defaults - how far out
-    a new/re-serviced asset's next_maintenance_due auto-computes to, and how
-    many days ahead of due counts as "due soon" for the dashboard/notification
-    sweep."""
+    """POST - i-update ang duha ka app-wide preventive-maintenance defaults -
+    kung unsa kalayo ma-auto-compute ang next_maintenance_due sa new/re-serviced
+    asset, ug pila ka days before due ang "due soon" sa dashboard/notification sweep."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1492,6 +1512,7 @@ def update_maintenance_settings():
 @staff_bp.route("/damage-restriction/manage-form")
 @roles_required("admin", "in_charge")
 def manage_damage_restriction_form():
+    """GET - opens ang Damage Restriction modal, current occurrence threshold."""
     return render_template(
         "staff/_damage_restriction_modal.html",
         damage_restriction_threshold=get_damage_restriction_threshold(),
@@ -1503,7 +1524,7 @@ def manage_damage_restriction_form():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def update_damage_restriction():
-    """Updates how many damaged returns trigger check_and_restrict_damaged_returns()'s auto-restriction."""
+    """POST - i-update pila ka damaged returns ang mo-trigger sa check_and_restrict_damaged_returns()'s auto-restriction."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1542,6 +1563,7 @@ def update_damage_restriction():
 @staff_bp.route("/feature-flags/manage-form")
 @roles_required("admin")
 def manage_feature_flags_form():
+    """GET - opens ang Feature Access modal, current on/off state sa tanang feature flags."""
     return render_template("staff/_feature_flags_modal.html", feature_flags=get_feature_flags(), error=None)
 
 
@@ -1549,7 +1571,7 @@ def manage_feature_flags_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_feature_flags():
-    """Flips feature-flag toggles; requires the admin's password either direction, enable or disable."""
+    """POST - i-flip ang feature-flag toggles; kinahanglan ang admin's password either direction, enable man o disable."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1597,6 +1619,7 @@ def update_feature_flags():
 @staff_bp.route("/alarm-settings/manage-form")
 @roles_required("admin")
 def manage_alarm_settings_form():
+    """GET - opens ang Alarm Settings modal, current enabled state sa exit-monitoring alarm."""
     return render_template("staff/_alarm_settings_modal.html", enabled=get_alarm_enabled(), error=None)
 
 
@@ -1604,9 +1627,9 @@ def manage_alarm_settings_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_alarm_settings():
-    """Requires the admin's password, same as feature-flags' update_feature_flags -
-    muting the exit-monitoring alarm is exactly the kind of security-relevant
-    toggle that shouldn't be one accidental click away."""
+    """POST - kinahanglan ang admin's password, same sa feature-flags'
+    update_feature_flags - ang pag-mute sa exit-monitoring alarm is exactly
+    ang tipo sa security-relevant toggle nga dili dapat one-click-away lang."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1634,6 +1657,7 @@ def update_alarm_settings():
 @staff_bp.route("/barcode-prefixes/manage-form")
 @roles_required("admin")
 def manage_barcode_prefixes_form():
+    """GET - opens ang Barcode ID Prefixes modal, current prefixes para sa asset/member/staff codes."""
     return render_template(
         "staff/_barcode_prefixes_modal.html",
         asset_id_prefix=get_asset_id_prefix(),
@@ -1647,10 +1671,10 @@ def manage_barcode_prefixes_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_barcode_prefixes():
-    """force_regenerate additionally rewrites every existing record's own
-    code, not just future ones - requires the admin's password to confirm,
-    same convention as Feature Access/Alarm Settings, since old printed
-    barcode labels stop scanning to the right record afterward."""
+    """POST - ang force_regenerate mag-rewrite pa gyud sa existing records'
+    own code, dili lang future ones - kinahanglan ang admin's password to
+    confirm, same convention sa Feature Access/Alarm Settings, kay ang mga
+    naka-print nga barcode labels dili na maka-scan sa insakto nga record after."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1681,7 +1705,7 @@ def update_barcode_prefixes():
 @staff_bp.route("/barcodes/log-generate", methods=["POST"])
 @roles_required("admin", "in_charge")
 def log_barcode_generate():
-    """Logs which specific assets/members were picked when a barcode label preview opens."""
+    """POST - i-log kung unsa gyud nga assets/members ang gi-pick pag-open sa barcode label preview."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1697,7 +1721,7 @@ def log_barcode_generate():
 @staff_bp.route("/barcodes/log-download", methods=["POST"])
 @roles_required("admin", "in_charge")
 def log_barcode_download():
-    """Mirrors log_barcode_generate, called after the PDF actually downloads, kept as a separate entry."""
+    """POST - mirrors log_barcode_generate, ma-call after ma-download gyud ang PDF, separate entry ni sa audit trail."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1717,13 +1741,14 @@ def log_barcode_download():
 
 
 def get_online_staff(conn, roles=None):
+    """Thin wrapper ra ni sa staff_service.get_online_staff() - gigamit sa laing modules nga naga-import diri."""
     return staff_service.get_online_staff(conn, roles=roles)
 
 
 @staff_bp.route("/staff/online")
 @roles_required("admin", "in_charge")
 def view_online_staff():
-    """Backs the "Currently Online" widget, polled every 30s; in_charge sees peers too, not just tool_keeper."""
+    """GET - backs ang "Currently Online" widget, gina-poll every 30s; in_charge makakita pud sa peers, dili tool_keeper ra."""
     conn = get_db_connection()
     try:
         roles = None if g.staff["role"] == "admin" else ("in_charge", "tool_keeper")
@@ -1742,6 +1767,7 @@ def view_online_staff():
 @staff_bp.route("/backup-settings/manage-form")
 @roles_required("admin")
 def manage_backup_settings_form():
+    """GET - opens ang Database Backups card, current settings ug list sa backup files."""
     conn = get_db_connection()
     try:
         context = staff_service.get_backup_settings_context(conn)
@@ -1754,6 +1780,7 @@ def manage_backup_settings_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_backup_settings():
+    """POST - i-update ang backup schedule/enabled toggle. Delegates sa staff_service.update_backup_settings()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1773,7 +1800,7 @@ def update_backup_settings():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def run_backup_now_route():
-    """Manual backup; runs unconditionally regardless of the enabled toggle or schedule interval."""
+    """POST - manual backup; mo-run gyud unconditionally, bisan unsa ang enabled toggle o schedule interval."""
     result, error_msg = staff_service.trigger_manual_backup(g.staff["id"])
     if error_msg:
         return jsonify({"error": error_msg}), 500
@@ -1783,6 +1810,7 @@ def run_backup_now_route():
 @staff_bp.route("/backup-settings/download/<filename>")
 @roles_required("admin")
 def download_backup(filename):
+    """GET - i-download ang usa ka backup file, naay path-containment check sa resolve_backup_path()."""
     path, error_msg, status = staff_service.resolve_backup_path(filename)
     if error_msg:
         return jsonify({"error": error_msg}), status
@@ -1792,7 +1820,7 @@ def download_backup(filename):
 @staff_bp.route("/backup-settings/delete-confirm/<filename>")
 @roles_required("admin")
 def delete_backup_confirm(filename):
-    """Password-confirmation modal for delete_backup, matching every other permanent action's shape."""
+    """GET - password-confirmation modal para sa delete_backup, mo-match sa uban permanent actions' shape."""
     _path, error_msg, status = staff_service.resolve_backup_path(filename)
     if error_msg:
         return jsonify({"error": error_msg}), status
@@ -1803,7 +1831,7 @@ def delete_backup_confirm(filename):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def delete_backup(filename):
-    """Manually removes one backup file, same path-containment check as download; permanent, no undo."""
+    """DELETE - manual removal sa usa ka backup file, same path-containment check sa download; permanent, walay undo."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1828,6 +1856,7 @@ def delete_backup(filename):
 @staff_bp.route("/archive-purge-settings/manage-form")
 @roles_required("admin")
 def manage_archive_purge_settings_form():
+    """GET - opens ang Archive Auto-Purge modal, current retention window ug counts sa archived records."""
     conn = get_db_connection()
     try:
         purge_days = get_archive_purge_days(conn)
@@ -1846,6 +1875,7 @@ def manage_archive_purge_settings_form():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def update_archive_purge_settings():
+    """POST - i-update ang shared retention window before archive_purge_service permanently deletes records."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -1865,7 +1895,7 @@ def update_archive_purge_settings():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def run_archive_purge_now():
-    """Manual purge; runs the same three passes as the scheduled job, but only if a retention window is set."""
+    """POST - manual purge; mo-run sa same three passes sa scheduled job, pero kung naay retention window na-set ra."""
     conn = get_db_connection()
     try:
         result, error_msg = staff_service.run_archive_purge(conn, g.staff["id"])

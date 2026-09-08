@@ -1,13 +1,13 @@
-"""Query-building and mutation logic for routes/staff.py (staff accounts, audit log,
-admin-deactivation approvals, loan limits, CSV import/export, system settings, backups,
-archive auto-purge, online-staff widget, and barcode-label audit logging).
+"""Query-building ug mutation logic para sa routes/staff.py (staff accounts, audit
+log, admin-deactivation approvals, loan limits, CSV import/export, system settings,
+backups, archive auto-purge, online-staff widget, ug barcode-label audit logging).
 
-Same convention as services/member_service.py and services/asset_service.py: every
-function takes an already-open `conn` and returns `(data, error)`, where `error` is
-`None` on success or `(error_payload, status, context)` on failure. A few simple
-"update one setting" endpoints instead return `(data, error_msg)` with a plain string
-message, since those routes only ever re-render their own modal or return JSON 400 --
-no extra context object is needed there.
+Same convention sa services/member_service.py ug services/asset_service.py: every
+function mag-take og already-open `conn` ug mag-return og `(data, error)`, diin ang
+`error` kay `None` kung success or `(error_payload, status, context)` kung fail. Pila
+ka simple "update one setting" endpoints kay mag-return na lang og `(data, error_msg)`
+nga plain string message, kay ang mga routes ana kay mag-re-render ra sa ilang own
+modal or mag-return og JSON 400 - wala nay extra context object nga kailangan didto.
 """
 
 import csv
@@ -128,6 +128,8 @@ _BACKUP_FILENAME_RE = re.compile(r"^toolroom_\d{8}_\d{6}\.db$")
 
 
 def _no_ctx(error_payload, status):
+    """Shortcut para sa error returns nga walay extra render context - just wraps
+    it into the `(error_payload, status, {})` shape nga gina-expect sa caller."""
     return (error_payload, status, {})
 
 
@@ -135,6 +137,8 @@ def _no_ctx(error_payload, status):
 
 
 def _parse_assigned_end(value):
+    """Mag-parse sa assigned_end string ngadto sa date object, tries duha ka
+    formats. Mo-return og None kung bad/empty value, dili mo-raise."""
     for fmt in _ASSIGNED_END_FORMATS:
         try:
             return datetime.strptime(value, fmt).date()
@@ -144,7 +148,8 @@ def _parse_assigned_end(value):
 
 
 def compute_usage_status(role, assigned_end):
-    """USAGE badge and remaining-days for a staff account; admin is always permanent, in_charge is real."""
+    """USAGE badge ug remaining-days sa staff account; admin kay permanent
+    gyud, in_charge/tool_keeper ang naay real assigned window."""
     if role == "admin":
         return "permanent", None
     if not assigned_end:
@@ -166,7 +171,8 @@ def compute_usage_status(role, assigned_end):
 
 
 def get_staff_table_context(conn, args, limit, offset):
-    """Shared query for the staff table, used by both the htmx partial and full-page route."""
+    """Shared query para sa staff table, gina-gamit sa duha ka htmx partial ug
+    full-page route."""
     q = args.get("q", "").strip()
     role = args.get("role")
     department_id = args.get("department_id")
@@ -276,7 +282,7 @@ def get_staff_table_context(conn, args, limit, offset):
 
 
 def get_staff_stat_cards(conn):
-    """Backs staff_page()'s stat cards in routes/pages.py."""
+    """Nag-back sa stat cards sa staff_page() didto sa routes/pages.py."""
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM staff").fetchone()["cnt"]
     # "Locked" only counts an unexpired lockout; once locked_until passes it
     # counts as Active instead (should still sum to stat_all).
@@ -305,6 +311,7 @@ def get_staff_stat_cards(conn):
 
 
 def get_staff_by_id(conn, staff_id):
+    """Basic staff+member+department lookup by id, plain dict, walay derived fields."""
     staff = conn.execute(
         """
         SELECT staff.id, staff.member_id, staff.username, staff.role, staff.assigned_start,
@@ -326,7 +333,8 @@ def get_staff_by_id(conn, staff_id):
 
 
 def find_staff_id_by_barcode(conn, barcode):
-    """Exact-match barcode lookup for the search box's Enter key, via the linked member's barcode."""
+    """Exact-match barcode lookup para sa search box's Enter key, through sa
+    naka-link nga member's barcode."""
     row = conn.execute(
         """
         SELECT staff.id
@@ -340,7 +348,8 @@ def find_staff_id_by_barcode(conn, barcode):
 
 
 def get_staff_profile(conn, staff_id):
-    """Read-only profile modal; Activity tab is admin-only since audit-log only filters by staff_id for admins."""
+    """Read-only profile modal; Activity tab kay admin-only ra kay ang
+    audit-log mag-filter ra by staff_id para sa admins."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.member_id, staff.username, staff.staff_code, staff.role,
@@ -394,6 +403,8 @@ def get_staff_profile(conn, staff_id):
 
 
 def get_staff_for_full_activity(conn, staff_id):
+    """Minimal lookup (id + name lang) para sa "View full activity" link,
+    gina-verify ra nga naa gyud ang staff before mag-render sa audit log page."""
     staff_member = conn.execute(
         """
         SELECT staff.id, members.first_name, members.last_name, members.middle_name, members.suffix
@@ -409,7 +420,8 @@ def get_staff_for_full_activity(conn, staff_id):
 
 
 def get_audit_log_context(conn, args, staff):
-    """Shared query for the audit trail; admin filters by any staff_id, others are forced to their own."""
+    """Shared query para sa audit trail; admin makahimo mag-filter by kang
+    kinsa nga staff_id, ang uban kay forced ra sa ilang kaugalingon."""
     filters = []
     params = []
 
@@ -482,7 +494,8 @@ def get_audit_log_context(conn, args, staff):
 
 
 def search_eligible_members(conn, q, browse_all, offset, page_size):
-    """Add Staff's member picker; matches name/code/barcode for active non-staff members, capped results."""
+    """Add Staff's member picker; nag-match sa name/code/barcode para sa
+    active non-staff members ra, capped ang results."""
     if browse_all:
         rows = conn.execute(
             """
@@ -534,6 +547,9 @@ def search_eligible_members(conn, q, browse_all, offset, page_size):
 
 
 def create_staff(conn, data, staff_id):
+    """Mag-insert og bag-ong staff account gikan sa existing member; ang
+    staff_code kay auto-generate as `{prefix}{id:05d}` human sa insert, kay
+    kinahanglan una ang lastrowid before ma-build ang code."""
     if data["role"] not in VALID_ROLES:
         return None, _no_ctx({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}, 400)
 
@@ -589,6 +605,8 @@ def create_staff(conn, data, staff_id):
 
 
 def get_staff_for_edit(conn, staff_id):
+    """Field set para sa Edit Staff modal - naa nay rfid_id/locked_until
+    unlike get_staff_by_id kay gina-display sa form."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.username, staff.role, staff.assigned_start, staff.assigned_end,
@@ -608,6 +626,8 @@ def get_staff_for_edit(conn, staff_id):
 
 
 def get_staff_for_reassign(conn, staff_id):
+    """Field set para sa Reassign modal (change role/assignment window ra);
+    mo-reject dayon kung admin ang staff kay wala man ni'y assignment window."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.role, staff.staff_code, staff.assigned_start, staff.assigned_end,
@@ -626,6 +646,9 @@ def get_staff_for_reassign(conn, staff_id):
 
 
 def update_staff(conn, staff_id, data, acting_staff_id):
+    """Mag-update sa role/assignment window/RFID; dili tugotan mag-demote/
+    change og role ang admin diretso - kinahanglan mo-agi sa peer-approval
+    deactivation flow (request_admin_deactivation) instead."""
     if "role" in data and data["role"] not in VALID_ROLES:
         return None, _no_ctx({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}, 400)
 
@@ -692,7 +715,8 @@ def update_staff(conn, staff_id, data, acting_staff_id):
 
 
 def change_own_password(conn, staff, new_password, current_token):
-    """Self-service password change; the current-password/strength checks already happened in the route."""
+    """Self-service password change; ang current-password/strength checks
+    nahitabo na sa route, dinhi na lang ang hash + write + session-kill."""
     new_hash = generate_password_hash(new_password)
     try:
         conn.execute("UPDATE staff SET password_hash = ? WHERE id = ?", (new_hash, staff["id"]))
@@ -717,6 +741,9 @@ def change_own_password(conn, staff, new_password, current_token):
 
 
 def change_own_rfid_pin(conn, staff, new_pin, current_token):
+    """Self-service RFID PIN change; parehas ra sa change_own_password nga
+    logic - kills other sessions kay basin naa pay shared kiosk nga
+    naka-trust sa old PIN."""
     new_hash = generate_password_hash(new_pin)
     try:
         conn.execute("UPDATE staff SET rfid_pin_hash = ? WHERE id = ?", (new_hash, staff["id"]))
@@ -750,11 +777,11 @@ def change_own_rfid_pin(conn, staff, new_pin, current_token):
 
 
 def enable_barcode_pin_login(conn, staff, new_pin, current_token):
-    """First-time enable: sets the PIN and flips barcode_pin_enabled on in
-    one action, same as change_own_rfid_pin otherwise (same session-kill,
-    same hashing). Called with a PIN staff typed just now, not one already
-    on file - unlike change_own_rfid_pin's caller, there's nothing to
-    overwrite versus create here, but the DB write is identical either way."""
+    """First-time enable: mag-set sa PIN ug mag-flip og barcode_pin_enabled
+    on sa usa ka action, same ra sa change_own_rfid_pin otherwise (same
+    session-kill, same hashing). PIN nga bag-o lang gi-type sa staff, dili
+    naay existing on file - lahi sa change_own_rfid_pin's caller nga naay
+    dunay overwrite, pero same ra ang DB write bisan asa."""
     new_hash = generate_password_hash(new_pin)
     try:
         conn.execute(
@@ -781,13 +808,14 @@ def enable_barcode_pin_login(conn, staff, new_pin, current_token):
 
 
 def disable_barcode_pin_login(conn, staff):
-    """Flips barcode_pin_enabled off without touching rfid_pin_hash - the
-    PIN itself is left in place (not cleared) so re-enabling later, or a
-    future RFID+PIN re-activation, doesn't need it set again from scratch.
-    No session-kill here (unlike change_own_rfid_pin/enable_barcode_pin_login):
-    disabling this doesn't invalidate anything the PIN itself could still be
-    used for, since login_barcode_pin() checks barcode_pin_enabled on every
-    attempt, not just at PIN-set time."""
+    """Mag-flip og barcode_pin_enabled off, wala gina-touch ang rfid_pin_hash
+    - ang PIN mismo kay gina-leave in place (dili gina-clear) para kung
+    mag-re-enable later, or future RFID+PIN re-activation, dili na
+    kinahanglan i-set balik gikan sa zero. Walay session-kill diri (lahi sa
+    change_own_rfid_pin/enable_barcode_pin_login): ang pag-disable ani wala
+    ni-invalidate sa bisan unsa nga magamit pa gihapon ang PIN, kay ang
+    login_barcode_pin() mag-check man og barcode_pin_enabled every attempt,
+    dili lang usa ka beses sa PIN-set time."""
     conn.execute("UPDATE staff SET barcode_pin_enabled = 0 WHERE id = ?", (staff["id"],))
     conn.commit()
 
@@ -803,10 +831,10 @@ def disable_barcode_pin_login(conn, staff):
 
 
 def change_own_barcode_pin(conn, staff, new_pin, current_token):
-    """Self-service PIN change once barcode + PIN login is already enabled --
-    identical write to change_own_rfid_pin (same shared column), just its
-    own audit-log action name/message so the two flows stay distinguishable
-    in the activity log."""
+    """Self-service PIN change kung naka-enable na ang barcode + PIN login -
+    identical ra ang write sa change_own_rfid_pin (same shared column), ang
+    lahi ra kay ang audit-log action name/message para magpabilin
+    distinguishable ang duha ka flows sa activity log."""
     new_hash = generate_password_hash(new_pin)
     try:
         conn.execute("UPDATE staff SET rfid_pin_hash = ? WHERE id = ?", (new_hash, staff["id"]))
@@ -833,7 +861,9 @@ def change_own_barcode_pin(conn, staff, new_pin, current_token):
 
 
 def parse_notification_pref_updates(data):
-    """Validates the notify_* toggles and toast duration; returns (updates_dict, error_msg)."""
+    """Nag-validate sa notify_* toggles ug toast duration.
+
+    Returns: (updates_dict, error_msg)."""
     updates = {}
     for col in _NOTIFY_PREF_COLUMNS:
         if col in data:
@@ -857,6 +887,8 @@ def parse_notification_pref_updates(data):
 
 
 def save_own_notification_prefs(conn, updates, staff):
+    """Mag-write sa already-validated notify_*/toast_duration updates dict
+    ngadto sa staff row, dayon log_action."""
     try:
         set_sql = ", ".join(f"{col} = ?" for col in updates)
         conn.execute(f"UPDATE staff SET {set_sql} WHERE id = ?", (*updates.values(), staff["id"]))
@@ -884,7 +916,8 @@ def save_own_notification_prefs(conn, updates, staff):
 
 
 def upload_own_photo(conn, staff, saved_path):
-    """DB update for a photo already validated+saved by the route; deletes the old file only after commit."""
+    """DB update para sa photo nga already validated+saved sa route; mag-delete
+    lang sa old file human sa commit, para dili mawala kung mag-fail ang DB write."""
     old_photo_path = staff["photo_path"]
     try:
         conn.execute("UPDATE staff SET photo_path = ? WHERE id = ?", (saved_path, staff["id"]))
@@ -909,6 +942,8 @@ def upload_own_photo(conn, staff, saved_path):
 
 
 def remove_own_photo(conn, staff):
+    """Mag-clear sa photo_path ug mag-delete sa file on disk; no-op ra kung
+    wala na'y photo, dili error."""
     old_photo_path = staff["photo_path"]
     if not old_photo_path:
         return {"message": "No profile photo to remove", "photo_url": None}
@@ -937,6 +972,8 @@ def remove_own_photo(conn, staff):
 
 
 def get_staff_for_reset_password(conn, staff_id):
+    """Field set para sa Reset Password confirm modal, plus is_active check
+    since dili ni allowed sa deactivated account."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.username, staff.is_active,
@@ -953,7 +990,8 @@ def get_staff_for_reset_password(conn, staff_id):
 
 
 def reset_staff_password(conn, staff_id, acting_staff_id):
-    """Admin-initiated reset; generates a random password, shown once, and kills existing sessions."""
+    """Admin-initiated reset; mag-generate og random password, ipakita usa
+    lang ka beses, ug mag-kill sa existing sessions."""
     import secrets
 
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
@@ -998,6 +1036,7 @@ def reset_staff_password(conn, staff_id, acting_staff_id):
 
 
 def get_staff_for_lock(conn, staff_id, acting_staff_id):
+    """Field set para sa Lock modal - guards vs self-lock ug vs already-deactivated account."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.is_active, staff.locked_until,
@@ -1019,6 +1058,8 @@ def get_staff_for_lock(conn, staff_id, acting_staff_id):
 
 
 def lock_staff(conn, staff_id, acting_staff_id, indefinite, duration_minutes):
+    """Manual lock, indefinite or timed; mag-kill dayon sa live sessions
+    aron dili lang mo-apply sa future logins."""
     if staff_id == acting_staff_id:
         return None, _no_ctx({"error": "You can't lock your own account"}, 403)
 
@@ -1059,6 +1100,7 @@ def lock_staff(conn, staff_id, acting_staff_id, indefinite, duration_minutes):
 
 
 def get_staff_for_unlock(conn, staff_id):
+    """Field set para sa Unlock modal; mo-reject kung wala man diay na-lock ang account."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.locked_until, staff.failed_login_attempts,
@@ -1078,7 +1120,8 @@ def get_staff_for_unlock(conn, staff_id):
 
 
 def unlock_staff(conn, staff_id, acting_staff_id):
-    """Manually clears a lockout early; no self-service recovery exists in this offline deployment."""
+    """Manually mag-clear sa lockout early; walay self-service recovery
+    diri kay offline deployment man ni."""
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
 
     if staff is None:
@@ -1106,6 +1149,8 @@ def unlock_staff(conn, staff_id, acting_staff_id):
 
 
 def get_staff_for_delete(conn, staff_id):
+    """Field set para sa Deactivate modal; mo-block dayon kung admin role kay
+    kailangan man na og peer-approval flow."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.role,
@@ -1125,6 +1170,8 @@ def get_staff_for_delete(conn, staff_id):
 
 
 def deactivate_staff(conn, staff_id, acting_staff_id):
+    """Single-staff deactivate; mag-clear sa assigned_start/end kay wala nay
+    active assignment window ang deactivated account."""
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
 
     if staff is None:
@@ -1162,6 +1209,7 @@ def deactivate_staff(conn, staff_id, acting_staff_id):
 
 
 def get_staff_for_reactivate(conn, staff_id):
+    """Field set para sa Reactivate modal; mo-reject kung active na diay ang account."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.is_active,
@@ -1180,8 +1228,9 @@ def get_staff_for_reactivate(conn, staff_id):
 
 
 def reactivate_staff(conn, staff_id, acting_staff_id, reason):
-    """Reactivating any staff role requires the acting admin's own password plus a logged reason
-    (the password check itself happens in the route, which owns g.staff)."""
+    """Mag-reactivate og bisan unsa nga staff role kay kinahanglan ang acting
+    admin's own password plus logged reason (ang password check mismo
+    nahitabo sa route, kay didto ra naa ang g.staff)."""
     staff = conn.execute("SELECT * FROM staff WHERE id = ?", (staff_id,)).fetchone()
 
     if staff is None:
@@ -1213,7 +1262,8 @@ def reactivate_staff(conn, staff_id, acting_staff_id, reason):
 
 
 def bulk_deactivate_staff(conn, ids, acting_staff_id):
-    """Bulk deactivate staff; admin accounts are skipped, since those only leave via peer-approval."""
+    """Bulk deactivate og daghang staff dungan; admin accounts kay gina-skip,
+    kay ang paggawas ana kay through peer-approval ra man."""
     deactivated, skipped = [], []
 
     for staff_id in ids:
@@ -1261,7 +1311,8 @@ def bulk_deactivate_staff(conn, ids, acting_staff_id):
 
 
 def bulk_reactivate_staff(conn, ids, acting_staff_id):
-    """Bulk reactivate staff; no admin guard needed since reactivating never routes through peer approval."""
+    """Bulk reactivate og daghang staff dungan; walay admin guard nga
+    gikinahanglan kay ang reactivate never mo-agi sa peer approval."""
     reactivated, skipped = [], []
 
     for staff_id in ids:
@@ -1303,6 +1354,7 @@ def bulk_reactivate_staff(conn, ids, acting_staff_id):
 
 
 def get_staff_by_barcode(conn, barcode):
+    """Barcode-based staff lookup para sa login flow's staff-scan step."""
     result = conn.execute(
         """
         SELECT staff.id, staff.role, staff.is_active, staff.assigned_start, staff.assigned_end,
@@ -1325,6 +1377,8 @@ def get_staff_by_barcode(conn, barcode):
 
 
 def get_staff_for_deactivation_request(conn, staff_id, acting_staff_id):
+    """Field set para sa Request Admin Deactivation modal, plus flag kung
+    naa nay pending request para ani nga admin."""
     staff_member = conn.execute(
         """
         SELECT staff.id, staff.role, staff.is_active,
@@ -1354,7 +1408,8 @@ def get_staff_for_deactivation_request(conn, staff_id, acting_staff_id):
 
 
 def request_admin_deactivation(conn, target_staff_id, acting_staff, reason):
-    """Requests deactivation of a fellow admin instead of doing it unilaterally; needs approvals first."""
+    """Mag-request og deactivation sa laing admin instead of doing it
+    unilaterally; kinahanglan pa muna og approvals before ma-finalize."""
     if target_staff_id == acting_staff["id"]:
         return None, _no_ctx({"error": "Cannot request your own deactivation"}, 400)
 
@@ -1453,6 +1508,9 @@ def request_admin_deactivation(conn, target_staff_id, acting_staff, reason):
 
 
 def approve_admin_deactivation(conn, request_id, acting_staff, reason):
+    """Mag-record og usa ka approve vote; dili pa mo-deactivate bisan
+    naabot na ang threshold - finalize_admin_deactivation_request pa gyud
+    ang mo-pull sa trigger."""
     req = conn.execute("SELECT * FROM admin_deactivation_requests WHERE id = ?", (request_id,)).fetchone()
 
     if req is None:
@@ -1501,7 +1559,8 @@ def approve_admin_deactivation(conn, request_id, acting_staff, reason):
 
 
 def deny_admin_deactivation(conn, request_id, acting_staff, denial_reason):
-    """A denial is just a recorded vote; only the requester finalizing or cancelling actually resolves it."""
+    """Ang deny kay recorded vote ra; ang requester's own finalize or cancel
+    ra gyud ang mo-resolve sa request."""
     req = conn.execute("SELECT * FROM admin_deactivation_requests WHERE id = ?", (request_id,)).fetchone()
 
     if req is None:
@@ -1576,7 +1635,8 @@ def deny_admin_deactivation(conn, request_id, acting_staff, denial_reason):
 
 
 def finalize_admin_deactivation_request(conn, request_id, acting_staff_id):
-    """The requester's own final say; deactivates the target, but only when they pull the trigger."""
+    """Ang requester's own final say; mag-deactivate sa target, pero only
+    kung sila mismo ang mo-pull sa trigger."""
     req = conn.execute("SELECT * FROM admin_deactivation_requests WHERE id = ?", (request_id,)).fetchone()
 
     if req is None:
@@ -1597,7 +1657,8 @@ def finalize_admin_deactivation_request(conn, request_id, acting_staff_id):
 
 
 def get_admin_deactivation_reviews(conn, request_id):
-    """Every vote on a request with who cast it and why, admin-only; others just see aggregate counts."""
+    """Every vote sa usa ka request plus kinsa ang nag-cast ug ngano,
+    admin-only ni; ang uban makakita ra sa aggregate counts."""
     req = conn.execute("SELECT * FROM admin_deactivation_requests WHERE id = ?", (request_id,)).fetchone()
 
     if req is None:
@@ -1638,6 +1699,9 @@ def get_admin_deactivation_reviews(conn, request_id):
 
 
 def list_admin_deactivation_requests(conn, args, acting_staff_id, limit, offset):
+    """Paginated list sa requests, naay optional status filter ug `mine`
+    toggle para sa "requests I filed" view; tag-iya nga vote (`my_decision`)
+    gina-include para sa acting staff."""
     valid_statuses = ("pending", "approved", "denied", "cancelled")
     status_filter = args.get("status")
     if status_filter and status_filter not in valid_statuses:
@@ -1719,11 +1783,14 @@ def list_admin_deactivation_requests(conn, args, acting_staff_id, limit, offset)
 
 
 def get_loan_limits(conn):
+    """Tanang per-member-type concurrent-loan caps (trainee/trainer), ordered by member_type."""
     return conn.execute("SELECT * FROM loan_limits ORDER BY member_type").fetchall()
 
 
 def parse_loan_limit_updates(data):
-    """Returns (updates_dict, error_msg)."""
+    """Nag-validate sa trainee/trainer loan-limit inputs (whole number, at least 1).
+
+    Returns: (updates_dict, error_msg)."""
     updates = {}
     for member_type in ("trainee", "trainer"):
         raw = data.get(f"max_concurrent_loans_{member_type}")
@@ -1738,6 +1805,7 @@ def parse_loan_limit_updates(data):
 
 
 def save_loan_limits(conn, updates, acting_staff_id):
+    """Mag-write sa validated loan-limit updates dict ngadto sa loan_limits table."""
     for member_type, value in updates.items():
         conn.execute(
             "UPDATE loan_limits SET max_concurrent_loans = ? WHERE member_type = ?", (value, member_type)
@@ -1757,7 +1825,9 @@ def save_loan_limits(conn, updates, acting_staff_id):
 
 
 def import_staff_csv(content, mode, acting_staff_id):
-    """Bulk-creates staff from CSV; each row must reference an existing eligible member, not a new one."""
+    """Bulk-create og staff gikan sa CSV; kada row kay mag-reference sa
+    existing eligible member, dili bag-ong member. `mode="preview"` mag-run
+    ra sa dry_run (walay commit) para makita una ang errors before i-import gyud."""
     dry_run = mode == "preview"
 
     reader = csv.DictReader(io.StringIO(content))
@@ -1802,8 +1872,10 @@ def import_staff_csv(content, mode, acting_staff_id):
 
 
 def _import_staff_rows(reader, header_map, conn, acting_staff_id, created, errors):
-    """The per-row body of import_staff_csv(), split out so the outer function's
-    try/finally can guarantee conn.close() runs no matter what happens in here."""
+    """Ang per-row body sa import_staff_csv(), gi-separate para ang outer
+    function's try/finally makaguarantee nga mo-run gyud ang conn.close()
+    bisan unsay mahitabo diri. Kada row naay own SAVEPOINT para usa lang ka
+    bad row ang ma-skip, dili mo-abort ang tibuok import."""
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         member_identifier = (row.get("member_identifier") or "").strip()
@@ -1863,10 +1935,13 @@ def _import_staff_rows(reader, header_map, conn, acting_staff_id, created, error
 
 
 def default_staff_export_basename(show_inactive):
+    """Default filename (walay extension pa) para sa staff export, e.g. staff_active_20260908."""
     return f"staff_{'inactive' if show_inactive else 'active'}_{datetime.now().strftime('%Y%m%d')}"
 
 
 def resolve_staff_export_columns(selected):
+    """Filters STAFF_EXPORT_COLUMNS down sa gi-select nga columns, pero
+    mo-fallback sa tanan kung walay valid match (empty/invalid selection)."""
     if selected:
         columns = [c for c in STAFF_EXPORT_COLUMNS if c in selected]
         if not columns:
@@ -1877,6 +1952,7 @@ def resolve_staff_export_columns(selected):
 
 
 def get_staff_for_export(conn, show_inactive):
+    """Raw rows para sa staff export, active or inactive lang depende sa toggle."""
     where_clause = "staff.is_active = 0" if show_inactive else "staff.is_active = 1"
     return conn.execute(
         f"""
@@ -1894,7 +1970,9 @@ def get_staff_for_export(conn, show_inactive):
 
 
 def build_staff_export_file(staff_rows, columns, export_format, show_inactive):
-    """Returns (file_bytes, content_type, export_format)."""
+    """Mag-build sa xlsx or csv file bytes gikan sa staff rows + columns.
+
+    Returns: (file_bytes, content_type, export_format)."""
     if export_format == "xlsx":
         wb = Workbook()
         ws = wb.active
@@ -1926,7 +2004,10 @@ def build_staff_export_file(staff_rows, columns, export_format, show_inactive):
 
 
 def save_export_copy(file_bytes, save_dir, filename):
-    """Best-effort server-side copy of an export; returns (saved_path_or_None, warning_or_None)."""
+    """Best-effort server-side copy sa usa ka export; dili ni mag-fail sa
+    tibuok request kung dili ma-save - warning ra i-return.
+
+    Returns: (saved_path_or_None, warning_or_None)."""
     try:
         os.makedirs(save_dir, exist_ok=True)
         saved_path = os.path.join(save_dir, filename)
@@ -1945,6 +2026,7 @@ def save_export_copy(file_bytes, save_dir, filename):
 
 
 def update_session_settings(conn, data, acting_staff_id):
+    """Mag-set sa session_idle_minutes ug session_absolute_hours app_settings."""
     try:
         idle_minutes = int(data.get("session_idle_minutes"))
     except (TypeError, ValueError):
@@ -1978,6 +2060,7 @@ def update_session_settings(conn, data, acting_staff_id):
 
 
 def update_account_security(conn, data, acting_staff_id):
+    """Mag-set sa max_failed_attempts ug lockout_minutes app_settings."""
     try:
         max_attempts = int(data.get("max_failed_attempts"))
     except (TypeError, ValueError):
@@ -2011,6 +2094,7 @@ def update_account_security(conn, data, acting_staff_id):
 
 
 def update_notification_settings(conn, data, acting_staff_id):
+    """Mag-set sa due_soon_hours app_setting (kanus-a mag-flag ang "due soon" sa loans)."""
     try:
         due_soon_hours = int(data.get("due_soon_hours"))
     except (TypeError, ValueError):
@@ -2032,6 +2116,7 @@ def update_notification_settings(conn, data, acting_staff_id):
 
 
 def update_loan_duration(conn, data, acting_staff_id):
+    """Mag-set sa default_loan_days app_setting."""
     try:
         default_loan_days = int(data.get("default_loan_days"))
     except (TypeError, ValueError):
@@ -2053,10 +2138,11 @@ def update_loan_duration(conn, data, acting_staff_id):
 
 
 def update_checkout_session_settings(conn, data, acting_staff_id):
-    """How long an in-progress checkout cart can sit untouched before it's
-    auto-cancelled and its reserved assets released - was a hardcoded
-    20-minute constant (utils/constants.py), now an admin/in_charge-editable
-    app_settings row like every other operational knob on this page."""
+    """Kutob asa katagal ang usa ka in-progress checkout cart makapabilin
+    untouched before mag-auto-cancel ug ma-release ang reserved assets -
+    kaniadto hardcoded 20-minute constant (utils/constants.py), karon
+    admin/in_charge-editable na nga app_settings row parehas sa uban
+    operational knobs ani nga page."""
     try:
         stale_minutes = int(data.get("checkout_session_stale_minutes"))
     except (TypeError, ValueError):
@@ -2086,16 +2172,16 @@ def update_checkout_session_settings(conn, data, acting_staff_id):
 
 
 def update_maintenance_settings(conn, data, acting_staff_id):
-    """Two independent operational defaults for preventive maintenance
-    scheduling (migrations 0055/0059) - previously seeded once and never
-    exposed to an admin/in_charge account to actually change:
-    - default_maintenance_interval_days: how far out a newly-created (or
-      re-serviced) serialized asset's next_maintenance_due auto-computes to
-      when staff don't set one explicitly - services/asset_service.py's
+    """Duha ka independent operational defaults para sa preventive
+    maintenance scheduling (migrations 0055/0059) - kaniadto seeded usa lang
+    ka beses ug wala pa gina-expose sa admin/in_charge account para ma-change:
+    - default_maintenance_interval_days: kutob asa ka layo ang next_maintenance_due
+      sa bag-ong-gibuhat (or re-serviced) serialized asset mag-auto-compute
+      kung wala mag-set ang staff og explicit value - services/asset_service.py's
       _default_next_maintenance_due.
-    - maintenance_reminder_lead_days: how many days ahead of a due date (or
-      how close to a usage-interval trigger) counts as "due soon" for the
-      dashboard card and the scheduled notification sweep -
+    - maintenance_reminder_lead_days: pila ka days before due date (or kutob
+      asa ka duol sa usage-interval trigger) ang mag-count as "due soon" para
+      sa dashboard card ug sa scheduled notification sweep -
       services/maintenance_service.py's sweep_maintenance_due."""
     try:
         interval_days = int(data.get("default_maintenance_interval_days"))
@@ -2134,6 +2220,8 @@ def update_maintenance_settings(conn, data, acting_staff_id):
 
 
 def update_damage_restriction(conn, data, acting_staff_id):
+    """Mag-set sa damage_restriction_threshold app_setting (kutob pila ka
+    damaged returns before ma-restrict ang member)."""
     try:
         threshold = int(data.get("damage_restriction_threshold"))
     except (TypeError, ValueError):
@@ -2160,6 +2248,8 @@ def update_damage_restriction(conn, data, acting_staff_id):
 
 
 def update_feature_flags(conn, new_values, acting_staff_id):
+    """Mag-toggle sa feature flags (per-feature on/off), naay log entry ra
+    para sa mga flags nga na-change gyud, dili ang tanan."""
     current_flags = get_feature_flags(conn)
     changed = {name: val for name, val in new_values.items() if val != current_flags[name]}
     for name, enabled in changed.items():
@@ -2188,10 +2278,11 @@ def update_feature_flags(conn, new_values, acting_staff_id):
 
 
 def update_alarm_settings(conn, data, acting_staff_id):
-    """Mutes/unmutes the RFID exit-monitoring alarm itself - independent of the
-    "monitoring" feature flag, which gates the whole tab/pipeline instead. See
-    services/monitoring_service.py's record_rfid_event for what this actually
-    changes (nothing stops being logged/classified either way)."""
+    """Mag-mute/unmute sa RFID exit-monitoring alarm mismo - independent ni
+    sa "monitoring" feature flag, nga naga-gate sa tibuok tab/pipeline
+    instead. Tan-awa services/monitoring_service.py's record_rfid_event kung
+    unsa gyud ang gina-change ani (walay hunong ang logging/classifying
+    bisan asa)."""
     enabled = bool(data.get("enabled"))
     conn.execute("UPDATE app_settings SET value = ? WHERE key = 'alarm_enabled'", ("1" if enabled else "0",))
     conn.commit()
@@ -2221,18 +2312,18 @@ _PREFIX_SETTINGS = {
 
 
 def update_barcode_prefixes(conn, data, acting_staff_id, force_regenerate=False):
-    """By default, changes only affect codes generated from this point on -
-    existing asset_id/member_code/staff_code values (and the barcode_ids
-    that default to them) keep whatever prefix they already had. See
-    settings_service.py's get_asset_id_prefix/get_member_code_prefix/
-    get_staff_code_prefix and their callers in asset_service.py/
-    member_service.py/staff_service.py/setup_service.py.
+    """By default, ang changes kay mag-apply ra sa codes nga i-generate gikan
+    ani nga point pasunod - ang existing asset_id/member_code/staff_code
+    values (ug ang barcode_ids nga default ana) magpabilin sa ilang existing
+    prefix. Tan-awa settings_service.py's get_asset_id_prefix/
+    get_member_code_prefix/get_staff_code_prefix ug ang ilang callers sa
+    asset_service.py/member_service.py/staff_service.py/setup_service.py.
 
-    force_regenerate=True additionally rewrites every existing record's own
-    code (see _force_regenerate_prefixed_codes) - opt-in and password-gated
-    at the route layer, since it's the one part of this action that isn't
-    trivially reversible (old printed barcode labels stop scanning to the
-    right record)."""
+    `force_regenerate=True` additionally mag-rewrite sa matag existing
+    record's own code (tan-awa _force_regenerate_prefixed_codes) - opt-in ug
+    password-gated sa route layer, kay kini ra ang part ani nga action nga
+    dili trivially reversible (ang old printed barcode labels mo-stop na
+    mag-scan sa tama nga record)."""
     prefixes = {key: (data.get(key) or "").strip().upper() for key in _PREFIX_SETTINGS}
 
     for key, value in prefixes.items():
@@ -2269,19 +2360,19 @@ def update_barcode_prefixes(conn, data, acting_staff_id, force_regenerate=False)
 
 
 def _force_regenerate_prefixed_codes(conn, prefixes, acting_staff_id):
-    """Rewrites every asset/member/staff row's own generated code (asset_id/
-    member_code/staff_code) to use the prefix just saved, keeping each row's
-    existing numeric id suffix (same `{prefix}{id:05d}` shape used at
-    creation - see create_asset/create_member/create_staff). A row's
-    barcode_id is only carried along if it currently equals that row's own
-    code (i.e. it was never customized to something else, per
-    normalize_barcode_id's convention) - a manually-set/scanned custom
-    barcode is left untouched either way.
+    """Mag-rewrite sa matag asset/member/staff row's own generated code
+    (asset_id/member_code/staff_code) para gamiton ang prefix nga bag-o lang
+    na-save, keeping ang existing numeric id suffix sa matag row (same
+    `{prefix}{id:05d}` shape nga gina-gamit sa creation - tan-awa
+    create_asset/create_member/create_staff). Ang row's barcode_id
+    ma-carry along ra kung kini currently equal sa row's own code (i.e. wala
+    pa na-customize, per normalize_barcode_id's convention) - ang
+    manually-set/scanned custom barcode kay untouched gihapon bisan asa.
 
-    Best-effort per table: a row that would collide with something else
-    (astronomically unlikely - new codes are id-derived and ids are unique,
-    but a hand-entered custom barcode could theoretically already equal one)
-    is skipped and counted, not allowed to abort the whole batch."""
+    Best-effort per table: usa ka row nga mo-collide sa uban (astronomically
+    unlikely - id-derived man ang new codes ug unique ang ids, pero
+    theoretically pwede mag-equal ang hand-entered custom barcode) kay
+    gina-skip lang ug i-count, dili mag-abort sa tibuok batch."""
     counts = {}
 
     for table, code_col, prefix_key in (
@@ -2331,7 +2422,8 @@ def _force_regenerate_prefixed_codes(conn, prefixes, acting_staff_id):
 
 
 def _describe_barcode_selection(asset_items, member_items):
-    """Turns two item lists into the human-readable audit_log detail string both endpoints log."""
+    """Mag-convert sa duha ka item lists ngadto sa human-readable audit_log
+    detail string nga gina-log sa duha ka endpoints."""
     parts = []
     if asset_items:
         parts.append(
@@ -2349,12 +2441,15 @@ def _describe_barcode_selection(asset_items, member_items):
 
 
 def split_barcode_items(items):
+    """Mag-separate sa mixed items list ngadto sa asset_items ug member_items,
+    based sa `type` field."""
     asset_items = [i for i in items if i.get("type") == "asset"]
     member_items = [i for i in items if i.get("type") == "member"]
     return asset_items, member_items
 
 
 def log_barcode_generate(items, acting_staff_id):
+    """Audit-log entry para sa label preview generation (walay download pa)."""
     asset_items, member_items = split_barcode_items(items)
     log_action(
         staff_id=acting_staff_id,
@@ -2364,6 +2459,7 @@ def log_barcode_generate(items, acting_staff_id):
 
 
 def log_barcode_download(items, size, acting_staff_id):
+    """Audit-log entry para sa actual PDF download sa barcode labels."""
     asset_items, member_items = split_barcode_items(items)
     log_action(
         staff_id=acting_staff_id,
@@ -2376,10 +2472,11 @@ _BARCODE_COUNT_RE = re.compile(r"(\d+) (?:asset|member)\(s\)")
 
 
 def get_barcode_labels_printed_count(conn):
-    """Total individual labels ever downloaded (System page's Hardware card summary) -
-    sums the asset(s)/member(s) counts out of every downloaded_barcode_labels audit_log
-    entry's own details string (log_barcode_download above) rather than tracking a
-    separate counter, since the audit log already has the numbers a download recorded."""
+    """Total individual labels ever na-download (System page's Hardware card
+    summary) - gina-sum ang asset(s)/member(s) counts gikan sa matag
+    downloaded_barcode_labels audit_log entry's own details string
+    (log_barcode_download sa taas) instead of tracking og separate counter,
+    kay naa naman diay sa audit log ang numbers nga na-record sa download."""
     rows = conn.execute(
         "SELECT details FROM audit_log WHERE action = 'downloaded_barcode_labels'"
     ).fetchall()
@@ -2392,7 +2489,8 @@ def get_barcode_labels_printed_count(conn):
 
 
 def get_online_staff(conn, roles=None):
-    """Staff with a currently-live session, same definition require_session uses; `roles` narrows the set."""
+    """Staff nga naay currently-live session, same definition sa
+    require_session; ang `roles` mag-narrow sa set kung gi-supply."""
     idle_minutes = get_session_idle_minutes(conn)
     where_role = ""
     params = [f"-{idle_minutes} minutes"]
@@ -2422,7 +2520,8 @@ def get_online_staff(conn, roles=None):
 
 
 def list_backups():
-    """Newest-first list of backup files on disk; empty list, not an error, before the first backup runs."""
+    """Newest-first list sa backup files on disk; empty list ra, dili error,
+    kung wala pa gyuy na-run nga first backup."""
     backup_dir = backup_db.DEFAULT_BACKUP_DIR
     if not os.path.isdir(backup_dir):
         return []
@@ -2444,6 +2543,7 @@ def list_backups():
 
 
 def get_backup_settings_context(conn):
+    """Everything nga gikinahanglan sa System page's Backup card sa usa ka call."""
     return {
         "enabled": get_auto_backup_enabled(conn),
         "interval_hours": get_auto_backup_interval_hours(conn),
@@ -2454,6 +2554,7 @@ def get_backup_settings_context(conn):
 
 
 def update_backup_settings(conn, data, acting_staff_id):
+    """Mag-toggle sa auto-backup on/off ug mag-set sa interval_hours."""
     enabled = bool(data.get("enabled"))
     try:
         interval_hours = int(data.get("interval_hours"))
@@ -2481,7 +2582,8 @@ def update_backup_settings(conn, data, acting_staff_id):
 
 
 def trigger_manual_backup(acting_staff_id):
-    """Manual backup; runs unconditionally regardless of the enabled toggle or schedule interval."""
+    """Manual backup; mo-run gyud unconditionally regardless sa enabled
+    toggle or sa schedule interval."""
     ok = run_backup_now()
     if not ok:
         return None, "Backup failed - check the server log for details."
@@ -2496,7 +2598,10 @@ def trigger_manual_backup(acting_staff_id):
 
 
 def resolve_backup_path(filename):
-    """Validates filename shape + path containment. Returns (path, error_msg, status)."""
+    """Nag-validate sa filename shape + path containment (dili makagawas sa
+    backup dir).
+
+    Returns: (path, error_msg, status)."""
     if not _BACKUP_FILENAME_RE.match(filename):
         return None, "Invalid backup filename", 400
 
@@ -2510,6 +2615,7 @@ def resolve_backup_path(filename):
 
 
 def delete_backup_file(filename, acting_staff_id):
+    """Mag-delete sa usa ka backup file on disk human ma-validate ang filename/path."""
     path, error_msg, status = resolve_backup_path(filename)
     if error_msg:
         return None, error_msg, status
@@ -2529,7 +2635,8 @@ def delete_backup_file(filename, acting_staff_id):
 
 
 def archived_record_counts(conn):
-    """{assets, members, staff} counts currently archived/deactivated, shown before setting a retention window."""
+    """{assets, members, staff} counts nga currently archived/deactivated,
+    gina-pakita before mag-set og retention window."""
     assets = conn.execute("SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NOT NULL").fetchone()["cnt"]
     members = conn.execute("SELECT COUNT(*) AS cnt FROM members WHERE is_active = 0").fetchone()["cnt"]
     staff = conn.execute("SELECT COUNT(*) AS cnt FROM staff WHERE is_active = 0").fetchone()["cnt"]
@@ -2537,6 +2644,7 @@ def archived_record_counts(conn):
 
 
 def update_archive_purge_settings(conn, data, acting_staff_id):
+    """Mag-set sa archive_purge_days app_setting (0 = None/disabled, max 3650)."""
     try:
         purge_days = int(data.get("purge_days"))
     except (TypeError, ValueError):
@@ -2563,7 +2671,8 @@ def update_archive_purge_settings(conn, data, acting_staff_id):
 
 
 def run_archive_purge(conn, acting_staff_id):
-    """Manual purge; runs the same three passes as the scheduled job, but only if a retention window is set."""
+    """Manual purge; mo-run sa same three passes sa scheduled job, pero only
+    kung naay na-set nga retention window."""
     purge_days = get_archive_purge_days(conn)
     if purge_days <= 0:
         return None, "Set a retention window before purging - it's currently set to None."

@@ -1,8 +1,7 @@
-"""RFID exit-monitoring: the Monitoring tab's htmx endpoints, plus the two
-machine-to-machine endpoints the Raspberry Pi's RFID listener (not part of
-this repo - see the thesis's Chapter 3 hardware description) is expected to
-call directly, without a staff browser session.
-"""
+"""RFID exit-monitoring: naay htmx endpoints para sa Monitoring tab, dungan
+sa duha ka machine-to-machine endpoints nga gi-call sa Raspberry Pi's RFID
+listener (dili part sa repo - see thesis Chapter 3 hardware description)
+direkta, walay staff browser session."""
 
 import os
 
@@ -22,9 +21,9 @@ _VIEW_ROLES = ("admin", "in_charge", "tool_keeper")
 
 
 def _listener_key_error():
-    """Shared guard for the two Pi-facing endpoints below. Fails closed:
-    an unset RFID_LISTENER_KEY disables both endpoints entirely rather than
-    accepting requests with no secret configured."""
+    """Shared guard sa duha ka Pi-facing endpoints below. Fail closed ni siya
+    - kung wa gi-set ang RFID_LISTENER_KEY, disabled dayon ang duha ka
+    endpoints imbes nga tugotan request nga walay secret configured."""
     configured_key = os.environ.get("RFID_LISTENER_KEY")
     if not configured_key:
         return jsonify({"error": "RFID_LISTENER_KEY is not configured on this server"}), 503
@@ -38,6 +37,8 @@ def _listener_key_error():
 
 
 def get_monitoring_table_context(args):
+    """Helper nga mo-parse sa pagination params ug mo-tawag sa
+    monitoring_service.get_monitoring_table_context()."""
     conn = get_db_connection()
     try:
         limit, offset, error = parse_pagination_params(args)
@@ -52,6 +53,7 @@ def get_monitoring_table_context(args):
 @roles_required(*_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_monitoring_table():
+    """GET - htmx partial sa Monitoring tab's live event table."""
     context, error = get_monitoring_table_context(request.args)
     if error:
         return error
@@ -62,7 +64,8 @@ def view_monitoring_table():
 @roles_required(*_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_alarm_banner():
-    """Polled every few seconds by the Monitoring page - see monitoring.html's hx-trigger."""
+    """GET - gi-poll every few seconds sa Monitoring page (see monitoring.html's
+    hx-trigger). Delegates to monitoring_service.get_alarm_status()."""
     conn = get_db_connection()
     try:
         status = monitoring_service.get_alarm_status(conn)
@@ -74,19 +77,15 @@ def view_alarm_banner():
 @monitoring_bp.route("/monitoring/alarm-status")
 @limiter.limit("30 per minute")
 def view_alarm_status():
-    """Deliberately public (no @login_required) - this is what lets
-    static/js/ui.js's global poll (every logged-in page) AND templates/
-    login.html's poll (nobody logged in yet) both work off the one
-    endpoint. Detail is scaled to who's asking, via a soft session check
-    (require_session, but its error is discarded rather than returned):
-    a valid staff session gets the same detail the Monitoring page itself
-    shows; no session at all (only reachable from the login page, since
-    every other page requires one) gets just the asset's name/barcode,
-    deliberately not the classification/raw tag/timestamp a logged-in
-    viewer sees - enough to grab attention and send someone to log in and
-    look, without broadcasting incident specifics to anyone who can merely
-    reach the login screen on the network. Feature-flagged like every
-    other Monitoring endpoint - reports inactive outright if it's off."""
+    """GET - deliberately public (walay @login_required) kay ni sila ang
+    ga-share ani nga endpoint: static/js/ui.js's global poll (logged-in
+    pages) ug templates/login.html's poll (wa pa naka-login). Detail level
+    ma-scale depende kinsay ni-request via soft session check
+    (require_session, pero gi-ignore ang error) - naay session, full detail;
+    walay session, asset name/barcode ra (dili classification/tag/timestamp)
+    para dili ma-leak ang incident details sa dili pa naka-log in.
+    Feature-flagged pareho sa uban Monitoring endpoints - inactive dayon ang
+    report kung off."""
     if not is_feature_enabled("monitoring"):
         return jsonify({"active": False})
 
@@ -118,6 +117,8 @@ def view_alarm_status():
 @roles_required(*_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_monitoring_stat_cards():
+    """GET - htmx partial sa Monitoring tab's stat cards. Delegates to
+    monitoring_service.get_monitoring_stat_cards()."""
     conn = get_db_connection()
     try:
         stats = monitoring_service.get_monitoring_stat_cards(conn)
@@ -134,13 +135,11 @@ def view_monitoring_stat_cards():
 @feature_required("monitoring", redirect_to_dashboard=False)
 @limiter.limit("20 per minute")
 def view_monitoring_trends():
-    """Backs the Trends tab: daily volume by classification, hour-of-day
-    histogram, alarm response-time stats, and the unknown_tag-rate proxy for
-    false-positive rate - see monitoring_stats_service's module docstring for
-    what this data can't answer yet (per-exit-gate breakdown, true
-    false-positive flagging). Accepts the same since/until/classification/q
-    filters as the live table (build_monitoring_filters), so the Trends tab
-    can reuse the page's existing date-filter UI."""
+    """GET - data para sa Trends tab: daily volume by classification,
+    hour-of-day histogram, alarm response-time stats, ug unknown_tag-rate
+    proxy for false-positive rate (see monitoring_stats_service's module
+    docstring for limitations). Same since/until/classification/q filters
+    sa live table (build_monitoring_filters)."""
     conn = get_db_connection()
     try:
         daily_volume, error = monitoring_stats_service.get_daily_event_volume(conn, request.args)
@@ -173,11 +172,10 @@ def view_monitoring_trends():
 
 @monitoring_bp.route("/rfid-events", methods=["POST"])
 def record_rfid_event():
-    """Called by the Pi's background RFID listener for each de-duplicated
-    detection at the monitored exit. Authenticated by a shared secret
-    (RFID_LISTENER_KEY), not a staff login - this runs headless with no
-    browser session behind it. See monitoring_service.record_rfid_event for
-    the classification rule."""
+    """POST - gi-call sa Pi's background RFID listener per de-duplicated
+    detection sa exit gate. Auth kay shared secret (RFID_LISTENER_KEY), dili
+    staff login, kay headless man ni nga walay browser session. See
+    monitoring_service.record_rfid_event() sa classification rule."""
     key_error = _listener_key_error()
     if key_error:
         return key_error
@@ -202,11 +200,11 @@ def record_rfid_event():
 
 @monitoring_bp.route("/rfid-events/deactivate", methods=["POST"])
 def deactivate_rfid_alarm():
-    """Called by the Pi's HF/NFC handler when the Admin taps the Master Key
-    Card at the tool room - the only way an active alarm clears. Identifies
-    the Admin the same way workstation RFID login does (staff.rfid_id,
-    role='admin'); there is no equivalent software-only "deactivate" action
-    anywhere in the browser UI, by design."""
+    """POST - gi-call sa Pi's HF/NFC handler kung mo-tap ang Admin sa Master
+    Key Card sa tool room - mao ra ni nga paagi para ma-clear ang active
+    alarm. Identifies the Admin same way sa workstation RFID login
+    (staff.rfid_id, role='admin'); walay software-only "deactivate" button
+    sa browser UI, by design."""
     key_error = _listener_key_error()
     if key_error:
         return key_error

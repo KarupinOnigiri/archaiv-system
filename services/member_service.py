@@ -1,12 +1,11 @@
-"""Query-building and mutation logic for routes/members.py (members + departments).
+"""Query-building ug mutation logic para sa routes/members.py (members + departments).
 
-Convention: every function takes an already-open `conn` (the route owns open/close)
-and returns `(data, error)`. `error` is `None` on success, or `(error_payload, status, context)`
-on failure, where `error_payload` is a plain dict (for jsonify), `status` is the HTTP
-status, and `context` is a dict of extra objects (e.g. {"member": member}) the route may
-need to re-render an inline-error template on non-JSON requests. `context` is `{}` when
-there's nothing to re-render. This keeps Flask's JSON-vs-template branching in the route
-while all query/validation/logging logic lives here.
+Same convention sa services/asset_service.py: matag function mo-dawat ug bukas nga
+`conn` (ang route ang mo-open/close), mobalik ug `(data, error)`. `error` None kung
+malampuson, o `(error_payload, status, context)` kung napakyas - `error_payload` plain
+dict (para sa jsonify), `status` ang HTTP status, ug `context` dict sa dugang objects
+(e.g. {"member": member}) nga gikinahanglan sa route para i-rerender ang inline-error
+template sa non-JSON nga request. `context` `{}` kung wala'y i-rerender.
 """
 
 import csv
@@ -81,6 +80,7 @@ OPTIONAL_MEMBER_CSV_COLUMNS = ("middle_name", "suffix", "batch")
 
 
 def _no_ctx(error_payload, status):
+    """Shortcut para sa error returns nga wala'y extra context - `(payload, status, {})`."""
     return (error_payload, status, {})
 
 
@@ -88,6 +88,7 @@ def _no_ctx(error_payload, status):
 
 
 def list_departments(conn):
+    """Tanan departments, sorted by sort_order tapos name - gamit sa dropdowns."""
     return conn.execute("SELECT * FROM departments ORDER BY sort_order, name").fetchall()
 
 
@@ -95,7 +96,8 @@ def list_departments(conn):
 
 
 def get_members_table_context(conn, args, limit, offset):
-    """Shared query for the members table, used by both the htmx partial and full-page route."""
+    """Shared query para sa members table, gamit sa htmx partial ug sa full-page route -
+    naay filter (search, department, is_restricted), sortable columns, ug pagination."""
     show_inactive = args.get("show_inactive") == "1"
     if show_inactive:
         where_clauses = ["members.is_active = 0"]
@@ -174,6 +176,9 @@ def get_members_table_context(conn, args, limit, offset):
 
 
 def get_member_stat_cards(conn):
+    """Ang 4 ka numero sa Members page's stat cards (All/Active/Restricted/Inactive).
+
+    Returns: dict {stat_all, stat_active, stat_restricted, stat_inactive}."""
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM members").fetchone()["cnt"]
     stat_active = conn.execute(
         "SELECT COUNT(*) AS cnt FROM members WHERE is_active = 1 AND is_restricted = 0"
@@ -193,7 +198,8 @@ def get_member_stat_cards(conn):
 
 
 def find_member_id_by_barcode(conn, barcode):
-    """Exact-match barcode lookup for the search box's Enter key; matches even deactivated members."""
+    """Exact-match barcode lookup para sa search box's Enter key; ma-match gihapon
+    bisan deactivated na ang member."""
     row = conn.execute(
         "SELECT id FROM members WHERE UPPER(barcode_id) = UPPER(?)", (barcode,)
     ).fetchone()
@@ -201,7 +207,9 @@ def find_member_id_by_barcode(conn, barcode):
 
 
 def get_member_profile(conn, member_id):
-    """Read-only profile modal; the rest loads client-side via separate transaction/history calls."""
+    """Read-only profile modal data; ang uban (transactions/history) mo-load client-side
+    via separate calls. Kung restricted ang member, gi-apil dinhi ang pending
+    unrestriction request para dili na mangita pa ang staff sa Approvals."""
     member = conn.execute(
         """
         SELECT members.*, departments.name AS department
@@ -236,10 +244,10 @@ def get_member_profile(conn, member_id):
 
 
 def create_member(conn, data, staff_id):
-    """Inserts a new member. member_code always auto-generates as MBR#####; barcode_id
-    matches it unless the caller supplies one (e.g. scanned off the member's existing
-    school/employee ID), in which case that value is reused instead of printing a new
-    barcode."""
+    """Mag-insert ug bag-ong member. Ang member_code kanunay auto-generate as MBR##### -
+    ang barcode_id parehas ana gawas kung naay gi-supply na custom barcode (e.g. scanned
+    off sa existing school/employee ID sa member), diha gamiton na hinuon na kay dili na
+    mag-print og bag-ong barcode."""
     error = _validate_department_id(conn, data.get("department_id"))
     if error:
         return None, _no_ctx(*error)
@@ -313,8 +321,9 @@ def create_member(conn, data, staff_id):
 
 
 def _validate_department_id(conn, department_id, required=False):
-    """Local, non-Flask mirror of utils.validators.validate_lookup_id(conn, "departments", ...) --
-    same behavior/wording, just returning a plain (dict, status) instead of a jsonify response."""
+    """Local, non-Flask mirror sa utils.validators.validate_lookup_id(conn, "departments", ...)
+    - parehas ra ang behavior/wording, mobalik lang ug plain (dict, status) imbes og
+    jsonify response."""
     if department_id is None:
         if required:
             return {"error": "Missing required field: department_id"}, 400
@@ -329,6 +338,7 @@ def _validate_department_id(conn, department_id, required=False):
 
 
 def get_member_for_edit(conn, member_id):
+    """Fetch member para sa edit modal/form; 404 kung wala."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -336,6 +346,10 @@ def get_member_for_edit(conn, member_id):
 
 
 def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
+    """Mag-update sa member details - naay separate validation para sa barcode
+    reuse/uniqueness ug sa is_restricted toggle (dili pwede mag-unrestrict sa
+    kaugalingon account). Mag-log ug restricted_member/unrestricted_member kung
+    nabag-o ang restriction status."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -471,6 +485,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
 
 
 def get_member_for_restrict(conn, member_id):
+    """Fetch member para sa restrict modal; 404 kung wala."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -478,7 +493,8 @@ def get_member_for_restrict(conn, member_id):
 
 
 def restrict_member(conn, member_id, restriction_reason, staff_id):
-    """Any staff can flag a member on the spot with a reason; low-risk and easy to trigger, but logged."""
+    """Bisan kinsa nga staff pwede mag-flag ug member diretso with a reason - low-risk ug
+    sayon i-trigger, pero naka-log gihapon."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -518,6 +534,7 @@ def restrict_member(conn, member_id, restriction_reason, staff_id):
 
 
 def get_member_for_unrestrict(conn, member_id):
+    """Fetch member para sa unrestrict action; 404 kung wala."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -525,8 +542,9 @@ def get_member_for_unrestrict(conn, member_id):
 
 
 def unrestrict_member(conn, member_id, staff_id, acting_staff_member_id):
-    """Lifting a restriction re-grants borrowing access, so it deliberately
-    requires more authority than restricting - tool_keeper cannot call this."""
+    """Ang pag-lift sa restriction mo-balik sa borrowing access, so mas dako og
+    authority ang gikinahanglan kaysa sa pag-restrict - dili ni ma-call sa tool_keeper.
+    Dili sad pwede mag-unrestrict sa kaugalingon account."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -573,7 +591,8 @@ def unrestrict_member(conn, member_id, staff_id, acting_staff_member_id):
 
 
 def get_member_for_unrestriction_request(conn, member_id):
-    """tool_keeper's modal to flag a restricted member for review; admin/in_charge just lift it directly."""
+    """Modal sa tool_keeper para i-flag ug restricted member for review; ang admin/in_charge
+    diretso ra mag-lift sa restriction, dili na kinahanglan mo-agi ani."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -586,6 +605,7 @@ def get_member_for_unrestriction_request(conn, member_id):
 
 
 def get_member_for_delete(conn, member_id):
+    """Fetch member para sa deactivate modal; 404 kung wala."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -593,6 +613,10 @@ def get_member_for_delete(conn, member_id):
 
 
 def deactivate_member(conn, member_id, staff_id, acting_staff_role):
+    """Mag-deactivate ug member, pero naay daghang guards: dili pwede kung naay open
+    borrow transaction o open checkout session, ug kung naay linked active staff
+    account dapat admin ra ang mo-deactivate (labi na kung admin pud tong staff account).
+    Mag-cascade deactivate sa linked staff account kung naa."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -696,6 +720,7 @@ def deactivate_member(conn, member_id, staff_id, acting_staff_role):
 
 
 def get_member_for_reactivate(conn, member_id):
+    """Fetch member para sa reactivate action; 404 kung wala."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -703,6 +728,7 @@ def get_member_for_reactivate(conn, member_id):
 
 
 def reactivate_member(conn, member_id, staff_id):
+    """Mag-reactivate balik sa member ug mag-clear sa deactivated_at."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -739,7 +765,9 @@ def reactivate_member(conn, member_id, staff_id):
 
 
 def bulk_deactivate_members(conn, ids, staff_id, acting_staff_role):
-    """Bulk deactivate; a bad row goes into `skipped`, same per-row guards as single deactivate_member."""
+    """Bulk deactivate ug daghang members dungan - kung naay bad row, mo-adto ra na sa
+    `skipped` list, dili mo-fail ang tibuok batch. Parehas ra ka strikto ang guards sa
+    single deactivate_member."""
     deactivated, skipped = [], []
     staff_cascades = []  # (staff_id, username) pairs to log after the loop
 
@@ -836,7 +864,9 @@ def bulk_deactivate_members(conn, ids, staff_id, acting_staff_role):
 
 
 def bulk_reactivate_members(conn, ids, staff_id):
-    """Bulk reactivate, open to admin/in_charge; lighter weight than asset restore's admin-only gate."""
+    """Bulk reactivate, open ra sa admin/in_charge; mas gaan ni na gate kumpara sa
+    asset restore nga admin-only jud. Bad row mo-adto sa `skipped`, dili mo-fail
+    ang tibuok batch."""
     reactivated, skipped = [], []
 
     for member_id in ids:
@@ -884,6 +914,8 @@ def bulk_reactivate_members(conn, ids, staff_id):
 
 
 def get_member_by_barcode(conn, barcode):
+    """Barcode scan lookup gamit sa checkout/API flows; mobalik ug plain dict (dili
+    sqlite3.Row) para JSON-serializable dayon."""
     member = conn.execute(
         """
         SELECT members.*, departments.name AS department
@@ -900,6 +932,8 @@ def get_member_by_barcode(conn, barcode):
 
 
 def get_member_transactions(conn, member_id, limit, offset, status_filter):
+    """Member's transaction history, filterable by status (current/returned/tanan),
+    gamit sa profile modal - paginated pero naay fixed small default limit."""
     member = conn.execute("SELECT id FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -937,7 +971,8 @@ def get_member_transactions(conn, member_id, limit, offset, status_filter):
 
 
 def get_borrow_history_modal_member(conn, member_id):
-    """"View Full History" shell for Borrow History; rows load from the partial via htmx."""
+    """"View Full History" shell para sa Borrow History; ang rows mo-load gikan sa
+    partial via htmx."""
     member = conn.execute(
         """
         SELECT members.id, members.first_name, members.last_name, members.middle_name, members.suffix
@@ -951,7 +986,8 @@ def get_borrow_history_modal_member(conn, member_id):
 
 
 def get_borrow_history_table(conn, member_id, limit, offset):
-    """Same query as get_member_transactions but actually paginated instead of a fixed limit=3."""
+    """Parehas ra sa query sa get_member_transactions pero real pagination ni, dili
+    fixed limit=3."""
     member = conn.execute("SELECT id FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -981,7 +1017,8 @@ def get_borrow_history_table(conn, member_id, limit, offset):
 
 
 def _fetch_restriction_history(member_id, conn):
-    """Shared query combining restrict/unrestrict audit events with the requests trail; capped, not paginated."""
+    """Shared query nga mag-combine sa restrict/unrestrict audit events ug sa
+    unrestriction_requests trail; naay cap (RESTRICTION_HISTORY_CAP), dili paginated."""
     restriction_events = conn.execute(
         """
         SELECT audit_log.action, audit_log.details, audit_log.created_at,
@@ -1018,7 +1055,8 @@ def _fetch_restriction_history(member_id, conn):
 
 
 def get_restriction_history(conn, member_id):
-    """JSON teaser for the Restriction History tab; open to any staff, including tool_keeper."""
+    """JSON teaser para sa Restriction History tab; open ni sa bisan kinsang staff,
+    tool_keeper apil."""
     member = conn.execute("SELECT id FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -1033,7 +1071,8 @@ def get_restriction_history(conn, member_id):
 
 
 def get_restriction_history_modal_member(conn, member_id):
-    """"View Full History" shell for Restriction History; rows load from the partial below."""
+    """"View Full History" shell para sa Restriction History; ang rows mo-load gikan
+    sa partial sa ubos."""
     member = conn.execute(
         """
         SELECT members.id, members.first_name, members.last_name, members.middle_name, members.suffix
@@ -1047,7 +1086,8 @@ def get_restriction_history_modal_member(conn, member_id):
 
 
 def get_restriction_history_table(conn, member_id, limit, offset):
-    """Paginated htmx partial; audit_log and unrestriction_requests are UNION ALL'd into one timeline."""
+    """Paginated htmx partial; ang audit_log ug unrestriction_requests gi-UNION ALL
+    para mahimong usa ka timeline."""
     member = conn.execute("SELECT id FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "Member not found"}, 404)
@@ -1093,6 +1133,8 @@ def get_restriction_history_table(conn, member_id, limit, offset):
 
 
 def get_departments_with_member_count(conn):
+    """Tanan departments dungan sa member count per department - gamit sa delete modal
+    para mo-warn kung naay members pa assigned."""
     # LEFT JOIN + COUNT gives 0, not NULL, for the delete modal to warn on.
     return conn.execute(
         """
@@ -1106,6 +1148,8 @@ def get_departments_with_member_count(conn):
 
 
 def add_department(conn, name, staff_id):
+    """Mag-insert ug bag-ong department; auto-append sa last (highest sort_order).
+    Duplicate name mo-error base sa DB unique constraint."""
     name = (name or "").strip()
     if not name:
         return None, _no_ctx({"error": "Missing required field: name"}, 400)
@@ -1138,6 +1182,7 @@ def add_department(conn, name, staff_id):
 
 
 def edit_department(conn, department_id, name, staff_id):
+    """Mag-rename ug department; duplicate name mo-error base sa DB unique constraint."""
     name = (name or "").strip()
     if not name:
         return None, _no_ctx({"error": "Missing required field: name"}, 400)
@@ -1166,7 +1211,8 @@ def edit_department(conn, department_id, name, staff_id):
 
 
 def reorder_departments(conn, ordered_ids, staff_id):
-    """Saves department order; requires the full id set so a partial request can't orphan one."""
+    """Mag-save sa department order; gikinahanglan ang full id set para dili ma-orphan
+    ang usa ka department gikan sa partial request."""
     if len(set(ordered_ids)) != len(ordered_ids):
         return None, _no_ctx({"error": "order contains duplicate department ids"}, 400)
 
@@ -1196,7 +1242,8 @@ def reorder_departments(conn, ordered_ids, staff_id):
 
 
 def delete_department(conn, department_id, staff_id):
-    """Blocks deleting a department with members still assigned; department_id is NOT NULL."""
+    """Dili tugotan ang pag-delete ug department nga naay members pa nga assigned -
+    ang department_id column NOT NULL man gud."""
     department = conn.execute("SELECT * FROM departments WHERE id = ?", (department_id,)).fetchone()
     if department is None:
         return None, _no_ctx({"error": "Department not found"}, 404)
@@ -1239,8 +1286,9 @@ def delete_department(conn, department_id, staff_id):
 
 
 def import_members_csv(content, mode, staff_id):
-    """Bulk-adds members from CSV; 'preview' rolls back, 'commit' keeps it. Opens its own
-    connection because it needs raw isolation_level/SAVEPOINT control the shared conn doesn't offer."""
+    """Bulk-add ug members gikan sa CSV; 'preview' mo-rollback, 'commit' mo-keep sa
+    changes. Naay kaugalingong connection kay gikinahanglan ang raw isolation_level/
+    SAVEPOINT control nga wala gi-offer sa shared conn."""
     dry_run = mode == "preview"
 
     reader = csv.DictReader(io.StringIO(content))
@@ -1300,8 +1348,10 @@ def import_members_csv(content, mode, staff_id):
 
 
 def _import_members_rows(reader, header_map, conn, created, errors, new_departments, seen_department_names):
-    """The per-row body of import_members_csv(), split out so the outer function's
-    try/finally can guarantee conn.close() runs no matter what happens in here."""
+    """Ang per-row nga body sa import_members_csv(), gi-separate para ang outer
+    function's try/finally maka-guarantee nga mo-run gihapon ang conn.close() bisan
+    unsa pa mahitabo diri. Mag-auto-create ug bag-ong department kung wala pa nay
+    existing name-match."""
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         first_name = (row.get("first_name") or "").strip()
@@ -1373,10 +1423,13 @@ def _import_members_rows(reader, header_map, conn, created, errors, new_departme
 
 
 def default_members_export_basename(show_inactive):
+    """Default filename para sa members export (active/inactive + today's date),
+    walay extension pa."""
     return f"members_{'inactive' if show_inactive else 'active'}_{datetime.now().strftime('%Y%m%d')}"
 
 
 def get_members_for_export(conn, show_inactive):
+    """Members (active o inactive, base sa `show_inactive`) nga i-export, sorted by name."""
     where_clause = "members.is_active = 0" if show_inactive else "members.is_active = 1"
     return conn.execute(
         f"""
@@ -1390,6 +1443,8 @@ def get_members_for_export(conn, show_inactive):
 
 
 def resolve_export_columns(selected):
+    """Mag-filter sa MEMBERS_EXPORT_COLUMNS base sa user's `selected` list; mo-fallback
+    sa tanan columns kung walay valid nga na-select."""
     if selected:
         columns = [c for c in MEMBERS_EXPORT_COLUMNS if c in selected]
         if not columns:
@@ -1400,8 +1455,9 @@ def resolve_export_columns(selected):
 
 
 def build_members_export_file(members, columns, export_format, show_inactive):
-    """Returns (file_bytes, content_type, export_format) - export_format may be
-    normalized back to 'csv' if an unrecognized format slipped through."""
+    """Mag-build ug export file (xlsx o csv). Returns (file_bytes, content_type,
+    export_format) - ang export_format pwede ma-normalize balik sa 'csv' kung naay
+    unrecognized format nga naka-sagol."""
     if export_format == "xlsx":
         wb = Workbook()
         ws = wb.active
@@ -1433,7 +1489,8 @@ def build_members_export_file(members, columns, export_format, show_inactive):
 
 
 def save_export_copy(file_bytes, save_dir, filename):
-    """Best-effort server-side copy of an export; returns (saved_path_or_None, warning_or_None)."""
+    """Best-effort server-side copy sa export file; returns (saved_path_or_None,
+    warning_or_None) - dili ni mag-raise kung mapakyas, warning ra."""
     try:
         os.makedirs(save_dir, exist_ok=True)
         saved_path = os.path.join(save_dir, filename)

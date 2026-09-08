@@ -1,8 +1,9 @@
-"""Query-building, checkout-session/loan business logic, and export shaping for
-routes/transactions.py. Every function takes an already-open `conn` (the route
-owns open/close) and returns `(data, error)` - `error` is a ready `(jsonify(...), status)`
-tuple on failure, `data` is a plain dict/list/row on success - so routes stay a thin
-parse-args -> call service -> jsonify layer, matching utils/validators.py's convention.
+"""Query-building, checkout-session/loan business logic, ug export shaping para sa
+routes/transactions.py. Matag function mo-dawat ug bukas nga `conn` (ang route ang
+mo-open/close) ug mobalik ug `(data, error)` - `error` kay ready `(jsonify(...), status)`
+tuple kung napakyas, `data` kay plain dict/list/row kung malampuson - para mag-stay ang
+routes as thin parse-args -> call service -> jsonify layer, parehas sa utils/validators.py's
+convention.
 """
 
 import csv
@@ -33,21 +34,20 @@ MAX_BATCH_RETURN_SIZE = 50
 
 
 def _verify_second_scan(asset, verify_code):
-    """Cross-checks the second (confirmatory) scan against the asset - the
-    actual anti-swap check (a barcode sticker alone only proves *a* barcode
-    was read, and a sticker can be peeled and moved to a different tool).
-    Accepts a match against the asset's RFID tag, its barcode, or its own
-    asset ID code: not every asset has an RFID tag registered yet, and
-    staff re-presenting any of the three is still deliberate proof they
-    have the actual tool in hand, not just re-typing the same value from
-    memory - so this isn't RFID-only despite the field name in the API
-    payload (rfid_code, kept for backward compatibility).
+    """Cross-check sa second (confirmatory) scan batok sa asset - mao ni ang
+    actual anti-swap check (ang barcode sticker ra lang, mo-prove ra na *a*
+    barcode ang gi-scan, ug ang sticker pwede man peelon ug ibutang sa laing
+    tool). Match against sa asset's RFID tag, barcode, o iyang own asset ID
+    code - dili tanan asset naay RFID tag na registered, ug bisan asa sa
+    tulo ang gi-present balik sa staff, deliberate proof gihapon nga naa
+    gyud sila sa tool mismo, dili lang re-type sa parehas value gikan sa
+    memory - mao nga dili ni RFID-only bisan pa sa field name sa API
+    payload (rfid_code, gi-keep ra para backward compatibility).
 
-    Optional by design: `verify_code` is None whenever staff add by a single
-    scan with no follow-up verification, which must keep working unchanged.
-    Only returns an error when staff *did* scan/enter something and it
-    doesn't match any of the asset's identifiers.
-    """
+    Optional by design: `verify_code` kay None kung single scan ra ang
+    staff nga wala'y follow-up verification, kinahanglan mo-work gihapon
+    na siya normally. Mo-return ra ug error kung naa gyud gi-scan/i-type
+    ang staff nga wa mo-match sa bisan unsa sa asset's identifiers."""
     if not verify_code:
         return None
     code = verify_code.strip().upper()
@@ -75,8 +75,8 @@ VALID_RETURN_CONDITIONS = ("functional", "inoperable", "for_repair", "disposed")
 
 
 def get_max_concurrent_loans(member_type, conn):
-    """Looks up the concurrent-loan cap for a member_type, falling back to
-    MAX_CONCURRENT_LOANS if loan_limits has no row for it."""
+    """Mangita sa concurrent-loan cap para sa member_type - fallback sa
+    MAX_CONCURRENT_LOANS kung wala'y row para ana sa loan_limits table."""
     row = conn.execute(
         "SELECT max_concurrent_loans FROM loan_limits WHERE member_type = ?",
         (member_type,),
@@ -85,7 +85,8 @@ def get_max_concurrent_loans(member_type, conn):
 
 
 def get_active_checkout_session(session_id, member_id, conn):
-    """Returns (session_row, error) for an open checkout session; lazily closes stale ones."""
+    """Mobalik ug (session_row, error) para sa open checkout session - lazily
+    ma-close ang stale ones (last activity beyond the configured timeout)."""
     session = conn.execute(
         "SELECT * FROM checkout_sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -129,14 +130,16 @@ def get_active_checkout_session(session_id, member_id, conn):
 
 
 def require_session_owner(session, staff_id):
-    """Errors if this session belongs to another staff member; no owner on record counts as accessible."""
+    """Mo-error kung iya ni ug laing staff member - kung wa'y owner naka-record,
+    accessible ra gihapon."""
     if session["staff_id"] is not None and session["staff_id"] != staff_id:
         return jsonify({"error": "This checkout session belongs to another staff member"}), 403
     return None
 
 
 def load_open_sessions_for_staff(staff_id, conn):
-    """All of a staff member's open checkout sessions with items; single source for the dock/banner."""
+    """Tanang open checkout sessions sa usa ka staff member, dungan sa items -
+    single source para sa dock/banner (walay laing duplicate query)."""
     sessions = conn.execute(
         """
         SELECT checkout_sessions.*, members.barcode_id AS member_barcode, members.first_name AS member_first_name
@@ -200,7 +203,8 @@ def load_open_sessions_for_staff(staff_id, conn):
 
 
 def load_open_session_for_staff(staff_id, conn):
-    """Most recent open session, or None; thin wrapper for callers that only want one."""
+    """Ang pinaka-recent open session, o None - thin wrapper para sa callers
+    nga usa ra ilang gusto."""
     sessions = load_open_sessions_for_staff(staff_id, conn)
     return sessions[0] if sessions else None
 
@@ -209,6 +213,8 @@ def load_open_session_for_staff(staff_id, conn):
 
 
 def list_transactions(conn, limit, offset):
+    """Paginated nga tanang transactions, newest time_out una, dungan sa asset
+    + member names para dili na kinahanglan mag-separate lookup."""
     total_count = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
     transactions = conn.execute(
         """
@@ -230,6 +236,8 @@ def list_transactions(conn, limit, offset):
 
 
 def list_overdue_transactions(conn):
+    """Tanang borrowed transactions nga lapas na sa due_date - sorted soonest
+    overdue una."""
     overdue = conn.execute(
         """
         SELECT transactions.*, assets.name AS asset_name, members.first_name, members.last_name, members.middle_name, members.suffix
@@ -273,7 +281,8 @@ TRANSACTIONS_EXPORT_COLUMNS = [
 
 
 def build_transactions_filters(args):
-    """Builds the WHERE clause + params shared by the table listing and CSV export."""
+    """Mag-build sa WHERE clause + params nga gi-share sa table listing ug CSV
+    export, para dili na duplicate ang filter logic."""
     where_clauses = []
     params = []
 
@@ -329,7 +338,9 @@ def build_transactions_filters(args):
 
 
 def get_transactions_table_context(conn, args, limit, offset):
-    """Shared table context for view_transactions_table() and transactions_page(), so they stay in sync."""
+    """Shared table context para sa view_transactions_table() ug
+    transactions_page(), para magkasabot sila permi (sort/filter/pagination
+    tanan dinhi lang gi-resolve)."""
     where_clauses, params, status_filter, error = build_transactions_filters(args)
     if error:
         return None, error
@@ -394,7 +405,8 @@ def get_transactions_table_context(conn, args, limit, offset):
 
 
 def build_transactions_export_csv(conn, args):
-    """CSV bytes of the current filtered table, ignoring sort/pagination since export means the whole set."""
+    """CSV bytes sa current filtered table - gi-ignore ang sort/pagination
+    kay export man gud, tibuok set gyud kinahanglan."""
     where_clauses, params, _status_filter, error = build_transactions_filters(args)
     if error:
         return None, error
@@ -433,7 +445,8 @@ def build_transactions_export_csv(conn, args):
 
 
 def get_transaction_stat_cards(conn):
-    """The 4 stat-card numbers, same pattern as /assets/stat-cards."""
+    """Ang 4 ka stat-card numbers (All/Borrowed/Overdue/Returned), parehas ra
+    ka pattern sa /assets/stat-cards."""
     stat_all = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()["cnt"]
     stat_borrowed = conn.execute(
         "SELECT COUNT(*) AS cnt FROM transactions WHERE status = 'borrowed'"
@@ -456,6 +469,8 @@ def get_transaction_stat_cards(conn):
 
 
 def get_transaction_details(conn, transaction_id):
+    """Full detail view sa usa ka transaction - dungan sa was_returned_late
+    flag ug ang renewal trail (audit_log entries sa renew_transaction)."""
     transaction = conn.execute(
         """
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
@@ -511,7 +526,10 @@ def get_transaction_details(conn, transaction_id):
 
 
 def start_checkout_session(conn, member_barcode, member_id, staff_id):
-    """Starts a new checkout session (the "cart") for a member; accepts either member_barcode or member_id."""
+    """Mag-start ug bag-ong checkout session (ang "cart") para sa member -
+    pwede member_barcode o member_id ang gamiton. Naay re-check sa overdue
+    status ug restriction dinhi mismo, dili lang sa first eligibility check,
+    para dili maka-build ug cart nga dili man diay ma-checkout."""
     if member_id:
         member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     else:
@@ -589,9 +607,10 @@ def start_checkout_session(conn, member_barcode, member_id, staff_id):
 
 
 def list_available_assets_for_checkout(conn):
-    """Backs the "Show available assets" flyout; `code` is barcode_id, capped, category included.
-    A consumable is "available" whenever it has stock, regardless of its
-    (always-'available') status column - see asset_service.py's asset_type docs."""
+    """Para sa "Show available assets" flyout - `code` kay ang barcode_id,
+    capped ang result, naa nay category. Ang consumable "available" basta
+    naay stock, dili nya i-consider ang status column (kay always-'available'
+    man na siya) - tan-awa asset_service.py's asset_type docs."""
     assets = conn.execute(
         """
         SELECT assets.barcode_id AS code, assets.name, categories.name AS category,
@@ -612,13 +631,13 @@ def list_available_assets_for_checkout(conn):
 
 
 def list_available_members_for_checkout(conn):
-    """Backs the "Show available members" flyout in checkout Step 1 - mirrors
-    list_available_assets_for_checkout above. Lists every active member,
-    restricted or not - restricted ones (overdue or damaged-return holds,
-    same rule start_checkout_session enforces) are included but flagged via
-    `restricted`/`restriction_reason` so the UI can show them greyed out with
-    a reason instead of just hiding them, which otherwise looked like a
-    member had vanished from the roster."""
+    """Para sa "Show available members" flyout sa checkout Step 1 - mirror ra
+    ni sa list_available_assets_for_checkout sa taas. Ga-lista ug tanang
+    active member, restricted man o dili - ang restricted ones (overdue o
+    damaged-return holds, parehas ra ka rule sa start_checkout_session) gi-
+    include gihapon pero flagged via `restricted`/`restriction_reason` para
+    ma-grey-out sa UI dungan sa reason, dili lang basta i-hide nga morag
+    nawala nalang ang member sa roster."""
     members = conn.execute(
         """
         SELECT members.barcode_id AS code,
@@ -648,14 +667,15 @@ def list_available_members_for_checkout(conn):
 
 
 def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_code=None, quantity=1):
-    """Scans one asset into the cart; claims it atomically (available -> reserved) before inserting the row.
-    rfid_code is optional - when staff also do a second, confirmatory scan (RFID tag, the barcode again,
-    or the asset ID), it's cross-checked against the asset's identifiers. See _verify_second_scan().
+    """Mag-scan ug usa ka asset paingon sa cart - gi-claim atomically (available
+    -> reserved) sa una pa i-insert ang row. Optional ang rfid_code - kung
+    naay second confirmatory scan (RFID tag, barcode balik, o asset ID), gi-
+    cross-check ni batok sa asset's identifiers. Tan-awa _verify_second_scan().
 
-    `quantity` only means something for a consumable asset (services/asset_service.py's
-    asset_type) - ignored for a serialized one, which is always exactly one
-    unit. See the branch below for why consumables skip the status CAS
-    entirely."""
+    `quantity` naay meaning para ra sa consumable asset (services/
+    asset_service.py's asset_type) - gi-ignore para sa serialized asset kay
+    always usa ra ka unit man na. Tan-awa ang branch sa ubos kung nganong
+    walay status CAS ang consumable."""
     session_probe = conn.execute(
         "SELECT member_id, staff_id FROM checkout_sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -803,15 +823,16 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
 
 
 def _add_consumable_to_checkout_session(conn, session_id, staff_id, asset, existing_item, quantity):
-    """A consumable never claims assets.status (it stays 'available' always -
-    quantity tracks what's left, not a single-unit reservation). Re-scanning
-    an already-in-cart consumable adds to its cart quantity instead of
-    erroring "already in cart", since that's the obviously-intended action
-    for "take some more of these." Stock itself isn't decremented until
-    finish_checkout_session actually commits - this is a soft check against
-    current on-hand quantity, not an atomic hold, so two concurrent sessions
-    can both pass this check and only one succeeds at commit time (the
-    guarded UPDATE there is what actually prevents overselling)."""
+    """Ang consumable dili gyud mag-claim sa assets.status ('available' ra
+    gihapon permi) - ang quantity ra ang nag-track kung pila na'y nabilin,
+    dili siya single-unit reservation. Kung ma-rescan pa ang consumable nga
+    naa nay sa cart, mo-dugang ra sa cart quantity, dili mo-error ug "already
+    in cart" kay mao man gyud ang obvious intent - "kuha pa ug dugang."
+    Ang actual stock wala pa gi-decrement dinhi - soft check ra ni batok sa
+    current on-hand quantity, dili atomic hold, mao nga pwede duha ka
+    concurrent session ma-pass ni pero usa ra ang mag-succeed sa commit time
+    (ang guarded UPDATE sa finish_checkout_session ang tinuod nga
+    nag-prevent sa overselling)."""
     try:
         quantity = int(quantity)
     except (TypeError, ValueError):
@@ -874,11 +895,11 @@ def _add_consumable_to_checkout_session(conn, session_id, staff_id, asset, exist
 
 
 def remove_item_from_checkout_session(conn, session_id, item_id, staff_id, decrement_by=None):
-    """decrement_by is consumable-only (the cart quantity stepper's "-" button)
-    - reduces the line's quantity instead of removing it outright, unless
-    that would take it to zero or below, in which case it's removed just
-    like a serialized item would be. None (the default) always removes the
-    whole line, same as before this existed."""
+    """Ang decrement_by kay consumable-only siya (ang cart quantity stepper's
+    "-" button) - mag-reduce ra sa line's quantity imbes tanggalon dayon,
+    gawas kung mo-zero or below na - mao pa na siya tanggalon parehas sa
+    serialized item. None (default) permi mag-remove sa whole line, parehas
+    sa daan before pa ni na feature."""
     item = conn.execute(
         "SELECT * FROM checkout_session_items WHERE id = ? AND checkout_session_id = ?",
         (item_id, session_id),
@@ -949,11 +970,11 @@ def remove_item_from_checkout_session(conn, session_id, item_id, staff_id, decre
 
 
 def get_reserved_asset_hold(conn, asset_id):
-    """Backs the admin-only "release reservation" confirm modal (Assets page).
-    Looks up who's actually holding a 'reserved' asset - which member's cart
-    it's sitting in, and which staff member started that checkout - so the
-    admin sees what they're about to bypass before confirming, not just the
-    asset's status."""
+    """Para sa admin-only "release reservation" confirm modal (Assets page).
+    Mangita kung kinsa gyud ang naka-hold sa 'reserved' asset - unsa nga
+    member's cart na siya, ug unsa nga staff ang nag-start ana nga checkout -
+    para makita sa admin unsa gyud iyang i-bypass before mo-confirm, dili
+    lang ang status sa asset."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, ({"error": "Asset not found"}, 404, {})
@@ -979,15 +1000,15 @@ def get_reserved_asset_hold(conn, asset_id):
 
 
 def release_reserved_asset(conn, asset_id, staff_id):
-    """Admin-only bypass for an asset stuck 'reserved' because whoever was
-    checking it out logged out (or the tab/device died) without cancelling
-    or completing that checkout - normally this clears itself after the
-    admin-configurable checkout_session_stale_minutes window (System >
-    Checkout Session Timeout; services/checkout_service.py's scheduled
-    sweep), but an admin shouldn't have to wait out that timer to get a
-    tool back into circulation. Unlike remove_item_from_checkout_session, this deliberately
-    skips require_session_owner - bypassing someone else's abandoned cart is
-    the entire point."""
+    """Admin-only bypass para sa asset nga stuck sa 'reserved' kay ang nag-
+    checkout niya nag-logout (o na-dead ang tab/device) nga wa i-cancel o
+    i-complete ang checkout - normally mo-clear ra na iyaha after sa admin-
+    configurable checkout_session_stale_minutes window (System > Checkout
+    Session Timeout; services/checkout_service.py's scheduled sweep), pero
+    dili na kinahanglan hulaton sa admin ang timer para mabalik ang tool sa
+    circulation. Lahi sa remove_item_from_checkout_session, deliberately
+    gi-skip diri ang require_session_owner - ang tibuok point man gud ani
+    kay i-bypass ang abandoned cart sa lain."""
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, ({"error": "Asset not found"}, 404, {})
@@ -1043,6 +1064,8 @@ def release_reserved_asset(conn, asset_id, staff_id):
 
 
 def get_checkout_session_detail(conn, session_id, staff_id):
+    """Full detail sa usa ka checkout session - member info dungan sa cart
+    items - naay owner check para dili malantaw sa laing staff."""
     session = conn.execute(
         """
         SELECT checkout_sessions.*, members.first_name, members.last_name,
@@ -1081,7 +1104,8 @@ def get_checkout_session_detail(conn, session_id, staff_id):
 
 
 def _finalize_return(transaction, asset, member, staff_id, condition_in, return_remarks, conn):
-    """Core return logic shared by scan-return and row-action return; callers own their own commit/log."""
+    """Core return logic nga gi-share sa scan-return ug row-action return -
+    ang caller ang tag-iya sa iyang own commit/log."""
     final_condition = condition_in if condition_in else asset["condition"]
     is_disposed = final_condition == "disposed"
     new_status = "available" if final_condition == "functional" else "maintenance"
@@ -1121,11 +1145,12 @@ def _finalize_return(transaction, asset, member, staff_id, condition_in, return_
 
 
 def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=None):
-    """Validates an asset/member barcode pair for a scan return; pure lookup, no mutation.
-    rfid_code is optional - when staff also do a second, confirmatory scan of the returned tool
-    (RFID tag, the barcode again, or the asset ID), it's cross-checked against the asset's
-    identifiers, so a barcode peeled off the original tool and stuck on a substitute can't sail
-    through just because the barcode matches. See _verify_second_scan()."""
+    """Mag-validate sa asset/member barcode pair para sa scan return - pure
+    lookup ra ni, walay mutation. Optional ang rfid_code - kung naay second
+    confirmatory scan sa gi-return na tool (RFID tag, barcode balik, o asset
+    ID), gi-cross-check batok sa asset's identifiers, para dili maka-pass
+    ang barcode nga gi-peel gikan sa original tool ug gibutang sa substitute
+    tool bisan pa nag-match ang barcode. Tan-awa _verify_second_scan()."""
     # Some readers set to type scans as keyboard input only type the decimal
     # value of an EPC's last 3 bytes, not the full hex ID - see
     # decimal_scan_hex_suffix()'s docstring. That extra LIKE branch is a
@@ -1179,6 +1204,8 @@ def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=
 
 
 def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
+    """Shared audit_log entry para sa gi-return na asset - naay dungan pang
+    'disposed_asset' log kung disposed ang final condition."""
     log_action(
         staff_id=staff_id,
         action="returned_asset",
@@ -1203,6 +1230,8 @@ def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
 
 
 def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_in, return_remarks, rfid_code=None):
+    """Ang actual return-by-scan flow - mag-lookup sa transaction/asset/member
+    via _find_open_transaction_for_scan, then i-finalize ang return."""
     transaction, asset, member, error = _find_open_transaction_for_scan(
         asset_code, member_barcode, conn, rfid_code
     )
@@ -1225,11 +1254,10 @@ def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_i
 
 
 def list_members_with_open_loans(conn):
-    """Backs the "Show members with loans" flyout in the Return Items modal --
-    same idea as list_available_members_for_checkout, but for the opposite
-    direction: only members who currently have something borrowed are worth
-    browsing here, since picking one only makes sense if there's something
-    of theirs to return."""
+    """Para sa "Show members with loans" flyout sa Return Items modal - parehas
+    ra ka idea sa list_available_members_for_checkout, pero baliktad ang
+    direction: ang members ra nga naay gi-borrow currently ang worth i-browse
+    diri, kay walay pulos mo-pick ug member nga wala man diay ibalik."""
     members = conn.execute(
         """
         SELECT members.barcode_id AS code,
@@ -1256,7 +1284,8 @@ def list_members_with_open_loans(conn):
 
 
 def get_member_open_loans(conn, member_barcode):
-    """Lists what a member has borrowed; zero loans is a normal 200 with an empty list, not an error."""
+    """Ga-lista kung unsay gi-borrow sa member - zero loans normal ra na 200
+    dungan sa empty list, dili ni error."""
     member = conn.execute(
         "SELECT * FROM members WHERE UPPER(barcode_id) = UPPER(?)", (member_barcode,)
     ).fetchone()
@@ -1284,7 +1313,8 @@ def get_member_open_loans(conn, member_barcode):
 
 
 def lookup_return_scan(conn, asset_code, member_barcode, rfid_code=None):
-    """Read-only per-scan lookup for the scan-return cart; nothing mutates until batch-return submits."""
+    """Read-only per-scan lookup para sa scan-return cart - wala pa mag-mutate
+    hangtod mo-submit ang batch-return."""
     transaction, asset, _member, error = _find_open_transaction_for_scan(
         asset_code, member_barcode, conn, rfid_code
     )
@@ -1300,8 +1330,8 @@ def lookup_return_scan(conn, asset_code, member_barcode, rfid_code=None):
 
 
 def get_return_confirm_transaction(conn, transaction_id):
-    """Opens the row-action return modal. Read-only lookup - the actual
-    mutation happens in return_transaction_by_id() below, on submit."""
+    """Mag-open sa row-action return modal. Read-only lookup ra ni - ang
+    actual mutation naa sa return_transaction_by_id() sa ubos, pag-submit."""
     transaction = conn.execute(
         """
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
@@ -1324,7 +1354,8 @@ def get_return_confirm_transaction(conn, transaction_id):
 
 
 def return_transaction_by_id(conn, transaction_id, staff_id, condition_in, return_remarks):
-    """Row-action return; skips the barcode lookup and just confirms the transaction is still open."""
+    """Row-action return - gi-skip ang barcode lookup, mag-confirm ra nga
+    open pa gyud ang transaction before mag-finalize."""
     transaction = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
     if transaction is None:
         return None, (jsonify({"error": "Transaction not found"}), 404)
@@ -1353,7 +1384,8 @@ def return_transaction_by_id(conn, transaction_id, staff_id, condition_in, retur
 
 
 def get_batch_return_candidates(conn, ids):
-    """Silently drops ids that are missing or already returned."""
+    """Silent ra i-drop ang ids nga wala na o na-return na - dili mo-error
+    kada usa."""
     placeholders = ",".join("?" for _ in ids)
     transactions = conn.execute(
         f"""
@@ -1374,8 +1406,9 @@ def get_batch_return_candidates(conn, ids):
 
 
 def batch_return(conn, items, return_remarks, staff_id):
-    """Applies condition/remarks to selected transactions; best-effort, one bad row doesn't abort the rest.
-    `items` is a list of (transaction_id, condition_in) already validated by the route."""
+    """Mag-apply ug condition/remarks sa selected transactions - best-effort
+    ni, usa ka bad row dili mo-abort sa uban. `items` kay list of
+    (transaction_id, condition_in) nga na-validate na sa route."""
     returned_ids = []
     skipped_ids = []
 
@@ -1410,8 +1443,8 @@ def batch_return(conn, items, return_remarks, staff_id):
 
 
 def get_renewable_transaction(conn, transaction_id):
-    """Opens the extend-due-date modal - read-only lookup, same split as
-    get_return_confirm_transaction()/return_transaction_by_id()."""
+    """Mag-open sa extend-due-date modal - read-only lookup, parehas ka split
+    sa get_return_confirm_transaction()/return_transaction_by_id()."""
     transaction = conn.execute(
         """
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
@@ -1433,7 +1466,9 @@ def get_renewable_transaction(conn, transaction_id):
 
 
 def renew_transaction(conn, transaction_id, new_due_date, staff_id):
-    """Pushes a due date out (or corrects it) without touching status."""
+    """Mag-push sa due date paatras (o mag-correct ana) - dili gyud ma-touch
+    ang status. Pwede maka-lift sa overdue restriction sa member kung
+    ma-un-overdue siya after sa extension."""
     transaction = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
     if transaction is None:
         return None, (jsonify({"error": "Transaction not found"}), 404)
@@ -1476,6 +1511,8 @@ def renew_transaction(conn, transaction_id, new_due_date, staff_id):
 
 
 def list_open_checkout_sessions(conn):
+    """Tanang open checkout sessions across staff members (admin overview),
+    dungan sa item_count per session."""
     sessions = conn.execute(
         """
         SELECT checkout_sessions.*, members.first_name, members.last_name,
@@ -1492,8 +1529,12 @@ def list_open_checkout_sessions(conn):
 
 
 def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_days):
-    """The actual commit point - nothing lands in `transactions` until
-    this runs; everything scanned before it is just a reservation."""
+    """Mao ni ang actual commit point - walay malanding sa `transactions`
+    hangtod ni siya mo-run; ang tanang gi-scan before pa ani reservation
+    ra gihapon. Mag-re-check pud ug eligibility (overdue, restriction,
+    concurrent-loan cap) kay pwede naman-usab ang status samtang nag-scan
+    pa - consumables gi-consume dayon (quantity decrement), serialized ang
+    ma-'borrowed' na proper transactions row."""
     if due_date is None:
         due_date = (datetime.now() + timedelta(days=default_loan_days)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1676,6 +1717,8 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
 
 
 def cancel_checkout_session(conn, session_id, staff_id):
+    """Mag-cancel sa cart - i-release balik ang tanang reserved assets ngadto
+    sa 'available' ug i-delete ang cart items, wa'y transaction nga ma-create."""
     session = conn.execute("SELECT * FROM checkout_sessions WHERE id = ?", (session_id,)).fetchone()
 
     if session is None:

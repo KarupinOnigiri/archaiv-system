@@ -21,12 +21,16 @@ from werkzeug.security import check_password_hash
 import json
 import os
 
+"""Thin HTTP layer para sa /assets/* ug /categories/* endpoints - validation
+ug business logic naa sa services/asset_service.py (transaction_service para
+sa reservation-release routes)."""
+
 assets_bp = Blueprint("assets", __name__)
 
 
 @assets_bp.before_request
 def _block_if_assets_disabled():
-    """Blocks this blueprint when Inventory is disabled; returns JSON 403, not a redirect."""
+    """Mag-block sa tibuok blueprint kung disabled ang Inventory feature; mo-return ug JSON 403, dili redirect."""
     if not is_feature_enabled("assets"):
         return jsonify({"error": f"{get_feature_label('assets')} is currently disabled"}), 403
 
@@ -38,7 +42,7 @@ ADDITIONAL_IMAGE_SLOTS = asset_service.ADDITIONAL_IMAGE_SLOTS
 
 
 def get_assets_table_context(args):
-    """Opens its own connection; shared by view_assets() here and assets_page() in routes/pages.py."""
+    """Mag-open ug kaugalingong connection; gi-share ni sa view_assets() diri ug sa assets_page() sa routes/pages.py."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -53,6 +57,7 @@ def get_assets_table_context(args):
 @assets_bp.route("/assets")
 @login_required
 def view_assets():
+    """GET - main Inventory table partial. Delegates to get_assets_table_context() sa taas."""
     context, error = get_assets_table_context(request.args)
     if error:
         return error
@@ -62,7 +67,7 @@ def view_assets():
 @assets_bp.route("/assets/stat-cards")
 @login_required
 def asset_stat_cards():
-    """The 4 stat-card numbers, refetched on 'assets-refreshed' to stay in sync after delete/import."""
+    """GET - ang 4 ka stat-card numbers, gi-refetch pag-fire sa 'assets-refreshed' event para in-sync after delete/import."""
     conn = get_db_connection()
     try:
         stats = asset_service.get_asset_stat_cards(conn)
@@ -77,6 +82,7 @@ def asset_stat_cards():
 @assets_bp.route("/categories")
 @login_required
 def view_categories():
+    """GET - raw category list as JSON. Delegates to asset_service.list_categories()."""
     conn = get_db_connection()
     try:
         categories = asset_service.list_categories(conn)
@@ -88,6 +94,7 @@ def view_categories():
 @assets_bp.route("/categories/manage-form")
 @roles_required("admin", "in_charge")
 def manage_categories_form():
+    """GET - opens ang Manage Categories modal with asset count per category."""
     conn = get_db_connection()
     try:
         categories = asset_service.get_categories_with_asset_count(conn)
@@ -99,8 +106,8 @@ def manage_categories_form():
 @assets_bp.route("/categories/options")
 @login_required
 def category_options():
-    """<option> tags for the category filter dropdown, in custom order.
-    Refetched on the modal's `categories-changed` event; mirrors department_options()."""
+    """<option> tags para sa category filter dropdown, naa sa custom order.
+    Gi-refetch pag-fire sa modal's `categories-changed` event; mirrors sa department_options()."""
     conn = get_db_connection()
     try:
         categories = asset_service.list_categories(conn)
@@ -113,6 +120,7 @@ def category_options():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def add_category():
+    """POST - mag-add ug bag-ong category. Delegates to asset_service.add_category()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -133,6 +141,7 @@ def add_category():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def edit_category(id):
+    """POST - i-rename ang category. Delegates to asset_service.edit_category()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -153,7 +162,7 @@ def edit_category(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def reorder_categories():
-    """Saves category order from the Manage Categories modal. Mirrors reorder_departments."""
+    """POST - i-save ang bag-ong order sa categories gikan sa Manage Categories modal. Mirrors reorder_departments."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -183,7 +192,7 @@ def reorder_categories():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def delete_category(id):
-    """Blocks deleting a category with active assets; asks for reassignment first."""
+    """POST - dili tugotan mag-delete ug category nga naay active assets pa; kinahanglan reassign una."""
     conn = get_db_connection()
     try:
         result, error = asset_service.delete_category(conn, id, g.staff["id"])
@@ -202,6 +211,7 @@ def delete_category(id):
 @assets_bp.route("/assets/add-form")
 @roles_required("admin", "in_charge")
 def add_asset_form():
+    """GET - opens ang Add Asset modal with the category list for the dropdown."""
     conn = get_db_connection()
     try:
         categories = asset_service.list_categories(conn)
@@ -211,6 +221,7 @@ def add_asset_form():
 
 
 def _add_asset_form_error(error_msg):
+    """Re-render ang Add Asset modal with an inline error message - helper para sa add_asset_submit()."""
     conn = get_db_connection()
     try:
         categories = asset_service.list_categories(conn)
@@ -223,6 +234,9 @@ def _add_asset_form_error(error_msg):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def add_asset_submit():
+    """POST - mag-create ug new asset (JSON or form/htmx with optional
+    image uploads). Validates fields/images diri, delegates the actual
+    create sa asset_service.create_asset()."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -297,11 +311,12 @@ def add_asset_submit():
 @assets_bp.route("/assets/import-form")
 @roles_required("admin", "in_charge")
 def import_assets_form():
+    """GET - opens ang CSV import modal."""
     return render_template("assets/_import_modal.html", error=None)
 
 
 def _import_error_response(error_msg, status):
-    """JSON for API callers, else re-renders the modal with an inline error via HX-Retarget."""
+    """JSON para sa API callers, kung dili, i-re-render ang modal with an inline error via HX-Retarget."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     response = make_response(render_template("assets/_import_modal.html", error=error_msg), 200)
@@ -314,6 +329,8 @@ def _import_error_response(error_msg, status):
 @roles_required("admin", "in_charge")
 @limiter.limit("5 per minute")
 def import_assets_csv():
+    """POST - CSV bulk import, either 'preview' (dry-run, walay DB write) or
+    'commit' mode. Delegates parsing/creation sa asset_service.import_assets_csv()."""
     if "file" not in request.files:
         return _import_error_response("Missing file upload (field name: 'file')", 400)
 
@@ -372,7 +389,7 @@ def import_assets_csv():
 @assets_bp.route("/assets/export/browse")
 @login_required
 def browse_export_folders():
-    """Lists subfolders under the app root for the export folder picker; clamped like the save-path."""
+    """GET - listahan sa subfolders sa ilawom sa app root para sa export folder picker; naka-clamp ra pareho sa save-path."""
     app_root = os.path.realpath(current_app.root_path)
     try:
         result = asset_service.list_export_subfolders(app_root, request.args.get("path", ""))
@@ -384,7 +401,7 @@ def browse_export_folders():
 @assets_bp.route("/assets/export/browse/mkdir", methods=["POST"])
 @login_required
 def create_export_folder():
-    """Creates a subfolder from the folder picker. Bad names are rejected outright, not sanitized."""
+    """POST - mag-create ug subfolder gikan sa folder picker. Bad names, i-reject dayon, dili i-sanitize."""
     app_root = os.path.realpath(current_app.root_path)
     try:
         rel_path, error_msg = asset_service.create_export_subfolder(
@@ -401,7 +418,7 @@ def create_export_folder():
 @assets_bp.route("/assets/export-form")
 @login_required
 def export_assets_form():
-    """Opens the export modal; show_archived matches whichever table view the user was on."""
+    """GET - opens ang export modal; ang show_archived mo-match sa kung unsa nga table view gigamit sa user."""
     show_archived = request.args.get("show_archived") == "1"
     fields = list(asset_service.EXPORT_CSV_COLUMNS)
     if show_archived:
@@ -418,7 +435,8 @@ def export_assets_form():
 @assets_bp.route("/assets/export", methods=["GET", "POST"])
 @login_required
 def export_assets():
-    """GET exports CSV/Excel read-only; POST also saves a copy server-side, gated for CSRF on the disk write."""
+    """GET/POST - GET kay download-only CSV/Excel; POST mo-save pud ug copy
+    server-side (naa CSRF gate sa disk write). Delegates sa asset_service.build_assets_export_file()."""
     show_archived = request.values.get("show_archived") == "1"
     export_format = request.values.get("format", "csv").lower()
     if export_format not in ("csv", "xlsx"):
@@ -467,6 +485,7 @@ def export_assets():
 @assets_bp.route("/assets/<int:id>")
 @login_required
 def get_asset(id):
+    """GET - single asset as JSON. Delegates to asset_service.get_asset()."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset(conn, id)
@@ -482,6 +501,7 @@ def get_asset(id):
 @assets_bp.route("/assets/<int:id>/edit-form")
 @roles_required("admin", "in_charge")
 def edit_asset_form(id):
+    """GET - opens ang Edit Asset modal, pre-filled with the current asset data."""
     conn = get_db_connection()
     try:
         result, error = asset_service.get_asset_for_edit(conn, id)
@@ -507,8 +527,8 @@ def edit_asset_form(id):
 
 
 def _edit_error_response(error_payload, status, asset=None, asset_id=None, return_to="table"):
-    """Returns JSON if this was a JSON request; renders the edit modal
-    with an inline error if it was an htmx/form request."""
+    """Mo-return ug JSON kung JSON request ni; kung htmx/form request, i-render
+    ang edit modal balik with an inline error."""
     if request.is_json:
         return jsonify(error_payload), status
     conn = get_db_connection()
@@ -540,6 +560,8 @@ def _edit_error_response(error_payload, status, asset=None, asset_id=None, retur
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def edit_asset_submit(id):
+    """POST - i-update ang asset (JSON or form/htmx, pwede mag-swap/remove
+    images). Delegates sa asset_service.update_asset()."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -609,6 +631,7 @@ def edit_asset_submit(id):
 @assets_bp.route("/assets/<int:id>/delete-confirm")
 @roles_required("admin", "in_charge")
 def delete_asset_confirm(id):
+    """GET - opens ang delete-confirm modal para sa usa ka asset."""
     conn = get_db_connection()
     try:
         asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
@@ -626,6 +649,8 @@ def delete_asset_confirm(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def delete_asset(id):
+    """POST - soft-delete (archive) ang asset, naay Undo toast after.
+    Delegates sa asset_service.delete_asset()."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -680,7 +705,7 @@ def delete_asset(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def undo_delete_asset(id):
-    """Undo button on the delete toast; admin/in_charge like delete, no condition prompt needed."""
+    """POST - undo button sa delete toast; admin/in_charge ra pareho sa delete, walay condition prompt needed."""
     conn = get_db_connection()
     try:
         result, error = asset_service.undo_delete_asset(conn, id, g.staff["id"])
@@ -697,7 +722,7 @@ def undo_delete_asset(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_delete_assets():
-    """Soft-deletes multiple assets; a bad row goes into `skipped` instead of failing the whole batch."""
+    """POST - soft-delete ug daghang assets dungan; kung naay bad row, mo-adto ra na sa `skipped` list, dili mo-fail ang tibuok batch."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -724,7 +749,7 @@ def bulk_delete_assets():
 @roles_required("admin")
 @limiter.limit("10 per minute")
 def bulk_restore_assets():
-    """Restores multiple archived assets, admin-only. Disposed ones are skipped - no per-row condition UI."""
+    """POST - i-restore ang daghang archived assets dungan, admin-only. Disposed ones, i-skip - walay per-row condition UI."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -751,7 +776,7 @@ def bulk_restore_assets():
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_reassign_category():
-    """Moves multiple assets to a different category in one action."""
+    """POST - i-move ang daghang assets to laing category, one action ra. Delegates sa asset_service.bulk_reassign_category()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -788,8 +813,8 @@ def bulk_reassign_category():
 @roles_required("admin", "in_charge")
 @limiter.limit("10 per minute")
 def bulk_change_status():
-    """Bulk status change - limited to available<->maintenance, see
-    asset_service.bulk_change_status's docstring for why."""
+    """POST - bulk status change, limited ra to available<->maintenance -
+    tan-awa ang asset_service.bulk_change_status() docstring sa why."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -821,6 +846,7 @@ def bulk_change_status():
 @assets_bp.route("/assets/<int:id>/restore-confirm")
 @roles_required("admin")
 def restore_asset_confirm(id):
+    """GET - opens ang restore-confirm modal para sa usa ka archived asset."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset_for_restore(conn, id)
@@ -838,8 +864,8 @@ def restore_asset_confirm(id):
 
 
 def _restore_error_response(error_msg, status, asset_id, return_to="table"):
-    """Mirrors _edit_error_response: JSON for API callers, a re-rendered
-    modal with the error inline for htmx/form callers."""
+    """Mirrors _edit_error_response: JSON para sa API callers, or re-rendered
+    modal with the error inline para sa htmx/form callers."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     conn = get_db_connection()
@@ -856,8 +882,8 @@ def _restore_error_response(error_msg, status, asset_id, return_to="table"):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def restore_asset(id):
-    """Admin-only, deliberately tighter than delete_asset (admin/in_charge)
-    - reversing a disposal is a bigger call than making one."""
+    """POST - admin-only gyud ni, mas tight kaysa delete_asset (admin/in_charge)
+    - mas dako'g impact ang pag-reverse sa disposal kaysa pag-dispose."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -931,6 +957,7 @@ def restore_asset(id):
 @assets_bp.route("/assets/<int:id>/mark-calibrated-form")
 @roles_required("admin", "in_charge")
 def mark_calibrated_form(id):
+    """GET - opens ang mark-calibrated modal."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset_for_mark_calibrated(conn, id)
@@ -948,9 +975,9 @@ def mark_calibrated_form(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def mark_calibrated_submit(id):
-    """Quick action from the Inventory row menu/Details modal - logs a
-    calibration (last_calibrated = today) without opening the full Edit
-    modal and hand-typing the date there."""
+    """POST - quick action gikan sa Inventory row menu/Details modal - mag-log
+    ug calibration (last_calibrated = today) nga dili na kinahanglan i-open
+    ang full Edit modal ug i-type pa ang date didto."""
     conn = get_db_connection()
     try:
         result, error = asset_service.mark_calibrated(conn, id, g.staff["id"])
@@ -982,6 +1009,7 @@ def mark_calibrated_submit(id):
 @assets_bp.route("/assets/<int:id>/mark-maintenance-form")
 @roles_required("admin", "in_charge")
 def mark_maintenance_form(id):
+    """GET - opens ang mark-for-maintenance modal."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset_for_mark_maintenance(conn, id)
@@ -999,9 +1027,9 @@ def mark_maintenance_form(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def mark_maintenance_submit(id):
-    """Quick action from the Inventory row menu/Details modal - flips an
-    asset straight to status='maintenance' without opening the full Edit
-    modal and hand-picking it from the status dropdown there."""
+    """POST - quick action gikan sa Inventory row menu/Details modal - i-flip
+    dayon ang asset to status='maintenance', dili na kinahanglan i-open ang
+    full Edit modal ug i-pick pa sa status dropdown."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1042,6 +1070,7 @@ def mark_maintenance_submit(id):
 @assets_bp.route("/assets/<int:id>/resolve-maintenance-form")
 @roles_required("admin", "in_charge")
 def resolve_maintenance_form(id):
+    """GET - opens ang resolve-maintenance modal."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset_for_resolve_maintenance(conn, id)
@@ -1056,9 +1085,9 @@ def resolve_maintenance_form(id):
 
 
 def _resolve_maintenance_error_response(error_msg, status, asset_id):
-    """Returns JSON if this was a JSON request; renders the modal with an
-    inline error if it was an htmx/form request - same shape as the edit
-    and restore error responders above."""
+    """Mo-return ug JSON kung JSON request ni; kung htmx/form, i-render ang
+    modal balik with an inline error - same shape sa edit ug restore error
+    responders sa taas."""
     if request.is_json:
         return jsonify({"error": error_msg}), status
     conn = get_db_connection()
@@ -1073,8 +1102,9 @@ def _resolve_maintenance_error_response(error_msg, status, asset_id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def resolve_maintenance_submit(id):
-    """Quick action from the Inventory row menu - brings a 'maintenance'
-    asset back into circulation without opening the full Edit modal."""
+    """POST - quick action gikan sa Inventory row menu - i-balik ang
+    'maintenance' asset back into circulation, dili na kinahanglan i-open
+    ang full Edit modal."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1121,6 +1151,7 @@ def resolve_maintenance_submit(id):
 @assets_bp.route("/assets/<int:id>/adjust-stock-form")
 @roles_required("admin", "in_charge")
 def adjust_stock_form(id):
+    """GET - opens ang adjust-stock modal, consumable assets ra pwede."""
     conn = get_db_connection()
     try:
         asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
@@ -1137,8 +1168,8 @@ def adjust_stock_form(id):
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def adjust_stock_submit(id):
-    """Manual stock correction (restock/write-off/recount) - not the
-    automatic decrement/increment a checkout/return already does."""
+    """POST - manual stock correction (restock/write-off/recount) - dili ni
+    ang automatic decrement/increment nga ginabuhat na sa checkout/return."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -1187,10 +1218,10 @@ def adjust_stock_submit(id):
 @assets_bp.route("/assets/<int:id>/release-reservation-form")
 @roles_required("admin")
 def release_reservation_form(id):
-    """Admin-only escape hatch for an asset stuck 'reserved' because whoever
-    was checking it out logged out (or crashed) without cancelling or
-    completing - see transaction_service.release_reserved_asset. Shows who's
-    actually holding it before the admin confirms bypassing it."""
+    """GET - admin-only escape hatch para sa asset nga stuck sa 'reserved'
+    kay naglogout (or nag-crash) ang naga-checkout without cancelling or
+    completing - tan-awa transaction_service.release_reserved_asset. I-show
+    kinsa gyud ang naga-hold before ma-confirm sa admin ang bypass."""
     conn = get_db_connection()
     try:
         result, error = transaction_service.get_reserved_asset_hold(conn, id)
@@ -1210,6 +1241,8 @@ def release_reservation_form(id):
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def release_reservation_submit(id):
+    """POST - admin bypass para i-release ang stuck 'reserved' hold.
+    Delegates sa transaction_service.release_reserved_asset()."""
     conn = get_db_connection()
     try:
         result, error = transaction_service.release_reserved_asset(conn, id, g.staff["id"])
@@ -1251,6 +1284,7 @@ def release_reservation_submit(id):
 @login_required
 @limiter.limit("40 per minute")
 def get_asset_by_barcode(barcode):
+    """GET - JSON lookup sa asset by barcode, para sa scanner integrations."""
     conn = get_db_connection()
     try:
         asset, error = asset_service.get_asset_by_barcode(conn, barcode)
@@ -1266,6 +1300,7 @@ def get_asset_by_barcode(barcode):
 @assets_bp.route("/assets/<int:id>/history")
 @login_required
 def get_asset_history(id):
+    """GET - paginated asset history as JSON. Delegates to asset_service.get_asset_history()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -1285,6 +1320,7 @@ def get_asset_history(id):
 @assets_bp.route("/assets/<int:id>/history-modal")
 @login_required
 def asset_history_modal(id):
+    """GET - full History modal (paginated) para sa usa ka asset."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -1315,7 +1351,7 @@ def asset_history_modal(id):
 @assets_bp.route("/assets/by-barcode/<string:barcode>")
 @login_required
 def asset_by_barcode(barcode):
-    """Exact-match barcode lookup for the search box's Enter key; returns 200 even on a miss for htmx."""
+    """GET - exact-match barcode lookup para sa search box's Enter key; mo-return ug 200 bisan miss para OK ra sa htmx."""
     conn = get_db_connection()
     try:
         asset_id = asset_service.find_asset_id_by_barcode(conn, barcode)
@@ -1329,7 +1365,7 @@ def asset_by_barcode(barcode):
 @assets_bp.route("/assets/<int:id>/details-modal")
 @login_required
 def asset_details_modal(id):
-    """Read-only 'Details' modal snapshot; adds current borrower/due date that the other modals skip."""
+    """GET - read-only 'Details' modal snapshot; naay current borrower/due date nga wala sa uban modals."""
     conn = get_db_connection()
     try:
         result, error = asset_service.get_asset_details(conn, id)

@@ -1,3 +1,7 @@
+"""Thin HTTP layer para sa /setup/* endpoints - first-admin wizard ug the
+temp-admin recovery path. Business logic naa sa services/setup_service.py
+ug services/seed_service.py."""
+
 from flask import Blueprint, jsonify
 from database import get_db_connection, get_json_or_error
 from services.auth_service import require_session
@@ -12,10 +16,11 @@ setup_bp = Blueprint("setup", __name__)
 @setup_bp.route("/setup/status")
 @limiter.limit("30 per minute")
 def setup_status():
-    """Public, no-auth check for whether to show the setup screen; never returns credentials.
-    fresh_install additionally tells the login page whether to send the visitor straight to
-    /setup (no temp admin exists to log in as) or show the temp-admin seed-notice modal instead
-    (a live system recovering from losing its last real admin - see services/seed_service.py)."""
+    """GET - Public, walay auth, check kung i-show ba ang setup screen; dili
+    gyud mo-return ug credentials. fresh_install mo-tell sa login page kung
+    i-redirect ba diretso sa /setup (walay temp admin) or i-show ang
+    temp-admin seed-notice modal (live system recovering from losing last
+    real admin - see services/seed_service.py)."""
     conn = get_db_connection()
     try:
         return jsonify(
@@ -31,9 +36,10 @@ def setup_status():
 @setup_bp.route("/setup/seed-notice")
 @limiter.limit("30 per minute")
 def setup_seed_notice():
-    """Public, no-auth - lets the login page show the temp admin's one-time credentials as a
-    modal. Only ever returns something on a live system's recovery path; a fresh install never
-    has a temp admin to begin with (see seed_service.seed_initial_admin)."""
+    """GET - Public, walay auth - para i-show sa login page ang temp admin's
+    one-time credentials as modal. Naay laman ra ni kung recovery path sa
+    live system; fresh install walay temp admin gyud (see
+    seed_service.seed_initial_admin)."""
     notice = get_seed_notice()
     return jsonify(notice or {})
 
@@ -41,11 +47,11 @@ def setup_seed_notice():
 @setup_bp.route("/setup/complete", methods=["POST"])
 @limiter.limit("10 per minute")
 def complete_setup():
-    """No @login_required here on purpose: a true fresh install (no staff at all yet) has no
-    one to log in as, so this creates the first admin account directly. Anything else - a live
-    system that re-seeded a temp admin after losing its last real admin - still requires being
-    logged in as that temp admin, checked manually below via require_session so the two paths
-    can be told apart before deciding whether a session is even required."""
+    """POST - walay @login_required kay ang true fresh install (walay staff
+    pa) walay ma-login as, so mag-create dayon ni ug first admin account.
+    Sa uban case (live system nga re-seeded ug temp admin after nawad-an sa
+    last real admin) required gihapon login as temp admin, checked manually
+    diri via require_session para ma-distinguish ang duha ka path."""
     data, error = get_json_or_error()
     if error:
         return error

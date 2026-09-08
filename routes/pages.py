@@ -1,3 +1,7 @@
+"""Thin HTTP layer para sa page-shell routes (assets/members/staff/etc) - mo
+render lang ug template with initial context, ang actual table data kay
+gikan sa htmx partials sa laing routes files."""
+
 from datetime import date
 from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
@@ -15,6 +19,8 @@ pages_bp = Blueprint("pages", __name__)
 
 @pages_bp.route("/login")
 def login_page():
+    """GET - login form. Ang `next` param kay ma-validate para same-site
+    relative path ra gyud, para dili ma-abuse as open-redirect."""
     error = request.args.get("error")
     username = request.args.get("username", "")
     # Only a same-site relative path is ever honored (routes/auth.py re-checks
@@ -29,11 +35,11 @@ def login_page():
 
 @pages_bp.route("/setup")
 def setup_page():
-    """First-admin setup wizard. No @login_required - a true fresh install (no
-    staff at all yet) has no one to log in as, so it's served openly in that
-    case. Anything else (a live system's temp-admin recovery path, see
-    services/seed_service.py) still requires being logged in as that temp
-    admin, checked manually below since the two cases need different rules."""
+    """GET - First-admin setup wizard. Walay @login_required kay ang true
+    fresh install (walay staff pa gyud) walay ma-login as, so open ni siya
+    ana nga case. Sa uban case (live system's temp-admin recovery path, see
+    services/seed_service.py) required gihapon login as temp admin, checked
+    manually diri kay lahi man ang rules sa duha ka case."""
     conn = get_db_connection()
     fresh_install = setup_service.is_fresh_install(conn)
 
@@ -57,6 +63,10 @@ def setup_page():
 @login_required
 @feature_required("assets")
 def assets_page():
+    """GET - Assets page shell. Nag-pull ug stat cards + category dropdown
+    dayon, ug mo-reuse sa get_assets_table_context() (routes/assets.py) para
+    mo-render na dayon ug filtered state kung naay query string sa hard
+    refresh, dili default lang."""
     conn = get_db_connection()
     stats = asset_service.get_asset_stat_cards(conn)
     # get_assets_table_context() only returns table/pagination state, not lookup
@@ -102,6 +112,9 @@ def assets_page():
 @login_required
 @feature_required("members")
 def members_page():
+    """GET - Members page shell, same pattern sa assets_page(): stat cards +
+    department dropdown, dayon reuse get_members_table_context()
+    (routes/members.py) para sa filtered hard refresh."""
     conn = get_db_connection()
     stats = member_service.get_member_stat_cards(conn)
     departments = conn.execute(
@@ -136,6 +149,9 @@ def members_page():
 @pages_bp.route("/staff")
 @roles_required("admin")
 def staff_page():
+    """GET - Staff page shell, admin-only. Same pattern sa assets_page/
+    members_page: stat cards + reuse get_staff_table_context()
+    (routes/staff.py) para sa filtered hard refresh."""
     conn = get_db_connection()
     stats = staff_service.get_staff_stat_cards(conn)
     departments = conn.execute(
@@ -172,6 +188,10 @@ def staff_page():
 @login_required
 @feature_required("transactions")
 def transactions_page():
+    """GET - Transactions page shell. Nag-lookup pa ug member name kung
+    naay ?member_id= (gikan sa notification's "open" link), dayon reuse
+    get_transactions_table_context() (routes/transactions.py) para sa
+    filtered hard refresh."""
     conn = get_db_connection()
     # "Overdue" = same condition as get_transactions_table_context()'s
     # is_overdue column: still borrowed, past due date.
@@ -223,8 +243,9 @@ def transactions_page():
 @pages_bp.route("/notifications")
 @login_required
 def notifications_page():
-    """Table loads via htmx (routes/notifications.py's /notifications/table);
-    this route just seeds limit/offset for the container's initial hx-vals."""
+    """GET - Notifications page shell. Table gikan sa htmx
+    (routes/notifications.py's /notifications/table); ni nga route mo-seed
+    lang ug limit/offset para sa container's initial hx-vals."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -235,9 +256,9 @@ def notifications_page():
 @roles_required("admin", "in_charge", "tool_keeper")
 @feature_required("monitoring")
 def monitoring_page():
-    """RFID exit-monitoring tab: live alarm status + a log of tagged-tool
-    detection events reported by the Pi's RFID listener. Table/banner load
-    via htmx, same pattern as Activity Log and Notifications."""
+    """GET - RFID exit-monitoring page shell: live alarm status + log sa
+    tagged-tool detection events gikan sa Pi's RFID listener. Table/banner
+    load via htmx, same pattern sa Activity Log ug Notifications."""
     conn = get_db_connection()
     stats = monitoring_service.get_monitoring_stat_cards(conn)
     conn.close()
@@ -289,8 +310,9 @@ def monitoring_page():
 @pages_bp.route("/audit-log")
 @login_required
 def audit_log_page():
-    """Sidebar's "Activity Log" page; /api/v1/audit-log used to only return raw
-    JSON. Table loads via htmx same as notifications_page()."""
+    """GET - Sidebar's "Activity Log" page shell; /api/v1/audit-log used to
+    only return raw JSON before ni. Table loads via htmx same sa
+    notifications_page(). Staff filter dropdown admin-only."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 25, 0
@@ -324,7 +346,10 @@ def audit_log_page():
 @login_required
 @feature_required("requests")
 def requests_page():
-    """Approvals queue for unrestriction and deactivation requests; rows are scoped per role downstream."""
+    """GET - Approvals queue page shell para sa unrestriction ug deactivation
+    requests; rows scoped per role sa downstream service. Tab + per-panel
+    status/mine/offset gikan sa URL (u_/d_ prefix) para independent ang
+    round-trip sa duha ka tab."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -359,9 +384,10 @@ def requests_page():
 @login_required
 @feature_required("reservations")
 def reservations_page():
-    """Advance-booking list - see services/reservation_service.py's module
-    docstring for the feature's design. New reservations are created from
-    an asset's Details modal ("Reserve for Later"), not from this page."""
+    """GET - Advance-booking list page shell (see
+    services/reservation_service.py's module docstring sa feature design).
+    Bag-ong reservations gikan ra sa asset's Details modal ("Reserve for
+    Later"), dili gikan ani nga page."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -378,7 +404,8 @@ def reservations_page():
 @roles_required("admin", "in_charge", "tool_keeper")
 @feature_required("reports")
 def reports_page():
-    """Just the page shell; numbers come from stats.py's JSON endpoints, fetched client-side."""
+    """GET - page shell ra jud ni; ang mga numbers gikan sa stats.py's JSON
+    endpoints, fetched client-side."""
 
     def _report_date(param):
         value = request.args.get(param, "")
@@ -395,7 +422,8 @@ def reports_page():
 @pages_bp.route("/barcodes")
 @roles_required("admin", "in_charge")
 def barcodes_page():
-    """Barcode label generator; only currently-present assets/members get labels, printed via browser dialog."""
+    """GET - Barcode label generator page; currently-present assets/members
+    ra ang naay labels, print gamit browser's print dialog."""
     conn = get_db_connection()
     assets = conn.execute("""
         SELECT id, asset_id, barcode_id, name
@@ -419,9 +447,10 @@ def barcodes_page():
 @pages_bp.route("/system")
 @roles_required("admin", "in_charge")
 def system_page():
-    """Launcher for app-wide policy knobs; system.html hides admin-only cards from in_charge.
-    Every card's live current value is gathered here so its own summary line can show it
-    without each card needing its own htmx round-trip just to display what's already set."""
+    """GET - Launcher para sa app-wide policy knobs; system.html mo-hide sa
+    admin-only cards para sa in_charge. Kada card's live current value
+    gi-gather diri para sa iyang summary line, dili na kinahanglan
+    individual htmx round-trip per card just to show current value."""
     conn = get_db_connection()
     try:
         loan_limits = {
@@ -469,7 +498,8 @@ def system_page():
 @pages_bp.route("/feedback")
 @roles_required("admin")
 def feedback_page():
-    """Admin-only feedback review tab; list loads via htmx, same pattern as Notifications."""
+    """GET - Admin-only feedback review page shell; list loads via htmx,
+    same pattern sa Notifications."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         limit, offset = 20, 0
@@ -488,5 +518,6 @@ def feedback_page():
 @pages_bp.route("/help")
 @login_required
 def help_page():
-    """The manual is a modal now; this route keeps old /help bookmarks from 404ing."""
+    """GET - ang manual modal na karon; ni nga route naa lang para dili
+    mag-404 ang mga old /help bookmarks."""
     return redirect(url_for("home", open_help=1))

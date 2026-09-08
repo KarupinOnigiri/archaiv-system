@@ -1,3 +1,6 @@
+"""Thin HTTP layer para sa /notifications/* endpoints - business logic naa
+sa services/notification_service.py."""
+
 from flask import Blueprint, jsonify, g, request, render_template, redirect
 from database import get_db_connection, get_json_or_error
 from services.auth_service import login_required
@@ -7,6 +10,8 @@ notifications_bp = Blueprint("notifications", __name__)
 
 
 def get_notifications_table_context(args, staff):
+    """Helper nga mo-open/close sa conn ug mo-tawag sa
+    notification_service.get_notifications_table_context()."""
     conn = get_db_connection()
     try:
         return notification_service.get_notifications_table_context(conn, args, staff)
@@ -17,7 +22,8 @@ def get_notifications_table_context(args, staff):
 @notifications_bp.route("/notifications/table")
 @login_required
 def view_notifications_table():
-    """htmx partial - just the list + pagination footer, so paging doesn't re-render the whole page."""
+    """GET - htmx partial, list + pagination footer ra so ang paging dili
+    mo-re-render sa entire page."""
     context, error = get_notifications_table_context(request.args, g.staff)
     if error:
         return error
@@ -27,6 +33,8 @@ def view_notifications_table():
 @notifications_bp.route("/notifications/mark-all-read", methods=["POST"])
 @login_required
 def mark_all_notifications_read():
+    """POST - i-mark tanan notifications ni g.staff as read. Delegates to
+    notification_service.mark_all_notifications_read()."""
     conn = get_db_connection()
     try:
         notification_service.mark_all_notifications_read(conn, g.staff)
@@ -38,6 +46,8 @@ def mark_all_notifications_read():
 @notifications_bp.route("/notifications/<int:id>/mark-read", methods=["POST"])
 @login_required
 def mark_notification_read(id):
+    """POST - i-mark isa lang ka notification as read. 404 kung wala
+    ma-found or dili iya ni g.staff."""
     conn = get_db_connection()
     try:
         found = notification_service.mark_notification_read(conn, id, g.staff)
@@ -55,7 +65,7 @@ def mark_notification_read(id):
 @notifications_bp.route("/notifications/<int:id>/clear", methods=["POST"])
 @login_required
 def clear_notification(id):
-    """The '×' on each row - clears one notification at a time."""
+    """POST - ang '×' sa matag row, mag-clear ug usa ka notification lang."""
     conn = get_db_connection()
     try:
         found = notification_service.clear_notification(conn, id, g.staff)
@@ -69,7 +79,7 @@ def clear_notification(id):
 @notifications_bp.route("/notifications/clear", methods=["POST"])
 @login_required
 def clear_notifications():
-    """"Clear selected" bulk action. Body: {"ids": [1, 2, 3]}."""
+    """POST - "Clear selected" bulk action. Body: {"ids": [1, 2, 3]}."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -92,8 +102,9 @@ def clear_notifications():
 @notifications_bp.route("/notifications/<int:id>/open")
 @login_required
 def open_notification(id):
-    """Marks a notification read, then redirects by type: loans or requests.
-    Plain GET despite the side effect, like an email client's click-to-open-and-clear pattern."""
+    """GET - i-mark read ang notification then redirect depende sa type
+    (loans or requests). Plain GET bisan naay side effect, pareho ra sa
+    email client's click-to-open-and-clear pattern."""
     conn = get_db_connection()
     try:
         target = notification_service.resolve_notification_open(conn, id, g.staff)

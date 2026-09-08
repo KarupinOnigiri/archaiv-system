@@ -1,8 +1,7 @@
-"""Advance booking of a specific asset for a member, ahead of time - see
-services/reservation_service.py's module docstring for the full design
-(especially why this never touches assets.status, and the v1 advisory-only
-scope decision).
-"""
+"""Advance booking sa usa ka specific asset para sa usa ka member - see
+services/reservation_service.py's module docstring sa full design
+(especially ngano wala ni ga-touch sa assets.status, ug ang v1
+advisory-only scope decision)."""
 
 from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
@@ -17,6 +16,8 @@ reservations_bp = Blueprint("reservations", __name__)
 
 @reservations_bp.before_request
 def _block_if_reservations_disabled():
+    """Mo-403 sa tanan /reservations/* endpoints kung naka-disable ang
+    reservations feature flag."""
     if not is_feature_enabled("reservations"):
         return jsonify({"error": f"{get_feature_label('reservations')} is currently disabled"}), 403
 
@@ -27,6 +28,8 @@ VALID_STATUSES = reservation_service.VALID_STATUSES
 @reservations_bp.route("/assets/<int:id>/reserve-form")
 @login_required
 def reserve_form(id):
+    """GET - modal form para mag-reserve ug asset gikan sa Details modal's
+    "Reserve for Later" button. Consumables dili pwede i-reserve."""
     conn = get_db_connection()
     try:
         asset = conn.execute("SELECT * FROM assets WHERE id = ?", (id,)).fetchone()
@@ -43,6 +46,9 @@ def reserve_form(id):
 @limiter.limit("20 per minute")
 @login_required
 def create_reservation():
+    """POST - mag-create ug bag-ong reservation. Delegates to
+    reservation_service.create_reservation() after validating required
+    fields ug date strings."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -79,6 +85,8 @@ def create_reservation():
 @limiter.limit("20 per minute")
 @login_required
 def cancel_reservation(id):
+    """POST - i-cancel ang reservation. Delegates to
+    reservation_service.cancel_reservation()."""
     conn = get_db_connection()
     try:
         result, error = reservation_service.cancel_reservation(conn, id, g.staff)
@@ -93,7 +101,9 @@ def cancel_reservation(id):
 @reservations_bp.route("/reservations")
 @login_required
 def list_reservations():
-    """admin/in_charge see every reservation; tool_keeper only sees their own."""
+    """GET - admin/in_charge makakita sa tanan reservations; tool_keeper
+    makakita ra sa iyang own. HX-Request header mo-decide kung partial
+    template or plain JSON ang i-return."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -123,8 +133,8 @@ def list_reservations():
 @reservations_bp.route("/assets/<int:id>/reservations")
 @login_required
 def asset_reservations(id):
-    """Upcoming reservations for one asset - feeds the Assets Details
-    modal's "RESERVED FOR" banner."""
+    """GET - upcoming reservations para sa usa ka asset - feeds ang Assets
+    Details modal's "RESERVED FOR" banner."""
     conn = get_db_connection()
     try:
         upcoming = reservation_service.get_upcoming_reservations_for_asset(conn, id)

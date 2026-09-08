@@ -1,3 +1,7 @@
+"""Thin HTTP layer para sa /stats/* endpoints (Reports tab's data + layout
++ export) - business logic naa sa services/stats_service.py ug
+services/monitoring_stats_service.py."""
+
 from flask import Blueprint, jsonify, request, make_response, g
 from database import get_db_connection
 from services.auth_service import roles_required
@@ -13,6 +17,8 @@ stats_bp = Blueprint("stats", __name__)
 
 @stats_bp.before_request
 def _block_if_reports_disabled():
+    """Mo-403 sa tanan /stats/* endpoints kung naka-disable ang reports
+    feature flag."""
     if not is_feature_enabled("reports"):
         return jsonify({"error": f"{get_feature_label('reports')} is currently disabled"}), 403
 
@@ -24,6 +30,8 @@ def _block_if_reports_disabled():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def most_borrowed_assets():
+    """GET - top assets by borrow count, date-ranged. Delegates to
+    stats_service.most_borrowed_assets()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -45,7 +53,8 @@ def most_borrowed_assets():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def least_borrowed_assets():
-    """Inverse of most-borrowed, including zero-transaction assets via LEFT JOIN."""
+    """GET - inverse sa most-borrowed, apil ang zero-transaction assets
+    (LEFT JOIN). Delegates to stats_service.least_borrowed_assets()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -67,7 +76,8 @@ def least_borrowed_assets():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def asset_valuation():
-    """Current book value snapshot - not date-ranged, see asset_valuation_summary's docstring."""
+    """GET - current book value snapshot, dili date-ranged - see
+    asset_valuation_summary's docstring sa service."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -85,8 +95,8 @@ def asset_valuation():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def maintenance_schedule():
-    """Upcoming/overdue preventive maintenance - not date-ranged, same
-    current-state-snapshot reasoning as asset_valuation above."""
+    """GET - upcoming/overdue preventive maintenance, dili date-ranged, same
+    current-state-snapshot reasoning sa asset_valuation() above."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -104,11 +114,11 @@ def maintenance_schedule():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def monitoring_summary():
-    """Reports' "Monitoring Activity" widget - a compact metric-list version
-    of Monitoring's own Trends tab, date-ranged the same way (since/until,
-    reusing Reports' own date filter). 403s if the monitoring feature itself
-    is off, same as the widget being absent from /stats/layout in that case
-    - see get_layout/export_stats' filtering below."""
+    """GET - Reports' "Monitoring Activity" widget - compact metric-list
+    version sa Monitoring's own Trends tab, date-ranged same way
+    (since/until, reusing Reports' own date filter). 403 kung naka-disable
+    ang monitoring feature, same reason ngano wala ni sa /stats/layout ana
+    nga case - see get_layout/export_stats' filtering below."""
     if not is_feature_enabled("monitoring"):
         return jsonify({"error": f"{get_feature_label('monitoring')} is currently disabled"}), 403
 
@@ -127,6 +137,8 @@ def monitoring_summary():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def most_borrowed_categories():
+    """GET - top categories by borrow count, date-ranged. Delegates to
+    stats_service.most_borrowed_categories()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -148,7 +160,8 @@ def most_borrowed_categories():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def loan_duration():
-    """Average hours between borrow and return, returned transactions only. group_by=asset or category."""
+    """GET - average hours between borrow ug return, returned transactions
+    lang. group_by=asset or category."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -180,6 +193,8 @@ def loan_duration():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def top_borrowers():
+    """GET - members sorted by borrow count, date-ranged. Delegates to
+    stats_service.top_borrowers()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -201,7 +216,8 @@ def top_borrowers():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def overdue_frequency():
-    """Repeat-lateness history, distinct from members.is_restricted. Splits overdue_count and still_open_count."""
+    """GET - repeat-lateness history, distinct ni sa members.is_restricted.
+    Split ang overdue_count ug still_open_count."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -226,7 +242,9 @@ def overdue_frequency():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def condition_changes():
-    """Damage-rate signal: how often items come back worse than they went out. Skips rows without condition_in."""
+    """GET - damage-rate signal: unsa ka often mo-balik ang items nga mas
+    grabe ang condition sa dihang gi-borrow. Ma-skip ang rows nga walay
+    condition_in."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -258,7 +276,8 @@ def condition_changes():
 @roles_required("admin", "in_charge")
 @limiter.limit("20 per minute")
 def stats_summary():
-    """KPI row for Reports; overdue/damage rates share definitions with the dedicated endpoints."""
+    """GET - KPI row para sa Reports; ang overdue/damage rates share ra ug
+    definitions sa dedicated endpoints (overdue_frequency, condition_changes)."""
     date_filter, date_params, error = stats_service.parse_date_range(request.args)
     if error:
         return error
@@ -280,7 +299,8 @@ def stats_summary():
 @roles_required("admin")
 @limiter.limit("20 per minute")
 def staff_activity():
-    """One row per active staff member: checkouts, returns, logged actions, avg session duration."""
+    """GET - admin-only, usa ka row per active staff member: checkouts,
+    returns, logged actions, avg session duration."""
     since = request.args.get("since")
     until = request.args.get("until")
     if since:
@@ -309,6 +329,8 @@ def staff_activity():
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("20 per minute")
 def my_checkouts():
+    """GET - "My Activity" widget: this staff member's own checkouts ra
+    (scoped sa g.staff["id"]). Delegates to stats_service.my_checkouts()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -329,6 +351,8 @@ def my_checkouts():
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("20 per minute")
 def my_returns():
+    """GET - "My Activity" widget: this staff member's own returns ra
+    (scoped sa g.staff["id"]). Delegates to stats_service.my_returns()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -349,7 +373,8 @@ def my_returns():
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("20 per minute")
 def my_overdue_handled():
-    """This staff member's checkouts that ended up overdue, same definition as overdue_frequency()."""
+    """GET - this staff member's checkouts nga na-overdue, same definition
+    sa overdue_frequency()."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -370,11 +395,11 @@ def my_overdue_handled():
 
 
 def _feature_disabled_widget_ids():
-    """Widget ids to hide regardless of role, because the feature they
-    summarize is currently off - monitoring_activity is meaningless (and
-    its own endpoint 403s) with monitoring disabled, same as the widget
-    catalog has no per-widget feature-flag field of its own to check this
-    generically yet."""
+    """Widget ids nga i-hide regardless sa role, kay naka-disable ang
+    feature nga gina-summarize - walay pulos ang monitoring_activity (ug
+    mo-403 ang iyang own endpoint) kung off ang monitoring, kay wala pa
+    man per-widget feature-flag field sa widget catalog para ma-check ni
+    generically."""
     hidden = set()
     if not is_feature_enabled("monitoring"):
         hidden.add("monitoring_activity")
@@ -384,6 +409,8 @@ def _feature_disabled_widget_ids():
 @stats_bp.route("/stats/layout")
 @roles_required("admin", "in_charge", "tool_keeper")
 def get_layout():
+    """GET - current staff's saved widget order/visibility para sa
+    Reports page, filtered sa feature-disabled widgets."""
     hidden_ids = _feature_disabled_widget_ids()
     return jsonify(
         {
@@ -400,6 +427,8 @@ def get_layout():
 @stats_bp.route("/stats/layout", methods=["POST"])
 @roles_required("admin", "in_charge", "tool_keeper")
 def post_layout():
+    """POST - i-save ang custom widget order/visibility sa report_layout_service.
+    Body: {"layout": [...]}."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not isinstance(data.get("layout"), list):
         return jsonify({"error": "Expected {\"layout\": [...]}"}), 400
@@ -410,6 +439,7 @@ def post_layout():
 @stats_bp.route("/stats/layout/reset", methods=["POST"])
 @roles_required("admin", "in_charge", "tool_keeper")
 def post_layout_reset():
+    """POST - i-reset ang widget layout balik sa default order/visibility."""
     reset_report_layout(g.staff["id"])
     return jsonify({"layout": get_report_layout(g.staff["id"], g.staff["role"])})
 
@@ -421,7 +451,8 @@ def post_layout_reset():
 @roles_required("admin", "in_charge", "tool_keeper")
 @limiter.limit("10 per minute")
 def export_stats():
-    """Exports chosen report sections as xlsx/csv; a tampered `sections` id is silently dropped, not a 403."""
+    """GET - i-export ang gipili nga report sections as xlsx/csv (or zip kung
+    multiple csv). Tampered `sections` id kay silently dropped ra, dili 403."""
     role = g.staff["role"]
     allowed_ids = {w["id"] for w in widgets_for_role(role)} - _feature_disabled_widget_ids()
 

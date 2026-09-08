@@ -19,6 +19,10 @@ from services import login_service
 from services.settings_service import PERMANENT_ASSIGNED_END
 from extensions import limiter
 
+"""Thin HTTP layer para sa login/logout ug session endpoints - ang actual
+verification (lockout, timing-safety, session creation) naa sa
+services/login_service.py, dinhi ra ang request parsing ug response shaping."""
+
 auth_bp = Blueprint("auth", __name__)
 
 # COOKIE_SECURE is its own env var, separate from FLASK_DEBUG - see .env.example / DEPLOYMENT.md.
@@ -33,28 +37,21 @@ _DUMMY_PASSWORD_HASH = generate_password_hash("dummy-password-for-timing-safety"
 
 
 def _check_assignment_window(staff):
-    """Blocks login for an account whose assignment window isn't active
-    right now. Required for Tool Keeper - blank assigned_start/assigned_end
-    means "never actually assigned," not "no restriction," so they can't
-    log in at all until an admin sets one. Optional for In Charge - a blank
-    or PERMANENT_ASSIGNED_END assigned_end means no restriction, but per
-    services/staff_service.py's compute_usage_status ("in_charge is real"),
-    when an In Charge account DOES have a genuine end date set, it's
-    enforced exactly like Tool Keeper's always is - previously this whole
-    check only ever ran for Tool Keeper, so an In Charge account past its
-    own assignment window could still log in indefinitely despite showing
-    "expired" on their own profile the entire time.
+    """Mag-block ug login kung ang account's assignment window dili pa/dili
+    na active. Required jud ni for Tool Keeper - blangko nga
+    assigned_start/assigned_end nagpasabot "wala pa gyud gi-assign," dili
+    "walay restriction," so dili gyud sila makalogin hangtod naay admin
+    mo-set. Optional para sa In Charge - blangko or PERMANENT_ASSIGNED_END
+    nga assigned_end means walay restriction, pero kung naay genuine end
+    date na-set (per staff_service.compute_usage_status), i-enforce gyud
+    parehas sa Tool Keeper.
 
-    Admin is exempt entirely, matching compute_usage_status's "admin is
-    always permanent" rule. Called from every login route that can
-    authenticate a non-admin account (login(), login_barcode_pin()) - not
-    login_rfid(), which only ever resolves admin accounts anyway, so this
-    would just always no-op there.
+    Exempt ang admin. Gitawag ni sa login() ug login_barcode_pin() ra -
+    dili sa login_rfid() kay admin-only man na siya.
 
-    Returns None if login may proceed, or an (payload_dict, status) error
-    tuple - not jsonify'd, since the route needs the raw dict either way
-    (JSON body or to extract `error` for a redirect), same convention as
-    services/login_service.py's other (data, error) helpers."""
+    Returns None kung pwede na mo-proceed ang login, or (payload_dict,
+    status) tuple kung naay error - raw dict pa, dili jsonify'd, para
+    ma-reuse sa JSON response or redirect."""
     role = staff["role"]
     if role == "admin":
         return None
@@ -82,12 +79,11 @@ def _check_assignment_window(staff):
 
 
 def _safe_next_url():
-    """Where to send someone after login if they were bounced here from a page
-    they were already on (session expired mid-use - services/auth_service.py's
-    login_required redirects here with ?next=<path>, carried through login.html
-    as a hidden field). Only a same-site relative path is ever honored - an
-    absolute/external `next` would be an open-redirect vector - so anything
-    else just falls through to the normal post-login destination."""
+    """Asa i-redirect after login kung gikan sila sa page nga na-bounce
+    (session expired mid-use, login_required nag-carry ug ?next=<path>).
+    Same-site relative path ra ang gi-honor - kung absolute/external ang
+    `next`, open-redirect risk na na, so mo-fall through na lang sa normal
+    post-login destination."""
     next_url = request.form.get("next") or request.args.get("next") or ""
     if next_url.startswith("/") and not next_url.startswith("//"):
         return next_url
@@ -95,7 +91,8 @@ def _safe_next_url():
 
 
 def _login_response(payload, status, redirect_to=None, cookie_data=None):
-    """JSON for JSON requests, redirect for form POSTs; echoes username/barcode back on error, never password."""
+    """JSON kung JSON request, redirect kung form POST; i-echo balik ang
+    username/barcode pag naay error, pero dili gyud ang password."""
     if request.is_json:
         response = make_response(jsonify(payload), status)
     else:
@@ -126,6 +123,9 @@ def _login_response(payload, status, redirect_to=None, cookie_data=None):
 @auth_bp.route("/login", methods=["POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login():
+    """POST - username/barcode + password login. Delegates ang lookup,
+    lockout, password check, ug session creation sa services/login_service.py;
+    kini na route ra ang nag-assemble sa response ug session cookie."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -228,7 +228,8 @@ def login():
 @auth_bp.route("/username-lookup", methods=["POST"])
 @limiter.limit("20 per minute; 100 per hour")
 def username_lookup():
-    """Step-1 check for the "Sign in as <name>" greeting; generic 404 so accounts can't be enumerated."""
+    """POST - step-1 check para sa "Sign in as <name>" greeting; generic 404
+    ang response para dili ma-enumerate ang mga existing accounts."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -257,7 +258,8 @@ def username_lookup():
 @auth_bp.route("/rfid-lookup", methods=["POST"])
 @limiter.limit("20 per minute; 100 per hour")
 def rfid_lookup():
-    """Identifies which admin a tapped card belongs to before the PIN, same generic response as login_rfid."""
+    """POST - i-identify kung kinsa ang admin sa gi-tap nga card before mag-
+    ask sa PIN; same generic response style sa login_rfid()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -286,7 +288,9 @@ def rfid_lookup():
 @auth_bp.route("/login-rfid", methods=["POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login_rfid():
-    """RFID login, admin-only; paired with a hashed PIN so a stolen card alone isn't enough."""
+    """POST - RFID login, admin-only; naay hashed PIN pair para dili sakto
+    nga makalogin ang tao kung nakawat lang ang card. Same flow style sa
+    login()."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -378,9 +382,9 @@ def login_rfid():
 @auth_bp.route("/barcode-pin-lookup", methods=["POST"])
 @limiter.limit("20 per minute; 100 per hour")
 def barcode_pin_lookup():
-    """Identifies whose barcode was scanned before the PIN, same generic
-    response as login_barcode_pin - mirrors rfid_lookup above, but open to
-    any staff who has barcode_pin_enabled set, not just admins."""
+    """POST - i-identify kinsa ang tag-iya sa gi-scan nga barcode before
+    mag-ask sa PIN; mirrors rfid_lookup() pero bukas sa bisan kinsang staff
+    nga naay barcode_pin_enabled, dili lang admins."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -409,10 +413,10 @@ def barcode_pin_lookup():
 @auth_bp.route("/login-barcode-pin", methods=["POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login_barcode_pin():
-    """Barcode + PIN login, open to any staff who's opted in via Account
-    Settings - mirrors login_rfid above exactly except the identifier
-    (barcode_id vs rfid_id) and the role check (barcode_pin_enabled instead
-    of hardcoded admin-only)."""
+    """POST - Barcode + PIN login, bukas sa bisan kinsang staff nga naka-
+    opt-in via Account Settings - mirrors login_rfid() pero lahi ang
+    identifier (barcode_id vs rfid_id) ug ang role check
+    (barcode_pin_enabled instead of admin-only)."""
     if request.is_json:
         data, error = get_json_or_error()
         if error:
@@ -509,6 +513,8 @@ def login_barcode_pin():
 @auth_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
+    """POST - mag-delete sa session row sa DB ug mag-clear sa session_token
+    cookie, then HX-Redirect balik sa /login."""
     token = request.cookies.get("session_token")
 
     if token:

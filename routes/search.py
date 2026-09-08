@@ -1,3 +1,6 @@
+"""Thin HTTP layer para sa /search endpoint - matching logic naa sa
+services/search_service.py."""
+
 from flask import Blueprint, g, render_template, request
 
 from database import get_db_connection
@@ -12,11 +15,11 @@ search_bp = Blueprint("search", __name__)
 @search_bp.route("/search")
 @login_required
 def global_search():
-    """Content header's Ctrl/Cmd+/ search bar - one small results dropdown
-    covering pages/assets/members/staff (role- and feature-flag-scoped the
-    same way each of those tabs already is; see services/search_service.py),
-    rendered as an htmx partial so the input's own hx-get can swap it in
-    directly."""
+    """GET - Content header's Ctrl/Cmd+/ search bar - usa lang ka small
+    results dropdown covering pages/assets/members/staff (role- ug
+    feature-flag-scoped same way sa matag tab; see
+    services/search_service.py), rendered as htmx partial para ma-swap
+    dayon sa input's own hx-get."""
     query = request.args.get("q", "")
     conn = get_db_connection()
     try:

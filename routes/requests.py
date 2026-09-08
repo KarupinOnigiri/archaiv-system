@@ -1,3 +1,6 @@
+"""Thin HTTP layer para sa /unrestriction-requests/* endpoints - business
+logic naa sa services/unrestriction_service.py."""
+
 from flask import Blueprint, jsonify, g, request, render_template
 from database import get_db_connection, get_json_or_error
 from services.auth_service import roles_required, login_required
@@ -11,6 +14,8 @@ requests_bp = Blueprint("requests", __name__)
 
 @requests_bp.before_request
 def _block_if_requests_disabled():
+    """Mo-403 sa tanan /unrestriction-requests/* endpoints kung naka-disable
+    ang requests feature flag."""
     if not is_feature_enabled("requests"):
         return jsonify({"error": f"{get_feature_label('requests')} is currently disabled"}), 403
 
@@ -25,6 +30,8 @@ VALID_STATUSES = unrestriction_service.VALID_STATUSES
 @limiter.limit("20 per minute")
 @roles_required("tool_keeper")
 def create_unrestriction_request():
+    """POST - tool_keeper only, mag-flag ug restricted member para review.
+    Delegates to unrestriction_service.create_unrestriction_request()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -52,7 +59,8 @@ def create_unrestriction_request():
 @limiter.limit("20 per minute")
 @login_required
 def cancel_unrestriction_request(id):
-    """Lets the requester withdraw their own pending request (unlike /deny, which is admin/in_charge only)."""
+    """POST - tugotan ang requester mo-withdraw sa iyang own pending request
+    (dili pareho sa /deny, nga admin/in_charge ra)."""
     data, error = get_json_or_error()
     review_notes = data.get("review_notes") if not error else None
 
@@ -73,7 +81,9 @@ def cancel_unrestriction_request(id):
 @requests_bp.route("/unrestriction-requests")
 @login_required
 def list_unrestriction_requests():
-    """admin/in_charge see the full review queue; tool_keeper only sees their own requests."""
+    """GET - admin/in_charge makakita sa full review queue; tool_keeper
+    makakita ra sa iyang own requests. HX-Request header mo-decide kung
+    partial template or plain JSON ang i-return."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -106,8 +116,9 @@ def list_unrestriction_requests():
 @requests_bp.route("/unrestriction-requests/<int:id>/details-modal")
 @login_required
 def unrestriction_request_details_modal(id):
-    """Row-click detail popup for the Approvals table - full_name/full request
-    context in one small modal instead of the table's own truncated cells."""
+    """GET - row-click detail popup sa Approvals table - full_name/full
+    request context sa usa ka small modal, dili just truncated cells sa
+    table."""
     conn = get_db_connection()
     try:
         req, error = unrestriction_service.get_unrestriction_request_detail(conn, id, g.staff)
@@ -126,6 +137,8 @@ def unrestriction_request_details_modal(id):
 @limiter.limit("20 per minute")
 @roles_required("admin", "in_charge")
 def approve_unrestriction_request(id):
+    """POST - admin/in_charge only, mo-approve sa unrestriction request.
+    Delegates to unrestriction_service.approve_unrestriction_request()."""
     data, error = get_json_or_error()
     review_notes = data.get("review_notes") if not error else None
 
@@ -144,6 +157,9 @@ def approve_unrestriction_request(id):
 @limiter.limit("20 per minute")
 @roles_required("admin", "in_charge")
 def deny_unrestriction_request(id):
+    """POST - admin/in_charge only, mo-deny sa unrestriction request.
+    review_notes required diri, dili optional. Delegates to
+    unrestriction_service.deny_unrestriction_request()."""
     data, error = get_json_or_error()
     if error:
         return error

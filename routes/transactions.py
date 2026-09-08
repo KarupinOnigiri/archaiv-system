@@ -7,11 +7,17 @@ from utils.validators import validate_due_date, parse_pagination_params
 from datetime import datetime
 from extensions import limiter
 
+"""Thin HTTP layer para sa /transactions ug /checkout-sessions endpoints -
+validation ug business logic naa sa services/transaction_service.py, dinhi
+lang ang request parsing, response shaping, ug role gates."""
+
 transactions_bp = Blueprint("transactions", __name__)
 
 
 @transactions_bp.before_request
 def _block_if_transactions_disabled():
+    """Mag-block sa tanang /transactions* ug /checkout-sessions* request
+    kung disabled ang Transactions feature toggle."""
     if not is_feature_enabled("transactions"):
         return jsonify({"error": f"{get_feature_label('transactions')} is currently disabled"}), 403
 
@@ -22,6 +28,7 @@ def _block_if_transactions_disabled():
 @transactions_bp.route("/transactions")
 @login_required
 def list_transactions():
+    """GET - paginated JSON list sa tanang transactions."""
     limit, offset, error = parse_pagination_params(request.args)
     if error:
         return error
@@ -38,6 +45,7 @@ def list_transactions():
 @transactions_bp.route("/transactions/overdue")
 @login_required
 def list_overdue_transactions():
+    """GET - JSON list sa tanang overdue transactions, walay pagination."""
     conn = get_db_connection()
     try:
         result = transaction_service.list_overdue_transactions(conn)
@@ -51,8 +59,8 @@ def list_overdue_transactions():
 
 
 def get_transactions_table_context(args):
-    """Opens its own connection; shared by view_transactions_table() here and
-    transactions_page() in routes/pages.py, so both stay in sync."""
+    """Naay kaugalingong connection; gi-share ni sa view_transactions_table()
+    diri ug sa transactions_page() sa routes/pages.py, para parehas gihapon."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -67,6 +75,7 @@ def get_transactions_table_context(args):
 @transactions_bp.route("/transactions/table")
 @login_required
 def view_transactions_table():
+    """GET - htmx table partial para sa Transactions page's filterable list."""
     context, error = get_transactions_table_context(request.args)
     if error:
         return error
@@ -76,7 +85,8 @@ def view_transactions_table():
 @transactions_bp.route("/transactions/export")
 @login_required
 def export_transactions():
-    """CSV of the current filtered table, ignoring sort/pagination since export means the whole set."""
+    """GET - CSV sa current filtered table, ignoring sort/pagination kay
+    ang export dapat ang tibuok set."""
     conn = get_db_connection()
     try:
         file_bytes, error = transaction_service.build_transactions_export_csv(conn, request.args)
@@ -96,8 +106,9 @@ def export_transactions():
 @transactions_bp.route("/transactions/stat-cards")
 @login_required
 def transaction_stat_cards():
-    """The 4 stat-card numbers as HTML; refreshed via the
-    'transactions-refreshed' HX-Trigger event, same pattern as /assets/stat-cards."""
+    """GET - ang 4 ka stat-card numbers as HTML; refreshed via
+    'transactions-refreshed' HX-Trigger event, same pattern sa
+    /assets/stat-cards."""
     conn = get_db_connection()
     try:
         stats = transaction_service.get_transaction_stat_cards(conn)
@@ -110,6 +121,7 @@ def transaction_stat_cards():
 @transactions_bp.route("/transactions/<int:id>/details-modal")
 @login_required
 def transaction_details_modal(id):
+    """GET - read-only details modal para sa usa ka transaction row."""
     conn = get_db_connection()
     try:
         transaction, error = transaction_service.get_transaction_details(conn, id)
@@ -127,7 +139,8 @@ def transaction_details_modal(id):
 @transactions_bp.route("/checkout-sessions/start-form")
 @login_required
 def checkout_start_form():
-    """New Checkout modal shell; client_id is minted client-side so it never collides with another instance."""
+    """GET - New Checkout modal shell; ang client_id kay gi-mint
+    client-side para dili gyud mag-collide sa laing instance."""
     client_id = request.args.get("client_id")
     if not client_id:
         return jsonify({"error": "client_id is required"}), 400
@@ -137,7 +150,8 @@ def checkout_start_form():
 @transactions_bp.route("/checkout-sessions/active-banner")
 @login_required
 def active_checkout_banner():
-    """Tells the staff member if they have an in-progress checkout; always re-fetched from the server."""
+    """GET - mo-tell sa staff kung naa ba silay in-progress checkout;
+    always re-fetched gikan sa server, dili cached client-side."""
     conn = get_db_connection()
     try:
         active_session = transaction_service.load_open_session_for_staff(g.staff["id"], conn)
@@ -151,7 +165,8 @@ def active_checkout_banner():
 @transactions_bp.route("/checkout-sessions/dock")
 @login_required
 def checkout_dock():
-    """Runs on every page load in base.html; renders one dock per open session, not just the newest."""
+    """GET - mo-run sa every page load sa base.html; mag-render ug usa ka
+    dock per open session, dili lang ang pinaka-bag-o."""
     conn = get_db_connection()
     try:
         resume_sessions = transaction_service.load_open_sessions_for_staff(g.staff["id"], conn)
@@ -172,7 +187,8 @@ def checkout_dock():
 @transactions_bp.route("/checkout-sessions/<int:id>/resume-form")
 @login_required
 def checkout_resume_form(id):
-    """Reopens the checkout modal for Resume; scoped by staff member, can't peek at another's session."""
+    """GET - mo-reopen sa checkout modal para sa Resume; scoped per staff
+    member, dili ma-peek ang session sa uban."""
     conn = get_db_connection()
     try:
         resume_session = transaction_service.load_open_session_for_staff(g.staff["id"], conn)
@@ -196,7 +212,8 @@ def checkout_resume_form(id):
 @login_required
 @limiter.limit("20 per minute")
 def create_checkout_session():
-    """Starts a new checkout session (the "cart") for a member; accepts either member_barcode or member_id."""
+    """POST - mag-start ug bag-ong checkout session (ang "cart") para sa
+    usa ka member; pwede member_barcode or member_id."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -221,7 +238,8 @@ def create_checkout_session():
 @transactions_bp.route("/checkout-sessions/available-assets")
 @login_required
 def list_available_assets_for_checkout():
-    """Backs the "Show available assets" flyout; `code` is barcode_id, capped, category included."""
+    """GET - backs the "Show available assets" flyout; `code` kay
+    barcode_id, capped ang list, naay category included."""
     conn = get_db_connection()
     try:
         result = transaction_service.list_available_assets_for_checkout(conn)
@@ -233,7 +251,8 @@ def list_available_assets_for_checkout():
 @transactions_bp.route("/checkout-sessions/available-members")
 @login_required
 def list_available_members_for_checkout():
-    """Backs the "Show available members" flyout in checkout Step 1; `code` is barcode_id."""
+    """GET - backs the "Show available members" flyout sa checkout Step 1;
+    `code` kay barcode_id."""
     conn = get_db_connection()
     try:
         result = transaction_service.list_available_members_for_checkout(conn)
@@ -246,6 +265,8 @@ def list_available_members_for_checkout():
 @login_required
 @limiter.limit("60 per minute")
 def add_item_to_session(id):
+    """POST - mag-add ug asset item sa checkout session (scan-based cart).
+    Quantity relevant ra sa consumable assets."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -277,6 +298,8 @@ def add_item_to_session(id):
 @login_required
 @limiter.limit("60 per minute")
 def remove_item_from_session(id, item_id):
+    """POST - mag-remove or mag-decrement ug item sa checkout session's
+    cart. `decrement_by` optional, consumable-only quantity stepper."""
     # Consumable-only quantity stepper's "-" button; absent/blank means
     # "remove the whole line" (a serialized item's only option), same as
     # before this existed - see remove_item_from_checkout_session's docstring.
@@ -303,6 +326,8 @@ def remove_item_from_session(id, item_id):
 @login_required
 @limiter.limit("20 per minute")
 def view_checkout_session(id):
+    """GET - JSON snapshot sa current state sa usa ka checkout session
+    (ang cart contents)."""
     conn = get_db_connection()
     try:
         result, error = transaction_service.get_checkout_session_detail(conn, id, g.staff["id"])
@@ -323,6 +348,8 @@ VALID_RETURN_CONDITIONS = transaction_service.VALID_RETURN_CONDITIONS
 @login_required
 @limiter.limit("20 per minute")
 def return_asset():
+    """POST - scan-based single-asset return, gi-identify sa asset_code +
+    member_barcode combo. Delegates sa return_asset_by_scan()."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -363,7 +390,8 @@ def return_asset():
 @transactions_bp.route("/transactions/members-with-loans")
 @login_required
 def members_with_open_loans():
-    """Backs the Return Items modal's "Show members with loans" flyout."""
+    """GET - backs the Return Items modal's "Show members with loans"
+    flyout."""
     conn = get_db_connection()
     try:
         result = transaction_service.list_members_with_open_loans(conn)
@@ -375,7 +403,8 @@ def members_with_open_loans():
 @transactions_bp.route("/transactions/member-open-loans")
 @login_required
 def member_open_loans():
-    """Lists what a member has borrowed; zero loans is a normal 200 with an empty list, not an error."""
+    """GET - i-list ang gi-borrow sa member; zero loans kay normal 200 with
+    empty list ra, dili error."""
     member_barcode = request.args.get("member_barcode")
     if not member_barcode:
         return jsonify({"error": "member_barcode is required"}), 400
@@ -394,15 +423,17 @@ def member_open_loans():
 @transactions_bp.route("/transactions/return-scan-form")
 @login_required
 def return_scan_form():
-    """Renders the scan-return modal shell - no DB work here, modal
-    drives itself client-side, same shape as checkout_start_form() above."""
+    """GET - i-render ang scan-return modal shell - walay DB work diri, ang
+    modal mo-drive sa iyaha client-side, same shape sa
+    checkout_start_form() above."""
     return render_template("transactions/_return_scan_modal.html")
 
 
 @transactions_bp.route("/transactions/return-scan-lookup")
 @login_required
 def return_scan_lookup():
-    """Read-only per-scan lookup for the scan-return cart; nothing mutates until batch-return submits."""
+    """GET - read-only per-scan lookup para sa scan-return cart; wala pay
+    mutate hangtod mo-submit ang batch-return."""
     asset_code = request.args.get("asset_code")
     member_barcode = request.args.get("member_barcode")
     rfid_code = request.args.get("rfid_code") or None
@@ -423,8 +454,9 @@ def return_scan_lookup():
 @transactions_bp.route("/transactions/<int:id>/return-confirm")
 @login_required
 def return_confirm(id):
-    """Opens the row-action return modal. Read-only lookup - the actual
-    mutation happens in return_transaction_by_id() below, on submit."""
+    """GET - mo-open sa row-action return modal. Read-only lookup ra - ang
+    actual mutation nahitabo sa return_transaction_by_id() below, pag
+    submit."""
     conn = get_db_connection()
     try:
         transaction, error = transaction_service.get_return_confirm_transaction(conn, id)
@@ -440,7 +472,8 @@ def return_confirm(id):
 @login_required
 @limiter.limit("20 per minute")
 def return_transaction_by_id(id):
-    """Row-action return; skips the barcode lookup and just confirms the transaction is still open."""
+    """POST - row-action return; skip ang barcode lookup, mo-confirm ra
+    kung open pa ang transaction."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -473,7 +506,8 @@ def return_transaction_by_id(id):
 @transactions_bp.route("/transactions/batch-return-confirm")
 @login_required
 def batch_return_confirm():
-    """Opens batch-return for checked rows; silently drops ids that are missing or already returned."""
+    """GET - mo-open sa batch-return para sa checked rows; silently
+    mo-drop sa ids nga missing or na-return na."""
     ids = request.args.getlist("transaction_ids", type=int)
     if not ids:
         return jsonify({"error": "No transactions selected"}), 400
@@ -493,7 +527,8 @@ def batch_return_confirm():
 @login_required
 @limiter.limit("10 per minute")
 def batch_return_transactions():
-    """Applies condition/remarks to selected transactions; best-effort, one bad row doesn't abort the rest."""
+    """POST - i-apply ang condition/remarks sa selected transactions;
+    best-effort, kung naay usa ka bad row dili ma-abort ang uban."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -555,8 +590,8 @@ def batch_return_transactions():
 @transactions_bp.route("/transactions/<int:id>/renew-form")
 @login_required
 def renew_form(id):
-    """Opens the extend-due-date modal - read-only lookup, same split as
-    return_confirm()/return_transaction_by_id()."""
+    """GET - mo-open sa extend-due-date modal - read-only lookup ra, same
+    split sa return_confirm()/return_transaction_by_id()."""
     conn = get_db_connection()
     try:
         transaction, error = transaction_service.get_renewable_transaction(conn, id)
@@ -572,7 +607,8 @@ def renew_form(id):
 @login_required
 @limiter.limit("20 per minute")
 def renew_transaction(id):
-    """Pushes a due date out (or corrects it) without touching status; reuses validate_due_date."""
+    """POST - i-push ang due date (or i-correct) without touching ang
+    status; ginagamit ra ang validate_due_date validator."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -601,6 +637,8 @@ def renew_transaction(id):
 @transactions_bp.route("/checkout-sessions/open")
 @roles_required("admin", "in_charge")
 def list_open_checkout_sessions():
+    """GET - admin/in_charge-only JSON list sa tanang open checkout
+    sessions across staff, monitoring purposes."""
     conn = get_db_connection()
     try:
         result = transaction_service.list_open_checkout_sessions(conn)
@@ -615,8 +653,9 @@ def list_open_checkout_sessions():
 @transactions_bp.route("/checkout-sessions/<int:id>/checkout", methods=["POST"])
 @login_required
 def checkout_session(id):
-    """The actual commit point - nothing lands in `transactions` until
-    this runs; everything scanned before it is just a reservation."""
+    """POST - ang actual commit point - wala pay ma-landing sa
+    `transactions` table hangtod ni mo-run; ang tanan gi-scan before ni kay
+    reservation ra."""
     data, error = get_json_or_error()
     if error:
         return error
@@ -644,6 +683,8 @@ def checkout_session(id):
 @login_required
 @limiter.limit("20 per minute")
 def cancel_checkout_session(id):
+    """POST - i-cancel ang in-progress checkout session (walay commit
+    nga nahitabo, safe ra i-discard)."""
     conn = get_db_connection()
     try:
         result, error = transaction_service.cancel_checkout_session(conn, id, g.staff["id"])
