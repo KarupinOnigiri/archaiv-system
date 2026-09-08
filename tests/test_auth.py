@@ -609,3 +609,31 @@ def test_dashboard_asset_status_includes_overdue(as_admin):
     # unrelated OVERDUE stat card, which already said "Overdue" before).
     assert 'bg-error shrink-0"></span>Overdue' in html
     assert "['Available', 'Borrowed', 'Overdue', 'Reserved', 'Maintenance']" in html
+
+
+def test_sidebar_nav_has_tightened_spacing_for_no_scrollbar(as_admin):
+    """Regression test for a reported scrollbar on #sidebar-nav after the
+    4-group regrouping added extra vertical space (group labels) - the
+    fix tightens nav/link/label spacing via CSS rather than shrinking
+    just one of them; this checks those specific override rules landed,
+    not the resulting pixel layout (no real layout engine in a plain
+    Flask test client)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "#sidebar-nav {" in html and "padding-top: 0.5rem;" in html
+    assert "#sidebar-nav .sidebar-link {" in html and "padding-top: 4px;" in html
+    assert "#sidebar-nav .nav-group-label {" in html and "height: 1rem;" in html
+
+
+def test_sidebar_collapsed_links_are_centered_squares(as_admin):
+    """Regression test for the collapsed-rail active highlight being an
+    off-center, disproportionate box (shrink-to-content width) instead of
+    a centered square matching the icon column - see the CSS rule fixing
+    it (fixed width + auto margins + justify-content:center)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "#sidebar.collapsed .sidebar-link," in html
+    assert "width: 2.75rem;" in html
+    assert "justify-content: center;" in html

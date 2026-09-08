@@ -861,3 +861,32 @@ def test_import_rejects_invalid_mode(as_admin):
     resp = csv_upload(client, csrf, "name\nX\n", mode="not-a-real-mode")
     assert resp.status_code == 200
     assert b"mode must be" in resp.data.lower()
+
+
+# # # HEADER OVERFLOW MENU --------------------------------------------------
+
+
+def test_inventory_page_import_export_icons_not_swapped_back(as_admin):
+    """Import shows a download-into-a-tray arrow, Export an
+    upload-out-of-a-tray arrow - regression test for explicit feedback
+    that an earlier attempt had these backwards."""
+    client, csrf, _ = as_admin
+    resp = client.get("/assets")
+    html = resp.get_data(as_text=True)
+    import_start = html.index('id="import-csv-btn"')
+    export_start = html.index('id="export-data-btn"')
+    import_block = html[import_start:import_start + 600]
+    export_block = html[export_start:export_start + 600]
+    assert "M7 10l5 5 5-5" in import_block  # downward chevron
+    assert "M17 8l-5-5-5 5" in export_block  # upward chevron
+
+
+def test_inventory_page_overflow_menu_is_squircle_not_circle(as_admin):
+    """The "More actions" button became a rounded-square (squircle) icon
+    button instead of a perfect circle, to match "Add New Item"'s own
+    soft-rounded-corner look."""
+    client, csrf, _ = as_admin
+    resp = client.get("/assets")
+    html = resp.get_data(as_text=True)
+    assert "btn-square rounded-xl" in html
+    assert "btn-outline btn-sm btn-circle" not in html

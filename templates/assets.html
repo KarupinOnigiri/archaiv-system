@@ -14,13 +14,16 @@
            for most under equal-weight clutter. Now: one primary action
            (Add New Item) + everything else tucked into this overflow
            menu, same dropdown/kebab convention the table's own row
-           actions already use (assets/_table.html). Import/Export icons
-           below are swapped from before too - Import now shows an
-           upload-into-the-app arrow, Export a download-out-of-the-app
-           arrow, matching the more common convention for those two words
-           (they'd ended up backwards). -->
+           actions already use (assets/_table.html). Import shows a
+           download-into-a-tray arrow (bringing a CSV file in), Export
+           shows an upload-out-of-a-tray arrow (sending data back out) -
+           per explicit feedback on an earlier swap of these two. -->
       <div class="dropdown dropdown-end">
-        <label tabindex="0" class="btn btn-outline btn-sm btn-circle" role="button" data-tooltip="More actions" aria-label="More inventory actions">
+        <!-- Squircle (rounded square), not a perfect circle - btn-square
+             keeps it icon-button-sized (equal w/h) while rounded-xl gives
+             it the same soft-rounded-corner language as "Add New Item"
+             right next to it, instead of the harder circular shape. -->
+        <label tabindex="0" class="btn btn-outline btn-sm btn-square rounded-xl" role="button" data-tooltip="More actions" aria-label="More inventory actions">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
         </label>
         <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow border border-base-300 mt-2 w-56 p-2 z-50">
@@ -35,7 +38,7 @@
           <li>
             <a id="import-csv-btn" class="flex items-center gap-2" data-tooltip="Import CSV (Alt+I)"
                hx-get="/api/v1/assets/import-form" hx-target="#modal-container" hx-swap="innerHTML">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
               Import CSV
             </a>
           </li>
@@ -43,7 +46,7 @@
           <li>
             <a id="export-data-btn" class="flex items-center gap-2" data-tooltip="Export data (Alt+E)"
                hx-get="/api/v1/assets/export-form" hx-target="#modal-container" hx-swap="innerHTML" hx-include="#show-archived-toggle">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
               Export Data
             </a>
           </li>
