@@ -80,6 +80,15 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
             409,
         )
 
+    # The SELECT above is just a fast-path/friendly-message check - it holds
+    # no lock, so two staff booking the same window at the same moment could
+    # both pass it (TOCTOU). Closing that: INSERT first (SQLite's WAL mode
+    # serializes writers - this statement now holds the write lock until
+    # commit/rollback, so a concurrent create_reservation() blocks here up to
+    # busy_timeout instead of racing past), then re-check for an overlap a
+    # SECOND time excluding this new row's own id. If a concurrent request
+    # beat us to it and already committed, we now see it and roll back
+    # instead of leaving two overlapping bookings on the same asset.
     try:
         cursor = conn.execute(
             """
@@ -89,6 +98,24 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
             (asset_id, member_id, staff["id"], start_at, end_at, notes),
         )
         reservation_id = cursor.lastrowid
+
+        overlap = conn.execute(
+            """
+            SELECT id FROM reservations
+            WHERE asset_id = ? AND status = 'scheduled' AND id != ?
+              AND NOT (end_at <= ? OR start_at >= ?)
+            """,
+            (asset_id, reservation_id, start_at, end_at),
+        ).fetchone()
+        if overlap is not None:
+            conn.rollback()
+            return None, (
+                jsonify(
+                    {"error": f"{asset['name']} already has an overlapping reservation", "reservation_id": overlap["id"]}
+                ),
+                409,
+            )
+
         conn.commit()
     except sqlite3.IntegrityError as e:
         conn.rollback()

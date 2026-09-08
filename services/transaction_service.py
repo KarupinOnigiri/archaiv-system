@@ -1208,10 +1208,13 @@ def _find_open_transaction_for_scan(asset_code, member_barcode, conn, rfid_code=
     return transaction, asset, member, None
 
 
-def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
+def _log_return(conn, staff_id, action_target_id, asset, member, result, batch=False):
     """Shared audit_log entry para sa gi-return na asset - naay dungan pang
-    'disposed_asset' log kung disposed ang final condition."""
+    'disposed_asset' log kung disposed ang final condition. Gina-pasa ang
+    conn ngadto sa log_action para dili mag-open og bag-ong connection
+    matag return (importante gyud sa batch_return's per-row loop)."""
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="returned_asset",
         target_table="transactions",
@@ -1225,6 +1228,7 @@ def _log_return(staff_id, action_target_id, asset, member, result, batch=False):
     )
     if result["is_disposed"]:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="disposed_asset",
             target_table="assets",
@@ -1249,7 +1253,7 @@ def return_asset_by_scan(conn, asset_code, member_barcode, staff_id, condition_i
         conn.rollback()
         raise
 
-    _log_return(staff_id, asset["id"], asset, member, result)
+    _log_return(conn, staff_id, asset["id"], asset, member, result)
 
     return {
         "message": "asset returned successfully",
@@ -1376,7 +1380,7 @@ def return_transaction_by_id(conn, transaction_id, staff_id, condition_in, retur
         conn.rollback()
         raise
 
-    _log_return(staff_id, transaction["id"], asset, member, result)
+    _log_return(conn, staff_id, transaction["id"], asset, member, result)
 
     return {
         "message": f"{asset['asset_id']} returned successfully",
@@ -1434,7 +1438,7 @@ def batch_return(conn, items, return_remarks, staff_id):
             continue
 
         returned_ids.append(txn_id)
-        _log_return(staff_id, transaction["id"], asset, member, result, batch=True)
+        _log_return(conn, staff_id, transaction["id"], asset, member, result, batch=True)
 
     return {
         "message": f"{len(returned_ids)} asset(s) returned"

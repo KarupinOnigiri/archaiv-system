@@ -553,6 +553,17 @@ def create_staff(conn, data, staff_id):
     if data["role"] not in VALID_ROLES:
         return None, _no_ctx({"error": f"role must be one of: {', '.join(VALID_ROLES)}"}, 400)
 
+    # Username never changes after creation ug gina-gamit isip filename
+    # component sa profile photo uploads (utils/uploads.py's
+    # save_staff_photo) - safe charset ra i-allow diri para dili
+    # kinahanglan pa mag-sanitize downstream, ug consistent sa naa nay
+    # client-side pattern sa create-staff form.
+    username = (data.get("username") or "").strip()
+    if not (3 <= len(username) <= 30) or not re.match(r"^[A-Za-z0-9_.-]+$", username):
+        return None, _no_ctx(
+            {"error": "username must be 3-30 characters: letters, numbers, or . _ - (no spaces)"}, 400
+        )
+
     member = conn.execute("SELECT id FROM members WHERE id = ?", (data["member_id"],)).fetchone()
     if member is None:
         return None, _no_ctx({"error": "member_id does not match an existing member"}, 404)
@@ -569,7 +580,7 @@ def create_staff(conn, data, staff_id):
             """,
             (
                 data.get("member_id"),
-                data["username"],
+                username,
                 hashed_password,
                 data["role"],
                 data.get("assigned_start"),
@@ -1915,6 +1926,14 @@ def _import_staff_rows(reader, header_map, conn, acting_staff_id, created, error
 
         if len(password) < 8:
             errors.append({"row": row_num, "error": "password must be at least 8 characters"})
+            continue
+
+        # Same charset rule as create_staff() - kay gina-gamit sab ni sa
+        # profile photo filename later (save_staff_photo).
+        if not (3 <= len(username) <= 30) or not re.match(r"^[A-Za-z0-9_.-]+$", username):
+            errors.append(
+                {"row": row_num, "error": "username must be 3-30 characters: letters, numbers, or . _ - (no spaces)"}
+            )
             continue
 
         member = conn.execute(

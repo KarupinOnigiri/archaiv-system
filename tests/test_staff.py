@@ -66,6 +66,25 @@ def test_add_staff_weak_password_is_rejected(as_admin, conn, department_id):
     assert resp.status_code == 400
 
 
+def test_add_staff_unsafe_username_is_rejected(as_admin, conn, department_id):
+    """username is later used as a filename component for profile-photo
+    uploads (utils/uploads.py's save_staff_photo) - a path separator or
+    similar must be rejected before it ever reaches the DB."""
+    client, csrf, _ = as_admin
+    member_id = make_member(conn, department_id, member_type="trainer")
+    resp = client.post(
+        "/api/v1/staff/add",
+        json={
+            "member_id": member_id,
+            "username": "../../etc/passwd",
+            "password": TEST_PASSWORD,
+            "role": "tool_keeper",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 400
+
+
 def test_add_staff_duplicate_username_is_rejected(as_admin, conn, department_id):
     client, csrf, _ = as_admin
     make_staff(conn, department_id, "tool_keeper", "dupe_username")
@@ -465,7 +484,7 @@ def test_import_preview_does_not_persist(as_admin, conn, member_id):
 
 def test_import_row_error_for_unknown_member_identifier(as_admin):
     client, csrf, _ = as_admin
-    content = f"member_identifier,username,password,role\nNO-SUCH-MEMBER,x,{TEST_PASSWORD},tool_keeper\n"
+    content = f"member_identifier,username,password,role\nNO-SUCH-MEMBER,testuser,{TEST_PASSWORD},tool_keeper\n"
     resp = csv_upload(client, csrf, content, mode="commit")
     assert resp.status_code == 200
     assert b"No member found" in resp.data

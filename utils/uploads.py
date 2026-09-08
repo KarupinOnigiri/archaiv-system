@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import logging
 from PIL import Image, UnidentifiedImageError
@@ -124,15 +125,19 @@ def save_asset_image(file_storage, asset_code):
 def save_staff_photo(file_storage, staff_username):
     """I-validate ug i-save ang profile photo sa staff; same contract sa
     save_asset_image, staff_username ra ang gigamit nga key instead of
-    asset code."""
+    asset code. Unlike asset_code (server-generated), staff_username kay
+    admin-typed ug walay charset restriction sa create-staff form's own
+    validation - i-sanitize una dinhi (safe charset ra) aron dili ma-abuse
+    isip path component (e.g. naay "/" o "..") sa filename."""
     error = validate_image_upload(file_storage)
     if error:
         return None, error
 
     os.makedirs(STAFF_PHOTO_DIR, exist_ok=True)
 
+    safe_username = re.sub(r"[^A-Za-z0-9_.-]", "_", staff_username)[:50] or "staff"
     ext = _extension(file_storage.filename)
-    filename = f"{staff_username}-{secrets.token_hex(4)}.{ext}"
+    filename = f"{safe_username}-{secrets.token_hex(4)}.{ext}"
     relative_path = os.path.join(STAFF_PHOTO_SUBDIR, filename).replace(os.sep, "/")
     absolute_path = os.path.join(STAFF_PHOTO_DIR, filename)
 

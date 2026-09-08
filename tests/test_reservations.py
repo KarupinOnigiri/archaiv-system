@@ -9,8 +9,11 @@ Advisory only (see reservation_service's module docstring): a reservation
 never touches assets.status, and doesn't block a normal checkout.
 """
 
+import threading
 from datetime import date, timedelta
 
+import app as app_module
+from database import get_db_connection
 from services import reservation_service
 from tests.conftest import make_asset, make_member, login_as
 from tests.test_transactions import start_session, add_item, finish, barcode_of
@@ -363,6 +366,44 @@ def test_upcoming_reservations_for_asset(conn, asset_id, member_id, admin_id):
     upcoming = reservation_service.get_upcoming_reservations_for_asset(conn, asset_id)
     assert len(upcoming) == 1
     assert upcoming[0]["member_id"] == member_id
+
+
+# # # CONCURRENCY (TOCTOU race on the overlap check) --------------------------
+
+
+def test_concurrent_overlapping_reservations_only_one_succeeds(conn, asset_id, member_id, admin_id):
+    """Two staff booking the same overlapping window on the same asset at
+    the same instant must not both succeed - regression test for the
+    insert-then-reverify race fix in create_reservation()."""
+    enable_reservations(conn)
+    staff = conn.execute("SELECT * FROM staff WHERE id = ?", (admin_id,)).fetchone()
+
+    results = [None, None]
+
+    def attempt(index):
+        with app_module.app.app_context():
+            thread_conn = get_db_connection()
+            try:
+                _, error = reservation_service.create_reservation(
+                    thread_conn, asset_id, member_id, START, END, staff
+                )
+                results[index] = error
+            finally:
+                thread_conn.close()
+
+    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    successes = sum(1 for e in results if e is None)
+    assert successes == 1, f"expected exactly one reservation to succeed, got results={results}"
+
+    count = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM reservations WHERE asset_id = ? AND status = 'scheduled'", (asset_id,)
+    ).fetchone()["cnt"]
+    assert count == 1
 
 
 # # # SWEEP EXPIRED -------------------------------------------------------------
