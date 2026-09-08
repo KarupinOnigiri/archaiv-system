@@ -62,6 +62,8 @@ def reserve_form(id):
         return jsonify({"error": "Asset not found"}), 404
     if asset["asset_type"] == "consumable":
         return jsonify({"error": "Consumables can't be reserved"}), 400
+    if asset["status"] == "maintenance":
+        return jsonify({"error": "This asset is in maintenance and can't be reserved right now"}), 400
     return render_template("reservations/_reserve_modal.html", asset=asset, error=None)
 
 
@@ -119,6 +121,21 @@ def cancel_reservation(id):
     if error:
         return error
     return jsonify(result)
+
+
+@reservations_bp.route("/reservations/<int:id>/details-modal")
+@login_required
+def reservation_details_modal(id):
+    """GET - row-click modal sa Reservations table showing full detail sa
+    usa ka reservation. Delegates to reservation_service.get_reservation_details()."""
+    conn = get_db_connection()
+    try:
+        reservation, error = reservation_service.get_reservation_details(conn, id, g.staff)
+    finally:
+        conn.close()
+    if error:
+        return error
+    return render_template("reservations/_details_modal.html", r=reservation, staff=g.staff)
 
 
 @reservations_bp.route("/reservations")

@@ -613,14 +613,21 @@
     <p class="text-sm text-base-content/60 max-w-xs">Please open this on a desktop or laptop. If you're already on one, try widening the browser window.</p>
   </div>
 
-  <!-- Ordered by how often you'd actually reach for each one: overview, data, workflow, action queues, then Reports last. Admin tabs below follow the same idea, Settings always last. -->
+  <!-- Ordered by how often you'd actually reach for each one: overview, data, workflow, action queues, then Reports last. Admin tabs below follow the same idea, Settings always last.
+       Grouped into 3 sections (Operations/People/Admin) with a small label +
+       divider between each, so a 12-item flat column has natural stopping
+       points instead of forcing a full scan every time - see the reported
+       sidebar feedback this addresses. "Notifications" was its own row here
+       before; dropped since the top-bar bell (same badge count, "See
+       previous notifications" link to /notifications already in its
+       dropdown) is the same entry point twice over - keeping just the bell
+       removes the "which one do I click" ambiguity. -->
   {% set nav_items = [
     ("Dashboard", "/", "grid"),
     ("Inventory", "/assets", "box"),
-    ("Members", "/members", "users"),
     ("Borrow & Return", "/transactions", "swap"),
+    ("Members", "/members", "users"),
     ("Approvals", "/requests", "check"),
-    ("Notifications", "/notifications", "bell"),
     ("Reports", "/reports", "chart")
   ] %}
 
@@ -629,11 +636,15 @@
   {% for label, href, icon in nav_items %}
     {% if request.path == href %}{% set ns.current_label = label %}{% endif %}
   {% endfor %}
+  {% if request.path == '/notifications' %}{% set ns.current_label = "Notifications" %}{% endif %}
   {% if request.path == '/staff' %}{% set ns.current_label = "Staff" %}{% endif %}
   {% if request.path == '/monitoring' %}{% set ns.current_label = "Monitoring" %}{% endif %}
+  {% if request.path == '/reservations' %}{% set ns.current_label = "Reservations" %}{% endif %}
   {% if request.path == '/audit-log' %}{% set ns.current_label = "Activity Log" %}{% endif %}
   {% if request.path == '/system' %}{% set ns.current_label = "System" %}{% endif %}
   {% if request.path == '/feedback' %}{% set ns.current_label = "Feedback" %}{% endif %}
+  {# People group can theoretically be empty (Members/Requests flags both off, non-admin role) - only show its label/divider when at least one item under it will render. #}
+  {% set show_people_group = feature_flags.members or feature_flags.requests or (staff and staff.role == "admin") %}
   <!-- Barcode Labels has no sidebar tab of its own (System is its only entry point), so it gets a 3-level breadcrumb instead of the usual 2. -->
   {% if request.path == '/barcodes' %}
     {% set ns.current_label = "Barcode Labels" %}
@@ -673,7 +684,7 @@
          Alt+Shift+S is already Edge's Web Capture / Snipping Tool combo. #}
       {% set SIDEBAR_SHORTCUT_KEYS = {
         'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
-        'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
+        'Approvals': 'A', 'Reports': 'R',
         'Staff': 'K', 'Monitoring': 'O', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y',
         'Reservations': 'V'
       } %}
@@ -694,7 +705,22 @@
       <nav id="sidebar-nav" hx-swap-oob="true"
            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
            class="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3 space-y-1">
+
+        {% macro nav_group_label(text) %}
+        <!-- Always-visible divider (collapsed rail keeps its own natural
+             stopping points even icon-only) + a label that hides itself
+             along with every other .sidebar-label when collapsed. first
+             group skips the top divider/margin - nothing above it to
+             separate from. -->
+        <div class="{% if text != "Operations" %}border-t border-base-200 mt-2 pt-2{% endif %} px-3 pb-1">
+          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/40 uppercase">{{ text }}</p>
+        </div>
+        {% endmacro %}
+
+        {{ nav_group_label("Operations") }}
         {% for label, href, icon in nav_items %}
+        {% if label == "Members" %}{{ nav_group_label("People") if show_people_group else "" }}{% endif %}
+        {% if label == "Reports" %}{{ nav_group_label("Admin") }}{% endif %}
         {% if label != "Reports" or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
         {% if href != "/assets" or feature_flags.assets %}
         {% if href != "/members" or feature_flags.members %}
@@ -717,29 +743,17 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
             {% elif icon == "chart" %}
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>
-            {% elif icon == "bell" %}
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             {% endif %}
             {% if label == "Approvals" and pending_approvals_count %}
             <!-- Flips to white-on-blue when the row is already active/blue, so the dot doesn't disappear into it. -->
             <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
                          {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
             {% endif %}
-            {% if label == "Notifications" and unread_notifications_count %}
-            <!-- Same active-row color flip as the expanded pill badge below. -->
-            <span class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none
-                         {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if unread_notifications_count > 9 else unread_notifications_count }}</span>
-            {% endif %}
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">{{ label }}</span>
           {% if label == "Approvals" and pending_approvals_count %}
           <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
                        {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ "9+" if pending_approvals_count > 9 else pending_approvals_count }}</span>
-          {% endif %}
-          {% if label == "Notifications" and unread_notifications_count %}
-          <!-- Flips to white-on-blue when the row itself is already blue (active), so the badge doesn't vanish into it. -->
-          <span class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0
-                       {% if request.path == href %}bg-white text-primary{% else %}bg-primary text-primary-content{% endif %}">{{ unread_notifications_count }}</span>
           {% endif %}
         </a>
         {% endif %}
@@ -748,9 +762,17 @@
         {% endif %}
         {% endif %}
         {% endif %}
-        {% endfor %}
-
-        {% if staff and staff.role == "admin" %}
+        {% if label == "Borrow & Return" and staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
+        <a href="/reservations" data-tooltip="{{ tab_tooltip('Reservations') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Reservations'] }}" aria-label="Reservations"
+           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
+                  {% if request.path == '/reservations' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
+          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+          </span>
+          <span class="sidebar-label whitespace-nowrap overflow-hidden">Reservations</span>
+        </a>
+        {% endif %}
+        {% if label == "Members" and staff and staff.role == "admin" %}
         <a href="/staff" data-tooltip="{{ tab_tooltip('Staff') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Staff'] }}" aria-label="Staff"
            class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
                   {% if request.path == '/staff' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
@@ -760,6 +782,7 @@
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Staff</span>
         </a>
         {% endif %}
+        {% endfor %}
 
         {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
         <a href="/monitoring" data-tooltip="{{ tab_tooltip('Monitoring') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Monitoring'] }}" aria-label="Monitoring"
@@ -769,17 +792,6 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 000 7"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M5.5 5.5a9 9 0 000 13"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Monitoring</span>
-        </a>
-        {% endif %}
-
-        {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
-        <a href="/reservations" data-tooltip="{{ tab_tooltip('Reservations') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Reservations'] }}" aria-label="Reservations"
-           class="sidebar-link flex items-center gap-3 px-3 py-[7px] rounded-lg text-sm font-medium
-                  {% if request.path == '/reservations' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
-          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
-          </span>
-          <span class="sidebar-label whitespace-nowrap overflow-hidden">Reservations</span>
         </a>
         {% endif %}
 
@@ -1882,7 +1894,7 @@
          browser/OS binding instead of another mnemonic first-letter. #}
       {% set SIDEBAR_SHORTCUT_KEYS = {
         'Dashboard': 'D', 'Inventory': 'I', 'Members': 'M', 'Borrow & Return': 'B',
-        'Approvals': 'A', 'Notifications': 'N', 'Reports': 'R',
+        'Approvals': 'A', 'Reports': 'R',
         'Staff': 'K', 'Monitoring': 'O', 'Activity Log': 'L', 'Feedback': 'F', 'System': 'Y',
         'Reservations': 'V'
       } %}
@@ -1952,7 +1964,7 @@
               {{ srow('Open this panel', ['?']) }}
               {{ srow('Close the open dialog', ['Esc']) }}
               {{ srow('Collapse / expand sidebar', ['Ctrl+E']) }}
-              {% for tab_label in ['Dashboard', 'Inventory', 'Members', 'Borrow & Return', 'Approvals', 'Notifications', 'Reports'] %}
+              {% for tab_label in ['Dashboard', 'Inventory', 'Members', 'Borrow & Return', 'Approvals', 'Reports'] %}
                 {% if tab_label != 'Reports' or (staff and staff.role in ["admin", "in_charge", "tool_keeper"]) %}
                 {% if tab_label != 'Inventory' or feature_flags.assets %}
                 {% if tab_label != 'Members' or feature_flags.members %}
@@ -2075,6 +2087,7 @@
             {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
             {% call shortcut_category('Reservations', 'calendar') %}
               {{ srow('New reservation', ['Alt+N']) }}
+              {{ srow('Refresh list', ['Alt+R']) }}
               {{ srow('Filter: Scheduled / Fulfilled / Cancelled / Expired / All', ['1', '2', '3', '4', '5']) }}
               {% if staff.role in ["admin", "in_charge"] %}
               {{ srow('Toggle "Only mine"', ['`']) }}

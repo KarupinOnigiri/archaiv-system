@@ -9245,6 +9245,9 @@
       }
     }
   }
+  .bg-\[\#9ca3af\] {
+    background-color: #9ca3af;
+  }
   .bg-\[\#322F35\] {
     background-color: #322F35;
   }
@@ -11034,6 +11037,12 @@
     color: color-mix(in srgb, #fff 70%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-white) 70%, transparent);
+    }
+  }
+  .text-white\/80 {
+    color: color-mix(in srgb, #fff 80%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-white) 80%, transparent);
     }
   }
   .capitalize {

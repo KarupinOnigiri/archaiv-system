@@ -19,6 +19,9 @@
 
   <div class="bg-base-100 rounded-xl border border-base-300 p-5">
     <div class="flex flex-wrap items-center gap-3 mb-5">
+      <button type="button" id="refresh-reservations-btn" class="btn btn-ghost btn-sm btn-circle shrink-0" data-tooltip="Refresh list (Alt+R)" aria-label="Refresh reservations list" onclick="refreshReservationsTable()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
       <select id="reservations-status-filter" name="status" class="select select-bordered select-sm w-40"
               hx-get="/api/v1/reservations" hx-trigger="change" hx-target="#reservations-table-container" hx-swap="innerHTML"
               hx-include="#reservations-mine-filter"
@@ -42,7 +45,7 @@
 
     <div id="reservations-table-container"
          hx-get="/api/v1/reservations"
-         hx-trigger="load"
+         hx-trigger="load, reservations-refreshed from:body"
          hx-target="#reservations-table-container"
          hx-swap="innerHTML"
          hx-vals='{"limit": {{ limit }}, "offset": {{ offset }}, "status": "{{ status }}", "mine": "{{ '1' if mine else '' }}"}'>
@@ -70,6 +73,10 @@ function isModalOpen() {
 // Same single-slot pageKeydownHandler pattern as Inventory/Members/etc (see
 // static/js/ui.js) - this page had none until now, so Reservations was
 // silently missing from every keyboard-driven workflow.
+function refreshReservationsTable() {
+  document.body.dispatchEvent(new Event('reservations-refreshed', { bubbles: true }));
+}
+
 window.pageKeydownHandler = function (e) {
   // Alt+N - open "New Reservation", same shortcut Assets/Members/Staff use
   // for their own primary create action. Checked before the ctrl/meta/alt
@@ -79,6 +86,15 @@ window.pageKeydownHandler = function (e) {
     if (btn && !isModalOpen()) {
       e.preventDefault();
       btn.click();
+    }
+    return;
+  }
+
+  // Alt+R - refresh the table, same mnemonic letter idea as N above.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'r') {
+    if (!isModalOpen()) {
+      e.preventDefault();
+      refreshReservationsTable();
     }
     return;
   }

@@ -364,7 +364,7 @@
         Mark Calibrated
       </button>
       {% endif %}
-      {% if feature_flags.reservations and asset.asset_type != 'consumable' and not asset.deleted_at %}
+      {% if feature_flags.reservations and asset.asset_type != 'consumable' and not asset.deleted_at and asset.status != 'maintenance' %}
       <button type="button" id="asset-details-reserve-btn" class="btn btn-outline" data-tooltip="Reserve for Later (V)"
               hx-get="/api/v1/assets/{{ asset.id }}/reserve-form"
               hx-target="#modal-container"

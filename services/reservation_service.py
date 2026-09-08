@@ -64,6 +64,8 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
         return None, (jsonify({"error": "Cannot reserve a deleted asset"}), 400)
     if asset["asset_type"] == "consumable":
         return None, (jsonify({"error": "Consumables can't be reserved - only serialized assets can"}), 400)
+    if asset["status"] == "maintenance":
+        return None, (jsonify({"error": "This asset is in maintenance and can't be reserved right now"}), 400)
 
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None:
@@ -291,6 +293,49 @@ def get_reservations_context(conn, args, limit, offset, staff):
     }, None
 
 
+def get_reservation_details(conn, reservation_id, staff):
+    """Full detail sa usa ka reservation - para sa row-click modal sa
+    Reservations table. Parehas role scoping sa get_reservations_context:
+    tool_keeper makakita ra sa iyang kaugalingong gi-book, admin/in_charge
+    makakita sa tanan. Naa nay linked transaction info kung 'fulfilled' na
+    (fulfilled_transaction_id).
+
+    Returns: tuple (reservation_dict, error)."""
+    row = conn.execute(
+        """
+        SELECT reservations.*,
+               assets.asset_id AS asset_code, assets.name AS asset_name,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id AS member_barcode,
+               booked_by.username AS staff_username,
+               cancelled_by.username AS cancelled_by_username
+        FROM reservations
+        JOIN assets ON reservations.asset_id = assets.id
+        JOIN members ON reservations.member_id = members.id
+        JOIN staff AS booked_by ON reservations.staff_id = booked_by.id
+        LEFT JOIN staff AS cancelled_by ON reservations.cancelled_by_staff_id = cancelled_by.id
+        WHERE reservations.id = ?
+        """,
+        (reservation_id,),
+    ).fetchone()
+    if row is None:
+        return None, (jsonify({"error": "Reservation not found"}), 404)
+    if staff["role"] not in ("admin", "in_charge") and row["staff_id"] != staff["id"]:
+        return None, (jsonify({"error": "You can only view your own reservations"}), 403)
+
+    result = dict(row)
+    result["fulfilled_transaction"] = None
+    if row["fulfilled_transaction_id"] is not None:
+        txn = conn.execute(
+            "SELECT id, status, time_out, time_in, due_date FROM transactions WHERE id = ?",
+            (row["fulfilled_transaction_id"],),
+        ).fetchone()
+        if txn is not None:
+            result["fulfilled_transaction"] = dict(txn)
+
+    return result, None
+
+
 def get_upcoming_reservations_for_asset(conn, asset_id, limit=5):
     """Gigamit sa "RESERVED FOR" banner sa details modal - ang mga
     reservation ra nga importante gihapon ('scheduled', wala pa
@@ -322,6 +367,10 @@ def search_reservable_assets(conn, q, limit=30):
     og pinakabag-o nga assets (browse-all case, parehas sa checkout's
     "Show available members").
 
+    Naa nay filter pud sa status != 'maintenance' - dili logic nga i-offer
+    ang asset sa picker kung dili man gyud siya ma-reserve (see
+    create_reservation's own guard, kani ra ang UI-side nga counterpart).
+
     Returns: list[dict] {id, asset_id, name, category, status}."""
     q = (q or "").strip()
     if q:
@@ -333,6 +382,7 @@ def search_reservable_assets(conn, q, limit=30):
             FROM assets
             LEFT JOIN categories ON categories.id = assets.category_id
             WHERE assets.deleted_at IS NULL AND assets.asset_type != 'consumable'
+              AND assets.status != 'maintenance'
               AND (
                   UPPER(assets.name) LIKE ? ESCAPE '\\'
                   OR UPPER(assets.asset_id) LIKE ? ESCAPE '\\'
@@ -351,6 +401,7 @@ def search_reservable_assets(conn, q, limit=30):
             FROM assets
             LEFT JOIN categories ON categories.id = assets.category_id
             WHERE assets.deleted_at IS NULL AND assets.asset_type != 'consumable'
+              AND assets.status != 'maintenance'
             ORDER BY assets.name
             LIMIT ?
             """,

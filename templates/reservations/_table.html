@@ -13,7 +13,11 @@
   </thead>
   <tbody>
     {% for r in reservations_list %}
-    <tr class="border-t border-base-200 hover:bg-base-200/40 transition-colors">
+    <tr class="border-t border-base-200 hover:bg-base-200/40 transition-colors cursor-pointer"
+        hx-get="/api/v1/reservations/{{ r.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="beforeend"
+        hx-trigger="click[!target.closest('a,button')]">
       <td class="py-2 text-sm">
         <a class="link link-hover font-medium" hx-get="/api/v1/assets/{{ r.asset_id }}/details-modal" hx-target="#modal-container" hx-swap="beforeend">
           {{ r.asset_name }}
@@ -67,7 +71,7 @@ async function cancelReservationRow(id, btn) {
       return;
     }
     showToast('Reservation cancelled', 'success');
-    htmx.trigger(document.getElementById('reservations-table-container'), 'load');
+    document.body.dispatchEvent(new Event('reservations-refreshed', { bubbles: true }));
     // Inventory's "Booked <date>" badge for this asset should disappear
     // without a manual refresh, same as every other status-changing
     // action in the app.

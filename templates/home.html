@@ -17,14 +17,33 @@
        every theme (not var(--color-primary-content) - that happens to
        already be white in all three themes today, but this card wants
        white specifically, not "whatever the theme's contrast token
-       resolves to" if a theme ever changed it). -->
-  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl px-6 py-4 bg-primary">
+       resolves to" if a theme ever changed it).
+       Slimmer than before (py-3, not py-4) and the subtitle is no longer
+       static filler ("Here's what's happening...") - it now surfaces the
+       actual thing that needs attention (overdue loans / pending
+       approvals) when there is one, so the stat cards below aren't just
+       repeating a header that already said nothing. Falls back to a plain
+       "All caught up" when there's genuinely nothing to flag. -->
+  {% set show_overdue_msg = feature_flags.transactions and dash_loans_overdue %}
+  {% set show_approvals_msg = staff.role in ["admin", "in_charge"] and pending_approvals_count %}
+  <div class="shrink-0 flex items-center justify-between gap-4 rounded-2xl px-6 py-3 bg-primary">
     <div class="min-w-0">
-      <h2 id="dash-greeting" class="text-xl font-bold truncate text-white">Welcome back</h2>
-      <p class="text-sm text-white/70 mt-0.5">Here's what's happening across the toolroom today.</p>
+      <h2 id="dash-greeting" class="text-lg font-bold truncate text-white">Welcome back</h2>
+      <p class="text-sm text-white/80 mt-0.5">
+        {% if show_overdue_msg and show_approvals_msg %}
+        <a href="/transactions?status=overdue" class="hover:underline">{{ dash_loans_overdue }} overdue loan{{ 's' if dash_loans_overdue != 1 }}</a> and
+        <a href="/requests" class="hover:underline">{{ pending_approvals_count }} pending approval{{ 's' if pending_approvals_count != 1 }}</a> need attention.
+        {% elif show_overdue_msg %}
+        <a href="/transactions?status=overdue" class="hover:underline font-medium">{{ dash_loans_overdue }} overdue loan{{ 's' if dash_loans_overdue != 1 }}</a> need{{ 's' if dash_loans_overdue == 1 }} attention.
+        {% elif show_approvals_msg %}
+        <a href="/requests" class="hover:underline font-medium">{{ pending_approvals_count }} pending approval{{ 's' if pending_approvals_count != 1 }}</a> waiting on you.
+        {% else %}
+        All caught up - nothing needs attention right now.
+        {% endif %}
+      </p>
     </div>
     <div class="text-right shrink-0">
-      <p id="dash-clock" class="text-2xl font-bold tabular-nums leading-none text-white"></p>
+      <p id="dash-clock" class="text-xl font-bold tabular-nums leading-none text-white"></p>
       <p id="dash-date" class="text-xs text-white/70 mt-1"></p>
     </div>
   </div>
@@ -207,7 +226,8 @@
               <span class="font-semibold shrink-0">{{ dash_assets_reserved }}</span>
             </div>
             <div class="flex items-center justify-between gap-2">
-              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-error shrink-0"></span>Maintenance</span>
+              <!-- Matches the chart's own hardcoded neutral gray for this slice (see dashRenderStatusChart's comment) - not bg-error, red stays reserved for the Overdue signal. -->
+              <span class="flex items-center gap-1.5 text-base-content/60 truncate"><span class="w-2 h-2 rounded-full bg-[#9ca3af] shrink-0"></span>Maintenance</span>
               <span class="font-semibold shrink-0">{{ dash_assets_maintenance }}</span>
             </div>
           </div>
@@ -569,13 +589,19 @@ function dashRenderStatusChart() {
   // ring itself always visible, same as the legend numbers already do.
   const total = data.reduce((sum, n) => sum + n, 0);
   const chartData = total === 0 ? [1] : data;
+  // Maintenance uses a fixed neutral gray, not --color-error (red) - red is
+  // reserved for the Overdue signal elsewhere on this dashboard (the
+  // OVERDUE stat card), and 3 assets sitting in routine maintenance isn't
+  // actually a warning/error state the way that color reads as. Hardcoded
+  // rather than a theme var since it's deliberately neutral across every
+  // theme, not meant to track the semantic palette the other 3 slices do.
   const colors = total === 0
     ? [dashThemeColor('--color-base-300')]
     : [
         dashThemeColor('--color-success'),
         dashThemeColor('--color-info'),
         dashThemeColor('--color-warning'),
-        dashThemeColor('--color-error'),
+        '#9ca3af',
       ];
   window.__dashStatusChart = new Chart(canvas, {
     type: 'doughnut',

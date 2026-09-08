@@ -144,25 +144,33 @@
           {% if qty == 0 %}Out of Stock{% elif low_stock %}Low{% else %}In Stock{% endif %}
         </span>
         {% else %}
-        <span class="px-2.5 py-1 rounded-full text-xs font-medium
-          {% if asset.status == 'available' %}bg-success/15 text-success
-          {% elif asset.status == 'borrowed' %}bg-info/15 text-info
-          {% elif asset.status == 'maintenance' %}bg-error/15 text-error
-          {% else %}bg-warning/15 text-warning{% endif %}">
-          {{ asset.status | capitalize }}
-        </span>
-        {% if asset.status != 'maintenance' and asset.next_maintenance_due and asset.next_maintenance_due <= maintenance_due_soon_cutoff %}
-        {% set overdue = asset.next_maintenance_due <= today %}
-        <span class="ml-1 px-2 py-1 rounded-full text-[11px] font-medium {% if overdue %}bg-error/15 text-error{% else %}bg-warning/15 text-warning{% endif %}"
-              data-tooltip="{{ 'Maintenance overdue' if overdue else 'Maintenance due soon' }} ({{ asset.next_maintenance_due }})">
-          &#128295; {{ asset.next_maintenance_due }}
-        </span>
-        {% endif %}
+        <!-- Status + the short maintenance-due pill share a row (they wrap
+             fine together); "Booked <date>" is long enough to break
+             mid-word when squeezed beside them, so it always gets its own
+             row below instead - see the reported layout issue this fixes. -->
+        <div class="flex flex-wrap items-center gap-1">
+          <span class="px-2.5 py-1 rounded-full text-xs font-medium
+            {% if asset.status == 'available' %}bg-success/15 text-success
+            {% elif asset.status == 'borrowed' %}bg-info/15 text-info
+            {% elif asset.status == 'maintenance' %}bg-error/15 text-error
+            {% else %}bg-warning/15 text-warning{% endif %}">
+            {{ asset.status | capitalize }}
+          </span>
+          {% if asset.status != 'maintenance' and asset.next_maintenance_due and asset.next_maintenance_due <= maintenance_due_soon_cutoff %}
+          {% set overdue = asset.next_maintenance_due <= today %}
+          <span class="px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap {% if overdue %}bg-error/15 text-error{% else %}bg-warning/15 text-warning{% endif %}"
+                data-tooltip="{{ 'Maintenance overdue' if overdue else 'Maintenance due soon' }} ({{ asset.next_maintenance_due }})">
+            &#128295; {{ asset.next_maintenance_due }}
+          </span>
+          {% endif %}
+        </div>
         {% if feature_flags.reservations and asset.next_reservation_start %}
-        <span class="ml-1 px-2 py-1 rounded-full text-[11px] font-medium bg-info/15 text-info"
-              data-tooltip="Reserved starting {{ asset.next_reservation_start }}">
-          &#128197; Booked {{ asset.next_reservation_start }}
-        </span>
+        <div class="mt-1">
+          <span class="px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-info/15 text-info"
+                data-tooltip="Reserved starting {{ asset.next_reservation_start }}">
+            &#128197; Booked {{ asset.next_reservation_start }}
+          </span>
+        </div>
         {% endif %}
         {% endif %}
       </td>

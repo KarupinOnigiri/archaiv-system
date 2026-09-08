@@ -1,0 +1,112 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+    <div class="flex justify-between items-start mb-4">
+      <h3 class="font-bold text-lg">Reservation Details</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <div class="min-w-0">
+        <a class="link link-hover font-semibold truncate block" hx-get="/api/v1/assets/{{ r.asset_id }}/details-modal" hx-target="#modal-container" hx-swap="beforeend">
+          {{ r.asset_name }}
+        </a>
+        <p class="text-xs text-base-content/40">{{ r.asset_code }}</p>
+      </div>
+      {% if r.status == "scheduled" %}
+      <span class="px-2.5 py-1 rounded-full bg-info/10 text-info text-xs font-medium shrink-0">Scheduled</span>
+      {% elif r.status == "fulfilled" %}
+      <span class="px-2.5 py-1 rounded-full bg-success/10 text-success text-xs font-medium shrink-0">Fulfilled</span>
+      {% elif r.status == "cancelled" %}
+      <span class="px-2.5 py-1 rounded-full bg-base-300 text-base-content/60 text-xs font-medium shrink-0">Cancelled</span>
+      {% else %}
+      <span class="px-2.5 py-1 rounded-full bg-warning/10 text-warning text-xs font-medium shrink-0">Expired</span>
+      {% endif %}
+    </div>
+
+    <div class="bg-base-200/50 rounded-xl p-4 space-y-3 text-sm">
+      <div class="flex justify-between gap-3">
+        <span class="text-base-content/50">Member</span>
+        <span class="font-medium text-right">
+          {{ full_name(r.first_name, r.last_name, r.middle_name, r.suffix) }}
+          <span class="block text-xs text-base-content/40 font-normal">{{ r.member_barcode }}</span>
+        </span>
+      </div>
+      <div class="flex justify-between gap-3">
+        <span class="text-base-content/50">Window</span>
+        <span class="font-medium text-right">{{ r.start_at | format_date }} &ndash; {{ r.end_at | format_date }}</span>
+      </div>
+      <div class="flex justify-between gap-3">
+        <span class="text-base-content/50">Booked by</span>
+        <span class="font-medium">@{{ r.staff_username }}</span>
+      </div>
+      <div class="flex justify-between gap-3">
+        <span class="text-base-content/50">Booked on</span>
+        <span class="font-medium">{{ r.created_at | format_date }}</span>
+      </div>
+      {% if r.notes %}
+      <div class="pt-2 border-t border-base-300">
+        <span class="text-base-content/50 block mb-1">Notes</span>
+        <p class="whitespace-pre-wrap">{{ r.notes }}</p>
+      </div>
+      {% endif %}
+      {% if r.status == "cancelled" %}
+      <div class="pt-2 border-t border-base-300 flex justify-between gap-3">
+        <span class="text-base-content/50">Cancelled by</span>
+        <span class="font-medium">{{ '@' ~ r.cancelled_by_username if r.cancelled_by_username else 'Unknown' }} &middot; {{ r.cancelled_at | format_date }}</span>
+      </div>
+      {% endif %}
+      {% if r.fulfilled_transaction %}
+      <div class="pt-2 border-t border-base-300 flex justify-between gap-3">
+        <span class="text-base-content/50">Fulfilled by checkout</span>
+        <span class="font-medium">{{ r.fulfilled_transaction.time_out | format_date }}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <p id="reservation-details-error" class="text-error text-sm mb-2 min-h-5"></p>
+
+    <div class="modal-action">
+      {% if r.status == "scheduled" and (staff.role in ["admin", "in_charge"] or r.staff_id == staff.id) %}
+      <button type="button" id="reservation-details-cancel-btn" class="btn btn-error btn-outline btn-sm"
+              onclick="cancelReservationFromDetails({{ r.id }}, this)">
+        Cancel Reservation
+      </button>
+      {% endif %}
+      <button type="button" class="btn btn-sm" onclick="this.closest('.modal').remove()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Self-contained (not relying on reservations/_table.html's own
+// cancelReservationRow being loaded) - this modal can be opened from
+// anywhere the table row link lives, and should work standalone.
+async function cancelReservationFromDetails(id, btn) {
+  if (!confirm('Cancel this reservation?')) return;
+  btn.disabled = true;
+  const errorEl = document.getElementById('reservation-details-error');
+  errorEl.textContent = '';
+  try {
+    const res = await fetch(`/api/v1/reservations/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      errorEl.textContent = data.error || "Couldn't cancel that reservation.";
+      btn.disabled = false;
+      return;
+    }
+    showToast('Reservation cancelled', 'success');
+    btn.closest('.modal').remove();
+    document.body.dispatchEvent(new Event('reservations-refreshed', { bubbles: true }));
+    // Inventory's "Booked <date>" badge for this asset should disappear
+    // without a manual refresh, same as reservations/_table.html's own cancel.
+    document.body.dispatchEvent(new Event('assets-refreshed', { bubbles: true }));
+  } catch (err) {
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    btn.disabled = false;
+  }
+}
+</script>

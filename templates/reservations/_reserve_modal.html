@@ -246,6 +246,10 @@ async function submitReservation(event, assetId) {
     showToast('Reservation created', 'success');
     document.querySelectorAll('.modal, .fixed.inset-0.z-50').forEach((el) => el.remove());
     document.body.dispatchEvent(new Event('assets-refreshed'));
+    // If the Reservations page's own table happens to be open (this modal
+    // can also be reached from the Assets page's Details panel, where
+    // there's nothing to refresh), keep it in sync without a manual reload.
+    document.body.dispatchEvent(new Event('reservations-refreshed', { bubbles: true }));
   } catch (err) {
     errorEl.textContent = 'Network error - check your connection and try again.';
     submitBtn.disabled = false;

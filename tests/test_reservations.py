@@ -15,7 +15,7 @@ from datetime import date, timedelta
 import app as app_module
 from database import get_db_connection
 from services import reservation_service
-from tests.conftest import make_asset, make_member, login_as
+from tests.conftest import make_asset, make_member, make_staff, login_as
 from tests.test_transactions import start_session, add_item, finish, barcode_of
 
 START = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d 09:00:00")
@@ -96,6 +96,38 @@ def test_create_reservation_rejects_consumable(as_admin, conn, category_id, memb
         headers={"X-CSRF-Token": csrf},
     )
     assert resp.status_code == 400
+
+
+def test_create_reservation_rejects_maintenance_asset(as_admin, conn, asset_id, member_id):
+    enable_reservations(conn)
+    conn.execute("UPDATE assets SET status = 'maintenance' WHERE id = ?", (asset_id,))
+    conn.commit()
+    client, csrf, _ = as_admin
+    resp = client.post(
+        "/api/v1/reservations",
+        json={"asset_id": asset_id, "member_id": member_id, "start_at": START, "end_at": END},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 400
+
+
+def test_reserve_form_rejects_maintenance_asset(as_admin, conn, asset_id):
+    enable_reservations(conn)
+    conn.execute("UPDATE assets SET status = 'maintenance' WHERE id = ?", (asset_id,))
+    conn.commit()
+    client, csrf, _ = as_admin
+    resp = client.get(f"/api/v1/assets/{asset_id}/reserve-form")
+    assert resp.status_code == 400
+
+
+def test_browse_reservable_assets_excludes_maintenance(as_admin, conn, asset_id):
+    enable_reservations(conn)
+    conn.execute("UPDATE assets SET status = 'maintenance' WHERE id = ?", (asset_id,))
+    conn.commit()
+    client, csrf, _ = as_admin
+    resp = client.get("/api/v1/reservations/browse-assets")
+    ids = [a["id"] for a in resp.get_json()["assets"]]
+    assert asset_id not in ids
 
 
 def test_create_reservation_rejects_end_before_start(as_admin, conn, asset_id, member_id):
@@ -533,3 +565,53 @@ def test_reservations_page_renders_new_reservation_button(as_admin, conn):
     html = resp.get_data(as_text=True)
     assert "New Reservation" in html
     assert "new-reservation-btn" in html
+    assert "refresh-reservations-btn" in html
+
+
+# # # ROW-CLICK DETAILS MODAL --------------------------------------------------
+
+
+def test_reservation_details_modal_renders(as_admin, conn, asset_id, member_id):
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    reservation_id = client.post(
+        "/api/v1/reservations",
+        json={"asset_id": asset_id, "member_id": member_id, "start_at": START, "end_at": END},
+        headers={"X-CSRF-Token": csrf},
+    ).get_json()["id"]
+
+    resp = client.get(f"/api/v1/reservations/{reservation_id}/details-modal")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Reservation Details" in html
+    assert "Cancel Reservation" in html
+
+
+def test_reservation_details_modal_404_for_missing(as_admin, conn):
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    resp = client.get("/api/v1/reservations/999999/details-modal")
+    assert resp.status_code == 404
+
+
+def test_reservation_details_modal_forbidden_for_other_tool_keepers_booking(
+    client, second_client, conn, department_id, asset_id, member_id
+):
+    """Two DIFFERENT staff acting at once needs client + second_client
+    (separate cookie jars) - a single client re-logging in as a second
+    staff would just overwrite the first one's session, not add a second
+    concurrent one. See tests/test_admin_deactivation.py's own note on this."""
+    enable_reservations(conn)
+    admin_id = make_staff(conn, department_id, "admin", "res_details_admin")
+    tk_id = make_staff(conn, department_id, "tool_keeper", "res_details_tk")
+    admin_csrf = login_as(client, conn, admin_id)
+    tk_csrf = login_as(second_client, conn, tk_id)
+
+    reservation_id = client.post(
+        "/api/v1/reservations",
+        json={"asset_id": asset_id, "member_id": member_id, "start_at": START, "end_at": END},
+        headers={"X-CSRF-Token": admin_csrf},
+    ).get_json()["id"]
+
+    resp = second_client.get(f"/api/v1/reservations/{reservation_id}/details-modal")
+    assert resp.status_code == 403

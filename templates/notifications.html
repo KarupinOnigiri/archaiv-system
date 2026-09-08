@@ -51,10 +51,14 @@
           <span>Unread only</span>
         </label>
 
-        <div id="notif-date-presets" class="join rounded-lg">
-          <button type="button" id="notif-preset-today" class="join-item btn btn-xs btn-outline"
+        <!-- Same plain-bordered join-item convention as transactions.html/
+             monitoring.html/audit_log.html's own Today/Yesterday presets -
+             not daisyUI's .btn chrome, which stood out next to the
+             date-range boxes here. -->
+        <div id="notif-date-presets" class="join rounded-lg" data-tooltip="Quick date filter">
+          <button type="button" id="notif-preset-today" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="setNotifDatePreset('today')">Today</button>
-          <button type="button" id="notif-preset-yesterday" class="join-item btn btn-xs btn-outline"
+          <button type="button" id="notif-preset-yesterday" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="setNotifDatePreset('yesterday')">Yesterday</button>
         </div>
 
@@ -310,15 +314,16 @@ function updateNotifFilterUI() {
   const yesterday = formatDateLocal(new Date(Date.now() - 86400000));
   const isToday = since.value === today && until.value === today;
   const isYesterday = since.value === yesterday && until.value === yesterday;
-  // btn-primary/btn-outline swap, not btn-active - see reports.html's
-  // setReportGroupBy comment for why btn-active alone doesn't read as
-  // "selected" in this theme (no --btn-color set on a plain .btn).
+  // Plain-bordered active/inactive swap, matching transactions.html's own
+  // date-quick-btn convention now that this page uses the same markup.
   const notifTodayBtn = document.getElementById('notif-preset-today');
   const notifYesterdayBtn = document.getElementById('notif-preset-yesterday');
-  notifTodayBtn.classList.toggle('btn-primary', isToday);
-  notifTodayBtn.classList.toggle('btn-outline', !isToday);
-  notifYesterdayBtn.classList.toggle('btn-primary', isYesterday);
-  notifYesterdayBtn.classList.toggle('btn-outline', !isYesterday);
+  notifTodayBtn.classList.toggle('border-primary', isToday);
+  notifTodayBtn.classList.toggle('bg-primary/10', isToday);
+  notifTodayBtn.classList.toggle('text-primary', isToday);
+  notifYesterdayBtn.classList.toggle('border-primary', isYesterday);
+  notifYesterdayBtn.classList.toggle('bg-primary/10', isYesterday);
+  notifYesterdayBtn.classList.toggle('text-primary', isYesterday);
 
   const unreadToggle = document.getElementById('show-unread-only-toggle');
   const unreadLabel = document.getElementById('unread-toggle-label');

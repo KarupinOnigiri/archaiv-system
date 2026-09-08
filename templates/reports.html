@@ -25,12 +25,16 @@
   <!-- Shared date range -->
   <div class="bg-base-100 rounded-xl border border-base-300 p-4 flex flex-wrap items-center gap-3">
     <span class="text-xs font-semibold text-base-content/50 tracking-wide">DATE RANGE</span>
-    <div id="reports-date-presets" class="join rounded-lg">
-      <button type="button" id="reports-preset-week" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('week')">This Week</button>
-      <button type="button" id="reports-preset-month" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('month')">This Month</button>
-      <button type="button" id="reports-preset-30d" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('30d')">Last 30 Days</button>
-      <button type="button" id="reports-preset-year" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('year')">This Year</button>
-      <button type="button" id="reports-preset-all" class="join-item btn btn-xs btn-outline" onclick="setReportsDatePreset('all')">All Time</button>
+    <!-- Same plain-bordered join-item convention as every other tab's date
+         quick-filters (transactions/monitoring/audit_log/notifications) -
+         not daisyUI's .btn chrome, which stood out next to the Clear button
+         and date-range boxes to the right of these. -->
+    <div id="reports-date-presets" class="join rounded-lg" data-tooltip="Quick date range">
+      <button type="button" id="reports-preset-week" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors" onclick="setReportsDatePreset('week')">This Week</button>
+      <button type="button" id="reports-preset-month" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors" onclick="setReportsDatePreset('month')">This Month</button>
+      <button type="button" id="reports-preset-30d" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors" onclick="setReportsDatePreset('30d')">Last 30 Days</button>
+      <button type="button" id="reports-preset-year" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors" onclick="setReportsDatePreset('year')">This Year</button>
+      <button type="button" id="reports-preset-all" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors" onclick="setReportsDatePreset('all')">All Time</button>
     </div>
     <div id="reports-date-filters" class="join rounded-lg transition-shadow">
       <button type="button" id="reports-date-clear-btn" class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100 text-base-content/40 hover:text-base-content hover:bg-base-200 disabled:hover:bg-base-100 disabled:hover:text-base-content/40 disabled:cursor-default disabled:opacity-50 transition-colors"
@@ -998,12 +1002,13 @@ function updateReportsDateFilterUI() {
     'reports-preset-30d': since.value === formatDateLocal(days30Start) && until.value === todayStr,
     'reports-preset-year': since.value === formatDateLocal(yearStart) && until.value === todayStr,
   };
-  // btn-primary/btn-outline swap, not btn-active - see setReportGroupBy's
-  // comment above for why btn-active alone doesn't read as "selected" here.
+  // Plain-bordered active/inactive swap, matching transactions.html's own
+  // date-quick-btn convention now that this row uses the same markup.
   Object.keys(presetMatches).forEach(function (id) {
     const btn = document.getElementById(id);
-    btn.classList.toggle('btn-primary', presetMatches[id]);
-    btn.classList.toggle('btn-outline', !presetMatches[id]);
+    btn.classList.toggle('border-primary', presetMatches[id]);
+    btn.classList.toggle('bg-primary/10', presetMatches[id]);
+    btn.classList.toggle('text-primary', presetMatches[id]);
   });
 }
 
