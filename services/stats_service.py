@@ -1,9 +1,10 @@
-"""Query-building and data-shaping for the Reports/Stats tab.
+"""Query-building ug data-shaping para sa Reports/Stats tab.
 
-Every function here takes an open `conn` (and already-validated filter values) and
-returns plain dicts/tuples ready for the route to jsonify or export - no Flask
-objects, no request parsing. `routes/stats.py` stays a thin HTTP layer: parse
-args, call here, jsonify/return.
+Matag function dinhi mo-dawat ug bukas nga `conn` (ug na-validate na nga
+filter values), mobalik ug plain dicts/tuples andam na i-jsonify o i-export
+sa route - walay Flask objects, walay request parsing dinhi. Ang
+`routes/stats.py` nagpabilin nga thin HTTP layer ra: i-parse ang args,
+tawagon dinhi, jsonify/return.
 """
 
 import csv
@@ -25,7 +26,8 @@ EXPORT_ROW_LIMIT = 500
 
 
 def parse_date_range(args, column="transactions.time_out"):
-    """Parses optional since/until params; sql_fragment is '' when neither is given."""
+    """I-parse ang optional since/until params; walay laman ang sql_fragment
+    kung wala gyud gipasa ang duha."""
     since = args.get("since")
     until = args.get("until")
 
@@ -51,7 +53,8 @@ def parse_date_range(args, column="transactions.time_out"):
 
 
 def condition_rank_case(column):
-    """Severity ranking (functional < for_repair < inoperable < disposed), shared by several queries."""
+    """Severity ranking (functional < for_repair < inoperable < disposed),
+    shared sa daghang query."""
     return f"""
         CASE {column}
             WHEN 'functional' THEN 1
@@ -66,6 +69,9 @@ def condition_rank_case(column):
 
 
 def most_borrowed_assets(conn, limit, offset, date_filter, date_params):
+    """Top assets sunod sa borrow_count, descending, sulod sa date range.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_sql = f"WHERE {date_filter}" if date_filter else ""
 
     total_count = conn.execute(
@@ -105,7 +111,10 @@ def most_borrowed_assets(conn, limit, offset, date_filter, date_params):
 
 
 def least_borrowed_assets(conn, limit, offset, date_filter, date_params):
-    """Inverse of most-borrowed, including zero-transaction assets via LEFT JOIN."""
+    """Kabaligtad sa most-borrowed, lakip ang mga asset nga zero pa ka
+    transaction via LEFT JOIN.
+
+    Returns: dict {total_count, limit, offset, results}."""
     join_filter = f"AND {date_filter}" if date_filter else ""
 
     total_count = conn.execute(
@@ -136,6 +145,9 @@ def least_borrowed_assets(conn, limit, offset, date_filter, date_params):
 
 
 def most_borrowed_categories(conn, limit, offset, date_filter, date_params):
+    """Top categories sunod sa borrow_count, descending.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_sql = f"WHERE {date_filter}" if date_filter else ""
 
     total_count = conn.execute(
@@ -176,7 +188,8 @@ def most_borrowed_categories(conn, limit, offset, date_filter, date_params):
 
 
 def _loan_duration_group(group_by):
-    """Shared group-by SQL fragments for loan_duration() and the export section."""
+    """Shared group-by SQL fragments para sa loan_duration() ug sa export
+    section."""
     if group_by == "asset":
         return "assets.id AS group_id, assets.asset_id, assets.barcode_id, assets.name", "assets.id", "assets.id"
     return (
@@ -187,7 +200,9 @@ def _loan_duration_group(group_by):
 
 
 def loan_duration(conn, limit, offset, group_by, date_filter, date_params):
-    """Average hours between borrow and return, returned transactions only."""
+    """Average nga oras tali sa borrow ug return, returned transactions ra.
+
+    Returns: dict {total_count, limit, offset, group_by, results}."""
     where_clauses = [
         "transactions.status = 'returned'",
         "transactions.time_in IS NOT NULL",
@@ -242,6 +257,9 @@ def loan_duration(conn, limit, offset, group_by, date_filter, date_params):
 
 
 def top_borrowers(conn, limit, offset, date_filter, date_params):
+    """Top members sunod sa borrow_count, descending, sulod sa date range.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_sql = f"WHERE {date_filter}" if date_filter else ""
 
     total_count = conn.execute(
@@ -282,7 +300,10 @@ def top_borrowers(conn, limit, offset, date_filter, date_params):
 
 
 def overdue_frequency(conn, limit, offset, date_filter, date_params):
-    """Repeat-lateness history, distinct from members.is_restricted. Splits overdue_count and still_open_count."""
+    """Repeat-lateness history, lahi sa members.is_restricted. I-split ang
+    overdue_count ug still_open_count.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_clauses = [
         "transactions.due_date IS NOT NULL",
         "COALESCE(transactions.time_in, datetime('now', 'localtime')) > transactions.due_date",
@@ -334,6 +355,7 @@ def overdue_frequency(conn, limit, offset, date_filter, date_params):
 
 
 def _condition_changes_group(group_by):
+    """Shared group-by SQL fragments para sa condition_changes()."""
     if group_by == "asset":
         return "assets.id AS group_id, assets.asset_id, assets.barcode_id, assets.name", "assets.id", "assets.id"
     return (
@@ -344,7 +366,10 @@ def _condition_changes_group(group_by):
 
 
 def condition_changes(conn, limit, offset, group_by, date_filter, date_params):
-    """Damage-rate signal: how often items come back worse than they went out. Skips rows without condition_in."""
+    """Damage-rate signal - pila ka beses nga mobalik ang item nga mas
+    grabe kaysa sa pagbiya niini. Laktawan ang rows nga walay condition_in.
+
+    Returns: dict {total_count, limit, offset, group_by, results}."""
     where_clauses = [
         "transactions.status = 'returned'",
         "transactions.condition_in IS NOT NULL",
@@ -404,7 +429,7 @@ def condition_changes(conn, limit, offset, group_by, date_filter, date_params):
 
 
 def _overdue_rate(conn, date_filter, date_params):
-    """Shared by stats_summary() and the export summary section."""
+    """Shared sa stats_summary() ug sa export summary section."""
     overdue_where = ["due_date IS NOT NULL"]
     if date_filter:
         overdue_where.append(date_filter)
@@ -425,7 +450,7 @@ def _overdue_rate(conn, date_filter, date_params):
 
 
 def _damage_rate(conn, date_filter, date_params):
-    """Shared by stats_summary() and the export summary section."""
+    """Shared sa stats_summary() ug sa export summary section."""
     damage_where = ["transactions.status = 'returned'", "transactions.condition_in IS NOT NULL"]
     if date_filter:
         damage_where.append(date_filter)
@@ -446,7 +471,10 @@ def _damage_rate(conn, date_filter, date_params):
 
 
 def stats_summary(conn, date_filter, date_params):
-    """KPI row for Reports; overdue/damage rates share definitions with the dedicated endpoints."""
+    """KPI row para sa Reports; ang overdue/damage rates parehas nga
+    definition sa ilang dedicated endpoints.
+
+    Returns: dict."""
     where_sql = f"WHERE {date_filter}" if date_filter else ""
 
     totals = conn.execute(
@@ -474,6 +502,8 @@ def stats_summary(conn, date_filter, date_params):
 
 
 def _staff_activity_range_clause(column, since, until):
+    """Mag-himo og "AND column >= ?/<= ?" nga WHERE fragment + params
+    para sa staff_activity()'s upat ka lahi nga date column."""
     clauses = []
     params = []
     if since:
@@ -486,7 +516,11 @@ def _staff_activity_range_clause(column, since, until):
 
 
 def staff_activity(conn, since, until):
-    """One row per active staff member: checkouts, returns, logged actions, avg session duration."""
+    """Usa ka row matag active nga staff: checkouts, returns, logged
+    actions, average session duration. Admin-only, workload coverage ra
+    (dili leaderboard), sunod sa alphabetical order.
+
+    Returns: dict {results}."""
     checkout_clause, checkout_params = _staff_activity_range_clause("time_out", since, until)
     return_clause, return_params = _staff_activity_range_clause("time_in", since, until)
     audit_clause, audit_params = _staff_activity_range_clause("created_at", since, until)
@@ -563,6 +597,10 @@ def staff_activity(conn, since, until):
 
 
 def my_checkouts(conn, staff_id, limit, offset, date_filter, date_params):
+    """Ang checkouts nga gi-process ani nga staff (tool_keeper's "My
+    Activity" tab) - naka-scope ra sa iyang kaugalingon.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_clauses = ["transactions.borrowed_by_staff_id = ?"]
     params = [staff_id]
     if date_filter:
@@ -608,6 +646,10 @@ def my_checkouts(conn, staff_id, limit, offset, date_filter, date_params):
 
 
 def my_returns(conn, staff_id, limit, offset, date_filter, date_params):
+    """Ang returns nga gi-process ani nga staff, naka-scope ra sa iyang
+    kaugalingon.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_clauses = ["transactions.returned_by_staff_id = ?"]
     params = [staff_id]
     if date_filter:
@@ -653,7 +695,10 @@ def my_returns(conn, staff_id, limit, offset, date_filter, date_params):
 
 
 def my_overdue_handled(conn, staff_id, limit, offset, date_filter, date_params):
-    """This staff member's checkouts that ended up overdue, same definition as overdue_frequency()."""
+    """Ang checkouts ani nga staff nga na-overdue, parehas ka definition
+    sa overdue_frequency().
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_clauses = [
         "transactions.borrowed_by_staff_id = ?",
         "transactions.due_date IS NOT NULL",
@@ -707,7 +752,8 @@ def my_overdue_handled(conn, staff_id, limit, offset, date_filter, date_params):
 
 
 def _autofit(ws, headers, rows_as_lists):
-    """width = widest cell, capped against one outlier."""
+    """Width = pinakalapad nga cell, naay cap para dili sobra ka lapad
+    tungod sa usa ka outlier."""
     for i, header in enumerate(headers):
         longest = len(str(header))
         for row in rows_as_lists:
@@ -717,6 +763,8 @@ def _autofit(ws, headers, rows_as_lists):
 
 
 def _write_sheet(wb, title, headers, rows_as_lists):
+    """Mag-himo og bag-ong Excel sheet nga naay bold header row, autofit
+    nga column widths, ug frozen header."""
     ws = wb.create_sheet(title=title[:31])  # Excel sheet-name length limit
     ws.append(headers)
     for cell in ws[1]:
@@ -729,9 +777,13 @@ def _write_sheet(wb, title, headers, rows_as_lists):
 
 # - Per-widget (headers, rows_as_lists) builders --------------------------
 # Same shape as the on-screen report card, returned plain for export_stats() to format.
+# (Bisaya: matag _section_X sa ubos export-ready nga bersyon sa parehas nga
+# widget sa taas - mobalik ug (title, headers, rows_as_lists) tuple nga
+# gamiton sa Excel/CSV export, dili JSON para sa browser.)
 
 
 def _section_summary(conn, ctx):
+    """Export-ready nga bersyon sa stats_summary()."""
     date_filter, date_params, where_sql = ctx["date_filter"], ctx["date_params"], ctx["where_sql"]
     totals = conn.execute(
         f"""
@@ -761,6 +813,7 @@ def _section_summary(conn, ctx):
 
 
 def _section_most_borrowed_assets(conn, ctx):
+    """Export-ready nga bersyon sa most_borrowed_assets()."""
     rows = conn.execute(
         f"""
         SELECT assets.asset_id, assets.barcode_id, assets.name, categories.name AS category, COUNT(transactions.id) AS borrow_count
@@ -780,6 +833,7 @@ def _section_most_borrowed_assets(conn, ctx):
 
 
 def _section_most_borrowed_categories(conn, ctx):
+    """Export-ready nga bersyon sa most_borrowed_categories()."""
     rows = conn.execute(
         f"""
         SELECT COALESCE(categories.name, 'Uncategorized') AS category, COUNT(transactions.id) AS borrow_count
@@ -799,6 +853,7 @@ def _section_most_borrowed_categories(conn, ctx):
 
 
 def _section_least_borrowed_assets(conn, ctx):
+    """Export-ready nga bersyon sa least_borrowed_assets()."""
     join_filter = f"AND {ctx['date_filter']}" if ctx["date_filter"] else ""
     rows = conn.execute(
         f"""
@@ -819,6 +874,7 @@ def _section_least_borrowed_assets(conn, ctx):
 
 
 def _section_avg_loan_duration(conn, ctx):
+    """Export-ready nga bersyon sa loan_duration()."""
     date_filter = ctx["date_filter"]
     group_by = ctx["loan_group_by"]
     ld_where = ["transactions.status = 'returned'", "transactions.time_in IS NOT NULL"] + ([date_filter] if date_filter else [])
@@ -849,6 +905,7 @@ def _section_avg_loan_duration(conn, ctx):
 
 
 def _section_top_borrowers(conn, ctx):
+    """Export-ready nga bersyon sa top_borrowers()."""
     rows = conn.execute(
         f"""
         SELECT members.member_code, members.first_name, members.last_name, members.middle_name, members.suffix,
@@ -870,6 +927,7 @@ def _section_top_borrowers(conn, ctx):
 
 
 def _section_overdue_frequency(conn, ctx):
+    """Export-ready nga bersyon sa overdue_frequency()."""
     date_filter = ctx["date_filter"]
     od_where = ["transactions.due_date IS NOT NULL",
                 "COALESCE(transactions.time_in, datetime('now', 'localtime')) > transactions.due_date"] + ([date_filter] if date_filter else [])
@@ -895,6 +953,7 @@ def _section_overdue_frequency(conn, ctx):
 
 
 def _section_condition_changes(conn, ctx):
+    """Export-ready nga bersyon sa condition_changes()."""
     date_filter = ctx["date_filter"]
     group_by = ctx["condition_group_by"]
     cc_where = ["transactions.status = 'returned'", "transactions.condition_in IS NOT NULL"] + ([date_filter] if date_filter else [])
@@ -926,6 +985,7 @@ def _section_condition_changes(conn, ctx):
 
 
 def _section_staff_activity(conn, ctx):
+    """Export-ready nga bersyon sa staff_activity()."""
     date_filter, date_params = ctx["date_filter"], ctx["date_params"]
     checkout_clause = f"AND {date_filter.replace('transactions.time_out', 'time_out')}" if date_filter else ""
     return_clause = f"AND {date_filter.replace('transactions.time_out', 'time_in')}" if date_filter else ""
@@ -978,7 +1038,8 @@ def _section_staff_activity(conn, ctx):
 
 
 def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
-    """Factory for the three near-identical "my activity" export sections."""
+    """Factory para sa tulo ka halos parehas nga "my activity" export
+    section (my_checkouts, my_returns, my_overdue_handled)."""
 
     def builder(conn, ctx):
         rows = conn.execute(
@@ -1007,8 +1068,11 @@ def _my_activity_section(title, staff_col, date_col, extra_col, extra_header):
 
 
 def asset_valuation_table(conn, limit, offset):
-    """Paginated live-view backing GET /stats/assets/valuation - export's
-    _section_asset_valuation covers the same data for the download."""
+    """Paginated live-view nga naa sa luyo sa GET /stats/assets/valuation -
+    ang _section_asset_valuation ang naga-cover sa parehas nga data para
+    sa download.
+
+    Returns: dict {total_count, limit, offset, summary, results}."""
     total_count = conn.execute(
         "SELECT COUNT(*) AS cnt FROM assets WHERE deleted_at IS NULL AND purchase_cost IS NOT NULL"
     ).fetchone()["cnt"]
@@ -1036,11 +1100,11 @@ def asset_valuation_table(conn, limit, offset):
 
 
 def asset_valuation_summary(conn):
-    """Point-in-time snapshot (not date-ranged like stats_summary - there's no
-    meaningful "value acquired between X and Y" without an acquisition-cost
-    ledger, just current book value of what's on hand right now). Returns
-    None if no asset has a purchase_cost set yet, so callers can skip
-    rendering the section rather than showing a misleading $0."""
+    """Point-in-time snapshot (dili date-ranged pareho sa stats_summary -
+    walay "value acquired between X and Y" nga makahulugan kung walay
+    acquisition-cost ledger, book value ra karon). Mobalik ug None kung
+    walay asset nga naay purchase_cost pa, para skip ra sa caller ang
+    pag-render sa section imbes mopakita og misleading $0."""
     row = conn.execute(
         """
         SELECT
@@ -1063,6 +1127,7 @@ def asset_valuation_summary(conn):
 
 
 def _section_asset_valuation(conn, ctx):
+    """Export-ready nga bersyon sa asset_valuation_table()."""
     rows = conn.execute(
         """
         SELECT assets.asset_id, assets.barcode_id, assets.name, COALESCE(categories.name, 'Uncategorized') AS category,
@@ -1083,8 +1148,11 @@ def _section_asset_valuation(conn, ctx):
 
 
 def maintenance_schedule_table(conn, limit, offset):
-    """Paginated live-view backing GET /stats/assets/maintenance-schedule -
-    export's _section_maintenance_schedule covers the same data for the download."""
+    """Paginated live-view nga naa sa luyo sa GET
+    /stats/assets/maintenance-schedule - ang _section_maintenance_schedule
+    ang naga-cover sa parehas nga data para sa download.
+
+    Returns: dict {total_count, limit, offset, results}."""
     where_sql = (
         "WHERE assets.deleted_at IS NULL AND assets.status != 'maintenance'"
         " AND (assets.next_maintenance_due IS NOT NULL OR assets.maintenance_interval_checkouts IS NOT NULL)"
@@ -1112,11 +1180,10 @@ def maintenance_schedule_table(conn, limit, offset):
 
 
 def _section_maintenance_schedule(conn, ctx):
-    """Same due-detection as services/asset_service.py's
-    get_maintenance_due_assets, kept as a standalone query here (not
-    reusing that function directly) since the export path shapes rows as
-    the (title, headers, rows_as_lists) tuple every other section returns,
-    not the list-of-dicts get_maintenance_due_assets returns for the
+    """Parehas ka due-detection sa asset_service.py's
+    get_maintenance_due_assets, apan standalone query diri (dili reuse
+    direkta) kay ang export path nagkinahanglan sa (title, headers,
+    rows_as_lists) tuple, dili sa list-of-dicts nga gibalik para sa
     dashboard/live-view."""
     rows = conn.execute(
         """
@@ -1144,12 +1211,9 @@ def _section_maintenance_schedule(conn, ctx):
 
 
 def _section_monitoring_activity(conn, ctx):
-    """Exportable version of reports.html's Monitoring Activity widget -
-    reuses monitoring_stats_service.get_summary (the same metrics the Reports
-    live-preview widget shows), scoped to the same since/until as the rest
-    of the export. ctx's plain since/until strings satisfy get_summary's
-    `.get("since")`/`.get("until")` the same way a real request.args would -
-    it never needs classification/q, so their absence here is fine."""
+    """Exportable nga bersyon sa reports.html's Monitoring Activity widget -
+    gigamit pag-usab ang monitoring_stats_service.get_summary, naka-scope
+    sa parehas nga since/until sa uban pang export."""
     from services import monitoring_stats_service
 
     args = {"since": ctx.get("since"), "until": ctx.get("until")}
@@ -1183,6 +1247,8 @@ SECTION_BUILDERS = {
 
 
 def _rows_to_csv_bytes(headers, rows_as_lists):
+    """I-convert ang headers/rows ngadto sa CSV bytes (UTF-8 nga naay BOM
+    para tukma nga ma-open sa Excel)."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(headers)
@@ -1191,12 +1257,15 @@ def _rows_to_csv_bytes(headers, rows_as_lists):
 
 
 def build_export_sections(conn, section_ids, ctx):
-    """Runs each requested section's builder against conn/ctx; returns [(id, title, headers, rows), ...]."""
+    """I-run ang builder sa matag gi-request nga section batok sa conn/ctx.
+
+    Returns: list[(id, title, headers, rows)]."""
     return [(wid, *SECTION_BUILDERS[wid](conn, ctx)) for wid in section_ids]
 
 
 def export_workbook_bytes(sections):
-    """sections: [(id, title, headers, rows_as_lists), ...] -> .xlsx bytes."""
+    """I-convert ang mga section ngadto sa .xlsx bytes, usa ka sheet matag
+    section."""
     wb = Workbook()
     wb.remove(wb.active)
     for _wid, title, headers, rows in sections:
@@ -1207,13 +1276,14 @@ def export_workbook_bytes(sections):
 
 
 def export_single_csv_bytes(section):
-    """section: (id, title, headers, rows_as_lists) -> .csv bytes."""
+    """I-convert ang usa ka section ngadto sa .csv bytes."""
     _wid, _title, headers, rows = section
     return _rows_to_csv_bytes(headers, rows)
 
 
 def export_zip_bytes(sections):
-    """sections: [(id, title, headers, rows_as_lists), ...] -> .zip bytes, one .csv per section."""
+    """I-convert ang mga section ngadto sa .zip bytes, usa ka .csv matag
+    section."""
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for _wid, title, headers, rows in sections:
@@ -1223,5 +1293,7 @@ def export_zip_bytes(sections):
 
 
 def export_basename():
+    """Default nga filename (walay extension) para sa export, e.g.
+    "reports_20260908"."""
     date_label = datetime.now().strftime("%Y%m%d")
     return sanitize_export_filename(None, f"reports_{date_label}")
