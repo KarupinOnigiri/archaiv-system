@@ -44,6 +44,18 @@ _PAGES = [
 
 
 def _search_pages(query, staff, feature_flags):
+    """Susihon ang _PAGES list para sa mga label nga naay match sa query,
+    filtered gyud sa ilang own "visible" lambda (role/feature-flag check)
+    para dili makita ang page nga bawal tan-awon sa niining staff.
+
+    Args:
+        query: ang search text nga gi-type sa staff.
+        staff: staff row - gigamit sa role check.
+        feature_flags: dict {name: bool} - gigamit sa flag check.
+
+    Returns:
+        list[dict] - matching pages ra, {"label", "href"} matag entry.
+    """
     q = query.lower()
     return [
         {"label": page["label"], "href": page["href"]}
@@ -97,6 +109,13 @@ _QUICK_ACTIONS = [
 
 
 def _search_quick_actions(query, staff, feature_flags):
+    """Same pattern as _search_pages pero para sa _QUICK_ACTIONS list -
+    ang "visible" key ra ang gi-strip out sa result kay internal detail ra
+    na, dili kinahanglan sa template.
+
+    Args: query, staff, feature_flags - same shape as _search_pages.
+    Returns: list[dict] - matching quick actions, walay "visible" key.
+    """
     q = query.lower()
     return [
         {k: v for k, v in action.items() if k != "visible"}
@@ -143,6 +162,12 @@ _SETTINGS = [
 
 
 def _search_settings(query, staff, feature_flags):
+    """Same pattern gihapon, para sa _SETTINGS list - System page's mga
+    settings card, role-gated sunod sa ilang own "visible" check.
+
+    Args: query, staff, feature_flags.
+    Returns: list[dict] - matching settings entries.
+    """
     q = query.lower()
     return [
         {"label": s["label"], "hx_get": s["hx_get"], "hx_target": s["hx_target"], "hx_swap": "innerHTML"}
@@ -176,11 +201,29 @@ _ACCOUNT_ACTIONS = [
 
 
 def _search_account_actions(query):
+    """Susihon ang _ACCOUNT_ACTIONS list - walay role/feature gate diri kay
+    naa naman gyud tanan na dialog sa DOM sa matag page, walay hx-get pa
+    gikinahanglan.
+
+    Args: query - ang search text.
+    Returns: list[dict] - matching account actions {"label", "onclick_js"}.
+    """
     q = query.lower()
     return [action for action in _ACCOUNT_ACTIONS if q in action["label"].lower()]
 
 
 def _search_assets(conn, like):
+    """Mag-search sa non-deleted assets base sa name/barcode_id/asset_id/
+    rfid_id, LIKE-based match, capped sa MAX_RESULTS_PER_CATEGORY.
+
+    Args:
+        conn: open sqlite3.Connection.
+        like: pre-wrapped "%query%" nga string, ready na para sa LIKE.
+
+    Returns:
+        list[dict] - matching assets (id, name, asset_id, barcode_id,
+        status).
+    """
     rows = conn.execute(
         """
         SELECT id, name, asset_id, barcode_id, status
@@ -196,6 +239,13 @@ def _search_assets(conn, like):
 
 
 def _search_members(conn, like):
+    """Mag-search sa active members base sa first_name/last_name/
+    barcode_id/member_code, LIKE-based, capped sa MAX_RESULTS_PER_CATEGORY.
+    Ang full_name gina-compute per row para sayon na i-display sa template.
+
+    Args: conn, like ("%query%" nga string).
+    Returns: list[dict] - matching members, naay dugang "full_name" key.
+    """
     rows = conn.execute(
         """
         SELECT id, first_name, last_name, middle_name, suffix, barcode_id, member_code, is_restricted
@@ -216,6 +266,13 @@ def _search_members(conn, like):
 
 
 def _search_staff(conn, like):
+    """Mag-search sa active staff base sa username/staff_code/first_name/
+    last_name, LIKE-based, capped sa MAX_RESULTS_PER_CATEGORY - admin ra
+    ang caller ani per global_search()'s own role check sa ubos.
+
+    Args: conn, like ("%query%" nga string).
+    Returns: list[dict] - matching staff, naay dugang "full_name" key.
+    """
     rows = conn.execute(
         """
         SELECT staff.id, staff.username, staff.staff_code, staff.role,

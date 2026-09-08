@@ -1,12 +1,6 @@
-"""Canonical widget catalog: names, card type, and which roles can see each one.
-Shared by routes/stats.py, report_layout_service.py, and templates/reports.html.
-
-(Bisaya: Kini ang opisyal/canonical nga listahan sa mga widget sa Reports
-page - ngalan, klase sa card - stat/chart/table - ug kung unsang mga role
-ang pwede makakita sa matag usa. Kini gigamit sa routes/stats.py,
-report_layout_service.py, ug templates/reports.html - usa ra ka lugar
-bubutangan sa impormasyon bahin sa mga widget, dili balik-balik i-type sa
-lain-laing file.)
+"""Canonical widget catalog para sa Reports page - ngalan, klase sa card
+(stat/chart/table), ug kung unsang role makakita matag usa. Shared sa
+routes/stats.py, report_layout_service.py, ug templates/reports.html.
 """
 
 # Order sets the default widget order for a fresh install.
@@ -117,69 +111,33 @@ WIDGETS_BY_ID = {w["id"]: w for w in WIDGETS}
 
 
 def widgets_for_role(role):
-    """Every widget this role is allowed to see, in default order.
-    (Bisaya: Tanan nga widget nga gitugotan makita ani nga role, sunod sa
-    default nga han-ay.)
+    """Tanan nga widget nga gitugotan makita ani nga role, sunod sa
+    default nga han-ay.
 
-    Args:
-        role: a staff role string, e.g. "admin", "in_charge", "tool_keeper".
-        (Bisaya: usa ka role sa staff, e.g. "admin", "in_charge",
-        "tool_keeper".)
-
-    Returns:
-        list[dict] - the full widget entries (id/title/type/roles) this
-        role can see, in WIDGETS' own order.
-        (Bisaya: usa ka listahan sa dict - ang kompleto nga entry sa
-        widget - id/title/type/roles - nga makita ani nga role, sunod sa
-        han-ay sa WIDGETS.)
-    """
+    Returns: list[dict] - full widget entries."""
     return [w for w in WIDGETS if role in w["roles"]]
 
 
 def widget_ids_for_role(role):
-    """Just the ids from widgets_for_role() - what report_layout_service.py
-    actually needs when building a default layout.
-    (Bisaya: Ang mga id ra gikan sa widgets_for_role() - kini ang
-    gikinahanglan sa report_layout_service.py kung mag-himo ug default nga
-    layout.)
+    """Ang mga id ra gikan sa widgets_for_role() - gikinahanglan sa
+    report_layout_service.py para mag-himo ug default layout.
 
-    Args:
-        role: a staff role string.
-        (Bisaya: usa ka role sa staff.)
-
-    Returns:
-        list[str] - widget ids this role can see, in default order.
-        (Bisaya: listahan sa mga widget id nga makita ani nga role, sunod
-        sa default nga han-ay.)
-    """
+    Returns: list[str] - widget ids."""
     return [w["id"] for w in widgets_for_role(role)]
 
 
 def is_widget_allowed(widget_id, role):
-    """Whether a specific widget id is both real and visible to this role -
-    the actual security check (report_layout_service.py filters a saved/
-    submitted layout through this, so a staff member can't sneak an
-    admin-only widget into their own layout by editing the request).
-    (Bisaya: Kung tinuod ba gyud kini nga widget id UG makita ba sa maong
-    role - kini ang TINUOD nga security check - gi-filter sa
-    report_layout_service.py ang bisan unsang na-save/gipasa nga layout
-    agi ani, para dili makasulod ang usa ka staff sa admin-only nga widget
-    sa iyang kaugalingong layout pinaagi sa pag-usab sa request.)
+    """Kung tinuod ba nga widget id UG visible sa maong role - kini ang
+    TINUOD nga security check, gigamit sa report_layout_service.py aron
+    dili makasulod ang usa ka staff sa admin-only widget pinaagi sa
+    pag-usab sa request.
 
     Args:
-        widget_id: the widget id to check, or None/garbage (returns False
-            safely).
-        (Bisaya: ang widget id nga susihon, o None/dili tinuod nga value -
-        mubalik ug False nga safe.)
+        widget_id: susihon, mubalik False nga safe kung None/garbage.
         role: a staff role string.
-        (Bisaya: usa ka role sa staff.)
 
-    Returns:
-        bool - True only when widget_id is a real entry in WIDGETS_BY_ID
-        AND role is in that widget's allowed roles.
-        (Bisaya: True ra kung tinuod nga naa sa WIDGETS_BY_ID ang
-        widget_id UG naa ang role sa mga role nga gitugotan ani nga
-        widget.)
+    Returns: bool - True ra kung naa sa WIDGETS_BY_ID UG naa ang role sa
+        gitugotan.
     """
     widget = WIDGETS_BY_ID.get(widget_id)
     return widget is not None and role in widget["roles"]
