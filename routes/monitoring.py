@@ -174,11 +174,18 @@ def view_monitoring_trends():
 
 
 @monitoring_bp.route("/rfid-events", methods=["POST"])
+@limiter.limit("60 per minute")
 def record_rfid_event():
     """POST - gi-call sa Pi's background RFID listener per de-duplicated
     detection sa exit gate. Auth kay shared secret (RFID_LISTENER_KEY), dili
     staff login, kay headless man ni nga walay browser session. See
-    monitoring_service.record_rfid_event() sa classification rule."""
+    monitoring_service.record_rfid_event() sa classification rule.
+
+    Rate-limited pareho sa uban sensitive endpoints - kung ma-leak ra gyud
+    ang RFID_LISTENER_KEY, wala unta'y throttle nga nag-guard sa write
+    volume diri gawas sa app-wide 200/min default. 60/min comfortably
+    covers real exit-gate bursts (multiple tagged items in one crossing)
+    without being loose enough to matter for abuse."""
     key_error = _listener_key_error()
     if key_error:
         return key_error
@@ -202,12 +209,17 @@ def record_rfid_event():
 
 
 @monitoring_bp.route("/rfid-events/deactivate", methods=["POST"])
+@limiter.limit("10 per minute")
 def deactivate_rfid_alarm():
     """POST - gi-call sa Pi's HF/NFC handler kung mo-tap ang Admin sa Master
     Key Card sa tool room - mao ra ni nga paagi para ma-clear ang active
     alarm. Identifies the Admin same way sa workstation RFID login
     (staff.rfid_id, role='admin'); walay software-only "deactivate" button
-    sa browser UI, by design."""
+    sa browser UI, by design.
+
+    Tighter than record_rfid_event's 60/min - a real tap only ever
+    happens as one deliberate admin action, not a burst, so this matches
+    the same "single deliberate action" limit login() itself uses."""
     key_error = _listener_key_error()
     if key_error:
         return key_error

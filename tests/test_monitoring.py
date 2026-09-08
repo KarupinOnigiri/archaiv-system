@@ -131,6 +131,35 @@ def test_deactivate_missing_rfid_id_field(client, conn, monkeypatch):
     assert resp.status_code == 400
 
 
+# # # RATE LIMITING -------------------------------------------------------
+# Neither M2M endpoint had its own @limiter.limit before - they're already
+# gated by a 256-bit shared secret, but nothing throttled repeated hits if
+# that key ever leaked. Added per explicit follow-up request; these fire
+# real requests up to and past the configured limit rather than just
+# checking the decorator is present, so a future edit that loosens/removes
+# the limit actually breaks the test.
+
+
+def test_record_event_is_rate_limited(client, conn, monkeypatch):
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    for _ in range(60):
+        resp = record_event(client, "TAG1")
+        assert resp.status_code != 429
+    resp = record_event(client, "TAG1")
+    assert resp.status_code == 429
+
+
+def test_deactivate_is_rate_limited(client, conn, monkeypatch):
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    for _ in range(10):
+        resp = deactivate(client, "nonexistent-rfid-id")
+        assert resp.status_code != 429
+    resp = deactivate(client, "nonexistent-rfid-id")
+    assert resp.status_code == 429
+
+
 # # # CLASSIFICATION -----------------------------------------------------------
 
 
