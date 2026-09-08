@@ -63,6 +63,23 @@ def view_monitoring_table():
     return render_template("monitoring/_table.html", **context)
 
 
+@monitoring_bp.route("/monitoring/<int:id>/details-modal")
+@roles_required(*_VIEW_ROLES)
+@feature_required("monitoring", redirect_to_dashboard=False)
+def view_event_details_modal(id):
+    """GET - read-only details modal para sa usa ka detection event row,
+    parehas nga pattern sa transactions/_details_modal.html."""
+    conn = get_db_connection()
+    try:
+        event, error = monitoring_service.get_event_details(conn, id)
+    finally:
+        conn.close()
+
+    if error:
+        return error
+    return render_template("monitoring/_details_modal.html", event=event)
+
+
 @monitoring_bp.route("/monitoring/alarm-banner")
 @roles_required(*_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)

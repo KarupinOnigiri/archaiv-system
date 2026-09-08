@@ -254,7 +254,7 @@
           {% if feature_flags.transactions %}
           <button type="button" id="dash-new-checkout-btn" data-tooltip="New checkout (Alt+N)" class="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-base-300 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer"
                   hx-get="/api/v1/checkout-sessions/start-form"
-                  hx-vals="js:{client_id: crypto.randomUUID()}"
+                  hx-vals="js:{client_id: generateClientId()}"
                   hx-target="#checkout-modal-container"
                   hx-swap="beforeend"
                   hx-trigger="click[Checkout.countOk()]">

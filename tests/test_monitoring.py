@@ -170,7 +170,7 @@ def test_unregistered_tag_is_unknown(client, conn, monkeypatch):
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["classification"] == "unknown_tag"
-    assert body["alarm_activated"] is True
+    assert body["alarm_activated"] is False
     assert body["asset_id"] is None
 
 

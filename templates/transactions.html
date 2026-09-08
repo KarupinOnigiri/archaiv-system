@@ -21,7 +21,7 @@
       </button>
       <button type="button" id="new-checkout-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="New checkout (Alt+N)"
               hx-get="/api/v1/checkout-sessions/start-form"
-              hx-vals="js:{client_id: crypto.randomUUID()}"
+              hx-vals="js:{client_id: generateClientId()}"
               hx-target="#checkout-modal-container"
               hx-swap="beforeend"
               hx-trigger="click[Checkout.countOk()]">

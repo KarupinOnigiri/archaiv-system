@@ -2196,6 +2196,26 @@ document.body.addEventListener('htmx:sendError', function (evt) {
   showToast("Network error - check your connection and try again.", 'error');
 });
 
+// crypto.randomUUID() only exists in a "secure context" (HTTPS, or exactly
+// `localhost`) - on a LAN deployment reached over plain http://<lan-ip> (the
+// default setup per DEPLOYMENT.md, before/without the optional Caddy HTTPS
+// step) it's simply undefined, which throws for every caller below.
+// crypto.getRandomValues() has no such restriction, so fall back to building
+// a UUID v4 from that instead of Math.random() (which would still work, just
+// with much weaker randomness for something that's only ever a client-side
+// session-tracking id anyway). Attached to window for the same reason
+// Checkout is below - htmx's "js:" hx-vals expressions run through
+// `new Function(...)`, which only sees true globals.
+window.generateClientId = function () {
+  if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+};
+
 // Checkout widget controller. A staff member can have several checkout sessions open at once
 // (one minimized while checking out a second trainee), so every instance - a dialog in
 // #checkout-modal-container plus its dock in #checkout-docks-tray - gets its own data-client-id
@@ -3439,7 +3459,7 @@ function handleGlobalSearchKeydown(e) {
       // via hx-trigger="click[Checkout.countOk()]" - replicated here since
       // htmx.ajax bypasses that trigger guard entirely.
       if (window.Checkout && window.Checkout.countOk()) {
-        window.htmx.ajax('GET', hxUrl, { target: hxTarget, swap: hxSwap, values: { client_id: crypto.randomUUID() } });
+        window.htmx.ajax('GET', hxUrl, { target: hxTarget, swap: hxSwap, values: { client_id: generateClientId() } });
       }
     } else if (hxUrl && window.htmx) {
       window.htmx.ajax('GET', hxUrl, { target: hxTarget, swap: hxSwap });

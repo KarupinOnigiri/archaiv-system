@@ -45,7 +45,7 @@
   <div class="global-search-result flex items-center gap-3 px-3 py-2 hover:bg-base-200 cursor-pointer transition-colors"
        role="button" tabindex="0"
        hx-get="{{ qa.hx_get }}" hx-target="{{ qa.hx_target }}" hx-swap="{{ qa.hx_swap }}"
-       {% if qa.checkout_guard %}hx-vals="js:{client_id: crypto.randomUUID()}" hx-trigger="click[Checkout.countOk()]" data-quick-action="checkout"{% endif %}
+       {% if qa.checkout_guard %}hx-vals="js:{client_id: generateClientId()}" hx-trigger="click[Checkout.countOk()]" data-quick-action="checkout"{% endif %}
        onclick="setTimeout(closeGlobalSearch, 0)"
        onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
     <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">

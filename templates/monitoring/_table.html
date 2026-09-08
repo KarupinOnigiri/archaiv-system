@@ -41,7 +41,10 @@
   </thead>
   <tbody>
     {% for event in events %}
-    <tr class="border-t border-base-200 {% if event.alarm_activated and not event.alarm_deactivated_at %}bg-error/5{% endif %}">
+    <tr class="border-t border-base-200 hover:bg-base-200/40 cursor-pointer {% if event.alarm_activated and not event.alarm_deactivated_at %}bg-error/5{% endif %}"
+        hx-get="/api/v1/monitoring/{{ event.id }}/details-modal"
+        hx-target="#modal-container"
+        hx-swap="innerHTML">
       <td class="py-2 text-sm whitespace-nowrap truncate">{{ event.detected_at | format_date("%b %d, %Y") }}</td>
       <td class="py-2 text-sm whitespace-nowrap truncate text-base-content/70">{{ event.detected_at | format_date("%I:%M %p") }}</td>
       <td class="py-2 text-sm font-mono truncate" title="{{ event.rfid_tag_scanned }}">{{ event.rfid_tag_scanned }}</td>

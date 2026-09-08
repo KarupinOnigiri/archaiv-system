@@ -100,7 +100,12 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
     # detections still get classified and logged exactly the same either
     # way, this only decides whether that classification actually raises
     # the banner/active-alarm state.
-    alarm_activated = classification in ("unauthorized", "unknown_tag") and get_alarm_enabled(conn)
+    #
+    # unknown_tag deliberately does NOT alarm - walay match sa inventory
+    # ang tag (mahimong stray/foreign tag, staff badge, etc.), so there's
+    # no confirmed asset actually leaving unauthorized. Still classified
+    # and logged normally, just doesn't raise the alarm/relay.
+    alarm_activated = classification == "unauthorized" and get_alarm_enabled(conn)
 
     try:
         cursor = conn.execute(
@@ -306,6 +311,34 @@ def get_monitoring_table_context(conn, args, limit, offset):
         "since": args.get("since", ""),
         "until": args.get("until", ""),
     }, None
+
+
+def get_event_details(conn, event_id):
+    """Full detail view sa usa ka detection event - parehas nga joins sa
+    get_monitoring_table_context's row shape, single row ra ang gina-kuha
+    para sa row-click details modal."""
+    event = conn.execute(
+        """
+        SELECT rfid_events.*, assets.asset_id AS asset_code, assets.name AS asset_name,
+               assets.barcode_id AS asset_barcode, assets.status AS asset_status,
+               categories.name AS category_name,
+               members.first_name, members.last_name, members.middle_name, members.suffix,
+               members.barcode_id AS member_barcode,
+               staff.username AS deactivated_by_username
+        FROM rfid_events
+        LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
+        LEFT JOIN members ON members.id = rfid_events.member_id
+        LEFT JOIN staff ON staff.id = rfid_events.deactivated_by
+        WHERE rfid_events.id = ?
+        """,
+        (event_id,),
+    ).fetchone()
+
+    if event is None:
+        return None, (jsonify({"error": "Detection event not found"}), 404)
+
+    return event, None
 
 
 def get_recent_events(conn, limit=5):

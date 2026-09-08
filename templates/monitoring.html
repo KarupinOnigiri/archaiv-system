@@ -263,6 +263,8 @@
   </div>
 </div>
 
+<div id="modal-container"></div>
+
 <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
 
 <style>
@@ -473,10 +475,9 @@ function isTypingTarget(el) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
-// This page has no htmx-loaded page-local modal of its own (no
-// #modal-container), just whatever base.html's shared account/session
-// modals put in #global-modal-container - same two-container check as
-// system.html, which is in the same boat.
+// #modal-container holds the row-click details modal (see
+// monitoring/_details_modal.html); #global-modal-container is base.html's
+// shared account/session modals - same two-container check as other pages.
 function isModalOpen() {
   const container = document.getElementById('modal-container');
   const globalContainer = document.getElementById('global-modal-container');
