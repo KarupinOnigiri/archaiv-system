@@ -17,28 +17,11 @@ SEED_NOTICE_SETTING_KEY = "setup_admin_seed_notice"
 
 
 def _set_seed_notice(conn, username, password):
-    """Stashes the just-generated temp admin's credentials so the login page
-    can show them once (via get_seed_notice below), then clear_seed_notice()
-    removes them for good.
-    (Bisaya: I-store una ang credentials sa bag-ong temp admin, para makita
-    kausa ra sa login page - pinaagi sa get_seed_notice sa ubos - dayon
-    tangtangon na dayon sa clear_seed_notice() aron dili na makita pag-usab.)
+    """I-store ang credentials sa bag-ong temp admin para makita kausa ra
+    sa login page (via get_seed_notice), dayon tangtangon sa
+    clear_seed_notice() aron dili na makita pag-usab.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        username: the temp admin's username.
-        (Bisaya: username sa temp admin.)
-        password: the temp admin's plain-text one-time password (only ever
-            stored here temporarily, until the notice is cleared).
-        (Bisaya: ang plain-text nga password sa temp admin - usa ra ka
-        beses gamiton - gi-store lang ni dinhi temporarily hangtod
-        tangtangon.)
-
-    Returns:
-        None - caller is responsible for conn.commit().
-        (Bisaya: walay gibalik - ang nagtawag ang responsable mag-commit.)
-    """
+    Returns: None - caller ang mag-commit."""
     conn.execute(
         """
         INSERT INTO app_settings (key, value) VALUES (?, ?)
@@ -49,20 +32,10 @@ def _set_seed_notice(conn, username, password):
 
 
 def get_seed_notice(conn=None):
-    """Returns {"username", "password"} for the pending temp admin, or None once setup's done.
-    (Bisaya: Ibalik ang {"username", "password"} sa temp admin nga naghulat
-    pa i-setup, o None human na-human na ang setup.)
+    """Ibalik ang {"username", "password"} sa temp admin nga naghulat pa
+    i-setup, o None human na-human na.
 
-    Args:
-        conn: an already-open sqlite3.Connection to reuse, or None to open
-            (and close) a fresh one.
-        (Bisaya: naa nay bukas nga koneksyon nga gamiton pag-usab, o None
-        para mag-abre - ug mo-close - ug bag-o.)
-
-    Returns:
-        dict {"username": str, "password": str} or None.
-        (Bisaya: dict {"username": str, "password": str} o None.)
-    """
+    Returns: dict {"username", "password"} or None."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -82,37 +55,17 @@ def get_seed_notice(conn=None):
 
 
 def clear_seed_notice(conn):
-    """Removes the stashed temp-admin credentials for good, once they've
-    been shown to whoever logged in as the temp admin.
-    (Bisaya: Tangtangon sa hingpit ang na-store nga credentials sa temp
-    admin, human na kini makita sa nag-login isip temp admin.)
+    """Tangtangon sa hingpit ang na-store nga credentials sa temp admin,
+    human na kini makita sa nag-login isip temp admin.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-
-    Returns:
-        None - caller is responsible for conn.commit().
-        (Bisaya: walay gibalik - ang nagtawag ang responsable mag-commit.)
-    """
+    Returns: None - caller ang mag-commit."""
     conn.execute("DELETE FROM app_settings WHERE key = ?", (SEED_NOTICE_SETTING_KEY,))
 
 
 def _get_or_create_department_id(conn, name):
-    """Finds a department by name, creating it if it doesn't exist yet.
-    (Bisaya: Pangitaon ang department base sa ngalan, himoon kung wala pa
-    ni.)
+    """Pangitaon ang department base sa ngalan, himoon kung wala pa ni.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        name: the department's exact name to find/create.
-        (Bisaya: eksakto nga ngalan sa department nga pangitaon/himoon.)
-
-    Returns:
-        int - that department's id.
-        (Bisaya: numero - ang id sa maong department.)
-    """
+    Returns: int - id sa department."""
     dept_row = conn.execute(
         "SELECT id FROM departments WHERE name = ?", (name,)
     ).fetchone()
@@ -123,23 +76,11 @@ def _get_or_create_department_id(conn, name):
 
 
 def _create_temp_admin(conn):
-    """Creates a temp admin (member + staff row, role='admin') with a random password.
-    (Bisaya: Mo-himo ug temp admin - member row + staff row, role='admin' -
-    naay random nga password.)
+    """Mo-himo ug temp admin (member + staff row, role='admin') naay
+    random nga password.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-
-    Returns:
-        tuple (staff_id, password) - the new temp admin's staff id and
-        plain-text one-time password (caller is responsible for showing
-        this once and never persisting it in plain text elsewhere).
-        (Bisaya: usa ka tuple (staff_id, password) - ang id sa bag-ong
-        temp admin ug ang plain-text nga password nga usa ra ka beses
-        gamiton - ang nagtawag ang responsable magpakita ani kausa ra ug
-        dili gyud i-store sa lain nga lugar nga plain-text.)
-    """
+    Returns: tuple (staff_id, password) - plain-text password, ipakita
+    kausa ra."""
     department_id = _get_or_create_department_id(conn, TEMP_ADMIN_DEPARTMENT)
 
     # Unique per reseed - a previous temp admin's barcode_id is already taken.
@@ -177,25 +118,11 @@ def _create_temp_admin(conn):
 
 
 def purge_temp_admin(conn, staff_id, member_id):
-    """Fully removes the temp admin's rows instead of soft-deactivating, per product decision.
-    Nullable FKs get nulled out; rows only relevant to this staff member get deleted.
-    (Bisaya: TANGTANGON GYUD sa hingpit ang mga row sa temp admin, imbes
-    i-soft-deactivate lang - desisyon gyud ni sa produkto/system. Ang mga
-    column nga pwede walay laman (nullable foreign key) i-set lang sa
-    NULL; ang mga row nga para ra gyud niining staff i-delete gyud.)
+    """TANGTANGON GYUD sa hingpit ang mga row sa temp admin, imbes lang
+    i-soft-deactivate - desisyon gyud ni sa system. Nullable FKs i-set sa
+    NULL; ang mga row para ra ani nga staff i-delete gyud.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        staff_id: id of the temp admin's staff row to purge.
-        (Bisaya: id sa staff row sa temp admin nga tangtangon.)
-        member_id: id of the temp admin's member row to purge.
-        (Bisaya: id sa member row sa temp admin nga tangtangon.)
-
-    Returns:
-        None - caller is responsible for conn.commit().
-        (Bisaya: walay gibalik - ang nagtawag ang responsable mag-commit.)
-    """
+    Returns: None - caller ang mag-commit."""
     conn.execute("UPDATE audit_log SET staff_id = NULL WHERE staff_id = ?", (staff_id,))
     conn.execute(
         "UPDATE staff SET created_by_staff_id = NULL WHERE created_by_staff_id = ?",
@@ -214,21 +141,10 @@ def purge_temp_admin(conn, staff_id, member_id):
 
 
 def _regenerate_temp_admin_password(conn, staff_row):
-    """Issues a fresh password every boot and drops sessions signed in with the old one.
-    (Bisaya: Mo-himo ug bag-ong password matag pag-boot/restart sa app, ug
-    i-tangtang ang mga session nga naka-login gamit ang daan nga password -
-    para dili na magamit pa ang daan.)
+    """Mo-himo ug bag-ong password matag boot/restart, i-tangtang ang mga
+    session nga naka-login gamit ang daan nga password.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        staff_row: the temp admin's existing staff row.
-        (Bisaya: ang naa nang staff row sa temp admin.)
-
-    Returns:
-        str - the fresh plain-text password.
-        (Bisaya: usa ka string - ang bag-ong plain-text nga password.)
-    """
+    Returns: str - ang bag-ong plain-text password."""
     password = secrets.token_urlsafe(12)
     hashed_password = generate_password_hash(password)
     conn.execute(
@@ -240,34 +156,15 @@ def _regenerate_temp_admin_password(conn, staff_row):
 
 
 def seed_initial_admin():
-    """Ensures a LIVE system always has a way back in after losing its last real
-    admin, without a fixed default username/password. No-op if an active admin
-    exists.
+    """Naghatag ug balik-access sa usa ka LIVE nga sistema human mawala
+    ang katapusan niyang tinuod nga admin, walay fixed default
+    username/password. Walay buhaton kung naa nay active admin.
 
-    Deliberately does NOT seed a temp admin for a true fresh install (staff
-    table completely empty) - that case is handled by routes/setup.py serving
-    an unauthenticated "create the first admin" form directly instead (see
-    services/setup_service.py's is_fresh_install/complete_setup). A temp
-    admin with a server-logged password only makes sense once the system is
-    actually in use and has something worth protecting from an open LAN
-    enrollment endpoint; a brand-new, never-configured database doesn't.
-    (Bisaya: Kini nga function ang naghatag TIKANG/access balik sa usa ka
-    BUHI/live nga sistema human mawala ang katapusan niyang tinuod nga
-    admin, wala nay fixed/permanente nga default username/password.
-    Walay buhaton kung naa nay active nga admin.
-
-    Tuyo gyud nga DILI mag-seed ug temp admin para sa tinuod nga
-    fresh install - walay staff gyud - kay kadto nga case gina-handle sa
-    routes/setup.py mismo, nag-serve ug walay-login nga "himo-og-unang-
-    admin" nga form direkta - tan-awa ang setup_service.py's
-    is_fresh_install/complete_setup. Ang temp admin nga naay
-    password nga gi-log sa server makahatag lang og sense kung ang sistema
-    naa nay tinuod nga gina-gamit ug naay bahandi nga proteksyonan gikan
-    sa bukas nga LAN enrollment endpoint; ang bag-ong database nga wala pa
-    gyud gi-set-up walay ipanalipdan pa.
-
-    Walay parameter ug walay return value - gitawag ni sa pag-start sa
-    app.)"""
+    Tuyo gyud nga DILI mag-seed ug temp admin para sa tinuod nga fresh
+    install (walay staff gyud) - kadto nga case gina-handle sa
+    routes/setup.py mismo, walay-login nga "himo-og-unang-admin" nga form.
+    Naay sense ra ang temp admin kung naa nay data ang sistema nga
+    proteksyonan gikan sa bukas nga LAN enrollment."""
     conn = get_db_connection()
 
     active_admin = conn.execute(

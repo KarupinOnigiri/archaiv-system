@@ -1,13 +1,10 @@
-"""Query-building for routes/search.py's global search bar (content header, Ctrl/Cmd+K).
+"""Query-building para sa routes/search.py's global search bar (Ctrl/Cmd+K).
 
-Not a full-text index - just the same LIKE-based matching each entity's own local
-search already does (services/asset_service.py's get_assets_table_context,
-services/member_service.py's get_members_table_context, services/staff_service.py's
-get_staff_table_context), reused here so results feel consistent with what typing
-the same query into Inventory/Members/Staff's own search box would find, just
-capped and merged into one dropdown. Each category is skipped outright rather than
-returned empty when its own feature flag is off, or (staff) when the caller's role
-can't see the Staff tab at all - same visibility rules those tabs themselves enforce.
+Dili full-text index - LIKE-based matching ra, pareho sa gigamit sa
+matag entity's own local search - reused diri para pareho ra ang resulta
+sa direktang search sa Inventory/Members/Staff's own box, capped ug
+gi-tapok sa usa ka dropdown. Skip dayon ang category kung disabled ang
+feature flag niini, o kung dili tugotan sa role sa staff.
 """
 
 from utils.formatters import full_name
@@ -296,11 +293,11 @@ def _search_staff(conn, like):
 
 
 def global_search(conn, query, staff, feature_flags):
-    """Returns {"query": str, "quick_actions": [...], "settings": [...], "account_actions": [...],
-    "pages": [...], "assets": [...], "members": [...], "staff_results": [...]} - an empty
-    query (below MIN_QUERY_LENGTH) returns every list empty, which the template renders as
-    nothing at all (dropdown stays closed) rather than a "no results" message, since that's
-    not really a search yet."""
+    """Mobalik ug dict sa tanang category (quick_actions, settings,
+    account_actions, pages, assets, members, staff_results). Kung short
+    ra kaayo ang query (below MIN_QUERY_LENGTH), tanan walay laman - ang
+    dropdown magpabilin nga sirado imbes mopakita "no results", kay dili
+    man gyud kini tinuod nga search pa."""
     query = (query or "").strip()
     # "staff_results", not "staff" - base.html's global context processor
     # already injects "staff" everywhere (the CURRENTLY LOGGED IN user), and

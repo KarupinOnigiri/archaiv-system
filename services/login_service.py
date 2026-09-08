@@ -1,24 +1,11 @@
-"""Login/session-establishment logic for routes/auth.py (username+password,
-RFID+PIN, and logout). Every function here takes an already-open `conn` (except
-start_session, which needs a fresh one since the caller's conn is often already
-closed by the time a session is minted) and returns plain data - never a Flask
-response - so routes/auth.py keeps full control of how errors get echoed back
-(JSON vs. redirect-with-query-string), which is security/UX-sensitive here.
+"""Login/session-establishment logic para sa routes/auth.py
+(username+password, RFID+PIN, logout). Matag function mo-dawat ug bukas
+nga `conn` (gawas sa start_session), mobalik ug plain data - DILI Flask
+response - para full control sa routes/auth.py kung unsaon pagpakita ang
+error (JSON o redirect).
 
-Convention: `(data, error)` where `error` is `None` on success or a plain
-`(payload_dict, status)` tuple on failure - not jsonify'd, since the route needs
-the raw dict either way (JSON body or to extract `error` for a redirect).
-
-(Bisaya: Kini nga file ang naghandle sa login/session - username+password,
-RFID+PIN, ug logout - para sa routes/auth.py. Matag function dinhi mo-dawat
-ug naa nay bukas nga `conn` - gawas sa start_session, nga kinahanglan mag-
-abre ug bag-o kay ang conn sa nagtawag kasagaran sirado na - ug mobalik ug
-plain data, DILI Flask response, para permanente nga makontrol sa
-routes/auth.py kung unsaon pagpakita ang error - JSON o redirect-with-
-query-string - importante ni sa security/UX.
-
-Convention: `(data, error)` diin ang `error` None kung malampuson, o usa ka
-plain `(payload_dict, status)` nga tuple kung napakyas.)
+Convention: `(data, error)` - `error` None kung malampuson, o
+`(payload_dict, status)` tuple kung napakyas.
 """
 
 import secrets
@@ -37,28 +24,11 @@ from utils.validators import decimal_scan_hex_suffix
 
 
 def check_existing_session_conflict(conn, token):
-    """Single-session-per-device policy: blocks login if a live session already
-    exists on this browser, belonging to anyone. Cleans up a stale (expired/timed
-    out) token instead of blocking.
-    (Bisaya: Usa-ka-session-ra-matag-device nga patakaran - i-block ang
-    login kung naay buhi/live nga session pa sa niining browser, bisan
-    kang kinsa. Kung stale na - na-expire/timeout - hinlo-an ra kini, dili
-    ni-block.)
+    """Single-session-per-device policy - i-block ang login kung naay
+    buhi/live nga session pa niining browser, bisan kang kinsa. Kung
+    stale na (expired/timeout), hinlo-an ra, dili i-block.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        token: the session_token cookie value from the request, or None.
-        (Bisaya: value sa session_token cookie gikan sa request, o None.)
-
-    Returns:
-        tuple (blocked, payload_or_None) - `blocked` True means refuse the
-        login attempt; `payload` (when blocked) explains whose session is
-        active.
-        (Bisaya: usa ka tuple (blocked, payload_or_None) - True ang
-        `blocked` nagpasabot nga i-refuse ang login; ang `payload` - kung
-        blocked - nagsulti kang kinsa nga session ang active.)
-    """
+    Returns: tuple (blocked, payload_or_None)."""
     if not token:
         return False, None
 
@@ -89,14 +59,10 @@ def check_existing_session_conflict(conn, token):
 
 
 def find_staff_for_login(conn, username, barcode_id):
-    """Looks up by username first, retrying as a barcode if that misses (unless
-    barcode_id was already passed explicitly), or by barcode_id directly.
-    (Bisaya: Pangitaon una base sa username, kung wala makit-i, sulayan
-    isip barcode - gawas kung gipasa na gyud ang barcode_id direkta - o
-    barcode_id direkta.
+    """Pangitaon una base sa username, kung wala makit-i sulayan isip
+    barcode; o barcode_id direkta kung gipasa na.
 
-    Args: conn, username (o None), barcode_id (o None).
-    Returns: sqlite3.Row (staff + member info) o None kung wala makit-i.)"""
+    Returns: sqlite3.Row (staff + member info) o None."""
     if username:
         staff = conn.execute(
             """
@@ -132,14 +98,10 @@ def find_staff_for_login(conn, username, barcode_id):
 
 
 def find_admin_for_rfid_login(conn, rfid_id):
-    """Finds an active admin by their rfid_id, for the (currently unused,
-    kept for a possible future re-activation) RFID+PIN login flow.
-    (Bisaya: Pangitaon ang admin base sa iyang rfid_id - para sa RFID+PIN
-    login flow, nga karon wala pa gigamit apan gibutang para sa posible
-    nga umaabot nga paggamit pag-usab.
+    """Pangitaon ang admin base sa rfid_id - para sa RFID+PIN login flow
+    nga karon wala pa gigamit (kept para sa posible nga umaabot).
 
-    Args: conn, rfid_id.
-    Returns: sqlite3.Row o None.)"""
+    Returns: sqlite3.Row o None."""
     # Some readers set to type scans as keyboard input only type the decimal
     # value of an EPC's last 3 bytes, not the full hex ID - see
     # decimal_scan_hex_suffix()'s docstring. That extra LIKE branch is a
@@ -156,12 +118,10 @@ def find_admin_for_rfid_login(conn, rfid_id):
 
 
 def find_admin_for_rfid_lookup(conn, rfid_id):
-    """Identifies which admin a tapped card belongs to before the PIN, same generic response as login_rfid.
-    (Bisaya: I-identify kang kinsang admin ang gi-tap nga card, sa dili pa
-    hangyoon ang PIN - pareho ka generic nga response sa login_rfid.
+    """I-identify kang kinsang admin ang gi-tap nga card, una i-hangyo ang
+    PIN - pareho ka generic nga response sa login_rfid.
 
-    Args: conn, rfid_id.
-    Returns: sqlite3.Row (limited columns) o None.)"""
+    Returns: sqlite3.Row (limited columns) o None."""
     return conn.execute(
         """
         SELECT staff.id, staff.is_active, staff.rfid_pin_hash, staff.photo_path,
@@ -175,17 +135,11 @@ def find_admin_for_rfid_lookup(conn, rfid_id):
 
 
 def find_staff_for_barcode_pin_login(conn, barcode_id):
-    """Same shape as find_admin_for_rfid_login, but by barcode_id (which
-    lives on the linked members row, not staff) and open to every role --
-    login_barcode_pin() is the general opt-in flow this app now actually
-    uses at the login page; find_admin_for_rfid_login above stays reserved
-    for a possible future RFID+PIN re-activation, untouched.
-    (Bisaya: Pareho ka porma sa find_admin_for_rfid_login, apan base sa
-    barcode_id - naa ni sa members row, dili sa staff - ug bukas sa TANANG
-    role, dili admin ra. Kini ang tinuod nga gigamit karon sa login page.
+    """Pareho ka porma sa find_admin_for_rfid_login, apan base sa
+    barcode_id ug bukas sa TANANG role, dili admin ra - kini ang tinuod
+    nga gigamit karon sa login page.
 
-    Args: conn, barcode_id.
-    Returns: sqlite3.Row o None.)"""
+    Returns: sqlite3.Row o None."""
     return conn.execute(
         """
         SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
@@ -198,13 +152,10 @@ def find_staff_for_barcode_pin_login(conn, barcode_id):
 
 
 def find_staff_for_barcode_pin_lookup(conn, barcode_id):
-    """Identifies whose barcode was scanned before the PIN, same generic
-    response as login_barcode_pin - mirrors find_admin_for_rfid_lookup.
-    (Bisaya: I-identify kang kinsang barcode ang gi-scan, sa dili pa
-    hangyoon ang PIN - pareho ka generic nga response.
+    """I-identify kang kinsang barcode ang gi-scan, una i-hangyo ang PIN -
+    mirrors find_admin_for_rfid_lookup.
 
-    Args: conn, barcode_id.
-    Returns: sqlite3.Row (limited columns) o None.)"""
+    Returns: sqlite3.Row (limited columns) o None."""
     return conn.execute(
         """
         SELECT staff.id, staff.is_active, staff.rfid_pin_hash, staff.barcode_pin_enabled, staff.photo_path,
@@ -218,13 +169,10 @@ def find_staff_for_barcode_pin_lookup(conn, barcode_id):
 
 
 def find_staff_for_username_lookup(conn, identifier):
-    """Step-1 check for the "Sign in as <name>" greeting; tries username then barcode, active accounts only.
-    (Bisaya: Unang lakang para makita ang "Sign in as <ngalan>" nga
-    pangumusta - sulayan una ang username, dayon barcode - active nga
-    account ra.
+    """Unang lakang para sa "Sign in as <ngalan>" nga greeting - sulayan
+    una ang username, dayon barcode - active accounts ra.
 
-    Args: conn, identifier (username o barcode text nga gi-type/scan).
-    Returns: sqlite3.Row (ngalan + photo ra) o None.)"""
+    Returns: sqlite3.Row (ngalan + photo ra) o None."""
     staff = conn.execute(
         """
         SELECT members.first_name, members.last_name, members.middle_name, members.suffix,
@@ -250,30 +198,11 @@ def find_staff_for_username_lookup(conn, identifier):
 
 
 def check_lockout(conn, staff):
-    """Mutates `staff` in place if a lockout has expired and gets auto-cleared.
-    Returns None if it's OK to proceed, or a (payload, status) error otherwise.
-    (Bisaya: Usbon/mutate ang `staff` mismo kung ang lockout na-expire na ug
-    na-auto-clear. None ang ibalik kung OK na mopadayon, o usa ka (payload,
-    status) nga error kung dili pa.)
+    """Usbon ang `staff` mismo (in place) kung na-expire na ang lockout ug
+    na-auto-clear na.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        staff: the staff row being logged into (has locked_until,
-            failed_login_attempts) - modified in place when a lockout
-            auto-clears.
-        (Bisaya: ang staff row nga gina-login-an - naa ni'y locked_until,
-        failed_login_attempts - mausab mismo kung mag-auto-clear ang
-        lockout.)
-
-    Returns:
-        None when OK to proceed, or (payload_dict, status) - 403 either
-        for an admin-imposed indefinite lock, or a still-counting-down
-        timed lockout.
-        (Bisaya: None kung OK na mopadayon, o (payload_dict, status) - 403
-        - kung na-lock permanente sa admin, o naa pay nahibilin nga oras
-        sa temporary nga lockout.)
-    """
+    Returns: None kung OK mopadayon, or (payload_dict, status) 403 - admin
+    lock o naa pay nahibilin nga temporary lockout."""
     if not staff["locked_until"]:
         return None
 
@@ -300,29 +229,12 @@ def check_lockout(conn, staff):
 
 
 def record_failed_attempt(conn, staff, attempt_kind):
-    """Call after a failed password/PIN check. Increments failed_login_attempts,
-    locking the account if the threshold is hit. Always returns a (payload, status) error.
-    (Bisaya: Tawagon human mapakyas ang password/PIN check. Dugangan ang
+    """Tawagon human mapakyas ang password/PIN check - dugangan ang
     failed_login_attempts, i-lock ang account kung na-abot na ang
-    threshold/limit. Kanunay mobalik ug (payload, status) nga error - kay
-    napakyas man gyud ang attempt.)
+    threshold.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        staff: the staff row that just failed to authenticate.
-        (Bisaya: ang staff row nga napakyas mo-login.)
-        attempt_kind: label for the audit log entry, e.g. "login" or
-            "PIN".
-        (Bisaya: label para sa audit log, e.g. "login" o "PIN".)
-
-    Returns:
-        tuple (payload_dict, status) - 403 with a lockout message when the
-        threshold was just hit, 401 "Invalid credentials" otherwise.
-        (Bisaya: usa ka tuple (payload_dict, status) - 403 nga naay
-        lockout message kung na-abot ang threshold karon, 401 "Invalid
-        credentials" kung dili pa.)
-    """
+    Returns: tuple (payload_dict, status) - 403 lockout message o 401
+    "Invalid credentials"."""
     new_attempts = staff["failed_login_attempts"] + 1
     lockout_minutes = get_lockout_minutes(conn)
 
@@ -351,39 +263,19 @@ def record_failed_attempt(conn, staff, attempt_kind):
 
 
 def reset_lockout_tracking(conn, staff_id):
-    """Correct password/PIN - reset lockout tracking.
-    (Bisaya: Tama ang password/PIN - i-reset ang lockout tracking - balik
-    sa 0 ang failed_login_attempts.
-
-    Args: conn, staff_id.
-    Returns: None.)"""
+    """Tama ang password/PIN - i-reset ang lockout tracking, balik sa 0
+    ang failed_login_attempts."""
     conn.execute("UPDATE staff SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?", (staff_id,))
     conn.commit()
 
 
 def start_session(staff_id):
-    """Opens its own connection (the caller's is often already closed by this point).
-    Deletes any existing session for this staff_id first - single-session-
-    per-staff, mirroring check_existing_session_conflict's per-device rule.
-    (Bisaya: Mag-abre ug bag-ong koneksyon - ang naa sa nagtawag kasagaran
-    sirado na sa niining punto. Tangtangon una ang naa nang session ani
-    nga staff_id - usa-ka-session-ra-matag-staff, sunod sa parehas nga
-    lohika sa check_existing_session_conflict's per-device nga
-    patakaran.)
+    """Mag-abre ug bag-ong koneksyon (ang sa nagtawag kasagaran sirado na
+    ani nga punto). Tangtangon una ang naa nang session ani nga staff_id -
+    single-session-per-staff.
 
-    Args:
-        staff_id: id of the staff member to start a session for.
-        (Bisaya: id sa staff nga hatagan ug bag-ong session.)
-
-    Returns:
-        tuple (token, csrf_token) - both random hex strings; `token` goes
-        in the session_token cookie, `csrf_token` is embedded in the page
-        (meta tag) for state-changing requests to echo back.
-        (Bisaya: usa ka tuple (token, csrf_token) - pareho random nga hex
-        string; ang `token` isulod sa session_token cookie, ang
-        `csrf_token` isulod sa page - meta tag - ibalik sa mga request nga
-        mag-usab ug data.)
-    """
+    Returns: tuple (token, csrf_token) - random hex strings para sa
+    session_token cookie ug CSRF meta tag."""
     conn = get_db_connection()
     try:
         conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff_id,))

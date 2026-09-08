@@ -1,9 +1,9 @@
-"""Query-building and mutation logic for routes/requests.py (member unrestriction
-requests - the tool_keeper-files, admin/in_charge-reviews approval flow).
+"""Query-building ug mutation logic para sa routes/requests.py - member
+unrestriction requests, ang tool_keeper-files, admin/in_charge-reviews nga
+approval flow.
 
-Same convention as the other *_service modules: functions take an already-open
-`conn` and return `(data, error)`, where `error` is `None` on success or a ready
-`(jsonify(...), status)` tuple on failure.
+Same convention sa laing *_service modules: `(data, error)`, `error` None
+kung malampuson, o `(jsonify(...), status)` tuple kung napakyas.
 """
 
 import logging
@@ -26,7 +26,10 @@ VALID_STATUSES = ("pending", "approved", "denied", "cancelled")
 
 
 def create_unrestriction_request(conn, member_id, reason, staff):
-    """tool_keeper can't unrestrict directly, they file a request that admin/in_charge reviews."""
+    """Ang tool_keeper dili makahimo pag-unrestrict direkta - mag-file ra
+    ug request nga i-review sa admin/in_charge.
+
+    Returns: tuple (result, error) - 404/400/409 kung napakyas."""
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
 
     if member is None:
@@ -80,8 +83,8 @@ def create_unrestriction_request(conn, member_id, reason, staff):
 
 
 def _load_pending_request(id, conn):
-    """Returns (request_row, error_response). error_response is None if
-    the request exists and is still pending."""
+    """Mobalik ug (request_row, error_response) - None ang error kung naa
+    gyud ug 'pending' pa gihapon ang request."""
     req = conn.execute("SELECT * FROM unrestriction_requests WHERE id = ?", (id,)).fetchone()
 
     if req is None:
@@ -94,7 +97,10 @@ def _load_pending_request(id, conn):
 
 
 def cancel_unrestriction_request(conn, request_id, review_notes, staff):
-    """Lets the requester withdraw their own pending request (unlike deny, which is admin/in_charge only)."""
+    """Tugotan ang nag-file mo-withdraw sa iyang kaugalingong pending
+    request (lahi sa deny, nga admin/in_charge ra ang pwede).
+
+    Returns: tuple (result, error)."""
     req, error = _load_pending_request(request_id, conn)
     if error:
         return None, error
@@ -143,7 +149,10 @@ def cancel_unrestriction_request(conn, request_id, review_notes, staff):
 
 
 def get_unrestriction_requests_context(conn, args, limit, offset, staff):
-    """admin/in_charge see the full review queue; tool_keeper only sees their own requests."""
+    """Ang admin/in_charge makakita sa tibuok review queue; ang
+    tool_keeper makakita ra sa iyang kaugalingong requests.
+
+    Returns: tuple (context, error)."""
     status_filter = args.get("status")
     if status_filter and status_filter not in VALID_STATUSES:
         return None, (jsonify({"error": f"status must be one of: {', '.join(VALID_STATUSES)}"}), 400)
@@ -198,10 +207,12 @@ def get_unrestriction_requests_context(conn, args, limit, offset, staff):
 
 
 def get_unrestriction_request_detail(conn, request_id, staff):
-    """Single-row version of the same join get_unrestriction_requests_context
-    uses, for the Approvals table's own "click a row for full details" modal.
-    tool_keeper can only open their own filed requests - same visibility rule
-    list_unrestriction_requests already applies to the whole list."""
+    """Single-row nga bersyon sa join nga gigamit sa
+    get_unrestriction_requests_context - para sa "click a row for full
+    details" modal sa Approvals table. Ang tool_keeper makaabli ra sa
+    iyang kaugalingong gi-file nga request.
+
+    Returns: tuple (row, error) - 404/403 kung napakyas."""
     row = conn.execute(
         """
         SELECT unrestriction_requests.*,
@@ -228,6 +239,10 @@ def get_unrestriction_request_detail(conn, request_id, staff):
 
 
 def approve_unrestriction_request(conn, request_id, review_notes, staff):
+    """I-approve ang request, unrestrict-on ang member. Admin dili
+    pwede mo-approve sa iyang kaugalingong request (self-approval block).
+
+    Returns: tuple (result, error) - 404/403/409 kung napakyas."""
     req, error = _load_pending_request(request_id, conn)
     if error:
         return None, error
@@ -285,6 +300,9 @@ def approve_unrestriction_request(conn, request_id, review_notes, staff):
 
 
 def deny_unrestriction_request(conn, request_id, review_notes, staff):
+    """I-deny ang request - magpabilin nga restricted ang member.
+
+    Returns: tuple (result, error) - 404/409 kung napakyas."""
     req, error = _load_pending_request(request_id, conn)
     if error:
         return None, error

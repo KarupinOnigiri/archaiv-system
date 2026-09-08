@@ -1,12 +1,7 @@
-"""Auto hard-deletes archived assets/members/staff past archive_purge_days - NOT reversible.
-Runs hourly; each row purges independently, so history-blocked rows just stay archived.
-
-(Bisaya: Kini nga file ang mag-TANGTANG SA HINGPIT - PERMANENTE, DILI NA
-MABAWI - sa mga archived nga asset/member/staff nga milapas na sa
-archive_purge_days nga setting. Nag-run kini kada oras; ang matag row
-tangtangon nga separado/independent, mao nga ang mga row nga gi-block sa
-history - naay transaction record - magpabilin ra nga archived, dili
-tangtangon.)
+"""Auto hard-delete sa archived assets/members/staff nga milapas na sa
+archive_purge_days - PERMANENTE, DILI NA MABAWI. Nag-run kada oras; matag
+row tangtangon nga separado, mao nga ang mga row nga gi-block sa history
+(naay transaction record) magpabilin ra nga archived.
 """
 
 import logging
@@ -22,26 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def _purge_one_asset(conn, asset_id):
-    """Deletes an archived asset and its owned rows; returns False if blocked by history.
-    (Bisaya: Tangtangon ang usa ka archived nga asset ug ang mga row nga
-    iyaha - False ang ibalik kung gi-block sa history/transaction record.)
-
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        asset_id: id of the archived asset to purge.
-        (Bisaya: id sa archived nga asset nga tangtangon.)
-
-    Returns:
-        bool - True when the asset (and its images/session-items) were
-        successfully deleted; False when a foreign-key constraint
-        (real transaction history) blocked it - the transaction is
-        rolled back in that case, and the asset stays archived.
-        (Bisaya: True kung malampuson nga natangtang ang asset - lakip ang
-        mga hulagway/session-items; False kung gi-block sa foreign-key -
-        naay tinuod nga history - gi-rollback ang transaction, magpabilin
-        nga archived ang asset.)
-    """
+    """Tangtangon ang archived nga asset ug ang mga row nga iyaha - False
+    kung gi-block sa foreign-key (naay tinuod nga history), gi-rollback
+    ang transaction ug magpabilin nga archived ang asset."""
     images = conn.execute(
         "SELECT image_path FROM asset_images WHERE asset_id = ?", (asset_id,)
     ).fetchall()
@@ -70,13 +48,8 @@ def _purge_one_asset(conn, asset_id):
 
 
 def _purge_one_staff(conn, staff_id, photo_path):
-    """Deletes a deactivated staff account's own rows; real history keeps the account un-purgeable.
-    (Bisaya: Tangtangon ang mga row nga sa deactivated nga staff account -
-    ang tinuod nga history mopugong ani nga account gikan sa
-    ma-purge/matangtang.
-
-    Args: conn, staff_id, photo_path (i-delete ra pod kung naay laman).
-    Returns: bool - True kung malampuson, False kung gi-block sa history.)"""
+    """Tangtangon ang mga row sa deactivated nga staff account - ang
+    tinuod nga history mopugong ani nga account gikan sa ma-purge."""
     conn.execute("DELETE FROM sessions WHERE staff_id = ?", (staff_id,))
 
     try:
@@ -91,13 +64,8 @@ def _purge_one_staff(conn, staff_id, photo_path):
 
 
 def _purge_one_member(conn, member_id):
-    """Deletes one deactivated member row; staff is purged first in the same pass.
-    (Bisaya: Tangtangon ang usa ka deactivated nga member row - ang staff
-    tangtangon una sa parehas nga pass, para dili ma-block sa foreign
-    key.
-
-    Args: conn, member_id.
-    Returns: bool - True kung malampuson, False kung gi-block sa history.)"""
+    """Tangtangon ang usa ka deactivated nga member row - ang staff
+    tangtangon una sa parehas nga pass, para dili ma-block sa foreign key."""
     try:
         conn.execute("DELETE FROM members WHERE id = ?", (member_id,))
     except sqlite3.IntegrityError:
@@ -107,23 +75,10 @@ def _purge_one_member(conn, member_id):
 
 
 def purge_expired_archived_assets(conn=None):
-    """Permanently deletes eligible assets past archive_purge_days; no-op if the setting is 0.
-    (Bisaya: PERMANENTE nga tangtangon ang mga asset nga milapas na sa
-    archive_purge_days - walay buhaton kung 0 ang setting - "Off".)
+    """PERMANENTE nga tangtangon ang mga asset nga milapas na sa
+    archive_purge_days - walay buhaton kung 0 ang setting (Off).
 
-    Args:
-        conn: an already-open sqlite3.Connection to reuse, or None to open
-            (and close) a fresh one.
-        (Bisaya: naa nay bukas nga koneksyon nga gamiton pag-usab, o None
-        para mag-abre - ug mo-close - ug bag-o.)
-
-    Returns:
-        int - how many assets were actually purged (skipped-by-history
-        ones don't count, but are still logged separately).
-        (Bisaya: numero - pila ka asset ang tinuod nga na-purge - ang
-        na-skip tungod sa history dili maapil sa ihap, apan gi-log gihapon
-        nga separado.)
-    """
+    Returns: int - pila ka asset ang tinuod nga na-purge."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -179,12 +134,10 @@ def purge_expired_archived_assets(conn=None):
 
 
 def purge_expired_inactive_staff(conn=None):
-    """Same idea as purge_expired_archived_assets, for staff; runs before members to avoid an FK block.
-    (Bisaya: Pareho ka ideya sa purge_expired_archived_assets, apan para
-    sa staff - nag-run una sa members para dili ma-block sa foreign key.)
+    """Pareho ka ideya sa purge_expired_archived_assets, para sa staff -
+    nag-run una sa members para dili ma-block sa foreign key.
 
-    Args: conn (optional).
-    Returns: int - pila ka staff account ang na-purge.)"""
+    Returns: int."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -239,12 +192,10 @@ def purge_expired_inactive_staff(conn=None):
 
 
 def purge_expired_inactive_members(conn=None):
-    """Same idea as purge_expired_archived_assets, for members; runs after staff.
-    (Bisaya: Pareho ka ideya sa purge_expired_archived_assets, apan para
-    sa members - nag-run human sa staff.
+    """Pareho ka ideya sa purge_expired_archived_assets, para sa members -
+    nag-run human sa staff.
 
-    Args: conn (optional).
-    Returns: int - pila ka member ang na-purge.)"""
+    Returns: int."""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -301,10 +252,8 @@ def purge_expired_inactive_members(conn=None):
 
 
 def run_scheduled_archive_purge():
-    """The APScheduler job; each purge_expired_* is a no-op when nothing's due.
-    (Bisaya: Kini ang APScheduler job - matag purge_expired_* walay
-    buhaton kung walay pa gikinahanglan i-purge. Walay parameter ug walay
-    return value.)"""
+    """APScheduler job - matag purge_expired_* walay buhaton kung walay
+    pa gikinahanglan i-purge."""
     purge_expired_archived_assets()
     purge_expired_inactive_staff()
     purge_expired_inactive_members()

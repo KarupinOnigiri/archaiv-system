@@ -1,11 +1,9 @@
-"""Query-building and mutation logic for routes/monitoring.py (RFID exit-monitoring events).
-
-Same (data, error) convention as the other services - see asset_service.py's module
-docstring. `record_rfid_event` is the one function meant to be called from outside a
-normal browser request: the Raspberry Pi's background RFID listener (not part of this
-repo - it runs on the tool-room controller, see the thesis's Chapter 3 hardware
-description) is expected to POST each de-duplicated detection to
-routes/monitoring.py's record endpoint, which just forwards into this module.
+"""Query-building ug mutation logic para sa routes/monitoring.py (RFID
+exit-monitoring events). `record_rfid_event` ang usa ka function nga
+gitawag gawas sa normal nga browser request - ang Raspberry Pi's
+background RFID listener (outside ani nga repo, naa sa tool-room
+controller) mag-POST sa matag de-duplicated detection ngadto sa
+routes/monitoring.py's record endpoint, nga mo-forward diretso ani.
 """
 
 import logging
@@ -30,11 +28,11 @@ def _no_ctx(error_payload, status):
 
 
 def get_alarm_status(conn):
-    """The single row the alarm banner polls. 'Active' means the most recent
-    unauthorized detection hasn't been cleared by a Master Key Card tap yet --
-    there is deliberately no software-only way to flip this off (see the
-    migration's comment); it only changes via deactivate_active_alarms(),
-    which the physical HF/NFC deactivation event is expected to call."""
+    """Ang usa ra ka row nga gina-poll sa alarm banner. 'Active' nagpasabot
+    nga ang pinakabag-o nga unauthorized detection wala pa ma-clear sa
+    Master Key Card tap - tuyo gyud nga walay software-only nga paagi
+    mo-off ani, deactivate_active_alarms() ra ang mag-usab, ang tinuod nga
+    HF/NFC deactivation event ra ang mag-tawag ani."""
     active_event = conn.execute(
         """
         SELECT rfid_events.*, assets.asset_id AS asset_code, assets.name AS asset_name,
@@ -62,16 +60,12 @@ def get_alarm_status(conn):
 
 
 def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
-    """Classifies one de-duplicated detection event and logs it.
+    """I-classify ang usa ka de-duplicated nga detection event ug i-log.
 
-    Classification rule (mirrors the thesis's alarm logic): a tag that
-    matches a tool currently checked out ('borrowed') is authorized for
-    exit; a tag that matches a known tool in any other status is
-    unauthorized; a tag that matches no asset at all is 'unknown_tag' --
-    kept distinct from 'unauthorized' so a stray/mis-tagged item doesn't
-    get counted the same as a real unauthorized-removal event in the
-    confusion-matrix data this table exists to support.
-    """
+    Classification rule: ang tag nga naa sa asset nga 'borrowed' karon
+    authorized; ang tag nga naa sa asset apan laing status unauthorized;
+    ang tag nga wala gyu'y match nga asset 'unknown_tag' - gilain gikan sa
+    unauthorized para dili sila magsagol sa confusion-matrix data."""
     rfid_tag_scanned = (rfid_tag_scanned or "").strip()
     if not rfid_tag_scanned:
         return None, _no_ctx({"error": "Missing required field: rfid_tag_scanned"}, 400)
@@ -146,12 +140,11 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
 
 
 def deactivate_active_alarms(conn, staff_id):
-    """Clears every currently-active alarm at once (there should only ever be
-    one active at a time in practice, but this covers the edge case of two
-    detections landing before the tap is processed). staff_id is the Admin
-    identified by the Master Key Card, not a browser session - the route
-    calling this on the software side is meant only for the Pi's HF/NFC
-    handler to invoke, never a plain "deactivate" button in the UI."""
+    """I-clear ang tanang active nga alarm dungan - usually usa ra ka
+    active, apan gina-cover ang edge case sa duha ka detection nga
+    ni-landing sa dili pa ma-process ang tap. Ang staff_id mao ang Admin
+    nga na-identify sa Master Key Card, dili browser session - kini ra
+    para sa Pi's HF/NFC handler, walay "deactivate" button sa UI."""
     active_ids = [
         row["id"]
         for row in conn.execute(
@@ -201,8 +194,8 @@ MONITORING_SORTABLE_COLUMNS = {
 
 
 def build_monitoring_filters(args):
-    """Builds the WHERE clause + params shared by the table listing - mirrors
-    transaction_service.build_transactions_filters' shape."""
+    """Mag-himo sa WHERE clause + params nga shared sa table listing -
+    mirrors transaction_service.build_transactions_filters' shape."""
     where_clauses = []
     params = []
 
@@ -250,7 +243,8 @@ def build_monitoring_filters(args):
 
 
 def get_monitoring_table_context(conn, args, limit, offset):
-    """Shared table context for monitoring_page() and the htmx table partial."""
+    """Shared table context para sa monitoring_page() ug sa htmx table
+    partial."""
     where_clauses, params, classification_filter, error = build_monitoring_filters(args)
     if error:
         return None, error
@@ -312,9 +306,9 @@ def get_monitoring_table_context(conn, args, limit, offset):
 
 
 def get_recent_events(conn, limit=5):
-    """Most recent detections for the Dashboard's Monitoring widget - a glance
-    feed, same idea as dashboard_service.py's own recent_activity, just scoped
-    to rfid_events instead of transactions."""
+    """Pinakabag-o nga mga detection para sa Dashboard's Monitoring
+    widget - pareho ka idea sa dashboard_service.py's recent_activity,
+    naka-scope ra sa rfid_events imbes transactions."""
     rows = conn.execute(
         """
         SELECT rfid_events.id, rfid_events.detected_at, rfid_events.classification,
@@ -330,7 +324,8 @@ def get_recent_events(conn, limit=5):
 
 
 def get_monitoring_stat_cards(conn):
-    """Today-scoped counts for the page header - mirrors get_asset_stat_cards's shape."""
+    """Today-scoped nga mga ihap para sa page header - mirrors
+    get_asset_stat_cards's shape."""
     counts = conn.execute(
         """
         SELECT

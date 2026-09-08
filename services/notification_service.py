@@ -1,13 +1,8 @@
-"""In-app notification bell logic: creating notifications for various events
-(due-soon/overdue loans, unrestriction/deactivation requests, reservations,
-feedback), plus the read/cleared state (per staff member, not shared) and
-the Notifications tab's own list/mark-read/clear/open flows.
-
-(Bisaya: Kini nga file ang naghandle sa notification bell sa app - paghimo
-sa notification para sa lain-laing panghitabo - due-soon/overdue nga loan,
-unrestriction/deactivation request, reservation, feedback - dungan sa
-read/cleared nga state - matag staff naay kaugalingon, dili shared - ug
-ang Notifications tab's own nga list/mark-read/clear/open.)
+"""In-app notification bell logic - paghimo sa notification para sa
+lain-laing panghitabo (due-soon/overdue nga loan, unrestriction/
+deactivation request, reservation, feedback), dungan sa read/cleared nga
+state (matag staff naay kaugalingon, dili shared) ug ang Notifications
+tab's own nga list/mark-read/clear/open flows.
 """
 
 from database import get_db_connection
@@ -38,16 +33,11 @@ _UPSERT_CLEAR_SQL = """
 
 
 def sync_loan_notifications():
-    """Creates a 'due_soon'/'overdue' notification per qualifying loan that doesn't already have one.
-    Runs on a schedule, opening its own connection like the other jobs.
-    (Bisaya: Mag-himo ug 'due_soon'/'overdue' nga notification matag loan
-    nga kwalipikado, kung wala pa ni'y notification. Naa sa iskedyul,
-    naay kaugalingong koneksyon pareho sa ubang scheduled job.
-
-    Walay parameter ug walay return value. Kung na-overdue na ang usa ka
-    due_soon notification, i-usab ra kini sa 'overdue' - dili maghimo ug
-    bag-o - ug i-clear ang read state niini, para makita pag-usab sa
-    staff nga na-eskalar na ni.)"""
+    """Mag-himo ug 'due_soon'/'overdue' nga notification matag loan nga
+    kwalipikado nga wala pa ni'y notification. Naa sa iskedyul, naay
+    kaugalingong koneksyon. Kung na-overdue na ang usa ka due_soon
+    notification, i-usab ra kini sa 'overdue' (dili maghimo ug bag-o), ug
+    i-clear ang read state para makita pag-usab sa staff."""
     conn = get_db_connection()
     try:
         if not is_feature_enabled("transactions", conn):
@@ -135,12 +125,8 @@ PREF_FILTER_SQL = (
 
 
 def pref_filter_params(staff):
-    """Param tuple for PREF_FILTER_SQL's three placeholders, from a staff row's notify_* columns.
-    (Bisaya: Tuple sa parameter para sa tulo ka placeholder sa
-    PREF_FILTER_SQL, gikan sa notify_* nga column sa staff row.)
-
-    Args: staff (row nga naay notify_due_soon/notify_overdue/notify_requests).
-    Returns: tuple sa 3 ka value (0 o 1 matag usa).)"""
+    """Tuple sa parameter para sa tulo ka placeholder sa PREF_FILTER_SQL,
+    gikan sa notify_* nga column sa staff row. Returns: tuple sa 3 ka value."""
     return (
         staff["notify_due_soon"],
         staff["notify_overdue"],
@@ -149,37 +135,12 @@ def pref_filter_params(staff):
 
 
 def get_notification_bell_context(conn, staff_id, role, staff, limit=8):
-    """Returns (notifications, unread_count) for the sidebar bell, most recent first.
-    Broadcasts have both recipient columns NULL; is_read/is_cleared come from notification_reads, not notifications itself.
-    (Bisaya: Mobalik ug (notifications, unread_count) para sa sidebar bell,
-    sunod sa han-ay gikan sa pinakabag-o. Ang "broadcast" nga notification
-    - para sa tanan - naay NULL ang duha ka recipient column; ang
-    is_read/is_cleared gikan sa notification_reads table, dili sa
-    notifications mismo - kay per-staff man ang read state.)
+    """Mobalik ug (notifications, unread_count) para sa sidebar bell,
+    sunod sa han-ay gikan sa pinakabag-o. Ang broadcast nga notification
+    naay NULL ang duha ka recipient column; ang is_read/is_cleared gikan
+    sa notification_reads table, per-staff man ang read state.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        staff_id: id of the staff member viewing the bell.
-        (Bisaya: id sa staff nga nagtan-aw sa bell.)
-        role: that staff member's role - for role-targeted broadcasts.
-        (Bisaya: role sa maong staff - para sa mga broadcast nga
-        gina-target og role.)
-        staff: the staff row itself, needed for pref_filter_params().
-        (Bisaya: ang staff row mismo, gikinahanglan sa
-        pref_filter_params().)
-        limit: max notifications to return, defaults to 8.
-        (Bisaya: pinakadaghan nga notification nga ibalik, default 8.)
-
-    Returns:
-        tuple (notifications, unread_count) - `notifications` a list of
-        rows (uncleared, visible to this staff, respecting mute
-        preferences); `unread_count` the badge number.
-        (Bisaya: usa ka tuple (notifications, unread_count) -
-        `notifications` listahan sa row nga wala pa cleared, makita sa
-        maong staff, gi-respeto ang mute preference; `unread_count` ang
-        numero sa badge.)
-    """
+    Returns: tuple (notifications, unread_count)."""
     pref_params = pref_filter_params(staff)
     notifications = conn.execute(
         f"""
@@ -227,12 +188,9 @@ def get_notification_bell_context(conn, staff_id, role, staff, limit=8):
 
 
 def create_unrestriction_requested_notifications(conn, request_id, member_name, requester_username):
-    """Notifies every admin/in_charge of a new request, one row per role.
-    (Bisaya: Pahibaw-on ang tanang admin/in_charge sa bag-ong request, usa
-    ka row matag role - broadcast nga naka-target sa role, dili sa
-    individual nga staff.)
-    Args: conn, request_id, member_name, requester_username.
-    Returns: None - i-insert lang ang rows, ang nagtawag mag-commit."""
+    """Pahibaw-on ang tanang admin/in_charge sa bag-ong request, usa ka
+    row matag role - broadcast nga naka-target sa role, dili individual.
+    Returns: None, ang nagtawag ang mag-commit."""
     message = f"{requester_username} requested unrestriction for {member_name}"
     for role in ("admin", "in_charge"):
         conn.execute(
@@ -245,11 +203,8 @@ def create_unrestriction_requested_notifications(conn, request_id, member_name, 
 
 
 def create_unrestriction_resolved_notification(conn, request_id, requester_staff_id, member_name, approved, review_notes=None):
-    """Notifies the requester their request was approved/denied; not sent on cancellation.
-    (Bisaya: Pahibaw-on ang nag-request nga na-approve o na-deny ang iyang
-    request - DILI ipadala kung gi-cancel lang.)
-    Args: conn, request_id, requester_staff_id, member_name, approved
-    (bool), review_notes (optional). Returns: None."""
+    """Pahibaw-on ang nag-request nga na-approve o na-deny ang iyang
+    request - DILI ipadala kung gi-cancel lang."""
     if approved:
         message = f"Your unrestriction request for {member_name} was approved"
     else:
@@ -273,12 +228,9 @@ def create_unrestriction_resolved_notification(conn, request_id, requester_staff
 
 
 def create_reservation_cancelled_notification(conn, reservation_id, staff_id, asset_name, member_name):
-    """Notifies the original booking staff member that someone else cancelled their reservation.
-    (Bisaya: Pahibaw-on ang orihinal nga staff nga nag-book nga gi-cancel
-    sa lain ang iyang reservation - gitawag ra kini kung DILI mismo siya
-    ang ni-cancel.)
-    Args: conn, reservation_id, staff_id (recipient), asset_name, member_name.
-    Returns: None."""
+    """Pahibaw-on ang orihinal nga staff nga nag-book nga gi-cancel sa
+    lain ang iyang reservation - gitawag ra kung DILI mismo siya ang
+    ni-cancel."""
     conn.execute(
         """
         INSERT INTO notifications (type, reservation_id, recipient_staff_id, message)
@@ -293,10 +245,8 @@ def create_reservation_cancelled_notification(conn, reservation_id, staff_id, as
 
 
 def create_admin_deactivation_requested_notifications(conn, request_id, target_name, requester_name):
-    """Notifies every in_charge/tool_keeper eligible to review, one row per role.
-    (Bisaya: Pahibaw-on ang tanang in_charge/tool_keeper nga pwede
-    mo-review, usa ka row matag role.)
-    Args: conn, request_id, target_name, requester_name. Returns: None."""
+    """Pahibaw-on ang tanang in_charge/tool_keeper nga pwede mo-review,
+    usa ka row matag role."""
     message = f"{requester_name} requested deactivation of admin {target_name}"
     for role in ("in_charge", "tool_keeper"):
         conn.execute(
@@ -309,11 +259,8 @@ def create_admin_deactivation_requested_notifications(conn, request_id, target_n
 
 
 def create_admin_deactivation_resolved_notification(conn, request_id, requester_staff_id, target_name, approved, denial_reason=None):
-    """Notifies the requester their deactivation request was approved/denied; not sent on cancellation.
-    (Bisaya: Pahibaw-on ang nag-request nga na-approve o na-deny ang iyang
-    deactivation request - DILI ipadala kung gi-cancel lang.)
-    Args: conn, request_id, requester_staff_id, target_name, approved
-    (bool), denial_reason (optional). Returns: None."""
+    """Pahibaw-on ang nag-request nga na-approve o na-deny ang iyang
+    deactivation request - DILI ipadala kung gi-cancel lang."""
     if approved:
         message = f"Your request to deactivate admin {target_name} was approved"
     else:
@@ -334,11 +281,8 @@ def create_admin_deactivation_resolved_notification(conn, request_id, requester_
 
 
 def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id, submitter_name, category):
-    """Two rows: a broadcast to every admin, plus a personal confirmation to the submitter.
-    (Bisaya: Duha ka row: broadcast para sa tanang admin, dungan sa
-    personal nga kumpirmasyon para sa nag-submit.)
-    Args: conn, report_id, submitter_staff_id, submitter_name, category.
-    Returns: None."""
+    """Duha ka row: broadcast para sa tanang admin, dungan sa personal nga
+    kumpirmasyon para sa nag-submit."""
     conn.execute(
         """
         INSERT INTO notifications (type, feedback_report_id, recipient_role, message)
@@ -356,10 +300,8 @@ def create_feedback_submitted_notifications(conn, report_id, submitter_staff_id,
 
 
 def create_feedback_resolved_notification(conn, report_id, submitter_staff_id, response):
-    """Notifies the submitter their report was resolved, with the admin's actual reply.
-    (Bisaya: Pahibaw-on ang nag-submit nga na-resolve na ang iyang report,
-    lakip ang tinuod nga reply sa admin.)
-    Args: conn, report_id, submitter_staff_id, response. Returns: None."""
+    """Pahibaw-on ang nag-submit nga na-resolve na ang iyang report, lakip
+    ang tinuod nga reply sa admin."""
     conn.execute(
         """
         INSERT INTO notifications (type, feedback_report_id, recipient_staff_id, message)
@@ -370,10 +312,8 @@ def create_feedback_resolved_notification(conn, report_id, submitter_staff_id, r
 
 
 def clear_unrestriction_pending_notifications(conn, request_id):
-    """Removes pending-review notices once a request is approved, denied, or cancelled.
-    (Bisaya: Tangtangon ang pending-review nga mga notice human ma-approve,
-    ma-deny, o ma-cancel ang request.)
-    Args: conn, request_id. Returns: None."""
+    """Tangtangon ang pending-review nga mga notice human ma-approve,
+    ma-deny, o ma-cancel ang request."""
     conn.execute(
         "DELETE FROM notifications WHERE unrestriction_request_id = ? AND type = 'unrestriction_requested'",
         (request_id,),
@@ -385,27 +325,11 @@ def clear_unrestriction_pending_notifications(conn, request_id):
 
 
 def get_notifications_table_context(conn, args, staff):
-    """Shared query for the notifications list, used by the page and its htmx partial.
-    is_read/is_cleared come from a LEFT JOIN scoped to this staff member.
-    (Bisaya: Sinagolan/shared nga query para sa notifications list,
-    gigamit sa page ug sa iyang htmx partial. Ang is_read/is_cleared gikan
-    sa LEFT JOIN nga naka-scope sa maong staff.)
+    """Shared query para sa notifications list, gigamit sa page ug sa
+    iyang htmx partial. Ang is_read/is_cleared gikan sa LEFT JOIN nga
+    naka-scope sa maong staff.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        args: request.args-like filter input (show_unread_only, since,
-            until, limit, offset).
-        (Bisaya: request.args-like nga filter input.)
-        staff: the staff row viewing the list.
-        (Bisaya: ang staff row nga nagtan-aw sa listahan.)
-
-    Returns:
-        tuple (context, error) - `context` has notifications/total_count/
-        limit/offset/show_unread_only/since/until; `error` for an invalid
-        date filter.
-        (Bisaya: usa ka tuple (context, error).)
-    """
+    Returns: tuple (context, error)."""
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -476,11 +400,8 @@ def get_notifications_table_context(conn, args, staff):
 
 
 def mark_all_notifications_read(conn, staff):
-    """Marks read only what this staff member can see, without touching anyone else's copy.
-    (Bisaya: Ang "Mark all as read" nga buton - i-mark read ra ang makita
-    sa maong staff, dili apilon ang kopya sa uban - kay per-staff man ang
-    read state.)
-    Args: conn, staff. Returns: None - mag-commit dayon."""
+    """Ang "Mark all as read" nga buton - i-mark read ra ang makita sa
+    maong staff, dili apilon ang kopya sa uban."""
     conn.execute(
         f"""
         INSERT INTO notification_reads (notification_id, staff_id, is_read, read_at)
@@ -500,16 +421,11 @@ def mark_all_notifications_read(conn, staff):
 
 
 def mark_notification_read(conn, notification_id, staff):
-    """Marks one notification read for this staff member, after confirming
-    it's actually visible to them (prevents marking-read something not
-    even theirs to see).
-    (Bisaya: I-mark read ang usa ka notification para ani nga staff, human
-    kumpirmahon nga tinuod nga makita niya kini - proteksyon batok sa
-    pag-mark-read og notification nga dili man unta iya.)
+    """I-mark read ang usa ka notification para ani nga staff, human
+    kumpirmahon nga tinuod nga makita niya - proteksyon batok sa
+    pag-mark-read og notification nga dili man unta iya.
 
-    Args: conn, notification_id, staff.
-    Returns: bool - True kung malampuson, False kung wala makit-i o dili
-    makita sa maong staff."""
+    Returns: bool - True kung malampuson."""
     notification = conn.execute(
         f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
         (notification_id, staff["id"], staff["role"]),
@@ -523,12 +439,8 @@ def mark_notification_read(conn, notification_id, staff):
 
 
 def clear_notification(conn, notification_id, staff):
-    """The '×' on each row - clears one notification at a time.
-    (Bisaya: Ang '×' sa matag row - i-clear ang usa ra ka notification
-    matag tawag.)
-    Args: conn, notification_id, staff.
-    Returns: bool - True kung malampuson, False kung wala makit-i o dili
-    makita sa maong staff."""
+    """Ang '×' sa matag row - i-clear ang usa ra ka notification matag
+    tawag. Returns: bool - True kung malampuson."""
     notification = conn.execute(
         f"SELECT id FROM notifications WHERE id = ? AND ({_VISIBILITY_SQL})",
         (notification_id, staff["id"], staff["role"]),
@@ -542,23 +454,10 @@ def clear_notification(conn, notification_id, staff):
 
 
 def clear_notifications_bulk(conn, ids, staff):
-    """Bulk clear; ids the staff member can't see are silently skipped rather than erroring.
-    (Bisaya: Bulk/daghan dungan nga clear - ang mga id nga dili makita sa
-    staff hilom ra nga laktawan, dili mag-error.)
+    """Bulk clear - ang mga id nga dili makita sa staff hilom ra nga
+    laktawan, dili mag-error.
 
-    Args:
-        conn: open sqlite3.Connection.
-        (Bisaya: bukas nga koneksyon sa database.)
-        ids: list of notification ids to clear.
-        (Bisaya: listahan sa mga notification id nga i-clear.)
-        staff: the staff member clearing them.
-        (Bisaya: ang staff nga nag-clear.)
-
-    Returns:
-        int - how many were actually cleared (visible ones only).
-        (Bisaya: numero - pila ka notification ang tinuod nga na-clear -
-        ang makita ra ni-a niya.)
-    """
+    Returns: int - pila ka notification ang tinuod nga na-clear."""
     placeholders = ",".join("?" * len(ids))
     cursor = conn.execute(
         f"""
