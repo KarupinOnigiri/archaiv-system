@@ -5,7 +5,27 @@ from services.settings_service import get_damage_restriction_threshold
 
 
 def check_and_lift_restriction_if_resolved(member_id, conn):
-    """If this member was auto-restricted and has no more overdue items, lift it."""
+    """If this member was auto-restricted and has no more overdue items, lift it.
+    (Bisaya: Kung kini nga member na-restrict automatic tungod sa overdue,
+    ug wala na siyay overdue nga item karon, tangtangon/liftan ang
+    restriction niya.)
+
+    Args:
+        member_id: id of the member to re-check.
+        (Bisaya: id sa member nga susihon pag-usab.)
+        conn: open sqlite3.Connection - caller owns the transaction; this
+            function commits its own UPDATE when it lifts a restriction.
+        (Bisaya: bukas nga koneksyon sa database - ang nagtawag ang
+        responsable sa transaction; kini nga function mag-commit sa iyang
+        kaugalingong UPDATE kung matangtang ang restriction.)
+
+    Returns:
+        bool - True if a restriction was actually lifted just now, False if
+        the member wasn't auto-restricted, or still has an overdue item.
+        (Bisaya: True kung natangtang gyud ang restriction karon; False
+        kung ang member wala man diay na-auto-restrict, o naay overdue pa
+        gihapon.)
+    """
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
 
     if not member["is_restricted"] or member["restriction_source"] != "auto":
@@ -45,6 +65,29 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
 
 
 def check_and_restrict_overdue_member(member_id, conn):
+    """Restricts this member if they currently have any overdue loan.
+    Counterpart to check_and_lift_restriction_if_resolved above - called
+    both right after a return (in case that return didn't clear the last
+    overdue item) and by sweep_overdue_members() below on a schedule.
+    (Bisaya: I-restrict kini nga member kung naay overdue nga loan siya
+    karon. Kabaligtad ni sa check_and_lift_restriction_if_resolved sa taas -
+    gitawag ni human mag-return - kay basin naay laing overdue pa nga wala
+    naka-human - ug gitawag pod sa sweep_overdue_members() sa ubos base sa
+    iskedyul.)
+
+    Args:
+        member_id: id of the member to check.
+        (Bisaya: id sa member nga susihon.)
+        conn: open sqlite3.Connection - caller owns the transaction.
+        (Bisaya: bukas nga koneksyon sa database - ang nagtawag ang
+        responsable sa transaction.)
+
+    Returns:
+        bool - True if this member was just restricted (had an overdue
+        loan), False if they had none.
+        (Bisaya: True kung na-restrict ang member karon - kay naay overdue -
+        False kung wala man diay siyay overdue.)
+    """
     # Fetched only for a readable Activity Log name, not needed for the check.
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     overdue = conn.execute(
@@ -84,7 +127,28 @@ def check_and_restrict_overdue_member(member_id, conn):
 
 def check_and_restrict_damaged_returns(member_id, conn):
     """Damage counterpart to check_and_restrict_overdue_member; restricts after enough non-functional returns.
-    Not auto-liftable like overdue - stays restricted until a human resolves it."""
+    Not auto-liftable like overdue - stays restricted until a human resolves it.
+    (Bisaya: Kabaligtad para sa "damage" - pareho sa
+    check_and_restrict_overdue_member pero base sa daghan nga na-damage nga
+    pagbalik sa item. Dili ni ma-auto-lift pareho sa overdue - magpabilin
+    ni nga restricted hangtod usa ka tawo/staff ang mo-resolve niini
+    mano-mano.)
+
+    Args:
+        member_id: id of the member to check.
+        (Bisaya: id sa member nga susihon.)
+        conn: open sqlite3.Connection - caller owns the transaction.
+        (Bisaya: bukas nga koneksyon sa database - ang nagtawag ang
+        responsable sa transaction.)
+
+    Returns:
+        bool - True if this member was just restricted for damage, False if
+        they weren't (already restricted, or below the configured
+        damage-count threshold).
+        (Bisaya: True kung na-restrict karon ang member tungod sa damage,
+        False kung wala - naka-restrict na siya kaniadto, o wala pa
+        makaabot sa gi-set nga threshold/limit.)
+    """
     member = conn.execute("SELECT * FROM members WHERE id = ?", (member_id,)).fetchone()
     if member is None or member["is_restricted"]:
         return False
@@ -128,7 +192,13 @@ def check_and_restrict_damaged_returns(member_id, conn):
 
 def sweep_overdue_members():
     """Proactively restricts every member with an overdue loan, not just at checkout time.
-    Runs on a schedule (app.py); opens its own connection like checkout_service.py's cleanup job."""
+    Runs on a schedule (app.py); opens its own connection like checkout_service.py's cleanup job.
+    (Bisaya: Mag-restrict nang daan sa TANANG member nga naay overdue nga
+    loan, dili lang mag-hulat nga mag-checkout pa sila para ma-check. Naa
+    ni sa iskedyul (app.py); naay kaugalingong database connection pareho
+    sa checkout_service.py's cleanup job.
+
+    Walay parameter ug walay return value.)"""
     conn = get_db_connection()
     try:
         overdue_member_ids = conn.execute("""

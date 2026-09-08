@@ -1,5 +1,10 @@
 """Business logic for routes/setup.py: the public "is setup needed" check and the
 one-time first-admin creation flow that retires the temporary seeded admin.
+
+(Bisaya: Ang logic sa routes/setup.py - ang public nga check kung
+"kinahanglan pa ba mag-setup" ug ang usa-ka-beses ra nga paghimo sa unang
+tinuod nga admin account, nga mo-retire/tangtang sa temporary/temp nga
+admin nga gi-seed/gibutang.)
 """
 
 import logging
@@ -17,6 +22,25 @@ logger = logging.getLogger(__name__)
 
 
 def is_setup_required(conn=None):
+    """Whether a REAL (not temp-seeded) active admin account exists yet -
+    the gate the login page uses to decide whether to send someone to the
+    Setup wizard instead.
+    (Bisaya: Kung naa na ba'y TINUOD - dili temporary - nga active nga admin
+    account. Kini ang gina-check sa login page para mahibaw-an kung
+    ipadala ba ang tawo sa Setup wizard imbes.)
+
+    Args:
+        conn: an already-open sqlite3.Connection to reuse, or None to open
+            (and close) a fresh one.
+        (Bisaya: naa nay bukas nga koneksyon nga gamiton pag-usab, o None
+        para mag-abre - ug mo-close - ug bag-o.)
+
+    Returns:
+        bool - True when setup is still needed (no real active admin
+        exists yet).
+        (Bisaya: True kung kinahanglan pa gyud mag-setup - kay wala pay
+        tinuod nga active nga admin.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -38,7 +62,20 @@ def is_fresh_install(conn=None):
     populated, already-deployed system shouldn't expose an unauthenticated
     "create yourself an admin account" endpoint to anyone on the LAN. A true
     fresh install has nothing to protect yet, so routes/setup.py skips the temp
-    admin entirely and lets complete_setup() below run with temp_admin=None."""
+    admin entirely and lets complete_setup() below run with temp_admin=None.
+    (Bisaya: True ra kung tinuod gyud nga bag-o pa ang database - walay
+    gyu'y staff bisan usa - lahi ni sa is_setup_required(), nga True pod
+    human ma-deactivate ang katapusang tinuod nga admin sa usa ka
+    naa-nang-gigamit nga sistema. Kadtong ikaduhang case (recovery path sa
+    seed_service.py) magpadayon gihapon mo-agi sa temp-admin-login flow,
+    tuyo gyud - kay ang naa nay data nga sistema dili angay maabli ug
+    "himo-og-imong-kaugalingong-admin" nga endpoint nga walay login, sa
+    bisan kinsa sa LAN. Ang tinuod nga bag-o/fresh install walay
+    proteksyonon pa, mao nga laktawan sa routes/setup.py ang temp admin,
+    complete_setup() ra sa ubos dayon ang mo-dagan nga temp_admin=None.
+
+    Args: conn (optional).
+    Returns: bool - True kung walay gyud staff sa database.)"""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -57,7 +94,34 @@ def complete_setup(conn, data, temp_admin):
     currently logged-in temporary setup admin from a recovery re-seed
     (services/seed_service.py, after a live system lost its last real admin),
     and must still be that system-seeded account - retired here once the
-    real one exists."""
+    real one exists.
+    (Bisaya: Ang temp_admin None kung tinuod nga bag-o/fresh install - walay
+    staff gyud - tan-awa ang is_fresh_install() - walay login nga
+    gikinahanglan, kini direkta na ang mahimong unang admin account. Kung
+    dili, ang temp_admin mao ang naka-login karon nga temporary setup admin
+    gikan sa recovery re-seed (seed_service.py, human mawad-an ang naa
+    nang sistema sa katapusang tinuod nga admin), ug kinahanglan gihapon
+    kining system-seeded nga account - i-retire/tangtangon dinhi human
+    mahimo na ang tinuod.
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        data: dict sa setup form - first_name, last_name, department_id,
+            username, password, ug uban pa.
+        (Bisaya: dict gikan sa setup form - first_name, last_name,
+        department_id, username, password, ug uban pa.)
+        temp_admin: ang naka-login nga temp admin row, o None kung fresh
+            install.
+        (Bisaya: ang row sa naka-login nga temp admin, o None kung fresh
+        install.)
+
+    Returns:
+        tuple (result, error) - `result` naa'y "message" ug "staff_id" kung
+        malampuson; `error` naa kung na-block - e.g. na-setup na, dili
+        temp admin, o username/barcode nga na-gamit na.
+        (Bisaya: usa ka tuple (result, error).)
+    """
     if temp_admin is None:
         if not is_fresh_install(conn):
             return None, (

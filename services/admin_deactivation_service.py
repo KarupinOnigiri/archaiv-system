@@ -7,14 +7,57 @@ ELIGIBLE_REVIEWER_ROLES = ("in_charge", "tool_keeper")
 
 
 def is_eligible_reviewer(role):
-    """Whether this role can cast an approve/deny vote on an admin-deactivation request."""
+    """Whether this role can cast an approve/deny vote on an admin-deactivation request.
+    (Bisaya: Kung pwede ba ni nga role mo-vote - approve o deny - sa usa ka
+    admin-deactivation request.)
+
+    Args:
+        role: a staff role string, e.g. "admin", "in_charge", "tool_keeper".
+        (Bisaya: usa ka role sa staff, e.g. "admin", "in_charge",
+        "tool_keeper".)
+
+    Returns:
+        bool - True only for "in_charge" and "tool_keeper"; other admins
+        can't vote on this (an admin can't vote another admin's
+        deactivation).
+        (Bisaya: True para ra sa "in_charge" ug "tool_keeper"; ang laing
+        admin dili pwede mo-vote - dili pwede ang admin mo-vote sa
+        pag-deactivate sa laing admin.)
+    """
     return role in ELIGIBLE_REVIEWER_ROLES
 
 
 def determine_approval_tier(conn, requester_id, target_id):
     """Picks an approval tier (full/reduced/minimal) from how many in_charge/tool_keeper accounts are active.
     Snapshotted once at request creation, never recalculated.
-    requester_id/target_id are unused here, kept only for call-site compatibility."""
+    requester_id/target_id are unused here, kept only for call-site compatibility.
+    (Bisaya: Mopili ug "approval tier" - full/reduced/minimal - base sa
+    kadaghan sa active nga in_charge/tool_keeper accounts karon. Kini
+    gikuha usa ra ka beses - "snapshot" - sa dihang gihimo ang request,
+    dili na ni ma-recalculate/usbon pag-usab bisan mausab pa ang
+    kadaghanon sa staff human niana. Ang requester_id/target_id wala gigamit
+    dinhi, gibutang ra para pareho ang porma sa pagtawag/call-site.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        requester_id: unused (kept for call-site compatibility).
+        (Bisaya: wala gigamit - gibutang ra para pareho ang porma sa
+        pagtawag.)
+        target_id: unused (kept for call-site compatibility).
+        (Bisaya: wala gigamit - gibutang ra para pareho ang porma sa
+        pagtawag.)
+
+    Returns:
+        tuple (tier, required_approvals, required_in_charge) - `tier` is
+        one of "full"/"reduced"/"minimal", or (None, None, None) when
+        there aren't even enough active reviewers to allow the request at
+        all.
+        (Bisaya: usa ka tuple (tier, required_approvals,
+        required_in_charge) - ang `tier` usa sa "full"/"reduced"/
+        "minimal", o (None, None, None) kung wala pay igo nga active nga
+        reviewer para tugotan gani ang request.)
+    """
     active_in_charge = conn.execute(
         "SELECT COUNT(*) AS cnt FROM staff WHERE role = 'in_charge' AND is_active = 1"
     ).fetchone()["cnt"]
@@ -33,7 +76,24 @@ def determine_approval_tier(conn, requester_id, target_id):
 
 
 def get_review_counts(conn, request_id):
-    """(approve, in_charge_approve, deny) counts for a request's finalize-eligibility check."""
+    """(approve, in_charge_approve, deny) counts for a request's finalize-eligibility check.
+    (Bisaya: Ihap sa (approve, in_charge_approve, deny) para sa
+    finalize-eligibility check sa usa ka request - kung igo na ba ang boto
+    para ma-finalize.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        request_id: id of the admin_deactivation_requests row to count
+            votes for.
+        (Bisaya: id sa request nga ihapon ang mga boto.)
+
+    Returns:
+        tuple (approve_count, in_charge_approve_count, deny_count) - all
+        ints, 0 if nobody's voted yet.
+        (Bisaya: usa ka tuple (approve_count, in_charge_approve_count,
+        deny_count) - tanan numero, 0 kung wala pay nivoto.)
+    """
     row = conn.execute(
         """
         SELECT
@@ -50,7 +110,25 @@ def get_review_counts(conn, request_id):
 
 
 def requirements_met(request_row, conn):
-    """Whether a request has enough votes to be finalize-eligible; finalizing itself is still manual."""
+    """Whether a request has enough votes to be finalize-eligible; finalizing itself is still manual.
+    (Bisaya: Kung igo na ba ang boto sa usa ka request para mahimo na
+    "finalize-eligible" - apan ang tinuod nga finalize kinahanglan gihapon
+    buhaton mano-mano/manual sa requester.)
+
+    Args:
+        request_row: the admin_deactivation_requests row (needs
+            required_approvals and required_in_charge columns).
+        (Bisaya: ang row sa admin_deactivation_requests - kinahanglan naa
+        ni'y required_approvals ug required_in_charge nga column.)
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+
+    Returns:
+        bool - True when both the total-approval and in_charge-approval
+        thresholds are met.
+        (Bisaya: True kung na-abot na ang parehong threshold - total nga
+        approval ug in_charge nga approval.)
+    """
     approve_count, in_charge_count, _ = get_review_counts(conn, request_row["id"])
     return (
         approve_count >= request_row["required_approvals"]
@@ -60,7 +138,36 @@ def requirements_met(request_row, conn):
 
 def finalize_admin_deactivation(request_row, actor_staff_id, conn):
     """Deactivates the target admin. Only called from the requester-triggered /finalize route.
-    Refuses if the target is the last active admin - a hard system invariant."""
+    Refuses if the target is the last active admin - a hard system invariant.
+    (Bisaya: I-deactivate ang gina-target nga admin. Gitawag ra ni gikan sa
+    /finalize route nga gi-trigger sa requester mismo - dili sa mga
+    reviewer nga ni-vote. Mo-refuse kung ang target mao ang KATAPUSANG
+    active nga admin - kini usa ka hugot/hard nga patakaran sa system, dili
+    gyud mahitabo nga mawad-an og admin ang tibuok sistema.)
+
+    Args:
+        request_row: the admin_deactivation_requests row to finalize -
+            needs id, target_staff_id, requested_by_staff_id,
+            required_approvals, required_in_charge.
+        (Bisaya: ang row sa request nga i-finalize - kinahanglan naa ni'y
+        id, target_staff_id, requested_by_staff_id, required_approvals,
+        required_in_charge.)
+        actor_staff_id: id of the staff member clicking Finalize (the
+            original requester), used for the audit log entry.
+        (Bisaya: id sa staff nga nag-click sa Finalize - ang orihinal nga
+        requester - gigamit ra para sa audit log.)
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+
+    Returns:
+        tuple (success, error) - (True, None) when the target admin was
+        deactivated; (False, "...") with a human-readable reason when
+        requirements_met() fails or the target is the last active admin.
+        (Bisaya: usa ka tuple (success, error) - (True, None) kung
+        malampuson nga na-deactivate ang target admin; (False, "...") naay
+        klaro nga rason kung wala pa igo ang requirements, o kung target
+        mao ang katapusang active nga admin.)
+    """
     if not requirements_met(request_row, conn):
         return False, "The required approvals haven't been reached yet"
 

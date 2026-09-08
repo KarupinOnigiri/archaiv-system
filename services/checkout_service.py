@@ -9,7 +9,16 @@ logger = logging.getLogger(__name__)
 
 def cleanup_stale_checkout_sessions():
     """Releases reserved assets and cancels checkout sessions abandoned past the stale timeout
-    (admin-configurable, System > Checkout Session Timeout - see settings_service.py)."""
+    (admin-configurable, System > Checkout Session Timeout - see settings_service.py).
+    (Bisaya: Mo-buhi/release sa mga asset nga "reserved" pa ug mo-cancel sa
+    mga checkout session nga gibiyaan/wala natapos sulod sa gi-set nga
+    "stale timeout" - pwede usbon sa admin sa System > Checkout Session
+    Timeout, tan-awa ang settings_service.py.
+
+    Walay parameter ug walay return value - kini gitawag lang sa
+    background scheduler (app.py), naay kaugalingong database connection,
+    ug matag naapektuhan nga session gi-log sa audit log isip
+    "auto_cancelled_checkout_session".)"""
     conn = get_db_connection()
     stale_minutes = get_checkout_session_stale_minutes(conn)
 

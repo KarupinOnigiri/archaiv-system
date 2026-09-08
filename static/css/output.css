@@ -11039,6 +11039,9 @@
   .capitalize {
     text-transform: capitalize;
   }
+  .lowercase {
+    text-transform: lowercase;
+  }
   .normal-case {
     text-transform: none;
   }
