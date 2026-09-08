@@ -1,3 +1,16 @@
+"""App-wide configurable settings (session timing, lockout, feature flags,
+barcode prefixes, etc), all backed by the generic key/value app_settings
+table - a missing row always falls back to a hardcoded default here, so a
+fresh/unmigrated install never crashes on a missing setting.
+
+(Bisaya: Kini nga file ang naghandle sa mga setting sa tibuok app - oras sa
+session, lockout, feature flags, barcode prefixes, ug uban pa - tanan
+gi-store sa usa ra ka key/value nga app_settings table. Kung wala pa ang
+row, mo-fallback ra sa hardcoded default nga naa dinhi, para dili gyud
+mag-crash ang usa ka bag-o/wala pa na-migrate nga install tungod lang sa
+nawala nga setting.)
+"""
+
 from database import get_db_connection
 
 # Sentinel for "locked with no expiry" in staff.locked_until, without a schema change.
@@ -60,7 +73,27 @@ FEATURE_FLAGS = {
 
 
 def get_setting_int(key, conn=None):
-    """Looks up an int setting by key, falling back to DEFAULT_SETTINGS if missing/unparseable."""
+    """Looks up an int setting by key, falling back to DEFAULT_SETTINGS if missing/unparseable.
+    (Bisaya: Pangitaon ang numero nga setting base sa key, mo-fallback sa
+    DEFAULT_SETTINGS kung wala/dili ma-parse. Kini ang gigamit sa tanang
+    get_X_minutes/get_X_hours/get_X_days nga mubo nga wrapper sa ubos.)
+
+    Args:
+        key: the app_settings row's key, e.g. "session_idle_minutes" -
+            must exist in DEFAULT_SETTINGS.
+        (Bisaya: ang key sa app_settings row, e.g. "session_idle_minutes" -
+        kinahanglan naa gyud sa DEFAULT_SETTINGS.)
+        conn: an already-open sqlite3.Connection to reuse, or None to open
+            (and close) a fresh one.
+        (Bisaya: naa nay bukas nga koneksyon nga gamiton pag-usab, o None
+        para mag-abre - ug mo-close - ug bag-o.)
+
+    Returns:
+        int - the stored value, or DEFAULT_SETTINGS[key] when the row is
+        missing or its value can't be parsed as an int.
+        (Bisaya: numero - ang na-store nga value, o DEFAULT_SETTINGS[key]
+        kung wala ang row o dili ma-parse isip numero.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -80,39 +113,66 @@ def get_setting_int(key, conn=None):
 
 
 def get_session_idle_minutes(conn=None):
+    """Minutes of inactivity before a session auto-expires.
+    (Bisaya: Pila ka minuto nga walay lihok sa dili pa mag-expire ang
+    session.) Args: conn (optional). Returns: int."""
     return get_setting_int("session_idle_minutes", conn)
 
 
 def get_session_absolute_hours(conn=None):
+    """Max hours a session can live even with continuous activity.
+    (Bisaya: Pinakataas nga oras nga mabuhi ang session bisan naay
+    padayon nga lihok.) Args: conn (optional). Returns: int."""
     return get_setting_int("session_absolute_hours", conn)
 
 
 def get_max_failed_attempts(conn=None):
+    """Failed login/PIN attempts allowed before the account locks.
+    (Bisaya: Pila ka sayop nga pagsulay sa login/PIN nga gitugotan sa dili
+    pa mag-lock ang account.) Args: conn (optional). Returns: int."""
     return get_setting_int("max_failed_attempts", conn)
 
 
 def get_lockout_minutes(conn=None):
+    """Minutes an account stays locked after hitting max_failed_attempts.
+    (Bisaya: Pila ka minuto nga naka-lock ang account human maabot ang
+    max_failed_attempts.) Args: conn (optional). Returns: int."""
     return get_setting_int("lockout_minutes", conn)
 
 
 def get_due_soon_hours(conn=None):
+    """Hours before a due date that a loan counts as "due soon".
+    (Bisaya: Pila ka oras sa dili pa moabot ang due date nga gina-isip na
+    nga "due soon".) Args: conn (optional). Returns: int."""
     return get_setting_int("due_soon_hours", conn)
 
 
 def get_default_loan_days(conn=None):
+    """Default loan length in days for a new checkout.
+    (Bisaya: Default nga gidugayon sa loan - sa adlaw - para sa bag-ong
+    checkout.) Args: conn (optional). Returns: int."""
     return get_setting_int("default_loan_days", conn)
 
 
 def get_damage_restriction_threshold(conn=None):
+    """Non-functional-condition returns before a member gets auto-restricted.
+    (Bisaya: Pila ka beses ka-balik nga naay damage sa dili pa
+    ma-auto-restrict ang member.) Args: conn (optional). Returns: int."""
     return get_setting_int("damage_restriction_threshold", conn)
 
 
 def get_auto_backup_interval_hours(conn=None):
+    """Hours between automatic database backups.
+    (Bisaya: Pila ka oras ang gilay-on sa matag automatic nga backup sa
+    database.) Args: conn (optional). Returns: int."""
     return get_setting_int("auto_backup_interval_hours", conn)
 
 
 def get_archive_purge_days(conn=None):
-    """0 means "None" - auto-purge disabled; otherwise days since deleted_at/deactivated_at."""
+    """0 means "None" - auto-purge disabled; otherwise days since deleted_at/deactivated_at.
+    (Bisaya: 0 nagpasabot "None" - patay/disabled ang auto-purge; kung
+    dili, pila ka adlaw human sa deleted_at/deactivated_at.)
+    Args: conn (optional). Returns: int."""
     return get_setting_int("archive_purge_days", conn)
 
 
@@ -123,14 +183,19 @@ ARCHIVE_PURGE_PRESET_LABELS = {0: "Off", 7: "1 week", 30: "1 month", 180: "6 mon
 
 
 def format_archive_purge_label(days):
-    """Short label for the System page's Auto-Delete card summary line."""
+    """Short label for the System page's Auto-Delete card summary line.
+    (Bisaya: Mubo nga label para sa summary line sa Auto-Delete card sa
+    System page.) Args: days (int). Returns: str, e.g. "1 month"."""
     return ARCHIVE_PURGE_PRESET_LABELS.get(days, f"{days} days")
 
 
 def get_default_maintenance_interval_days(conn=None):
     """Default days-out for a new/re-serviced asset's next_maintenance_due
     when staff don't set one explicitly - see asset_service.py's
-    _default_next_maintenance_due."""
+    _default_next_maintenance_due.
+    (Bisaya: Default nga pila ka adlaw sa unahan ang next_maintenance_due
+    sa bag-o/na-serbisyohan nga asset kung wala ni-set ang staff mismo.)
+    Args: conn (optional). Returns: int."""
     return get_setting_int("default_maintenance_interval_days", conn)
 
 
@@ -138,7 +203,10 @@ def get_maintenance_reminder_lead_days(conn=None):
     """How many days ahead of next_maintenance_due (or how close to
     maintenance_interval_checkouts) counts as "due soon" - services/
     maintenance_service.py's scheduled sweep, and get_asset_stat_cards'
-    low_stock-style due-soon count."""
+    low_stock-style due-soon count.
+    (Bisaya: Pila ka adlaw sa unahan sa next_maintenance_due - o pila na
+    ka duol sa maintenance_interval_checkouts - ang gina-isip nga "due
+    soon".) Args: conn (optional). Returns: int."""
     return get_setting_int("maintenance_reminder_lead_days", conn)
 
 
@@ -147,7 +215,11 @@ def get_checkout_session_stale_minutes(conn=None):
     forgotten, or the browser tab just closed) before it's auto-cancelled
     and its reserved assets released - services/checkout_service.py's
     scheduled sweep, and the lazy same-check done inline whenever a session
-    is looked up (services/transaction_service.py)."""
+    is looked up (services/transaction_service.py).
+    (Bisaya: Pila ka minuto nga wala hilabti ang usa ka in-progress nga
+    checkout cart - gi-dock ug nalimtan, o na-close ang tab - sa dili pa
+    kini auto-cancel-on ug buhian ang mga reserved nga asset.)
+    Args: conn (optional). Returns: int."""
     return get_setting_int("checkout_session_stale_minutes", conn)
 
 
@@ -157,7 +229,30 @@ def get_setting_bool(key, conn=None, default=True):
     feature flag keeps defaulting the way DEFAULT_FEATURE_FLAGS already says,
     regardless of what's passed here) - lets a non-tab boolean setting (e.g.
     alarm_enabled) declare its own fallback without being added to that dict,
-    which is specifically about tab-gating flags and their redirect labels."""
+    which is specifically about tab-gating flags and their redirect labels.
+    (Bisaya: Pareho ka porma sa get_setting_int, apan para sa '1'/'0' nga
+    row - boolean/tinuod-o-dili. Ang `default` parameter importante ra
+    kung ang key wala sa DEFAULT_FEATURE_FLAGS - tugotan ang laing
+    boolean setting - e.g. alarm_enabled - nga naay kaugalingong
+    fallback nga dili na kinahanglan idugang sa maong dict, nga
+    specifically para sa tab-gating nga mga flag.)
+
+    Args:
+        key: the app_settings row's key.
+        (Bisaya: ang key sa app_settings row.)
+        conn: an already-open sqlite3.Connection to reuse, or None.
+        (Bisaya: naa nay bukas nga koneksyon, o None.)
+        default: fallback when `key` isn't in DEFAULT_FEATURE_FLAGS.
+        (Bisaya: fallback kung wala ang `key` sa DEFAULT_FEATURE_FLAGS.)
+
+    Returns:
+        bool - True when the stored value is exactly "1", the flag's own
+        DEFAULT_FEATURE_FLAGS default, or `default` when the row is
+        missing.
+        (Bisaya: True kung ang na-store nga value "1" gyud, ang default
+        gikan sa DEFAULT_FEATURE_FLAGS, o ang `default` kung wala ang
+        row.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -174,7 +269,9 @@ def get_setting_bool(key, conn=None, default=True):
 
 
 def get_auto_backup_enabled(conn=None):
-    """Falls back to True by default, like the feature flags' own safety-first default."""
+    """Falls back to True by default, like the feature flags' own safety-first default.
+    (Bisaya: Mo-fallback sa True by default - pareho sa "safety-first" nga
+    default sa feature flags.) Args: conn (optional). Returns: bool."""
     return get_setting_bool("auto_backup_enabled", conn)
 
 
@@ -183,13 +280,35 @@ def get_alarm_enabled(conn=None):
     the alarm (banner, active-alarm state) - see services/monitoring_service.py's
     record_rfid_event. Detections are still classified and logged either way;
     this only gates the alarm itself, independent of the "monitoring" feature
-    flag (which gates the whole tab/hardware pipeline, not just this)."""
+    flag (which gates the whole tab/hardware pipeline, not just this).
+    (Bisaya: Kung ang usa ka unauthorized/unknown-tag nga RFID detection
+    mo-raise gyud ba sa alarm - banner, active-alarm state. Ang detection
+    gi-classify ug gi-log gihapon bisan unsaon; kini ra ang mo-gate/kontrol
+    sa alarm mismo, lahi sa "monitoring" feature flag nga mo-gate sa
+    tibuok tab/hardware pipeline.) Args: conn (optional). Returns: bool."""
     return get_setting_bool("alarm_enabled", conn)
 
 
 def get_setting_str(key, conn=None, default=""):
     """String counterpart to get_setting_int/get_setting_bool - for settings
-    like the barcode ID prefixes that aren't numbers or on/off flags."""
+    like the barcode ID prefixes that aren't numbers or on/off flags.
+    (Bisaya: Bersyon para sa string - text - sa get_setting_int/
+    get_setting_bool - para sa mga setting nga sama sa barcode ID prefixes
+    nga dili numero o on/off flag.)
+
+    Args:
+        key: the app_settings row's key.
+        (Bisaya: ang key sa app_settings row.)
+        conn: an already-open sqlite3.Connection to reuse, or None.
+        (Bisaya: naa nay bukas nga koneksyon, o None.)
+        default: fallback string when the row is missing or empty.
+        (Bisaya: fallback nga string kung wala o walay laman ang row.)
+
+    Returns:
+        str - the stored value, or `default`.
+        (Bisaya: usa ka string - ang na-store nga value, o ang
+        `default`.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -229,19 +348,41 @@ BARCODE_PREFIX_PATTERN = r"^[A-Z0-9\-_.#]{2,6}$"
 
 
 def get_asset_id_prefix(conn=None):
+    """The prefix new asset_id codes are generated with, e.g. "AST" for "AST00042".
+    (Bisaya: Ang prefix nga gigamit sa bag-ong asset_id code, e.g. "AST"
+    para sa "AST00042".) Args: conn (optional). Returns: str."""
     return get_setting_str("asset_id_prefix", conn, DEFAULT_ASSET_ID_PREFIX)
 
 
 def get_member_code_prefix(conn=None):
+    """The prefix new member_code codes are generated with, e.g. "MBR".
+    (Bisaya: Ang prefix nga gigamit sa bag-ong member_code, e.g. "MBR".)
+    Args: conn (optional). Returns: str."""
     return get_setting_str("member_code_prefix", conn, DEFAULT_MEMBER_CODE_PREFIX)
 
 
 def get_staff_code_prefix(conn=None):
+    """The prefix new staff_code codes are generated with, e.g. "STF".
+    (Bisaya: Ang prefix nga gigamit sa bag-ong staff_code, e.g. "STF".)
+    Args: conn (optional). Returns: str."""
     return get_setting_str("staff_code_prefix", conn, DEFAULT_STAFF_CODE_PREFIX)
 
 
 def get_feature_flags(conn=None):
-    """Returns {name: enabled} for every FEATURE_FLAGS entry; used by templates and route gating."""
+    """Returns {name: enabled} for every FEATURE_FLAGS entry; used by templates and route gating.
+    (Bisaya: Mobalik ug {name: enabled} para sa matag entry sa
+    FEATURE_FLAGS - gigamit sa templates - e.g. sidebar nav - ug sa
+    route gating.)
+
+    Args:
+        conn: an already-open sqlite3.Connection to reuse, or None.
+        (Bisaya: naa nay bukas nga koneksyon, o None.)
+
+    Returns:
+        dict {str: bool} - e.g. {"assets": True, "monitoring": False, ...}.
+        (Bisaya: dict {str: bool} - e.g. {"assets": True, "monitoring":
+        False, ...}.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -256,10 +397,40 @@ def get_feature_flags(conn=None):
 
 
 def is_feature_enabled(name, conn=None):
-    """Single-flag convenience wrapper around get_feature_flags for callers checking just one."""
+    """Single-flag convenience wrapper around get_feature_flags for callers checking just one.
+    (Bisaya: Mubo nga wrapper para sa usa ra ka flag - gamiton kung usa ra
+    ka feature ang gusto susihon, dili tanan.)
+
+    Args:
+        name: short feature name, e.g. "assets", "monitoring" - must be a
+            key in FEATURE_FLAGS.
+        (Bisaya: mubo nga ngalan sa feature, e.g. "assets", "monitoring" -
+        kinahanglan naa sa FEATURE_FLAGS.)
+        conn: an already-open sqlite3.Connection to reuse, or None.
+        (Bisaya: naa nay bukas nga koneksyon, o None.)
+
+    Returns:
+        bool - True when that feature is enabled.
+        (Bisaya: True kung naka-enable kanang feature.)
+    """
     key, _label = FEATURE_FLAGS[name]
     return get_setting_bool(key, conn)
 
 
 def get_feature_label(name):
+    """Human-readable label for a feature flag, e.g. "assets" -> "Inventory"
+    - used in "X is currently disabled" messages.
+    (Bisaya: Ngalan nga sayon basahon sa tawo para sa usa ka feature flag,
+    e.g. "assets" -> "Inventory" - gigamit sa mga mensahe nga "X is
+    currently disabled".)
+
+    Args:
+        name: short feature name - must be a key in FEATURE_FLAGS.
+        (Bisaya: mubo nga ngalan sa feature - kinahanglan naa sa
+        FEATURE_FLAGS.)
+
+    Returns:
+        str - the human-readable label.
+        (Bisaya: usa ka string - ang ngalan nga sayon basahon.)
+    """
     return FEATURE_FLAGS[name][1]

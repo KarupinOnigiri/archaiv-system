@@ -27,7 +27,26 @@ TOP_BORROWED_RANGE_LABELS = {
 
 
 def get_top_borrowed(conn, range_key):
-    """Top 5 most-borrowed assets in range_key's window; shared by the server render and htmx refresh."""
+    """Top 5 most-borrowed assets in range_key's window; shared by the server render and htmx refresh.
+    (Bisaya: Top 5 nga assets nga labing kanunay gi-borrow sulod sa
+    range_key's nga panahon - gigamit sa server render UG sa htmx nga
+    refresh, usa ra ka function.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        range_key: one of "today", "yesterday", "7d", "30d" - must be a
+            key in TOP_BORROWED_RANGES.
+        (Bisaya: usa sa "today", "yesterday", "7d", "30d" - kinahanglan
+        naa sa TOP_BORROWED_RANGES.)
+
+    Returns:
+        list[sqlite3.Row] - up to 5 rows with asset_id, asset_name,
+        asset_code, borrow_count, ordered by borrow_count descending.
+        (Bisaya: listahan sa hangtod 5 ka row - asset_id, asset_name,
+        asset_code, borrow_count - sunod sa han-ay gikan sa pinakadaghan
+        nga borrow_count.)
+    """
     lower_bound = TOP_BORROWED_RANGES[range_key]
     upper_clause = ""
     params = []
@@ -51,7 +70,30 @@ def get_top_borrowed(conn, range_key):
 
 def get_dashboard_context(conn=None):
     """Everything the Dashboard needs in one place; every count mirrors its own tab's query exactly.
-    Read-only and cheap, so it just re-runs on every load instead of caching."""
+    Read-only and cheap, so it just re-runs on every load instead of caching.
+    (Bisaya: Ang TANANG gikinahanglan sa Dashboard, usa ra ka lugar; ang
+    matag ihap dinhi pareho gyud sa query sa iyang kaugalingong tab -
+    pananglitan ang asset counts dinhi pareho gyud sa Inventory page's
+    stat cards. Read-only ra ug barato/cheap ang query, mao nga ge-rerun
+    ra kini matag load imbes i-cache.)
+
+    Args:
+        conn: an already-open sqlite3.Connection to reuse, or None to open
+            (and close) a fresh one.
+        (Bisaya: naa nay bukas nga koneksyon nga gamiton pag-usab, o None
+        para mag-abre - ug mo-close - ug bag-o.)
+
+    Returns:
+        dict - every "dash_*" key the Dashboard template (templates/home.html)
+        renders: asset/member/loan totals, the Due Soon and Maintenance Due
+        lists, upcoming reservations, recent activity feed, top-borrowed
+        assets, and monitoring/alarm status.
+        (Bisaya: usa ka dict - ang tanang "dash_*" nga key nga gina-render
+        sa Dashboard template - templates/home.html - kabahin: total sa
+        asset/member/loan, mga listahan sa Due Soon ug Maintenance Due,
+        umaabot nga reservations, recent activity feed, top-borrowed nga
+        asset, ug monitoring/alarm status.)
+    """
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()

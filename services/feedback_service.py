@@ -3,6 +3,10 @@ reports staff can submit, admins can review and resolve).
 
 Same (data, error) convention as the other *_service modules, error being a ready
 `(jsonify(...), status)` tuple.
+
+(Bisaya: Kini nga file ang naghandle sa feedback - bug/idea/other nga
+report nga pwede i-submit sa staff sulod mismo sa app, mao pod ang
+review/resolve nga gina-himo sa admin.)
 """
 
 from flask import jsonify
@@ -21,7 +25,37 @@ CATEGORIES = ("bug", "idea", "other")
 
 
 def submit_feedback(conn, staff, category, message, page_path, screenshots):
-    """screenshots: list of FileStorage objects, already filtered to non-empty by the route."""
+    """Creates a feedback report with 0+ screenshots, all-or-nothing (a
+    failed screenshot save rolls back the whole report, not a partial one).
+    (Bisaya: Mo-himo ug feedback report nga naay 0 o labaw pa nga
+    screenshot, tanan-o-wala - kung mapakyas ang usa ka screenshot,
+    mo-rollback ang TIBUOK report, dili tugotan nga partial/kulang ra ang
+    nasave.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        staff: the staff row submitting this report.
+        (Bisaya: ang staff row nga nag-submit ani nga report.)
+        category: one of "bug", "idea", "other".
+        (Bisaya: usa sa "bug", "idea", "other".)
+        message: the report text, required, max 4000 characters.
+        (Bisaya: ang sulat sa report, kinahanglan gyud naay laman,
+        pinakadaghan 4000 ka letra.)
+        page_path: which page the staff was on when they reported this,
+            optional.
+        (Bisaya: unsa nga page ang gina-abrehan sa staff sa dihang
+        nag-report - pwede walay laman.)
+        screenshots: list of FileStorage objects, already filtered to
+            non-empty by the route.
+        (Bisaya: listahan sa FileStorage - mga hulagway - na-filter na sa
+        route, walay laman nga file wala na dinhi.)
+
+    Returns:
+        tuple (result, error) - "message" on success, or a
+        (jsonify(...), status) tuple on failure.
+        (Bisaya: usa ka tuple (result, error).)
+    """
     if category not in CATEGORIES:
         return None, (jsonify({"error": f"category must be one of {', '.join(CATEGORIES)}"}), 400)
     if not message:
@@ -78,7 +112,12 @@ def submit_feedback(conn, staff, category, message, page_path, screenshots):
 
 
 def get_open_feedback_count(conn=None):
-    """Feeds the System/Feedback sidebar badges, same pattern as the other pending-count helpers."""
+    """Feeds the System/Feedback sidebar badges, same pattern as the other pending-count helpers.
+    (Bisaya: Gigamit sa System/Feedback nga sidebar badge, pareho ka porma
+    sa laing pending-count nga helper.)
+
+    Args: conn (optional).
+    Returns: int - pila ka feedback report ang 'open' pa.)"""
     owns_conn = conn is None
     if owns_conn:
         conn = get_db_connection()
@@ -90,7 +129,23 @@ def get_open_feedback_count(conn=None):
 
 
 def get_feedback_table_context(conn, args):
-    """Shared query for the Feedback tab, same get_*_table_context pattern as the other tabs."""
+    """Shared query for the Feedback tab, same get_*_table_context pattern as the other tabs.
+    (Bisaya: Sinagolan/shared nga query para sa Feedback tab, pareho ka
+    porma sa get_*_table_context sa laing tabs.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        args: request.args-like filter input (status, category, limit,
+            offset).
+        (Bisaya: request.args-like nga filter input.)
+
+    Returns:
+        tuple (context, error) - `context` has reports/images_by_report/
+        open_count/total_count/limit/offset/status/category; `error` for
+        an invalid status or category filter.
+        (Bisaya: usa ka tuple (context, error).)
+    """
     limit, offset, error = parse_pagination_params(args)
     if error:
         return None, error
@@ -167,7 +222,26 @@ def get_feedback_table_context(conn, args):
 
 
 def resolve_feedback(conn, report_id, response, staff):
-    """Resolving requires an actual reply, not a silent status flip."""
+    """Resolving requires an actual reply, not a silent status flip.
+    (Bisaya: Ang pag-resolve kinahanglan gyud naay tinuod nga reply -
+    dili lang basta usbon ang status sa hilom.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        report_id: id of the feedback report to resolve.
+        (Bisaya: id sa feedback report nga i-resolve.)
+        response: the admin's reply text, required, max 2000 characters.
+        (Bisaya: ang reply sa admin, kinahanglan gyud naay laman,
+        pinakadaghan 2000 ka letra.)
+        staff: the staff row (admin) resolving this.
+        (Bisaya: ang staff row - admin - nga nag-resolve ani.)
+
+    Returns:
+        tuple (result, error) - "message" on success, or a
+        (jsonify(...), status) tuple - 400/404 - on failure.
+        (Bisaya: usa ka tuple (result, error).)
+    """
     if not response:
         return None, (jsonify({"error": "A reply is required to mark feedback resolved"}), 400)
     if len(response) > 2000:
@@ -201,6 +275,25 @@ def resolve_feedback(conn, report_id, response, staff):
 
 
 def reopen_feedback(conn, report_id, staff):
+    """Puts a resolved feedback report back to 'open', clearing the
+    resolution fields (resolved_at, resolved_by, admin_response).
+    (Bisaya: I-balik ang resolved nga feedback report sa 'open' pag-usab,
+    hawanan ang mga resolution field - resolved_at, resolved_by,
+    admin_response.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        report_id: id of the feedback report to reopen.
+        (Bisaya: id sa feedback report nga i-reopen.)
+        staff: the staff row (admin) reopening this.
+        (Bisaya: ang staff row - admin - nga nag-reopen ani.)
+
+    Returns:
+        tuple (result, error) - "message" on success, or a
+        (jsonify(...), 404) tuple when the report doesn't exist.
+        (Bisaya: usa ka tuple (result, error).)
+    """
     report = conn.execute("SELECT * FROM feedback_reports WHERE id = ?", (report_id,)).fetchone()
     if report is None:
         return None, (jsonify({"error": "Feedback report not found"}), 404)

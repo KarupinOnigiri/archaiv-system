@@ -25,6 +25,20 @@ biggest risk-reduction decision in this feature; auto-linking a fulfilled
 reservation to its actual checkout transaction (fulfilled_transaction_id)
 is deferred to a later pass - the column exists for that future use but
 nothing sets it yet.
+
+(Bisaya: Kini nga file ang naghandle sa advance booking - pag-reserve
+nang daan - sa usa ka serialized nga asset para sa usa ka member. IMPORTANTE
+GYUD: ang assets.status='reserved' NAGPASABOT RA gyud "naa sa open nga
+checkout-session cart karon dayon" - lahi kaayo sa reservation. Ang usa ka
+reservation row DILI GYUD mosuwat sa assets.status. Ang availability para
+sa booking gina-check pinaagi sa pagtan-aw kung naay sumpay/overlapping nga
+'scheduled' nga row DIRI sa reservations table, dili sa status sa asset.
+
+V1 SCOPE: ang reservation ADVISORY ra, DILI ENFORCED/PUGSANON. Ang asset
+nga naay umaabot nga reservation pwede gihapon ma-checkout karong adlawa
+sa bisan kinsa - makita ra sa staff ang "reserved for" banner, sila na ang
+mo-desisyon. Kini ang labing dako nga desisyon nga nag-gamay sa risk sa
+niini nga feature.)
 """
 
 import logging
@@ -43,6 +57,40 @@ VALID_STATUSES = ("scheduled", "fulfilled", "cancelled", "expired")
 
 
 def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes=None):
+    """Books a serialized asset for a member over [start_at, end_at), after
+    checking the asset is real/not deleted/not a consumable, the member is
+    real, the window is valid, and it doesn't overlap another 'scheduled'
+    reservation on the same asset.
+    (Bisaya: I-reserve ang usa ka serialized nga asset para sa usa ka
+    member sulod sa [start_at, end_at) - susihon una nga tinuod ang asset,
+    wala pa na-delete, dili consumable; tinuod ang member; balido ang
+    window; ug dili nag-overlap sa laing 'scheduled' nga reservation sa
+    parehas nga asset.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        asset_id: id of the asset to reserve.
+        (Bisaya: id sa asset nga i-reserve.)
+        member_id: id of the member the booking is for.
+        (Bisaya: id sa member nga para niini nga booking.)
+        start_at, end_at: ISO datetime strings for the reservation window
+            (end_at must be after start_at).
+        (Bisaya: ISO datetime string para sa window sa reservation - ang
+        end_at kinahanglan human sa start_at.)
+        staff: the staff row making this booking.
+        (Bisaya: ang staff row nga naghimo ani nga booking.)
+        notes: optional free-text notes.
+        (Bisaya: dugang nga sinulat, pwede walay laman.)
+
+    Returns:
+        tuple (result, error) - `result` has "message" and "id" on
+        success; `error` is a (jsonify(...), status) tuple - 404/400/409 -
+        on failure (not found, invalid window, or an overlapping booking).
+        (Bisaya: usa ka tuple (result, error) - malampuson kung naay
+        "message" ug "id"; ang `error` naa kung napakyas - wala makit-i,
+        invalid nga window, o naay nag-overlap na nga booking.)
+    """
     asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
     if asset is None:
         return None, (jsonify({"error": "Asset not found"}), 404)
@@ -102,7 +150,13 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
 
 def _load_scheduled_reservation(conn, reservation_id):
     """Returns (reservation_row, error_response). error_response is None if
-    the reservation exists and is still scheduled."""
+    the reservation exists and is still scheduled.
+    (Bisaya: Mobalik ug (reservation_row, error_response). None ang
+    error_response kung naa gyud ang reservation ug 'scheduled' pa gihapon.
+
+    Args: conn, reservation_id.
+    Returns: tuple (res, error) - 404 kung wala makit-i, 409 kung dili na
+    'scheduled' ang status.)"""
     res = conn.execute("SELECT * FROM reservations WHERE id = ?", (reservation_id,)).fetchone()
     if res is None:
         return None, (jsonify({"error": "Reservation not found"}), 404)
@@ -114,7 +168,25 @@ def _load_scheduled_reservation(conn, reservation_id):
 def cancel_reservation(conn, reservation_id, staff):
     """Anyone can cancel their own booking; admin/in_charge can also cancel
     someone else's (e.g. tool_keeper is out, the booking needs clearing) -
-    tool_keeper cannot cancel another staff member's booking."""
+    tool_keeper cannot cancel another staff member's booking.
+    (Bisaya: Bisan kinsa pwede mo-cancel sa iyang kaugalingong booking;
+    ang admin/in_charge pwede pod mo-cancel sa booking sa lain - e.g.
+    wala ang tool_keeper, kinahanglan hawanan ang booking - apan ang
+    tool_keeper DILI pwede mo-cancel sa booking sa laing staff.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        reservation_id: id of the reservation to cancel.
+        (Bisaya: id sa reservation nga i-cancel.)
+        staff: the staff row requesting the cancel.
+        (Bisaya: ang staff row nga nangayo sa cancel.)
+
+    Returns:
+        tuple (result, error) - "message" on success, or a
+        (jsonify(...), status) tuple - 404/409/403 - on failure.
+        (Bisaya: usa ka tuple (result, error).)
+    """
     res, error = _load_scheduled_reservation(conn, reservation_id)
     if error:
         return None, error
@@ -159,7 +231,27 @@ def cancel_reservation(conn, reservation_id, staff):
 
 
 def get_reservations_context(conn, args, limit, offset, staff):
-    """admin/in_charge see every reservation; tool_keeper only sees ones they booked."""
+    """admin/in_charge see every reservation; tool_keeper only sees ones they booked.
+    (Bisaya: Ang admin/in_charge makakita sa TANANG reservation; ang
+    tool_keeper makakita ra sa iyang kaugalingong gi-book.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        args: request.args-like filter input (status, mine).
+        (Bisaya: request.args-like nga filter input.)
+        limit, offset: pagination.
+        (Bisaya: para sa pagination.)
+        staff: the staff row viewing the list - determines scope
+            (admin/in_charge see all, others see only their own).
+        (Bisaya: ang staff row nga nagtan-aw - mo-determinar sa scope.)
+
+    Returns:
+        tuple (context, error) - `context` has total_count/limit/offset/
+        status_filter/reservations_list; `error` is a (jsonify(...), 400)
+        tuple for an invalid status filter.
+        (Bisaya: usa ka tuple (context, error).)
+    """
     status_filter = args.get("status")
     if status_filter and status_filter not in VALID_STATUSES:
         return None, (jsonify({"error": f"status must be one of: {', '.join(VALID_STATUSES)}"}), 400)
@@ -214,7 +306,24 @@ def get_reservations_context(conn, args, limit, offset, staff):
 
 def get_upcoming_reservations_for_asset(conn, asset_id, limit=5):
     """Feeds the details-modal "RESERVED FOR" banner - only ever-relevant
-    ('scheduled', not yet ended) reservations, soonest first."""
+    ('scheduled', not yet ended) reservations, soonest first.
+    (Bisaya: Gigamit sa "RESERVED FOR" nga banner sa details modal - ang
+    mga reservation ra nga importante gihapon - 'scheduled', wala pa
+    ma-tapos - sunod sa han-ay gikan sa pinakasunod.)
+
+    Args:
+        conn: open sqlite3.Connection.
+        (Bisaya: bukas nga koneksyon sa database.)
+        asset_id: id of the asset to check.
+        (Bisaya: id sa asset nga susihon.)
+        limit: max rows to return, defaults to 5.
+        (Bisaya: pinakadaghan nga row nga ibalik, default 5.)
+
+    Returns:
+        list[dict] - upcoming scheduled reservations for this asset.
+        (Bisaya: listahan sa dict - mga umaabot nga scheduled nga
+        reservation ani nga asset.)
+    """
     rows = conn.execute(
         """
         SELECT reservations.*,
@@ -234,7 +343,12 @@ def get_upcoming_reservations_for_asset(conn, asset_id, limit=5):
 def sweep_expired_reservations():
     """Flips past-due 'scheduled' rows to 'expired' - own connection, runs
     on a schedule (app.py), same shape as services/loan_service.py's
-    sweep_overdue_members()."""
+    sweep_overdue_members().
+    (Bisaya: I-usab ang mga 'scheduled' nga row nga nangagi na sa
+    'expired' - naay kaugalingong koneksyon, naa sa iskedyul (app.py),
+    pareho ka porma sa loan_service.py's sweep_overdue_members().
+
+    Walay parameter ug walay return value.)"""
     from database import get_db_connection
 
     conn = get_db_connection()
