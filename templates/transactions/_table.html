@@ -90,6 +90,15 @@
         <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-error/15 text-error">Overdue</span>
         {% elif txn.status == 'borrowed' %}
         <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-info/15 text-info">Borrowed</span>
+        {% elif txn.asset_type == 'consumable' %}
+        <!-- Distinct from a real "Returned" (which implies someone handed
+             a tool back) - a consumable was used up on the spot, nothing
+             physically comes back. Same status='returned' row under the
+             hood (see finish_checkout_session's own comment for why), but
+             conflating the two in this table read as misleading - asked
+             for after noticing Time Out/Return Date land on the same
+             instant with no visual explanation why. -->
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-neutral/15 text-neutral" data-tooltip="Consumed on checkout - not a borrow/return">Consumed</span>
         {% else %}
         <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/15 text-success">Returned</span>
         {% endif %}

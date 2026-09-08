@@ -289,3 +289,54 @@ def test_consumable_never_shows_up_in_return_flow(as_admin, conn, member_id, cat
         "SELECT id FROM transactions WHERE asset_id = ? AND status = 'borrowed'", (asset_id,)
     ).fetchone()
     assert open_loan is None
+
+
+# # # "CONSUMED" DISTINCT FROM A REAL "RETURNED" ----------------------------
+# A consumable's transaction row is stored as status='returned' (see this
+# file's own module docstring) since nothing new needed adding to
+# transactions.status - but showing that literally as "Returned" in the UI
+# reads as a real borrow-then-return, which never happened. Both surfaces
+# that render this status (the table and the details modal) special-case
+# asset_type == 'consumable' into a "Consumed" badge instead.
+
+
+def test_transactions_table_shows_consumed_badge_not_returned(as_admin, conn, member_id, category_id):
+    client, csrf, _ = as_admin
+    asset_id = make_consumable(conn, category_id, quantity=50, name="Consumed Badge Tape")
+    barcode = barcode_of(conn, "members", member_id)
+    session_id = start_session(client, csrf, barcode).get_json()["checkout_session_id"]
+    asset_code = barcode_of(conn, "assets", asset_id)
+    add_item(client, csrf, session_id, asset_code, quantity=1)
+    finish(client, csrf, session_id)
+
+    resp = client.get("/api/v1/transactions/table")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    # Scoped to this row specifically (by its own distinctive asset name),
+    # not just "the table contains the word Consumed somewhere" - other
+    # rows in a shared test DB could coincidentally contain either word.
+    row_start = html.index("Consumed Badge Tape")
+    row = html[row_start : row_start + 1500]
+    assert ">Consumed<" in row
+    assert ">Returned<" not in row
+
+
+def test_transaction_details_modal_shows_consumed_badge_not_returned(
+    as_admin, conn, member_id, category_id
+):
+    client, csrf, _ = as_admin
+    asset_id = make_consumable(conn, category_id, quantity=50, name="Consumed Badge Tape 2")
+    barcode = barcode_of(conn, "members", member_id)
+    session_id = start_session(client, csrf, barcode).get_json()["checkout_session_id"]
+    asset_code = barcode_of(conn, "assets", asset_id)
+    add_item(client, csrf, session_id, asset_code, quantity=1)
+    finish(client, csrf, session_id)
+
+    txn_id = conn.execute(
+        "SELECT id FROM transactions WHERE asset_id = ?", (asset_id,)
+    ).fetchone()["id"]
+    resp = client.get(f"/api/v1/transactions/{txn_id}/details-modal")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert ">Consumed<" in html
+    assert ">Returned<" not in html

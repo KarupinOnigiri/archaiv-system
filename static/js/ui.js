@@ -259,27 +259,53 @@ function formatDateTime12h(raw, opts) {
       if (!text) return;
       tooltipEl.textContent = text;
       tooltipEl.classList.remove('hidden');
+      // Measured AFTER unhiding (position doesn't affect a fixed,
+      // content-sized bubble's own width/height, so this is safe to read
+      // before top/left are set below) - real per-tooltip size instead of
+      // one guessed constant, needed now that placement is picked in both
+      // axes instead of just flipping vertically near the bottom edge.
+      const tw = tooltipEl.offsetWidth;
+      const th = tooltipEl.offsetHeight;
       const rect = el.getBoundingClientRect();
-      // Non-rail tooltips normally go below-center (toolbar buttons, filter
-      // toggles - plenty of room under them). The account row's name span
-      // (line 728 below) is the one non-rail tooltip that sits right at the
-      // bottom of the viewport (sidebar-account is the last thing in the
-      // sidebar) - "below" there pushed the bubble half off-screen, so it
-      // read as cut off/not shown. Rather than special-case that one
-      // element, flip to the same right-of-element placement rail tooltips
-      // already use whenever there isn't roughly a tooltip's height of room
-      // below - works for this element today and for anything else that
-      // ever ends up hugging the bottom edge later.
-      const TOOLTIP_EST_HEIGHT = 36;
-      if (isRail || rect.bottom + TOOLTIP_EST_HEIGHT > window.innerHeight) {
-        tooltipEl.style.top = (rect.top + rect.height / 2) + 'px';
-        tooltipEl.style.left = (rect.right + 10) + 'px';
-        tooltipEl.style.transform = 'translateY(-50%)';
-      } else {
-        tooltipEl.style.top = (rect.bottom + 8) + 'px';
-        tooltipEl.style.left = (rect.left + rect.width / 2) + 'px';
-        tooltipEl.style.transform = 'translateX(-50%)';
+      const GAP = 8;
+      const MARGIN = 8; // min breathing room against the viewport edge
+
+      if (isRail) {
+        // Prefer right-of-element (the icon column's own free space) -
+        // flip to the left instead whenever the rail itself is hugging
+        // the right edge and there isn't room to grow rightward (e.g. an
+        // icon in a right-docked panel, if one is ever added - collapsed
+        // sidebar tabs today always have room to their right already).
+        const roomRight = window.innerWidth - rect.right - GAP;
+        const left = roomRight >= tw + MARGIN ? rect.right + GAP : rect.left - GAP - tw;
+        tooltipEl.style.top = (rect.top + rect.height / 2 - th / 2) + 'px';
+        tooltipEl.style.left = left + 'px';
+        tooltipEl.style.transform = '';
+        return;
       }
+
+      // Everything else: below-center by default, flipped/clamped on
+      // whichever axis would otherwise push the bubble off-screen - not
+      // just the bottom edge (the account row's name span, sitting right
+      // at the sidebar's bottom edge, was the one case this used to
+      // special-case into the rail's right-side placement instead; it
+      // now naturally flips to "above" here like anything else hugging
+      // the bottom would). A button near the right edge or a
+      // bottom/top-right corner no longer grows off-screen either - the
+      // horizontal center clamps inward, and if that's not enough (the
+      // element itself is right at the edge) it right-aligns against the
+      // viewport instead of the element's own center.
+      const showAbove = rect.bottom + GAP + th > window.innerHeight - MARGIN
+        && rect.top - GAP - th >= MARGIN;
+      const top = showAbove ? (rect.top - GAP - th) : (rect.bottom + GAP);
+
+      let left = rect.left + rect.width / 2 - tw / 2;
+      if (left + tw + MARGIN > window.innerWidth) left = window.innerWidth - tw - MARGIN;
+      if (left < MARGIN) left = MARGIN;
+
+      tooltipEl.style.top = top + 'px';
+      tooltipEl.style.left = left + 'px';
+      tooltipEl.style.transform = '';
     }, TOOLTIP_SHOW_DELAY_MS);
   });
 
@@ -1523,18 +1549,33 @@ const FAVICON_HREFS = {
   dark: '/static/images/logo-icon-dark.png',
 };
 
-function setFaviconForTheme(theme) {
+// Driven by the BROWSER/OS's own light-or-dark preference, not the app's
+// Theme mode - see base.html's identical early-paint version for the
+// full reasoning (the tab favicon is browser chrome, it should match the
+// OS/browser's actual visual context, not whatever content theme is
+// picked inside the app). No longer takes a theme argument - it never
+// varies with app theme at all now.
+function setFaviconForOsScheme() {
   const link = document.getElementById('favicon-link');
   if (!link) return;
-  const isDark = theme === 'tesda-dark';
+  let isDark = false;
+  try {
+    isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch (e) {}
   link.href = isDark ? FAVICON_HREFS.dark : FAVICON_HREFS.light;
 }
+
+// Keeps the tab icon in sync live if the OS theme changes while this tab
+// stays open, without needing a reload - base.html's own inline copy only
+// runs once, at first paint.
+try {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setFaviconForOsScheme);
+} catch (e) {}
 
 function applyThemeMode(mode) {
   const attrs = THEME_MODE_ATTRS[mode];
   document.documentElement.setAttribute('data-theme', attrs.theme);
   document.documentElement.setAttribute('data-sidebar', attrs.sidebar);
-  setFaviconForTheme(attrs.theme);
 }
 
 function syncThemeModeLabel() {

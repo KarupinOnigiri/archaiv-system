@@ -9,6 +9,11 @@
       </div>
       {% if transaction.status == 'borrowed' %}
       <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-info/15 text-info shrink-0">Borrowed</span>
+      {% elif transaction.asset_type == 'consumable' %}
+      <!-- Same distinction as transactions/_table.html's own row badge -
+           consumed on checkout, not a real borrow/return, see that
+           template's comment for the full reasoning. -->
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-neutral/15 text-neutral shrink-0" data-tooltip="Consumed on checkout - not a borrow/return">Consumed</span>
       {% else %}
       <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-success/15 text-success shrink-0">Returned</span>
       {% endif %}

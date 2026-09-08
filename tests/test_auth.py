@@ -623,13 +623,40 @@ def test_sidebar_nav_has_tightened_spacing_for_no_scrollbar(as_admin):
     html = resp.get_data(as_text=True)
     assert "#sidebar-nav {" in html and "padding-top: 0;" in html
     assert "#sidebar-nav .sidebar-link {" in html and "height: 29px;" in html
-    assert "#sidebar-nav .nav-group-label {" in html and "height: 19px;" in html
+    assert "#sidebar-nav .nav-group-label {" in html and "height: 18px;" in html
     # Breathing room around each group's divider line (reported as flush
-    # against the line on both sides) - margin-top before it, padding-top
-    # after it, both added without reintroducing the scrollbar this same
-    # test guards against (nav/link/label spacing were all reclaimed from
-    # elsewhere so this fits alongside .sidebar-link's own height).
-    assert "margin-top: 5px;" in html and "padding-top: 3px;" in html
+    # against the line on both sides, then asked for more a second time) -
+    # margin-top before it, padding-top after it, without reintroducing
+    # the scrollbar this same test guards against (that round's extra
+    # space was reclaimed from #sidebar-header's own padding instead of
+    # touching .sidebar-link's height again; a THIRD round then gave 2px
+    # of margin-top back to #sidebar-header, which had been trimmed too
+    # far and sat too close to the viewport's top edge).
+    assert "margin-top: 6px;" in html and "padding-top: 6px;" in html
+    assert 'id="sidebar-header"' in html and "pt-6 pb-4" in html
+
+
+def test_tooltip_positioning_is_edge_aware():
+    """Regression test: the shared #app-tooltip bubble used to only flip
+    vertically (below -> right-of-element) when hugging the viewport's
+    bottom edge, with no horizontal edge-awareness at all - an element
+    near the right edge or a corner had its tooltip pushed off-screen.
+    static/js/ui.js now measures the tooltip's real rendered size and
+    clamps/flips on whichever axis would otherwise overflow, in both the
+    rail (icon-only, right<->left flip) and default (below<->above flip +
+    horizontal clamp) cases. Read directly from the static file - this is
+    pure client-side positioning math with no server-rendered HTML to
+    assert against, verified live in the browser instead (see the git
+    history/commit message for the specific corner cases checked)."""
+    import pathlib
+
+    ui_js = pathlib.Path(__file__).resolve().parent.parent / "static" / "js" / "ui.js"
+    src = ui_js.read_text(encoding="utf-8")
+    assert "tooltipEl.offsetWidth" in src and "tooltipEl.offsetHeight" in src
+    assert "showAbove" in src
+    assert "roomRight" in src
+    # The old fixed-constant/always-right-of-element approach should be gone.
+    assert "TOOLTIP_EST_HEIGHT" not in src
 
 
 def test_sidebar_collapsed_links_are_centered_squares(as_admin):
@@ -837,10 +864,48 @@ def test_system_search_bar_is_wider_and_inits_rounded_corner_on_load(as_admin):
 
 def test_sidebar_group_label_is_dimmer(as_admin):
     """Regression test: sidebar category titles (OPERATIONS/PEOPLE/...)
-    were text-base-content/40 - dimmed further to /30 per feedback so
-    they read as a quiet section label rather than competing with the
-    actual tab names below them."""
+    were text-base-content/40, dimmed to /30, then dimmed again to /25 per
+    a second round of feedback asking for a clearer gap against the tab
+    names/icons below them (those stay at full/55% opacity - see
+    .sidebar-link-inactive). /20 was tried live and found too faint to
+    read as a label at all."""
     client, csrf, _ = as_admin
     resp = client.get("/")
     html = resp.get_data(as_text=True)
-    assert 'sidebar-label text-[10px] font-semibold tracking-wider text-base-content/30' in html
+    assert 'sidebar-label text-[10px] font-semibold tracking-wider text-base-content/25' in html
+
+
+def test_favicon_follows_os_scheme_not_app_theme(as_admin):
+    """Regression test: the tab favicon used to follow the app's own Theme
+    mode (data-theme="tesda-dark" => dark icon), only falling back to the
+    browser/OS's own prefers-color-scheme for an untouched Mixed-mode
+    install - meaning picking e.g. Light mode in a dark-OS browser left
+    the tab icon mismatched against every other tab. Per explicit
+    feedback ("i meant it in the theme mode of the browser itself not on
+    the app"), it's unconditional now - always prefers-color-scheme,
+    regardless of data-theme/savedMode."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "matchMedia" in html and "prefers-color-scheme: dark" in html
+    # The old theme-gated condition should be gone, not just supplemented.
+    assert "theme === 'tesda' && typeof savedMode" not in html
+    start = html.index("var lightHref")
+    favicon_block = html[max(0, start - 500) : start]
+    assert "isDark = theme ===" not in favicon_block
+
+
+def test_sidebar_group_label_divider_only_visible_when_collapsed(as_admin):
+    """Regression test: the divider line above each sidebar group label
+    (OPERATIONS/PEOPLE/...) now only shows while the sidebar is collapsed
+    - expanded, the label text itself already separates one group from
+    the next, so the line read as redundant clutter. border-color (not
+    border-width/display) is what toggles, so .nav-group-label's own
+    border-t utility class keeps reserving its 1px either way and nothing
+    shifts position when the line appears/disappears."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "#sidebar-nav .nav-group-label {\n    border-color: transparent;" in html
+    assert "#sidebar.collapsed #sidebar-nav .nav-group-label," in html
+    assert "border-color: var(--color-base-200);" in html

@@ -374,6 +374,7 @@ def get_transactions_table_context(conn, args, limit, offset):
     transactions = conn.execute(
         f"""
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
+               assets.asset_type,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                borrowed_staff.username AS borrowed_by_username,
                returned_staff.username AS returned_by_username,
@@ -474,6 +475,7 @@ def get_transaction_details(conn, transaction_id):
     transaction = conn.execute(
         """
         SELECT transactions.*, assets.name AS asset_name, assets.asset_id AS asset_code,
+               assets.asset_type,
                members.first_name, members.last_name, members.middle_name, members.suffix,
                borrower_staff.username AS borrowed_by_username,
                returner_staff.username AS returned_by_username

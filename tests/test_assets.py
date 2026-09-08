@@ -901,6 +901,19 @@ def test_show_archived_toggle_drives_input_color_inline(as_admin):
     assert "setProperty('--input-color'" in tag
 
 
+def test_inventory_table_thumbnail_is_squircle_not_circle(as_admin, conn, category_id):
+    """Regression test: the asset thumbnail in the Inventory table was
+    briefly rounded-full (circular) to match Members/Staff's avatar
+    convention, but an asset photo is a picture of a physical tool, not a
+    person - reverted to rounded-lg (squircle) per explicit feedback."""
+    make_asset(conn, category_id)
+    client, csrf, _ = as_admin
+    resp = client.get("/api/v1/assets")
+    html = resp.get_data(as_text=True)
+    assert "w-6 h-6 rounded-lg" in html
+    assert "w-6 h-6 rounded-full" not in html
+
+
 def test_inventory_page_overflow_menu_is_squircle_not_circle(as_admin):
     """The "More actions" button became a rounded-square (squircle) icon
     button instead of a perfect circle, to match "Add New Item"'s own

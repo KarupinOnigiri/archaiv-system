@@ -9437,6 +9437,12 @@
       background-color: color-mix(in oklab, var(--color-info) 15%, transparent);
     }
   }
+  .bg-neutral\/15 {
+    background-color: var(--color-neutral);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-neutral) 15%, transparent);
+    }
+  }
   .bg-primary {
     background-color: var(--color-primary);
   }
@@ -10211,9 +10217,6 @@
   .pt-6 {
     padding-top: calc(var(--spacing) * 6);
   }
-  .pt-8 {
-    padding-top: calc(var(--spacing) * 8);
-  }
   .pr-1 {
     padding-right: var(--spacing);
   }
@@ -10969,6 +10972,9 @@
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-info) 80%, transparent);
     }
+  }
+  .text-neutral {
+    color: var(--color-neutral);
   }
   .text-primary {
     color: var(--color-primary);

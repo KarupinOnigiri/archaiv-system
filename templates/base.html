@@ -73,31 +73,25 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/logo-icon.png') }}">
   <script>
     // Same light/dark logo asset pairing as the sidebar wordmark
-    // (.logo-theme-light/.logo-theme-dark further down this file) -
-    // tesda-dark gets the dark-logo asset, everything else
-    // (tesda, i.e. Mixed or Light mode) gets the light-logo asset. Runs
-    // right after the theme-detection script above (which has already set
-    // data-theme on <html> by this point, synchronously) so the tab icon
-    // is correct on first paint, not just after a later JS pass - and is
-    // re-applied live by setFaviconForTheme() in ui.js whenever the Theme
-    // mode dropdown changes it without a reload.
+    // (.logo-theme-light/.logo-theme-dark further down this file) - but
+    // driven by the BROWSER/OS's own light-or-dark preference
+    // (prefers-color-scheme), not the app's own Theme mode (Mixed/Light/
+    // Dark). The tab favicon is browser chrome sitting outside the app's
+    // themed content, so it should match the OS/browser's actual visual
+    // context, not whatever content theme the user happens to have
+    // picked inside the app - previously this followed data-theme
+    // instead (tesda-dark => dark icon) and only fell back to the OS
+    // preference for an untouched Mixed-mode install, which meant
+    // picking e.g. Light mode in a dark-OS browser left the tab icon
+    // mismatched against every other tab. A live listener keeps it in
+    // sync if the OS theme changes while this tab stays open, without
+    // needing a reload - setFaviconForOsScheme() in ui.js re-runs the
+    // same check, so this and that stay identical on purpose.
     (function () {
-      var theme = document.documentElement.getAttribute('data-theme');
-      var isDark = theme === 'tesda-dark';
-      // "Mixed" (data-theme="tesda") is this app's untouched default, not
-      // itself a dark or light choice the way Dark/Light are -
-      // so ONLY here, and only when the staff member has never explicitly
-      // picked a Theme mode at all (no localStorage key yet, same variable
-      // the theme-detection script above already read), the tab icon
-      // follows the browser/OS's own light-or-dark preference instead of
-      // always defaulting to the light asset. An explicit choice (Light
-      // included, since picking it is still a deliberate override of the
-      // default) always wins over the OS from here on.
-      if (theme === 'tesda' && typeof savedMode !== 'undefined' && !savedMode) {
-        try {
-          isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        } catch (e) {}
-      }
+      var isDark = false;
+      try {
+        isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      } catch (e) {}
       var link = document.getElementById('favicon-link');
       var lightHref = "{{ url_for('static', filename='images/logo-icon-light.png') }}";
       var darkHref = "{{ url_for('static', filename='images/logo-icon-dark.png') }}";
@@ -480,15 +474,38 @@
   }
   /* margin-top is the space BEFORE the divider line, padding-top is the
      space AFTER it (before the label text itself) - both were flush
-     against the line before an earlier fix gave them real breathing room;
-     that spacing is trimmed slightly here (not given back to 0) only to
-     make room for .sidebar-link's own height bump above - still visibly
-     more open than pre-fix, just less generous than that fix's own first
-     pass. */
+     against the line before an earlier fix gave them real breathing
+     room, then trimmed back down to make room for .sidebar-link's own
+     height bump. Widened again per a follow-up round asking for more
+     space around the category text/lines - that round's budget (margin-
+     top +3px, padding-top +3px, each × 4 groups, minus 1px reclaimed off
+     height × 4) came from #sidebar-header's own padding. margin-top
+     alone is trimmed 2px here in a THIRD round, to give a few of those
+     px back to #sidebar-header - it sat too close to the viewport's top
+     edge once its own padding had been trimmed that much (reported
+     feedback that the logo/title/collapse button read as "too high").
+     padding-top (the line-to-text gap) is untouched, still the fuller
+     value from the previous round. */
   #sidebar-nav .nav-group-label {
-    height: 19px;
-    margin-top: 5px;
-    padding-top: 3px;
+    height: 18px;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+  /* Divider lines only while collapsed - expanded, the group LABEL TEXT
+     itself already separates one group from the next, so the line on
+     top of it read as redundant clutter (reported feedback); collapsed,
+     the label text disappears (see .sidebar-label rules below) and the
+     line becomes the only remaining signal that a new group started, so
+     it stays. border-color, not border-width/display, is what toggles -
+     .nav-group-label's own border-t utility class already reserves the
+     1px either way, so hiding is purely a color swap with nothing to
+     shift: every tab/icon/label position underneath is untouched. */
+  #sidebar-nav .nav-group-label {
+    border-color: transparent;
+  }
+  #sidebar.collapsed #sidebar-nav .nav-group-label,
+  html.sidebar-collapsed-init #sidebar-nav .nav-group-label {
+    border-color: var(--color-base-200);
   }
 
   /* Collapsed rail: every link becomes a fixed, centered square instead of
@@ -704,7 +721,14 @@
     <!-- SIDEBAR -->
     <aside id="sidebar" class="relative bg-base-100 flex flex-col transition-all duration-200 w-[12.6rem] shrink-0" aria-expanded="true" aria-label="Toggle sidebar">
 
-      <div id="sidebar-header" class="flex items-center justify-between gap-3 min-w-0 pl-6 pr-3 pt-8 pb-4 shrink-0">
+      <!-- pt-6/pb-4 (was pt-8/pb-4, trimmed once to pt-4/pb-3 to free room
+           for .nav-group-label's own spacing, then nudged back down here
+           - trimmed too far the first time, reported as the logo/title/
+           collapse button sitting too close to the sidebar's top edge.
+           The 8px this needed back came from .nav-group-label's own
+           margin-top instead of re-cramping the group spacing that same
+           earlier round was about. -->
+      <div id="sidebar-header" class="flex items-center justify-between gap-3 min-w-0 pl-6 pr-3 pt-6 pb-4 shrink-0">
         <div class="flex items-center min-w-0">
           <span class="w-5 h-7 shrink-0 flex items-center justify-center">
             <img src="{{ url_for('static', filename='images/logo-icon-light.png') }}" alt="Archaív" class="logo-theme-light w-10 h-10 shrink-0 object-contain max-w-none">
@@ -775,11 +799,13 @@
              with it. items-end + the label's own pb-1 keeps the same
              visual baseline this used to get from plain div padding. -->
         <div class="nav-group-label {% if text != "Operations" %}border-t border-base-200{% endif %} px-3 flex items-end">
-          <!-- text-base-content/30, dimmer than the /40 this used to be
-               (still readable, but reads as a quiet section label rather
-               than competing with the actual tab names below it) - per
-               feedback. -->
-          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/30 uppercase leading-none pb-1">{{ text }}</p>
+          <!-- text-base-content/25 - dimmed twice now (was /40, then /30,
+               now this) per repeated feedback that it should read as
+               clearly dimmer than the tab names/icons below it (those
+               stay at full/55% opacity - see .sidebar-link-inactive).
+               /20 was tried and tested too faint to read as a label at
+               all; /25 is the floor that still reads as one. -->
+          <p class="sidebar-label text-[10px] font-semibold tracking-wider text-base-content/25 uppercase leading-none pb-1">{{ text }}</p>
         </div>
         {% endmacro %}
 
