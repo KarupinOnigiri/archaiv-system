@@ -778,9 +778,9 @@ def test_toggle_checked_state_color_not_overridden_by_contrast_fix(as_admin):
 
 def test_content_card_and_stat_cards_use_dedicated_panel_border(as_admin):
     """Regression test: stat cards/dashboard widgets used border-base-300,
-    the same token as literal table dividers - #eceef2 (--color-panel-
-    border / .border-panel) is a dedicated, much lighter default border
-    for card/panel chrome specifically, per explicit feedback, without
+    the same token as literal table dividers - --color-panel-border /
+    .border-panel is a dedicated, much lighter default border for
+    card/panel chrome specifically, per explicit feedback, without
     touching border-base-300 itself (still needed at full contrast for
     actual dividing lines elsewhere)."""
     client, csrf, _ = as_admin

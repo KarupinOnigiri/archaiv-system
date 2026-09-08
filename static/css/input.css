@@ -48,13 +48,15 @@
   /* Default (non-active) card/panel border - a dedicated token, NOT
      base-300, on purpose: base-300 is also every literal dividing line
      (table cell borders, .divide-y separators) and needs real contrast
-     to read as one at all - #eceef2 is close enough to base-100's white
+     to read as one at all - this is close enough to base-100's white
      that it would defeat that purpose there. But for a card/panel's own
      OUTER edge (stat cards, dashboard widgets, the Inventory table
      panel, the top bar's own bottom border) a much fainter line reads as
      "quiet structure" rather than a hard outline - explicit feedback
-     asking for this specific, lighter value on exactly those elements. */
-  --color-panel-border: #eceef2;
+     asking for this specific, lighter value on exactly those elements.
+     Was #eceef2, darkened 10% (each channel * 0.9) per follow-up
+     feedback asking for 10% more grayness - #d4d6da. */
+  --color-panel-border: #d4d6da;
 
   /* Status colors: full-saturation MD swatches so alerts/notifications
      read clearly at a glance instead of the earlier muted, desaturated
