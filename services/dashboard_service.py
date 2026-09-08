@@ -144,7 +144,13 @@ def get_dashboard_context(conn=None):
     ).fetchone()["cnt"]
 
     # # # Recent activity --------------------------------------------------
-    # One feed of borrow/return events via UNION ALL, capped at 8 - just a glance feed.
+    # One feed of borrow/return events via UNION ALL, capped at 12 - just a
+    # glance feed. Both halves are pre-filtered to the last 30 days before
+    # the union/sort - without it, SQLite has to materialize + sort every
+    # borrow and return the tool room has ever logged just to keep the top
+    # 12, which only gets slower as `transactions` grows (Pi/SD-card cost).
+    # 30 days is generous headroom over what a "recent activity" glance
+    # feed would ever need to show.
     recent_activity = conn.execute(
         """
         SELECT * FROM (
@@ -156,6 +162,7 @@ def get_dashboard_context(conn=None):
             FROM transactions
             JOIN assets ON assets.id = transactions.asset_id
             JOIN members ON members.id = transactions.member_id
+            WHERE transactions.time_out >= datetime('now', 'localtime', '-30 days')
 
             UNION ALL
 
@@ -168,6 +175,7 @@ def get_dashboard_context(conn=None):
             JOIN assets ON assets.id = transactions.asset_id
             JOIN members ON members.id = transactions.member_id
             WHERE transactions.time_in IS NOT NULL
+              AND transactions.time_in >= datetime('now', 'localtime', '-30 days')
         )
         ORDER BY event_time DESC
         LIMIT 12

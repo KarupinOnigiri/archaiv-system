@@ -1594,13 +1594,22 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
             400,
         )
 
+    # One batched lookup instead of a per-item SELECT - reused below both for
+    # the loan-cap check (consumables don't count, see comment) and again in
+    # the commit loop, so asset rows aren't fetched twice per item.
+    asset_rows_by_id = {
+        row["id"]: row
+        for row in conn.execute(
+            f"SELECT * FROM assets WHERE id IN ({','.join('?' * len(items))})",
+            [item["asset_id"] for item in items],
+        ).fetchall()
+    }
+
     # Consumables are consumed on the spot (see the loop below), never
     # 'borrowed' - they shouldn't count against the member's concurrent-loan
     # cap, only the serialized items actually going out on loan do.
     borrowable_item_count = sum(
-        1 for item in items
-        if conn.execute("SELECT asset_type FROM assets WHERE id = ?", (item["asset_id"],)).fetchone()["asset_type"]
-        != "consumable"
+        1 for item in items if asset_rows_by_id[item["asset_id"]]["asset_type"] != "consumable"
     )
 
     max_loans = get_max_concurrent_loans(member["member_type"], conn)
@@ -1619,9 +1628,14 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
             403,
         )
 
+    # Guard-clause races (item claimed/consumed by someone else between the
+    # scan and this commit) are reported back as a normal (data, error)
+    # 409 tuple - not raised - so the route's already-established JSON error
+    # pattern handles it instead of falling through to a generic 500.
+    race_conflict_asset_id = None
     try:
         for item in items:
-            asset = conn.execute("SELECT * FROM assets WHERE id = ?", (item["asset_id"],)).fetchone()
+            asset = asset_rows_by_id[item["asset_id"]]
 
             if asset["asset_type"] == "consumable":
                 # No borrowed/reserved lifecycle for a consumable - decrement
@@ -1636,7 +1650,8 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
                     (item["quantity"], item["asset_id"], item["quantity"]),
                 )
                 if claim.rowcount == 0:
-                    raise ValueError(f"asset {item['asset_id']} does not have {item['quantity']} unit(s) in stock")
+                    race_conflict_asset_id = item["asset_id"]
+                    break
 
                 conn.execute(
                     """
@@ -1662,7 +1677,8 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
                 (item["asset_id"],),
             )
             if claim.rowcount == 0:
-                raise ValueError(f"asset {item['asset_id']} was not in reserved state")
+                race_conflict_asset_id = item["asset_id"]
+                break
 
             # Feeds the usage-based maintenance trigger (services/
             # asset_service.py's get_maintenance_due_assets) - resets to 0
@@ -1689,17 +1705,34 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
                 ),
             )
 
-        conn.execute(
-            "DELETE FROM checkout_session_items WHERE checkout_session_id = ?", (session_id,)
-        )
-        conn.execute(
-            "UPDATE checkout_sessions SET status = 'completed', completed_at = datetime('now', 'localtime') WHERE id = ?",
-            (session_id,),
-        )
-        conn.commit()
+        if race_conflict_asset_id is not None:
+            conn.rollback()
+        else:
+            conn.execute(
+                "DELETE FROM checkout_session_items WHERE checkout_session_id = ?", (session_id,)
+            )
+            conn.execute(
+                "UPDATE checkout_sessions SET status = 'completed', completed_at = datetime('now', 'localtime') WHERE id = ?",
+                (session_id,),
+            )
+            conn.commit()
     except Exception:
         conn.rollback()
         raise
+
+    if race_conflict_asset_id is not None:
+        # Cart itself is untouched (rolled back above) - safe to retry after
+        # a rescan; this is the same 409 shape add_item_to_checkout_session
+        # already uses for its own claim races.
+        return None, (
+            jsonify(
+                {
+                    "error": "One or more items changed status while checking out - rescan the cart and try again",
+                    "asset_id": race_conflict_asset_id,
+                }
+            ),
+            409,
+        )
 
     log_action(
         staff_id=staff_id,

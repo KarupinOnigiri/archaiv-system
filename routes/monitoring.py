@@ -3,6 +3,7 @@ sa duha ka machine-to-machine endpoints nga gi-call sa Raspberry Pi's RFID
 listener (dili part sa repo - see thesis Chapter 3 hardware description)
 direkta, walay staff browser session."""
 
+import hmac
 import os
 
 from flask import Blueprint, jsonify, g, request, render_template
@@ -28,7 +29,9 @@ def _listener_key_error():
     if not configured_key:
         return jsonify({"error": "RFID_LISTENER_KEY is not configured on this server"}), 503
     presented_key = request.headers.get("X-RFID-Listener-Key")
-    if not presented_key or presented_key != configured_key:
+    # compare_digest para constant-time ang comparison - parehas sa CSRF
+    # token check sa auth_service.py, dili timing side-channel.
+    if not presented_key or not hmac.compare_digest(presented_key, configured_key):
         return jsonify({"error": "Invalid or missing listener key"}), 401
     return None
 

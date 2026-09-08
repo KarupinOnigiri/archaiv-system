@@ -801,6 +801,9 @@ def _import_assets_rows(reader, header_map, conn, staff_id, created, errors, new
     """Ang per-row logic sa import_assets_csv(), gi-separate para ang
     outer function's try/finally maka-guarantee nga mo-run gyud ang
     conn.close() bisan unsay mahitabo diri."""
+    # Read once outside the loop - it can't change mid-import, so a 500-row
+    # CSV shouldn't pay for 500 redundant app_settings lookups.
+    id_prefix = get_asset_id_prefix(conn)
     for row_num, raw_row in enumerate(reader, start=2):  # row 1 is the header
         row = {header_map[h]: v for h, v in raw_row.items() if h in header_map}
         name = (row.get("name") or "").strip()
@@ -864,7 +867,7 @@ def _import_assets_rows(reader, header_map, conn, staff_id, created, errors, new
                 ),
             )
             new_id = cursor.lastrowid
-            generated_code = f"{get_asset_id_prefix(conn)}{new_id:05d}"
+            generated_code = f"{id_prefix}{new_id:05d}"
             conn.execute(
                 "UPDATE assets SET asset_id = ?, barcode_id = ? WHERE id = ?",
                 (generated_code, generated_code, new_id),
