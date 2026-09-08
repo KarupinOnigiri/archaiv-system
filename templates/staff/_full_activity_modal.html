@@ -38,10 +38,10 @@
            didn't even belong to whoever's profile this was opened from.
            See the project conversation history for the full diagnosis. -->
       <div class="flex flex-wrap items-center gap-3 mb-4 pt-5">
-        <div id="full-activity-date-presets" class="join rounded-lg">
-          <button type="button" id="full-activity-preset-today" class="join-item btn btn-xs btn-outline"
+        <div id="full-activity-date-presets" class="join rounded-lg" data-tooltip="Quick date filter">
+          <button type="button" id="full-activity-preset-today" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="fullActivitySetDatePreset('today')">Today</button>
-          <button type="button" id="full-activity-preset-yesterday" class="join-item btn btn-xs btn-outline"
+          <button type="button" id="full-activity-preset-yesterday" class="date-quick-btn join-item flex items-center px-3 h-8 border border-base-300 bg-base-100 text-sm text-base-content/70 hover:bg-base-200 hover:text-base-content transition-colors"
                   onclick="fullActivitySetDatePreset('yesterday')">Yesterday</button>
         </div>
         <div id="full-activity-date-filters" class="join rounded-lg transition-shadow" data-tooltip="Date range">
@@ -142,22 +142,25 @@
         document.getElementById('full-activity-date-clear-btn').disabled = !dateActive;
 
         // Highlights whichever preset (if either) matches the current range -
-        // same btn-primary/btn-outline swap as audit_log.html's own Today/
-        // Yesterday presets (not btn-active, which reads as nearly identical
-        // to a resting .btn in this theme - see reports.html's
-        // setReportGroupBy comment for the full reasoning). This used to have
-        // no highlight logic at all, unlike every other quick-filter pair in
-        // the app.
+        // same border-primary/bg-primary/10/text-primary soft-tint swap as
+        // every other quick-filter pair in the app (audit_log.html,
+        // notifications.html, monitoring.html, transactions.html,
+        // reports.html), not the solid btn-primary fill this used to use -
+        // that was a one-off drift from this shared convention, since fixed
+        // per explicit feedback that active-filter highlighting should look
+        // the same everywhere.
         const todayStr = fullActivityFormatDateLocal(new Date());
         const yesterdayStr = fullActivityFormatDateLocal(new Date(Date.now() - 86400000));
         const isToday = since.value === todayStr && until.value === todayStr;
         const isYesterday = since.value === yesterdayStr && until.value === yesterdayStr;
         const todayBtn = document.getElementById('full-activity-preset-today');
         const yesterdayBtn = document.getElementById('full-activity-preset-yesterday');
-        todayBtn.classList.toggle('btn-primary', isToday);
-        todayBtn.classList.toggle('btn-outline', !isToday);
-        yesterdayBtn.classList.toggle('btn-primary', isYesterday);
-        yesterdayBtn.classList.toggle('btn-outline', !isYesterday);
+        todayBtn.classList.toggle('border-primary', isToday);
+        todayBtn.classList.toggle('bg-primary/10', isToday);
+        todayBtn.classList.toggle('text-primary', isToday);
+        yesterdayBtn.classList.toggle('border-primary', isYesterday);
+        yesterdayBtn.classList.toggle('bg-primary/10', isYesterday);
+        yesterdayBtn.classList.toggle('text-primary', isYesterday);
 
         const clearBtn = document.getElementById('full-activity-clear-filters-btn');
         clearBtn.classList.toggle('hidden', !dateActive);

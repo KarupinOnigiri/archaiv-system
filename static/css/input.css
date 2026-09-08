@@ -35,6 +35,16 @@
   --color-base-300: #a3a3a3;
   --color-base-content: #212121;
 
+  /* Outer page background (the <html> backdrop behind #content-card,
+     Mixed/Light modes only - see .bg-page below) - a dedicated token,
+     NOT base-200, on purpose: base-200 is also every hover-state's
+     background (hover:bg-base-200 etc.) and needed to stay a visibly
+     darker grey for that to read as a hover at all. #f7f8fa is close
+     enough to base-100's white that it wouldn't work as a hover color,
+     but reads as a soft, barely-there backdrop behind the white content
+     card - explicit per-tab feedback on the previous flat base-200 grey. */
+  --color-page-bg: #f7f8fa;
+
   /* Status colors: full-saturation MD swatches so alerts/notifications
      read clearly at a glance instead of the earlier muted, desaturated
      versions, which looked flat next to a solid blue primary. */
@@ -77,6 +87,12 @@
   --color-base-200: #242428;
   --color-base-300: #2f2f34;
   --color-base-content: #e8e8e8;
+
+  /* Same value base-200 already had - Dark's page-vs-card depth was
+     already fine (a real, if inverted-from-"elevated=lighter", contrast
+     step between them), so this only exists so .bg-page has a value in
+     every theme; nothing about how Dark actually looks changes. */
+  --color-page-bg: #242428;
 
   --color-info: #29b6f6;
   --color-info-content: #00293b;
@@ -130,6 +146,12 @@
   --color-base-300: #292a2e;
   --color-base-content: #e8e8e8;
 
+  /* Same value base-200 already had - see Dark theme's identical comment
+     above; Modern Dark's page-vs-card-vs-popup elevation ramp was
+     already the whole point of this theme, so it already has depth/
+     contrast without needing a different value here. */
+  --color-page-bg: #1e1f22;
+
   --color-info: #29b6f6;
   --color-info-content: #00293b;
   --color-success: #66bb6a;
@@ -147,6 +169,13 @@
    deliberate exception, styled inline with the vendored Archivo font. */
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Outer page background (the <html> element - see --color-page-bg's own
+   comment under the "tesda" theme block above for why this is a
+   dedicated token rather than reusing bg-base-200). */
+.bg-page {
+  background-color: var(--color-page-bg);
 }
 
 /* Hide native browser password icons so only our custom eye toggle shows */

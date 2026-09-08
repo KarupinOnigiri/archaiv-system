@@ -293,14 +293,15 @@ function clearMonitoringSearch() {
 }
 
 // Replaces daisyUI's .btn-active (meaningless now that these are plain
-// join-items, not .btn) with the same primary-highlight look the other
-// active filter joins already use.
+// join-items, not .btn) with the same soft-tint primary highlight every
+// other quick-date-filter join uses (audit_log.html, notifications.html,
+// reports.html) - this used to be a solid bg-primary fill instead, a
+// one-off drift from that shared convention, fixed per explicit feedback
+// that active-filter highlighting should be consistent everywhere.
 function setDateQuickBtnActive(btn, active) {
-  btn.classList.toggle('bg-primary', active);
   btn.classList.toggle('border-primary', active);
-  btn.classList.toggle('text-primary-content', active);
-  btn.classList.toggle('hover:bg-primary', active);
-  btn.classList.toggle('hover:text-primary-content', active);
+  btn.classList.toggle('bg-primary/10', active);
+  btn.classList.toggle('text-primary', active);
   btn.classList.toggle('text-base-content/70', !active);
 }
 

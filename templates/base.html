@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="tesda" data-sidebar="dark" class="h-full bg-base-200">
+<html lang="en" data-theme="tesda" data-sidebar="dark" class="h-full bg-page">
 <head>
   <meta charset="UTF-8">
   <script>
@@ -487,18 +487,45 @@
      <link>), so no !important is needed. Verified clean (no scrollY)
      down to a 650px-tall viewport;
      a genuinely tiny window may still scroll, same graceful-degradation
-     the "works best on a larger screen" notice already covers for width. */
+     the "works best on a larger screen" notice already covers for width.
+
+     Nav's own top/bottom padding was later dropped to 0 entirely (was
+     0.375rem/6px each) to reclaim room for .sidebar-link's own 10% height
+     bump below - the group-label spacing (the part with the most
+     deliberate breathing room, per its own comment) was trimmed only
+     slightly rather than given up first, since that fix landed most
+     recently and is the one most likely to look flush/cramped again if
+     it regressed. */
   #sidebar-nav {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0;
+    padding-bottom: 0;
   }
+  /* 29px = 26px (padding-top/bottom 3px + 20px line-height) + 10%, rounded
+     to a whole pixel per feedback. A fixed height (not just padding) is
+     used deliberately so every link is EXACTLY the same height regardless
+     of its own content - .sidebar-link is a flex row with items-center
+     already, so this doesn't disturb icon/label centering, it just also
+     guarantees uniformity across all tabs (reported concern alongside the
+     height increase itself; nothing in these rows varies row-to-row that
+     would otherwise cause drift, but a fixed height makes that guaranteed
+     rather than incidental). Reclaiming the ~36px this adds across 12
+     rows (see #sidebar-nav and .nav-group-label above/below) is what let
+     this land without reintroducing the scrollbar this whole block
+     guards against. */
   #sidebar-nav .sidebar-link {
-    padding-top: 4px;
-    padding-bottom: 4px;
+    height: 29px;
   }
+  /* margin-top is the space BEFORE the divider line, padding-top is the
+     space AFTER it (before the label text itself) - both were flush
+     against the line before an earlier fix gave them real breathing room;
+     that spacing is trimmed slightly here (not given back to 0) only to
+     make room for .sidebar-link's own height bump above - still visibly
+     more open than pre-fix, just less generous than that fix's own first
+     pass. */
   #sidebar-nav .nav-group-label {
-    height: 1rem;
-    margin-top: 0.25rem;
+    height: 19px;
+    margin-top: 5px;
+    padding-top: 3px;
   }
 
   /* Collapsed rail: every link becomes a fixed, centered square instead of
@@ -647,7 +674,7 @@
 <body class="m-0 h-full overflow-hidden bg-base-300">
 
 
-  <div class="flex lg:hidden fixed inset-0 z-[100] bg-base-200 flex-col items-center justify-center gap-4 px-8 text-center">
+  <div class="flex lg:hidden fixed inset-0 z-[100] bg-page flex-col items-center justify-center gap-4 px-8 text-center">
     <span class="w-14 h-14 rounded-full bg-base-100 border border-base-300 flex items-center justify-center">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-base-content/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
     </span>
@@ -1017,13 +1044,24 @@
     <div id="main-shell" class="flex-1 flex flex-col h-full min-w-0 pt-2 pr-2 pb-2 bg-base-100">
 
       <!-- CONTENT CARD -->
-      <div id="content-card" class="flex-1 flex flex-col min-h-0 bg-base-100 rounded-[4.8px] shadow-sm overflow-hidden">
+      <!-- bg-page (--color-page-bg), not bg-base-100 - the individual
+           stat cards/widgets each page renders on top of this already use
+           bg-base-100 themselves, so this card and its own contents need
+           to be visibly different tones or every card sits flush against
+           an identically-colored backdrop with only its border for
+           separation. See --color-page-bg's own comment in input.css. -->
+      <div id="content-card" class="flex-1 flex flex-col min-h-0 bg-page rounded-[4.8px] shadow-sm overflow-hidden">
 
       {% if staff %}
       <!-- CONTENT HEADER - hx-swap-oob="true" so a boosted nav (see #sidebar-nav
            above) refreshes the title/breadcrumb and notification bell/badge
            counts from that same response, same reasoning as the sidebar. -->
-      <div id="content-header" hx-swap-oob="true" class="shrink-0 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
+      <!-- bg-base-100, not bg-page - #content-card as a whole switched to
+           the dedicated page-bg tint (see its own comment above) so page
+           content has depth against it, but the top bar reads as part of
+           the app chrome rather than "page content" and stays on the same
+           base-100 surface as the widgets/cards below it, in every theme. -->
+      <div id="content-header" hx-swap-oob="true" class="shrink-0 bg-base-100 border-b border-base-300 px-6 h-16 flex items-center justify-between gap-4">
 
         {% if request.path == '/' %}
         <div class="min-w-0">

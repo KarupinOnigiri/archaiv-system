@@ -528,3 +528,30 @@ def test_staff_page_header_has_overflow_menu_and_single_primary_button(as_admin)
     assert 'id="import-staff-btn"' in html
     assert 'id="export-staff-btn"' in html
     assert 'id="add-staff-btn"' in html
+
+
+# # # FULL ACTIVITY MODAL (staff/_full_activity_modal.html) ------------------
+
+
+def test_full_activity_modal_date_presets_use_shared_soft_tint_highlight(
+    as_admin, conn, department_id
+):
+    """Regression test: this modal's Today/Yesterday presets used a solid
+    btn-primary/btn-outline swap for their active state, while every other
+    quick-date-filter join in the app (audit_log.html, notifications.html,
+    reports.html, monitoring.html, transactions.html) used a soft
+    border-primary/bg-primary-10/text-primary tint - a one-off drift from
+    that shared convention, per explicit feedback that active-filter
+    highlighting should look the same everywhere."""
+    other_admin_id = make_staff(conn, department_id, "admin", "activity_modal_target")
+    client, csrf, _ = as_admin
+    resp = client.get(f"/api/v1/staff/{other_admin_id}/full-activity-modal")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "date-quick-btn" in html
+    assert "btn-outline" not in html
+    start = html.index("function fullActivityUpdateFilterUI")
+    body = html[start : start + 1200]
+    assert "border-primary" in body
+    assert "bg-primary/10" in body
+    assert "'btn-primary'" not in body

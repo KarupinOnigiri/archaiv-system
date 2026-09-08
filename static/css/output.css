@@ -7888,9 +7888,6 @@
   .h-\[18px\] {
     height: 18px;
   }
-  .h-\[30rem\] {
-    height: 30rem;
-  }
   .h-\[40rem\] {
     height: 40rem;
   }
@@ -10185,9 +10182,6 @@
   .py-16 {
     padding-block: calc(var(--spacing) * 16);
   }
-  .py-\[7px\] {
-    padding-block: 7px;
-  }
   @layer daisyui.l1.l2 {
     .file-input-xl {
       padding-inline-end: calc(0.25rem * 6);
@@ -11036,23 +11030,8 @@
       color: color-mix(in oklab, var(--color-white) 60%, transparent);
     }
   }
-  .text-white\/70 {
-    color: color-mix(in srgb, #fff 70%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      color: color-mix(in oklab, var(--color-white) 70%, transparent);
-    }
-  }
-  .text-white\/80 {
-    color: color-mix(in srgb, #fff 80%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      color: color-mix(in oklab, var(--color-white) 80%, transparent);
-    }
-  }
   .capitalize {
     text-transform: capitalize;
-  }
-  .lowercase {
-    text-transform: lowercase;
   }
   .normal-case {
     text-transform: none;
@@ -12429,6 +12408,9 @@
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+.bg-page {
+  background-color: var(--color-page-bg);
+}
 input[type='password']::-ms-reveal, input[type='password']::-ms-clear {
   display: none;
 }
@@ -12839,6 +12821,7 @@ html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb:hover {
     --color-base-200: #e6e6e6;
     --color-base-300: #a3a3a3;
     --color-base-content: #212121;
+    --color-page-bg: #f7f8fa;
     --color-info: #039be5;
     --color-info-content: #ffffff;
     --color-success: #43a047;
@@ -12863,6 +12846,7 @@ html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb:hover {
       --color-base-200: #242428;
       --color-base-300: #2f2f34;
       --color-base-content: #e8e8e8;
+      --color-page-bg: #242428;
       --color-info: #29b6f6;
       --color-info-content: #00293b;
       --color-success: #66bb6a;
@@ -12887,6 +12871,7 @@ html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb:hover {
     --color-base-200: #242428;
     --color-base-300: #2f2f34;
     --color-base-content: #e8e8e8;
+    --color-page-bg: #242428;
     --color-info: #29b6f6;
     --color-info-content: #00293b;
     --color-success: #66bb6a;
@@ -12910,6 +12895,7 @@ html[data-theme="tesda-modern"] ::-webkit-scrollbar-thumb:hover {
     --color-base-200: #1e1f22;
     --color-base-300: #292a2e;
     --color-base-content: #e8e8e8;
+    --color-page-bg: #1e1f22;
     --color-info: #29b6f6;
     --color-info-content: #00293b;
     --color-success: #66bb6a;

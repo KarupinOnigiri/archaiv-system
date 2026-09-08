@@ -621,9 +621,15 @@ def test_sidebar_nav_has_tightened_spacing_for_no_scrollbar(as_admin):
     client, csrf, _ = as_admin
     resp = client.get("/")
     html = resp.get_data(as_text=True)
-    assert "#sidebar-nav {" in html and "padding-top: 0.5rem;" in html
-    assert "#sidebar-nav .sidebar-link {" in html and "padding-top: 4px;" in html
-    assert "#sidebar-nav .nav-group-label {" in html and "height: 1rem;" in html
+    assert "#sidebar-nav {" in html and "padding-top: 0;" in html
+    assert "#sidebar-nav .sidebar-link {" in html and "height: 29px;" in html
+    assert "#sidebar-nav .nav-group-label {" in html and "height: 19px;" in html
+    # Breathing room around each group's divider line (reported as flush
+    # against the line on both sides) - margin-top before it, padding-top
+    # after it, both added without reintroducing the scrollbar this same
+    # test guards against (nav/link/label spacing were all reclaimed from
+    # elsewhere so this fits alongside .sidebar-link's own height).
+    assert "margin-top: 5px;" in html and "padding-top: 3px;" in html
 
 
 def test_sidebar_collapsed_links_are_centered_squares(as_admin):
@@ -637,3 +643,74 @@ def test_sidebar_collapsed_links_are_centered_squares(as_admin):
     assert "#sidebar.collapsed .sidebar-link," in html
     assert "width: 2.75rem;" in html
     assert "justify-content: center;" in html
+
+
+def test_sidebar_link_height_increased_10_percent_and_fixed(as_admin):
+    """Regression test: sidebar tabs used to size themselves off their own
+    padding + line-height (26px), which meant nothing guaranteed every tab
+    came out the same height. Now fixed at 29px (26px + 10%, rounded to a
+    whole pixel) via an explicit height rule, so every link is exactly the
+    same height by construction, not incidentally - see this rule's own
+    comment for how the extra space was reclaimed elsewhere so it still
+    fits without a scrollbar (test_sidebar_nav_has_tightened_spacing_for_
+    no_scrollbar covers that budget)."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "#sidebar-nav .sidebar-link {" in html and "height: 29px;" in html
+
+
+def test_content_card_uses_dedicated_page_bg_not_base_100(as_admin):
+    """Regression test for #content-card sharing bg-base-100 with the
+    individual stat cards/widgets rendered inside it - every card sat flush
+    against an identically-colored backdrop with only its border for
+    separation, in every mode. #content-card now uses a dedicated bg-page
+    class (--color-page-bg) so its own background can differ from
+    bg-base-100 (still used by the widgets on top of it), giving real
+    depth/contrast - #f7f8fa in Mixed/Light per explicit feedback, a
+    slightly different shade of the existing dark palette elsewhere."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'id="content-card"' in html
+    start = html.index('id="content-card"')
+    tag = html[start : html.index(">", start)]
+    assert "bg-page" in tag
+    assert "bg-base-100" not in tag
+
+
+def test_content_header_stays_on_base_100_not_page_bg(as_admin):
+    """Regression test: #content-header (the top bar with the page title/
+    breadcrumb/search/notification bell) sits inside #content-card, which
+    now uses the dedicated page-bg tint (see test_content_card_uses_
+    dedicated_page_bg_not_base_100) - without its own override the header
+    would inherit that tint too, but it's app chrome, not page content, and
+    per explicit feedback should stay on the same base-100 surface as the
+    widgets/cards below it in every theme."""
+    client, csrf, _ = as_admin
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'id="content-header"' in html
+    start = html.index('id="content-header"')
+    tag = html[start : start + 200]
+    assert "bg-base-100" in tag
+    assert "bg-page" not in tag
+
+
+def test_transactions_date_quick_filter_uses_shared_soft_tint_highlight(as_admin):
+    """Regression test: Transactions' Today/Yesterday quick-date buttons
+    used a solid bg-primary/text-primary-content fill for their active
+    state, while every other quick-date-filter join in the app (Audit Log,
+    Notifications, Reports) used a soft border-primary/bg-primary-10/
+    text-primary tint - drifted, inconsistent highlight colors per
+    explicit feedback. setDateQuickBtnActive now applies the same
+    soft-tint classes as the others."""
+    client, csrf, _ = as_admin
+    resp = client.get("/transactions")
+    html = resp.get_data(as_text=True)
+    start = html.index("function setDateQuickBtnActive")
+    body = html[start : start + 400]
+    assert "border-primary" in body
+    assert "bg-primary/10" in body
+    assert "text-primary" in body and "text-primary-content" not in body
+    assert "'bg-primary'" not in body

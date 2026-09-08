@@ -520,3 +520,23 @@ def test_monitoring_page_defaults_date_range_to_today(as_admin, conn):
     resp = client.get("/monitoring")
     assert resp.status_code == 200
     assert date.today().isoformat().encode() in resp.data
+
+
+def test_monitoring_date_quick_filter_uses_shared_soft_tint_highlight(as_admin, conn):
+    """Regression test: Monitoring's Today/Yesterday/All quick-date buttons
+    used a solid bg-primary/text-primary-content fill for their active
+    state, while every other quick-date-filter join in the app (Audit Log,
+    Notifications, Reports) used a soft border-primary/bg-primary-10/
+    text-primary tint - drifted, inconsistent highlight colors per
+    explicit feedback. setDateQuickBtnActive now applies the same
+    soft-tint classes as the others."""
+    client, csrf, _ = as_admin
+    enable_monitoring(conn)
+    resp = client.get("/monitoring")
+    html = resp.get_data(as_text=True)
+    start = html.index("function setDateQuickBtnActive")
+    body = html[start : start + 400]
+    assert "border-primary" in body
+    assert "bg-primary/10" in body
+    assert "text-primary" in body and "text-primary-content" not in body
+    assert "'bg-primary'" not in body
