@@ -25,6 +25,29 @@ def _block_if_reservations_disabled():
 VALID_STATUSES = reservation_service.VALID_STATUSES
 
 
+@reservations_bp.route("/reservations/new-form")
+@login_required
+def new_reservation_form():
+    """GET - modal shell para sa Reservations page's "New Reservation"
+    button - asset picker (search/browse) una, dayon mo-swap ngadto sa
+    reserve_form's own modal human mapili ang asset."""
+    return render_template("reservations/_new_reservation_modal.html")
+
+
+@reservations_bp.route("/reservations/browse-assets")
+@login_required
+def browse_reservable_assets():
+    """GET - JSON list sa reservable assets (non-consumable, dili pa
+    deleted) para sa "New Reservation" picker's search/browse."""
+    q = request.args.get("q", "")
+    conn = get_db_connection()
+    try:
+        assets = reservation_service.search_reservable_assets(conn, q)
+    finally:
+        conn.close()
+    return jsonify({"assets": assets})
+
+
 @reservations_bp.route("/assets/<int:id>/reserve-form")
 @login_required
 def reserve_form(id):

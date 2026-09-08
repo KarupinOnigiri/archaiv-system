@@ -383,3 +383,54 @@ def test_sweep_expires_past_due_reservations(conn, asset_id, member_id, admin_id
 
     status = conn.execute("SELECT status FROM reservations WHERE id = ?", (reservation_id,)).fetchone()["status"]
     assert status == "expired"
+
+
+# # # NEW RESERVATION PICKER (asset browse/search) ---------------------------
+
+
+def test_new_reservation_form_requires_login(client, conn):
+    enable_reservations(conn)
+    resp = client.get("/api/v1/reservations/new-form")
+    assert resp.status_code in (302, 401)
+
+
+def test_browse_reservable_assets_lists_non_consumables(as_admin, conn, asset_id):
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    resp = client.get("/api/v1/reservations/browse-assets")
+    assert resp.status_code == 200
+    ids = [a["id"] for a in resp.get_json()["assets"]]
+    assert asset_id in ids
+
+
+def test_browse_reservable_assets_excludes_consumables(as_admin, conn, category_id):
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    consumable_id = make_asset(
+        conn, category_id, name="Test Gloves", asset_type="consumable", quantity=10, reorder_threshold=2
+    )
+    resp = client.get("/api/v1/reservations/browse-assets")
+    ids = [a["id"] for a in resp.get_json()["assets"]]
+    assert consumable_id not in ids
+
+
+def test_browse_reservable_assets_filters_by_query(as_admin, conn, asset_id, category_id):
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    other_id = make_asset(conn, category_id, name="Impact Wrench")
+    resp = client.get("/api/v1/reservations/browse-assets?q=Drill")
+    ids = [a["id"] for a in resp.get_json()["assets"]]
+    assert asset_id in ids
+    assert other_id not in ids
+
+
+def test_reservations_page_renders_new_reservation_button(as_admin, conn):
+    """Full-page render sanity check - catches Jinja errors in the button
+    markup/shortcut that a JSON-only test wouldn't."""
+    enable_reservations(conn)
+    client, csrf, _ = as_admin
+    resp = client.get("/reservations")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "New Reservation" in html
+    assert "new-reservation-btn" in html

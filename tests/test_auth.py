@@ -546,3 +546,24 @@ def test_successful_login_with_no_next_goes_to_dashboard(client, conn, departmen
     )
     assert resp.status_code == 302
     assert "/login" not in resp.headers["Location"]
+
+
+def test_account_panel_shows_member_barcode_not_staff_code(as_admin, conn, admin_id):
+    """The sidebar "My Account" quick panel's BARCODE ID field must show the
+    linked member's real barcode_id, not staff.staff_code (a separate
+    internal reference code) - regression test for a mislabeled field."""
+    client, csrf, _ = as_admin
+    row = conn.execute(
+        """
+        SELECT staff.staff_code, members.barcode_id
+        FROM staff JOIN members ON staff.member_id = members.id
+        WHERE staff.id = ?
+        """,
+        (admin_id,),
+    ).fetchone()
+    assert row["staff_code"] != row["barcode_id"]  # sanity: fixture data actually differs
+
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert row["barcode_id"] in html
+    assert row["staff_code"] not in html

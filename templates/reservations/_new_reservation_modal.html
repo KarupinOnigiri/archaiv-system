@@ -1,0 +1,105 @@
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-bold text-lg">New Reservation</h3>
+      <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
+              onclick="this.closest('.modal').remove()" aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
+    </div>
+    <p class="text-sm text-base-content/70 mb-4">
+      Pick an asset to book ahead of time for a member. Consumables can't be reserved.
+    </p>
+
+    <div class="form-control mb-2">
+      <label class="label"><span class="label-text">Search by name, asset ID, or barcode</span></label>
+      <input type="text" id="new-reservation-search" autocomplete="off"
+             placeholder="Start typing to search..."
+             class="input input-bordered w-full"
+             oninput="filterNewReservationAssets(this.value)">
+    </div>
+
+    <div id="new-reservation-loading" class="text-xs text-base-content/50 px-1 py-4 text-center">Loading&hellip;</div>
+    <div id="new-reservation-error" class="text-error text-xs px-1 py-2 hidden"></div>
+    <ul id="new-reservation-results" class="max-h-72 overflow-y-auto space-y-0.5"></ul>
+  </div>
+</div>
+
+<script>
+let newReservationSearchTimer = null;
+
+async function filterNewReservationAssets(q) {
+  clearTimeout(newReservationSearchTimer);
+  newReservationSearchTimer = setTimeout(() => loadNewReservationAssets(q), 250);
+}
+
+async function loadNewReservationAssets(q) {
+  const listEl = document.getElementById('new-reservation-results');
+  const loadingEl = document.getElementById('new-reservation-loading');
+  const errorEl = document.getElementById('new-reservation-error');
+  errorEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/api/v1/reservations/browse-assets?q=${encodeURIComponent(q || '')}`);
+    const data = await res.json();
+    loadingEl.classList.add('hidden');
+
+    if (!res.ok) {
+      if (res.status === 401) { showSessionTimeoutModal(); return; }
+      errorEl.textContent = data.error || "Couldn't load assets.";
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    renderNewReservationAssets(data.assets || []);
+  } catch (err) {
+    loadingEl.classList.add('hidden');
+    errorEl.textContent = 'Network error - check your connection and try again.';
+    errorEl.classList.remove('hidden');
+  }
+}
+
+function renderNewReservationAssets(assets) {
+  const listEl = document.getElementById('new-reservation-results');
+  listEl.innerHTML = '';
+  if (assets.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'text-xs text-base-content/40 px-2 py-3 text-center';
+    li.textContent = 'No matching assets found.';
+    listEl.appendChild(li);
+    return;
+  }
+  assets.forEach((asset) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w-full text-left px-3 py-2 rounded-lg hover:bg-base-200 text-sm flex items-center justify-between gap-2';
+    btn.setAttribute('hx-get', `/api/v1/assets/${asset.id}/reserve-form`);
+    btn.setAttribute('hx-target', 'closest .modal');
+    btn.setAttribute('hx-swap', 'outerHTML');
+
+    const left = document.createElement('span');
+    left.className = 'flex flex-col truncate';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'truncate font-medium';
+    nameSpan.textContent = asset.name;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'text-xs text-base-content/50 truncate';
+    metaSpan.textContent = `${asset.asset_id}${asset.category ? ' · ' + asset.category : ''}`;
+    left.appendChild(nameSpan);
+    left.appendChild(metaSpan);
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge badge-sm shrink-0 ' + (asset.status === 'available' ? 'badge-success' : 'badge-ghost');
+    statusBadge.textContent = asset.status;
+
+    btn.appendChild(left);
+    btn.appendChild(statusBadge);
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  });
+  // Newly-inserted hx-get buttons need htmx to pick them up.
+  if (window.htmx) htmx.process(listEl);
+}
+
+loadNewReservationAssets('');
+</script>

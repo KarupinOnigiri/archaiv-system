@@ -1183,7 +1183,10 @@
             </div>
             <div>
               <p class="text-xs font-semibold text-base-content/50 tracking-wide">BARCODE ID</p>
-              <p class="mt-0.5 font-mono">{{ staff.staff_code or "-" }}</p>
+              <!-- members.barcode_id, dili staff.staff_code - kini ra ang
+                   tinuod nga barcode nga pwede i-scan (login, checkout member
+                   lookup), gikan sa naka-link nga members row. -->
+              <p class="mt-0.5 font-mono">{{ staff_barcode_id or "-" }}</p>
             </div>
             {% if staff_member_type %}
             <div>
@@ -2071,6 +2074,7 @@
 
             {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.reservations %}
             {% call shortcut_category('Reservations', 'calendar') %}
+              {{ srow('New reservation', ['Alt+N']) }}
               {{ srow('Filter: Scheduled / Fulfilled / Cancelled / Expired / All', ['1', '2', '3', '4', '5']) }}
               {% if staff.role in ["admin", "in_charge"] %}
               {{ srow('Toggle "Only mine"', ['`']) }}

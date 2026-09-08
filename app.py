@@ -99,7 +99,10 @@ def inject_csrf_token():
         # Needed even here since base.html's nav guards run on the logged-out /login page too.
         feature_flags = get_feature_flags(conn)
         conn.close()
-        return {"csrf_token": "", "staff_first_name": "", "feature_flags": feature_flags}
+        return {
+            "csrf_token": "", "staff_first_name": "", "feature_flags": feature_flags,
+            "staff_barcode_id": "",
+        }
 
     session = conn.execute(
         "SELECT csrf_token FROM sessions WHERE token = ?", (token,)
@@ -109,7 +112,7 @@ def inject_csrf_token():
         """
         SELECT staff.id AS staff_id, staff.role,
                staff.notify_due_soon, staff.notify_overdue, staff.notify_requests,
-               members.first_name, members.last_name,
+               members.first_name, members.last_name, members.barcode_id,
                members.member_type, members.batch,
                departments.name AS department_name
         FROM sessions
@@ -159,9 +162,14 @@ def inject_csrf_token():
         "pending_approvals_count": pending_approvals_count,
         "open_feedback_count": open_feedback_count,
         # For the "My Account" modal - comes from the linked member record, not the staff table.
+        # barcode_id mismo (dili staff_code) - kay ang actual barcode nga
+        # ginascan sa gawas naa sa members table, gikonekta sa staff via
+        # staff.member_id. staff_code laing butang - internal reference code
+        # ra na sa staff account, dili siya barcode.
         "staff_member_type": staff_member["member_type"] if staff_member else "",
         "staff_batch": staff_member["batch"] if staff_member else None,
         "staff_department_name": staff_member["department_name"] if staff_member else "",
+        "staff_barcode_id": staff_member["barcode_id"] if staff_member else "",
     }
 
 

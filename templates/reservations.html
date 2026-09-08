@@ -6,6 +6,15 @@
     <div>
       <h1 class="text-2xl font-bold">Reservations</h1>
     </div>
+    {% if feature_flags.reservations %}
+    <button type="button" id="new-reservation-btn" class="btn btn-primary btn-sm rounded-full" data-tooltip="New Reservation (Alt+N)"
+            hx-get="/api/v1/reservations/new-form"
+            hx-target="#modal-container"
+            hx-swap="beforeend">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      New Reservation
+    </button>
+    {% endif %}
   </div>
 
   <div class="bg-base-100 rounded-xl border border-base-300 p-5">
@@ -62,6 +71,18 @@ function isModalOpen() {
 // static/js/ui.js) - this page had none until now, so Reservations was
 // silently missing from every keyboard-driven workflow.
 window.pageKeydownHandler = function (e) {
+  // Alt+N - open "New Reservation", same shortcut Assets/Members/Staff use
+  // for their own primary create action. Checked before the ctrl/meta/alt
+  // early-return below since this one specifically needs Alt held.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'n') {
+    const btn = document.getElementById('new-reservation-btn');
+    if (btn && !isModalOpen()) {
+      e.preventDefault();
+      btn.click();
+    }
+    return;
+  }
+
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (isTypingTarget(e.target) || isModalOpen()) return;
 

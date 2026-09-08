@@ -1,0 +1,11 @@
+-- 0060_maintenance_due_composite_index.sql
+-- services/asset_service.py's get_maintenance_due_assets() runs on every
+-- dashboard load and the Inventory page's maintenance_due filter, always
+-- filtering deleted_at IS NULL + status != 'maintenance' first before
+-- either the date-based or usage-based OR branch. Migration 0047 already
+-- indexes deleted_at and status separately, and 0055 indexes
+-- next_maintenance_due alone - none of those help SQLite prune the
+-- deleted_at + status pair together in one pass. This composite index
+-- covers that shared prefix; still fine on a small fleet, but keeps the
+-- query flat instead of degrading as the assets table grows.
+CREATE INDEX IF NOT EXISTS idx_assets_deleted_at_status ON assets(deleted_at, status);

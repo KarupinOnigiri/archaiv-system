@@ -1,38 +1,32 @@
-"""Query-building and mutation logic for routes/reservations.py - advance
-booking of a specific serialized asset for a member, ahead of time.
+"""Query-building ug mutation logic para sa routes/reservations.py -
+advance booking sa usa ka specific serialized asset para sa usa ka
+member, nang daan pa.
 
-Same convention as the other *_service modules: functions take an already-open
-`conn` and return `(data, error)`, where `error` is `None` on success or a
-ready `(jsonify(...), status)` tuple on failure. Structurally mirrors
-services/unrestriction_service.py (a status-flow entity tied to an
-asset/member/staff), with one deliberate difference: creation doesn't need
-admin/in_charge review - a staff member booking a tool for a member is
-self-approving, not something to be reviewed the way an unrestriction
-request is.
+Same convention sa ubang *_service modules: matag function mo-dawat ug
+bukas nga `conn`, mobalik ug `(data, error)` - `error` None kung
+malampuson, o ready `(jsonify(...), status)` tuple kung napakyas.
+Structurally mirrors services/unrestriction_service.py (status-flow entity
+nga naka-tie sa asset/member/staff), pero lahi sa usa ka butang: ang
+creation dili na kinahanglan admin/in_charge review - kung mag-book ug
+tool ang staff para sa member, self-approving na dayon, dili parehas sa
+unrestriction request nga kinahanglan pa i-review.
 
-CRITICAL DESIGN NOTE: assets.status='reserved' means EXCLUSIVELY "sitting in
-an open checkout-session cart right now" - claimed via the atomic CAS in
-services/transaction_service.py's add_item_to_checkout_session. A reservation
-row here NEVER writes to assets.status. Availability for booking is decided
-by checking for overlapping 'scheduled' rows in THIS table, not by asset
-state.
+IMPORTANTE KAAYO: ang assets.status='reserved' EXCLUSIVE ra sa "naa sa
+open checkout-session cart karon dayon" - gina-claim via atomic CAS sa
+services/transaction_service.py's add_item_to_checkout_session. Ang
+reservation row dinhi DILI GYUD mosuwat sa assets.status. Availability
+para sa booking gina-check base sa overlapping 'scheduled' rows sa KINING
+table ra, dili base sa asset's own status.
 
-V1 SCOPE: reservations are advisory, not enforced. An asset with an upcoming
-reservation can still be checked out today by anyone - staff see the
-"reserved for" banner (templates/assets/_details_modal.html) and use
-judgment. This keeps the existing checkout CAS untouched and is the single
-biggest risk-reduction decision in this feature; auto-linking a fulfilled
-reservation to its actual checkout transaction (fulfilled_transaction_id)
-is deferred to a later pass - the column exists for that future use but
-nothing sets it yet.
-
-Kini nga file ang naghandle sa advance booking (pag-reserve nang daan) sa
-usa ka serialized nga asset para sa usa ka member. IMPORTANTE GYUD: ang
-assets.status='reserved' NAGPASABOT RA "naa sa open checkout-session cart
-karon dayon" - lahi kaayo sa reservation, ug ang reservation row DILI GYUD
-mosuwat sa assets.status. V1 SCOPE: ang reservation ADVISORY ra, DILI
-enforced - ang asset nga naay umaabot nga reservation pwede gihapon
-ma-checkout karong adlawa sa bisan kinsa.
+V1 SCOPE: advisory ra ang reservations, dili enforced. Ang asset nga naay
+umaabot nga reservation pwede gihapon ma-checkout karong adlawa sa bisan
+kinsa - ang staff makakita ra sa "reserved for" banner
+(templates/assets/_details_modal.html) ug gamiton ang judgment. Mao ni
+ang pinakadako nga risk-reduction decision ani nga feature (wala gi-touch
+ang existing checkout CAS); ang pag-auto-link sa fulfilled reservation
+ngadto sa iyang actual checkout transaction (fulfilled_transaction_id)
+deferred pa sa later pass - naa na ang column para ana pero wala pay
+nagsuwat niini.
 """
 
 import logging
@@ -253,6 +247,51 @@ def get_upcoming_reservations_for_asset(conn, asset_id, limit=5):
         """,
         (asset_id, limit),
     ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_reservable_assets(conn, q, limit=30):
+    """Asset picker para sa Reservations page's "New Reservation" button
+    (dili pareha sa Details modal's "Reserve", nga naa nay pre-selected
+    asset na - kani nagsugod nga walay asset pa, so kinahanglan naay
+    picker una). Nagtugot ra og non-consumable, dili pa deleted nga
+    assets, mo-match sa name/asset_id/barcode_id. Blangko nga `q` mobalik
+    og pinakabag-o nga assets (browse-all case, parehas sa checkout's
+    "Show available members").
+
+    Returns: list[dict] {id, asset_id, name, category, status}."""
+    q = (q or "").strip()
+    if q:
+        rows = conn.execute(
+            """
+            SELECT assets.id, assets.asset_id, assets.name, assets.status,
+                   categories.name AS category
+            FROM assets
+            LEFT JOIN categories ON categories.id = assets.category_id
+            WHERE assets.deleted_at IS NULL AND assets.asset_type != 'consumable'
+              AND (
+                  assets.name LIKE '%' || ? || '%'
+                  OR UPPER(assets.asset_id) LIKE '%' || UPPER(?) || '%'
+                  OR UPPER(assets.barcode_id) LIKE '%' || UPPER(?) || '%'
+              )
+            ORDER BY assets.name
+            LIMIT ?
+            """,
+            (q, q, q, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT assets.id, assets.asset_id, assets.name, assets.status,
+                   categories.name AS category
+            FROM assets
+            LEFT JOIN categories ON categories.id = assets.category_id
+            WHERE assets.deleted_at IS NULL AND assets.asset_type != 'consumable'
+            ORDER BY assets.name
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

@@ -776,10 +776,9 @@ def _write_sheet(wb, title, headers, rows_as_lists):
 
 
 # - Per-widget (headers, rows_as_lists) builders --------------------------
-# Same shape as the on-screen report card, returned plain for export_stats() to format.
-# (Bisaya: matag _section_X sa ubos export-ready nga bersyon sa parehas nga
-# widget sa taas - mobalik ug (title, headers, rows_as_lists) tuple nga
-# gamiton sa Excel/CSV export, dili JSON para sa browser.)
+# Matag _section_X sa ubos export-ready nga bersyon sa parehas nga widget
+# sa taas - mobalik ug (title, headers, rows_as_lists) tuple para sa
+# Excel/CSV export sa export_stats(), dili ang JSON shape para sa browser.
 
 
 def _section_summary(conn, ctx):
