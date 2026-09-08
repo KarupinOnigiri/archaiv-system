@@ -247,6 +247,7 @@ def record_failed_attempt(conn, staff, attempt_kind):
         conn.commit()
 
         log_action(
+            conn=conn,
             staff_id=staff["id"],
             action="account_locked",
             target_table="staff",

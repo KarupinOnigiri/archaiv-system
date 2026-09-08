@@ -103,6 +103,7 @@ def create_reservation(conn, asset_id, member_id, start_at, end_at, staff, notes
 
     member_name = full_name(member["first_name"], member["last_name"], member["middle_name"], member["suffix"])
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="created_reservation",
         target_table="reservations",
@@ -164,6 +165,7 @@ def cancel_reservation(conn, reservation_id, staff):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="cancelled_reservation",
         target_table="reservations",

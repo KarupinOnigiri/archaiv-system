@@ -71,6 +71,7 @@ def create_unrestriction_request(conn, member_id, reason, staff):
         return None, (jsonify({"error": "A database constraint was violated."}), 400)
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="requested_unrestriction",
         target_table="unrestriction_requests",
@@ -133,6 +134,7 @@ def cancel_unrestriction_request(conn, request_id, review_notes, staff):
     ).fetchone()
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="cancelled_unrestriction_request",
         target_table="unrestriction_requests",
@@ -288,6 +290,7 @@ def approve_unrestriction_request(conn, request_id, review_notes, staff):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="approved_unrestriction_request",
         target_table="unrestriction_requests",
@@ -335,6 +338,7 @@ def deny_unrestriction_request(conn, request_id, review_notes, staff):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="denied_unrestriction_request",
         target_table="unrestriction_requests",

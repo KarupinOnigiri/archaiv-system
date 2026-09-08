@@ -456,6 +456,7 @@ def add_category(conn, name, staff_id):
         return None, _no_ctx({"error": "A category with this name already exists"}, 400)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="created_category",
         target_table="categories",
@@ -485,6 +486,7 @@ def edit_category(conn, category_id, name, staff_id):
         return None, _no_ctx({"error": "A category with this name already exists"}, 400)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="renamed_category",
         target_table="categories",
@@ -517,6 +519,7 @@ def reorder_categories(conn, ordered_ids, staff_id):
         return None, _no_ctx({"error": "Failed to save category order"}, 500)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="reordered_categories",
         target_table="categories",
@@ -557,6 +560,7 @@ def delete_category(conn, category_id, staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="deleted_category",
         target_table="categories",
@@ -699,6 +703,7 @@ def create_asset(conn, data, image_file, additional_image_files, staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="created_asset",
         target_table="assets",
@@ -1313,6 +1318,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
 
     updated_name = data.get("name", asset["name"])
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="updated_asset",
         target_table="assets",
@@ -1324,6 +1330,7 @@ def update_asset(conn, asset_id, data, image_file, remove_image, additional_imag
 
     if new_condition == "disposed":
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="disposed_asset",
             target_table="assets",
@@ -1380,6 +1387,7 @@ def delete_asset(conn, asset_id, staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="deleted_asset",
         target_table="assets",
@@ -1413,6 +1421,7 @@ def undo_delete_asset(conn, asset_id, staff_id):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="undid_asset_delete",
         target_table="assets",
@@ -1458,6 +1467,7 @@ def bulk_delete_assets(conn, ids, staff_id):
 
     if deleted:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_deleted_assets",
             target_table="assets",
@@ -1508,6 +1518,7 @@ def bulk_restore_assets(conn, ids, staff_id):
 
     if restored:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_restored_assets",
             target_table="assets",
@@ -1553,6 +1564,7 @@ def bulk_reassign_category(conn, ids, category_id, staff_id):
     if reassigned:
         category = conn.execute("SELECT name FROM categories WHERE id = ?", (category_id,)).fetchone()
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_reassigned_category",
             target_table="assets",
@@ -1613,6 +1625,7 @@ def bulk_change_status(conn, ids, new_status, staff_id):
 
     if changed:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_changed_status",
             target_table="assets",
@@ -1670,6 +1683,7 @@ def restore_asset(conn, asset_id, condition, reason, staff_id):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="restored_asset",
         target_table="assets",
@@ -1727,6 +1741,7 @@ def mark_calibrated(conn, asset_id, staff_id):
         return None, ({"error": "A database constraint was violated."}, 400, {"asset": asset})
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="marked_calibrated",
         target_table="assets",
@@ -1796,6 +1811,7 @@ def mark_for_maintenance(conn, asset_id, notes, staff_id):
         return None, ({"error": "A database constraint was violated."}, 400, {"asset": asset})
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="marked_for_maintenance",
         target_table="assets",
@@ -1883,6 +1899,7 @@ def resolve_maintenance(conn, asset_id, condition, notes, staff_id, next_mainten
         return None, ({"error": "A database constraint was violated."}, 400, {"asset": asset})
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="resolved_maintenance",
         target_table="assets",
@@ -1968,6 +1985,7 @@ def adjust_consumable_stock(conn, asset_id, delta, reason, staff_id):
     new_quantity = conn.execute("SELECT quantity FROM assets WHERE id = ?", (asset_id,)).fetchone()["quantity"]
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="adjusted_stock",
         target_table="assets",

@@ -69,6 +69,7 @@ def submit_feedback(conn, staff, category, message, page_path, screenshots):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="submitted_feedback",
         target_table="feedback_reports",
@@ -202,6 +203,7 @@ def resolve_feedback(conn, report_id, response, staff):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="resolved_feedback",
         target_table="feedback_reports",
@@ -232,6 +234,7 @@ def reopen_feedback(conn, report_id, staff):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="reopened_feedback",
         target_table="feedback_reports",

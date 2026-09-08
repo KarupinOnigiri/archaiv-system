@@ -587,6 +587,7 @@ def start_checkout_session(conn, member_barcode, member_id, staff_id):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="started_checkout_session",
         target_table="checkout_sessions",
@@ -783,6 +784,7 @@ def add_item_to_checkout_session(conn, session_id, staff_id, asset_code, rfid_co
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="added_item_to_checkout_session",
         target_table="checkout_session_items",
@@ -875,6 +877,7 @@ def _add_consumable_to_checkout_session(conn, session_id, staff_id, asset, exist
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="added_item_to_checkout_session",
         target_table="checkout_session_items",
@@ -948,6 +951,7 @@ def remove_item_from_checkout_session(conn, session_id, item_id, staff_id, decre
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="removed_item_from_checkout_session",
         target_table="checkout_session_items",
@@ -1049,6 +1053,7 @@ def release_reserved_asset(conn, asset_id, staff_id):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="admin_released_reserved_asset",
         target_table="assets",
@@ -1492,6 +1497,7 @@ def renew_transaction(conn, transaction_id, new_due_date, staff_id):
     ).fetchone()
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="renewed_loan",
         target_table="transactions",
@@ -1735,6 +1741,7 @@ def finish_checkout_session(conn, session_id, staff_id, due_date, default_loan_d
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="checked_out_session",
         target_table="checkout_sessions",
@@ -1794,6 +1801,7 @@ def cancel_checkout_session(conn, session_id, staff_id):
         ).fetchone()
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="cancelled_checkout_session",
         target_table="checkout_sessions",

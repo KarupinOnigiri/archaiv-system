@@ -35,6 +35,7 @@ def check_and_lift_restriction_if_resolved(member_id, conn):
         conn.commit()
 
         log_action(
+            conn=conn,
             staff_id=None,
             action="auto_unrestricted_member",
             target_table="members",
@@ -79,6 +80,7 @@ def check_and_restrict_overdue_member(member_id, conn):
 
         # staff_id=None since no human triggered this; name spelled out in the message too
         log_action(
+            conn=conn,
             staff_id=None,
             action="auto_restricted_member",
             target_table="members",
@@ -123,6 +125,7 @@ def check_and_restrict_damaged_returns(member_id, conn):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=None,
         action="auto_restricted_member_damage",
         target_table="members",

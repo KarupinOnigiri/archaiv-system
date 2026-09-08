@@ -590,6 +590,7 @@ def create_staff(conn, data, staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="created_staff",
         target_table="staff",
@@ -700,6 +701,7 @@ def update_staff(conn, staff_id, data, acting_staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_staff",
         target_table="staff",
@@ -730,6 +732,7 @@ def change_own_password(conn, staff, new_password, current_token):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="changed_own_password",
         target_table="staff",
@@ -757,6 +760,7 @@ def change_own_rfid_pin(conn, staff, new_pin, current_token):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="changed_own_rfid_pin",
         target_table="staff",
@@ -797,6 +801,7 @@ def enable_barcode_pin_login(conn, staff, new_pin, current_token):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="enabled_barcode_pin_login",
         target_table="staff",
@@ -820,6 +825,7 @@ def disable_barcode_pin_login(conn, staff):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="disabled_barcode_pin_login",
         target_table="staff",
@@ -847,6 +853,7 @@ def change_own_barcode_pin(conn, staff, new_pin, current_token):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="changed_own_barcode_pin",
         target_table="staff",
@@ -898,6 +905,7 @@ def save_own_notification_prefs(conn, updates, staff):
         raise
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="updated_own_notification_prefs",
         target_table="staff",
@@ -931,6 +939,7 @@ def upload_own_photo(conn, staff, saved_path):
     delete_staff_photo(old_photo_path)
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="updated_own_photo",
         target_table="staff",
@@ -958,6 +967,7 @@ def remove_own_photo(conn, staff):
     delete_staff_photo(old_photo_path)
 
     log_action(
+        conn=conn,
         staff_id=staff["id"],
         action="removed_own_photo",
         target_table="staff",
@@ -1021,6 +1031,7 @@ def reset_staff_password(conn, staff_id, acting_staff_id):
         raise
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="reset_staff_password",
         target_table="staff",
@@ -1088,6 +1099,7 @@ def lock_staff(conn, staff_id, acting_staff_id, indefinite, duration_minutes):
         else f"Manually locked staff account for {duration_minutes} minute(s): {staff['username']}"
     )
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="locked_staff",
         target_table="staff",
@@ -1134,6 +1146,7 @@ def unlock_staff(conn, staff_id, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="unlocked_staff",
         target_table="staff",
@@ -1197,6 +1210,7 @@ def deactivate_staff(conn, staff_id, acting_staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="deactivated_staff",
         target_table="staff",
@@ -1250,6 +1264,7 @@ def reactivate_staff(conn, staff_id, acting_staff_id, reason):
         )
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="reactivated_staff",
         target_table="staff",
@@ -1297,6 +1312,7 @@ def bulk_deactivate_staff(conn, ids, acting_staff_id):
 
     if deactivated:
         log_action(
+            conn=conn,
             staff_id=acting_staff_id,
             action="bulk_deactivated_staff",
             target_table="staff",
@@ -1337,6 +1353,7 @@ def bulk_reactivate_staff(conn, ids, acting_staff_id):
 
     if reactivated:
         log_action(
+            conn=conn,
             staff_id=acting_staff_id,
             action="bulk_reactivated_staff",
             target_table="staff",
@@ -1487,6 +1504,7 @@ def request_admin_deactivation(conn, target_staff_id, acting_staff, reason):
         return None, _no_ctx({"error": "A database constraint was violated."}, 400)
 
     log_action(
+        conn=conn,
         staff_id=acting_staff["id"],
         action="requested_admin_deactivation",
         target_table="admin_deactivation_requests",
@@ -1538,6 +1556,7 @@ def approve_admin_deactivation(conn, request_id, acting_staff, reason):
     # req has no join, so target_username isn't on it - look it up separately.
     target_staff_row = conn.execute("SELECT username FROM staff WHERE id = ?", (req["target_staff_id"],)).fetchone()
     log_action(
+        conn=conn,
         staff_id=acting_staff["id"],
         action="approved_admin_deactivation",
         target_table="admin_deactivation_requests",
@@ -1602,6 +1621,7 @@ def deny_admin_deactivation(conn, request_id, acting_staff, denial_reason):
         )
         conn.commit()
         log_action(
+            conn=conn,
             staff_id=acting_staff["id"],
             action="cancelled_admin_deactivation",
             target_name=target_staff_row["username"] if target_staff_row else None,
@@ -1622,6 +1642,7 @@ def deny_admin_deactivation(conn, request_id, acting_staff, denial_reason):
         return None, _no_ctx({"error": "You have already reviewed this request"}, 400)
 
     log_action(
+        conn=conn,
         staff_id=acting_staff["id"],
         action="denied_admin_deactivation",
         target_name=target_staff_row["username"] if target_staff_row else None,
@@ -1813,6 +1834,7 @@ def save_loan_limits(conn, updates, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_loan_limits",
         target_table="loan_limits",
@@ -2046,6 +2068,7 @@ def update_session_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_session_settings",
         target_table="app_settings",
@@ -2080,6 +2103,7 @@ def update_account_security(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_account_security_settings",
         target_table="app_settings",
@@ -2106,6 +2130,7 @@ def update_notification_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_notification_settings",
         target_table="app_settings",
@@ -2128,6 +2153,7 @@ def update_loan_duration(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_loan_duration",
         target_table="app_settings",
@@ -2156,6 +2182,7 @@ def update_checkout_session_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_checkout_session_settings",
         target_table="app_settings",
@@ -2206,6 +2233,7 @@ def update_maintenance_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_maintenance_settings",
         target_table="app_settings",
@@ -2235,6 +2263,7 @@ def update_damage_restriction(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_damage_restriction_threshold",
         target_table="app_settings",
@@ -2260,6 +2289,7 @@ def update_feature_flags(conn, new_values, acting_staff_id):
     for name, enabled in changed.items():
         _key, label = FEATURE_FLAGS[name]
         log_action(
+            conn=conn,
             staff_id=acting_staff_id,
             action="enabled_feature" if enabled else "disabled_feature",
             target_table="app_settings",
@@ -2288,6 +2318,7 @@ def update_alarm_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="enabled_alarm" if enabled else "disabled_alarm",
         target_table="app_settings",
@@ -2335,6 +2366,7 @@ def update_barcode_prefixes(conn, data, acting_staff_id, force_regenerate=False)
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_barcode_prefixes",
         target_table="app_settings",
@@ -2406,6 +2438,7 @@ def _force_regenerate_prefixed_codes(conn, prefixes, acting_staff_id):
         counts[table] = updated
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="force_regenerated_prefixed_codes",
         target_table="app_settings",
@@ -2572,6 +2605,7 @@ def update_backup_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_backup_settings",
         target_table="app_settings",
@@ -2657,6 +2691,7 @@ def update_archive_purge_settings(conn, data, acting_staff_id):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="updated_archive_purge_settings",
         target_table="app_settings",
@@ -2682,6 +2717,7 @@ def run_archive_purge(conn, acting_staff_id):
     purged_members = purge_expired_inactive_members()
 
     log_action(
+        conn=conn,
         staff_id=acting_staff_id,
         action="ran_manual_archive_purge",
         target_table="assets",

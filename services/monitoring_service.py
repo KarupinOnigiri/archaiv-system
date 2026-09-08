@@ -119,6 +119,7 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
     new_id = cursor.lastrowid
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="rfid_event_recorded",
         target_table="rfid_events",
@@ -171,6 +172,7 @@ def deactivate_active_alarms(conn, staff_id):
         return None, _no_ctx({"error": "Failed to deactivate alarm"}, 500)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="rfid_alarm_deactivated",
         target_table="rfid_events",

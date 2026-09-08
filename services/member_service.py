@@ -309,6 +309,7 @@ def create_member(conn, data, staff_id):
 
     name = full_name(data['first_name'], data['last_name'], data.get('middle_name'), data.get('suffix'))
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="created_member",
         target_table="members",
@@ -450,6 +451,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
         data.get("suffix", member["suffix"]),
     )
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="updated_member",
         target_table="members",
@@ -461,6 +463,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
     if old_is_restricted != new_is_restricted:
         if new_is_restricted:
             log_action(
+                conn=conn,
                 staff_id=staff_id,
                 action="restricted_member",
                 target_table="members",
@@ -470,6 +473,7 @@ def update_member(conn, member_id, data, staff_id, acting_staff_member_id):
             )
         else:
             log_action(
+                conn=conn,
                 staff_id=staff_id,
                 action="unrestricted_member",
                 target_table="members",
@@ -522,6 +526,7 @@ def restrict_member(conn, member_id, restriction_reason, staff_id):
 
     updated_name = full_name(member["first_name"], member["last_name"], member["middle_name"], member["suffix"])
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="restricted_member",
         target_table="members",
@@ -579,6 +584,7 @@ def unrestrict_member(conn, member_id, staff_id, acting_staff_member_id):
 
     updated_name = full_name(member["first_name"], member["last_name"], member["middle_name"], member["suffix"])
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="unrestricted_member",
         target_table="members",
@@ -698,6 +704,7 @@ def deactivate_member(conn, member_id, staff_id, acting_staff_role):
 
     name = full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="deactivated_member",
         target_table="members",
@@ -708,6 +715,7 @@ def deactivate_member(conn, member_id, staff_id, acting_staff_role):
 
     if linked_staff is not None:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="deactivated_staff_cascade",
             target_table="staff",
@@ -750,6 +758,7 @@ def reactivate_member(conn, member_id, staff_id):
 
     name = full_name(member['first_name'], member['last_name'], member['middle_name'], member['suffix'])
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="reactivated_member",
         target_table="members",
@@ -837,6 +846,7 @@ def bulk_deactivate_members(conn, ids, staff_id, acting_staff_role):
 
     if deactivated:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_deactivated_members",
             target_table="members",
@@ -849,6 +859,7 @@ def bulk_deactivate_members(conn, ids, staff_id, acting_staff_role):
 
     for cascade_staff_id, username in staff_cascades:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="deactivated_staff_cascade",
             target_table="staff",
@@ -893,6 +904,7 @@ def bulk_reactivate_members(conn, ids, staff_id):
 
     if reactivated:
         log_action(
+            conn=conn,
             staff_id=staff_id,
             action="bulk_reactivated_members",
             target_table="members",
@@ -1170,6 +1182,7 @@ def add_department(conn, name, staff_id):
         return None, _no_ctx({"error": "A department with this name already exists"}, 400)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="created_department",
         target_table="departments",
@@ -1199,6 +1212,7 @@ def edit_department(conn, department_id, name, staff_id):
         return None, _no_ctx({"error": "A department with this name already exists"}, 400)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="renamed_department",
         target_table="departments",
@@ -1231,6 +1245,7 @@ def reorder_departments(conn, ordered_ids, staff_id):
         return None, _no_ctx({"error": "Failed to save department order"}, 500)
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="reordered_departments",
         target_table="departments",
@@ -1271,6 +1286,7 @@ def delete_department(conn, department_id, staff_id):
         )
 
     log_action(
+        conn=conn,
         staff_id=staff_id,
         action="deleted_department",
         target_table="departments",

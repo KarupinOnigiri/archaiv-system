@@ -129,6 +129,7 @@ def finalize_admin_deactivation(request_row, actor_staff_id, conn):
     conn.commit()
 
     log_action(
+        conn=conn,
         staff_id=actor_staff_id,
         action="deactivated_admin_via_approval",
         target_table="staff",

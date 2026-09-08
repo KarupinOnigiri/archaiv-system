@@ -147,6 +147,7 @@ def complete_setup(conn, data, temp_admin):
         )
 
     log_action(
+        conn=conn,
         staff_id=new_staff_id,
         action="completed_initial_setup",
         target_table="staff",
