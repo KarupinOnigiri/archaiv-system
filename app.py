@@ -88,6 +88,11 @@ if not app.secret_key:
 
 @app.context_processor
 def inject_csrf_token():
+    """Runs sa matag template render - mag-inject sa csrf_token,
+    feature_flags, notifications, ug staff info nga gikinahanglan sa
+    base.html (sidebar, bell, badges) bisan unsa nga page ang gina-render.
+    Anonymous/logged-out nga request kay walay staff info, feature_flags
+    ra ang naa."""
     conn = get_db_connection()
     token = request.cookies.get("session_token")
     if not token:
@@ -191,7 +196,8 @@ app.register_blueprint(pages_bp)
 
 @app.after_request
 def cache_uploaded_files_aggressively(response):
-    """Uploaded files get a fresh filename every time, so caching them long-term is safe."""
+    """Ang na-upload nga files naay bag-ong filename matag beses, so safe
+    ra ang long-term caching."""
     if request.path.startswith("/static/uploads/"):
         response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
     return response
@@ -202,7 +208,8 @@ def cache_uploaded_files_aggressively(response):
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(e):
-    """Reformats Flask/Werkzeug's built-in HTTP errors (404, 405, 429, ...) as JSON."""
+    """I-reformat ang built-in HTTP errors sa Flask/Werkzeug (404, 405,
+    429, ...) isip JSON."""
     response = jsonify({"error": e.description})
     response.status_code = e.code
     return response
@@ -210,7 +217,8 @@ def handle_http_exception(e):
 
 @app.errorhandler(Exception)
 def handle_unexpected_exception(e):
-    """Catch-all for real bugs (unhandled exceptions). Logs full traceback, hides details from the client."""
+    """Catch-all para sa tinuod nga bugs (unhandled exceptions). I-log ang
+    full traceback, tagoan ang detalye gikan sa client."""
     app.logger.exception("Unhandled exception")
     response = jsonify({"error": "An unexpected error occurred"})
     response.status_code = 500
@@ -249,8 +257,9 @@ if not testing_mode and (not debug_mode or os.environ.get("WERKZEUG_RUN_MAIN") =
 
 @app.route("/")
 def home():
-    """The dashboard (templates/home.html) - counts, recent activity, top-borrowed
-    assets, quick actions. Query layer lives in services/dashboard_service.py."""
+    """Ang dashboard (templates/home.html) - counts, recent activity,
+    top-borrowed assets, quick actions. Ang query layer naa sa
+    services/dashboard_service.py."""
     conn = get_db_connection()
     staff, error = require_session(conn)
     if error:
@@ -268,7 +277,8 @@ def home():
 @app.route("/health")
 @limiter.exempt
 def health():
-    """Confirms the app is up and can reach the DB. No auth needed - meant for a watchdog script."""
+    """I-kumpirma nga naa/buhi ang app ug maka-abot sa DB. Walay auth nga
+    gikinahanglan - para ni sa watchdog script."""
     try:
         conn = get_db_connection()
         conn.execute("SELECT 1")
@@ -280,7 +290,8 @@ def health():
 
 
 def format_date(value, format="%b %d, %Y %I:%M %p"):
-    """Jinja filter: formats dates, handling datetime objects and ISO strings."""
+    """Jinja filter - i-format ang petsa, ma-handle ang datetime objects
+    ug ISO strings."""
     if value is None:
         return "-"
 
@@ -302,16 +313,12 @@ app.jinja_env.globals["format_date"] = format_date
 
 
 def asset_url(filename):
-    """Cache-busted static URL: appends ?v=<mtime> so a real deployment's
-    1-hour SEND_FILE_MAX_AGE_DEFAULT (above) doesn't leave a browser sitting
-    on a stale cached output.css/ui.js for up to an hour after every
-    redeploy - the query string changes the moment the file's mtime does,
-    forcing a fresh fetch, while an unchanged file still gets the full
-    cache lifetime. Local dev (FLASK_DEBUG=1) doesn't need this (that mode
-    already disables the cache entirely, see SEND_FILE_MAX_AGE_DEFAULT's
-    own comment), but it's harmless there too - just an unused query string.
-    Falls back to a plain, unversioned URL if the file can't be stat'd
-    (e.g. a bad filename) rather than raising and breaking the whole page."""
+    """Cache-busted static URL - dugangan og ?v=<mtime> para dili
+    magpabilin ang browser sa stale cached output.css/ui.js hangtod usa ka
+    oras human sa matag redeploy - mausab ang query string sa gilayon nga
+    mausab ang mtime sa file, mo-force ug fresh fetch. Kung dili ma-stat
+    ang file (e.g. sayop nga filename), mo-fallback ra sa plain URL imbes
+    mag-raise ug mabuak ang tibuok page."""
     try:
         mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
     except OSError:
