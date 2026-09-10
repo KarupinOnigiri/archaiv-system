@@ -163,10 +163,12 @@
          a normal form submit.
 
          This view/its IDs used to be RFID-card-specific (rfid-pin-*) --
-         RFID + PIN login itself is still there server-side
-         (routes/auth.py:login_rfid), just not linked from this page
-         anymore now that barcode + PIN is the active flow; see the project
-         conversation history for why it's being kept, not deleted. -->
+         the actual RFID + PIN login route (routes/auth.py:login_rfid) has
+         since been removed entirely (it was unreachable dead code, unlinked
+         from any page since barcode + PIN became the active flow). The PIN
+         itself lives on in staff.rfid_pin_hash either way - that column is
+         genuinely shared storage for whichever quick-login method a staff
+         member has enabled, not RFID-specific despite the name. -->
     <div id="barcode-pin-view" class="hidden p-8 flex flex-col">
       <button type="button" onclick="cancelBarcodePinLogin()"
               class="group self-start flex items-center gap-1 text-sm text-base-content/50 rounded-full pl-1.5 pr-3 py-1 -ml-1.5 -mt-1 mb-2 transition-colors hover:text-base-content hover:bg-base-200 active:scale-95">

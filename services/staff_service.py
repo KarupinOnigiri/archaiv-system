@@ -756,34 +756,6 @@ def change_own_password(conn, staff, new_password, current_token):
     return {"message": "Password changed successfully"}
 
 
-def change_own_rfid_pin(conn, staff, new_pin, current_token):
-    """Self-service RFID PIN change; parehas ra sa change_own_password nga
-    logic - kills other sessions kay basin naa pay shared kiosk nga
-    naka-trust sa old PIN."""
-    new_hash = generate_password_hash(new_pin)
-    try:
-        conn.execute("UPDATE staff SET rfid_pin_hash = ? WHERE id = ?", (new_hash, staff["id"]))
-        # Same as change_own_password: kills other sessions (a shared kiosk could still trust the old PIN).
-        conn.execute(
-            "DELETE FROM sessions WHERE staff_id = ? AND token != ?", (staff["id"], current_token)
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-
-    log_action(
-        conn=conn,
-        staff_id=staff["id"],
-        action="changed_own_rfid_pin",
-        target_table="staff",
-        target_id=staff["id"],
-        target_name=staff["username"],
-        details=f"Staff {staff['username']} changed their own RFID PIN",
-    )
-    return {"message": "RFID PIN changed successfully"}
-
-
 # # # BARCODE + PIN LOGIN (self-service, any staff role) --------------------
 #
 # Reuses staff.rfid_pin_hash unchanged - see 0051_add_staff_barcode_pin_enabled.sql's
@@ -791,13 +763,19 @@ def change_own_rfid_pin(conn, staff, new_pin, current_token):
 # actual login-time lookup lives in services/login_service.py
 # (find_staff_for_barcode_pin_lookup/find_staff_for_barcode_pin_login);
 # these three are just the Account Settings-side enable/disable/change flow.
+#
+# A fourth function (change_own_rfid_pin) used to live here for the
+# admin-only RFID+PIN login flow's own PIN-change - deleted along with that
+# whole login route (routes/auth.py:login_rfid), which is why comments below
+# still occasionally compare against "the same write" - these three are now
+# the only place that write happens.
 
 
 def enable_barcode_pin_login(conn, staff, new_pin, current_token):
     """First-time enable: mag-set sa PIN ug mag-flip og barcode_pin_enabled
-    on sa usa ka action, same ra sa change_own_rfid_pin otherwise (same
-    session-kill, same hashing). PIN nga bag-o lang gi-type sa staff, dili
-    naay existing on file - lahi sa change_own_rfid_pin's caller nga naay
+    on sa usa ka action (same session-kill, same hashing as
+    change_own_password). PIN nga bag-o lang gi-type sa staff, dili naay
+    existing on file - lahi sa change_own_barcode_pin's caller nga naay
     dunay overwrite, pero same ra ang DB write bisan asa."""
     new_hash = generate_password_hash(new_pin)
     try:
@@ -828,12 +806,11 @@ def enable_barcode_pin_login(conn, staff, new_pin, current_token):
 def disable_barcode_pin_login(conn, staff):
     """Mag-flip og barcode_pin_enabled off, wala gina-touch ang rfid_pin_hash
     - ang PIN mismo kay gina-leave in place (dili gina-clear) para kung
-    mag-re-enable later, or future RFID+PIN re-activation, dili na
-    kinahanglan i-set balik gikan sa zero. Walay session-kill diri (lahi sa
-    change_own_rfid_pin/enable_barcode_pin_login): ang pag-disable ani wala
-    ni-invalidate sa bisan unsa nga magamit pa gihapon ang PIN, kay ang
-    login_barcode_pin() mag-check man og barcode_pin_enabled every attempt,
-    dili lang usa ka beses sa PIN-set time."""
+    mag-re-enable later dili na kinahanglan i-set balik gikan sa zero. Walay
+    session-kill diri (lahi sa enable_barcode_pin_login): ang pag-disable
+    ani wala ni-invalidate sa bisan unsa nga magamit pa gihapon ang PIN, kay
+    ang login_barcode_pin() mag-check man og barcode_pin_enabled every
+    attempt, dili lang usa ka beses sa PIN-set time."""
     conn.execute("UPDATE staff SET barcode_pin_enabled = 0 WHERE id = ?", (staff["id"],))
     conn.commit()
 
@@ -851,9 +828,8 @@ def disable_barcode_pin_login(conn, staff):
 
 def change_own_barcode_pin(conn, staff, new_pin, current_token):
     """Self-service PIN change kung naka-enable na ang barcode + PIN login -
-    identical ra ang write sa change_own_rfid_pin (same shared column), ang
-    lahi ra kay ang audit-log action name/message para magpabilin
-    distinguishable ang duha ka flows sa activity log."""
+    same session-kill/hashing pattern as change_own_password, just against
+    staff.rfid_pin_hash (the shared quick-login PIN column) instead."""
     new_hash = generate_password_hash(new_pin)
     try:
         conn.execute("UPDATE staff SET rfid_pin_hash = ? WHERE id = ?", (new_hash, staff["id"]))

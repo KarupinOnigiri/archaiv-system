@@ -145,12 +145,22 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
 # # # DEACTIVATE (physical Master Key Card tap, reported by the Pi) --------
 
 
-def deactivate_active_alarms(conn, staff_id):
+def deactivate_active_alarms(conn, staff_id, via="master_key_card"):
     """I-clear ang tanang active nga alarm dungan - usually usa ra ka
     active, apan gina-cover ang edge case sa duha ka detection nga
     ni-landing sa dili pa ma-process ang tap. Ang staff_id mao ang Admin
-    nga na-identify sa Master Key Card, dili browser session - kini ra
-    para sa Pi's HF/NFC handler, walay "deactivate" button sa UI."""
+    nga na-identify sa Master Key Card (via="master_key_card", dili
+    browser session - kini ra para sa Pi's HF/NFC handler) OR ang
+    currently-logged-in nga admin/in_charge nga mi-agi sa software
+    override (via="software_override" - see
+    routes/monitoring.py's override_dismiss_alarm(), nagkinahanglan ug
+    password re-confirmation, dili ni ang default/primary nga paagi,
+    fallback ra ni kung wala/nadaot ang physical HF/NFC reader).
+
+    Walay "deactivate" button sa UI nga wala'y re-auth - ang tinuod nga
+    security value sa Master Key Card kay physical presence requirement,
+    naa gihapon ni nga logged distinctly gikan sa physical tap para klaro
+    sa audit trail kung asa gikan ang usa ka deactivation."""
     active_ids = [
         row["id"]
         for row in conn.execute(
@@ -176,12 +186,13 @@ def deactivate_active_alarms(conn, staff_id):
         logger.error(f"Failed to deactivate RFID alarm(s): {e}")
         return None, _no_ctx({"error": "Failed to deactivate alarm"}, 500)
 
+    via_label = "Master Key Card" if via == "master_key_card" else "admin software override (password re-confirmed)"
     log_action(
         conn=conn,
         staff_id=staff_id,
-        action="rfid_alarm_deactivated",
+        action="rfid_alarm_deactivated" if via == "master_key_card" else "rfid_alarm_deactivated_override",
         target_table="rfid_events",
-        details=f"Deactivated {len(active_ids)} active alarm event(s) via Master Key Card",
+        details=f"Deactivated {len(active_ids)} active alarm event(s) via {via_label}",
     )
 
     return {"deactivated_count": len(active_ids)}, None
@@ -232,20 +243,26 @@ def build_monitoring_filters(args):
         where_clauses.append("date(rfid_events.detected_at) <= ?")
         params.append(until)
 
-    # Searches the asset's name/barcode and the borrower's name/barcode --
-    # not the raw scanned tag (that's what the TAG column is for, and an
-    # unregistered/mismatched tag wouldn't match a real asset's identifiers
-    # anyway) and not the borrower fields for events with no member_id
-    # (unauthorized/unknown_tag - there's nothing to match there).
+    # Searches every text column actually shown in the table row (TAG,
+    # ASSET, CATEGORY, BARCODE, BORROWER name+barcode) - originally left out
+    # rfid_tag_scanned/category on the theory that "that's what the TAG
+    # column is for" and an unregistered tag wouldn't match a real asset
+    # anyway, but a staff member scanning a printed tag list or asking "did
+    # anything in the Electrical category trip the alarm" has no reason to
+    # know that distinction - if it's a visible column, it should be
+    # searchable. Borrower fields still just no-op for unauthorized/
+    # unknown_tag events (no member_id to match against there).
     q = args.get("q")
     if q:
         where_clauses.append(
-            "(assets.name LIKE ? ESCAPE '\\' OR assets.barcode_id LIKE ? ESCAPE '\\'"
+            "(rfid_events.rfid_tag_scanned LIKE ? ESCAPE '\\'"
+            " OR assets.name LIKE ? ESCAPE '\\' OR assets.barcode_id LIKE ? ESCAPE '\\'"
+            " OR categories.name LIKE ? ESCAPE '\\'"
             " OR members.first_name LIKE ? ESCAPE '\\' OR members.last_name LIKE ? ESCAPE '\\'"
             " OR members.barcode_id LIKE ? ESCAPE '\\')"
         )
         like = f"%{escape_like_wildcards(q)}%"
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like, like])
 
     return where_clauses, params, classification_filter, None
 
@@ -360,8 +377,14 @@ def get_recent_events(conn, limit=5):
 
 
 def get_monitoring_stat_cards(conn):
-    """Today-scoped nga mga ihap para sa page header - mirrors
-    get_asset_stat_cards's shape."""
+    """All-time nga mga ihap para sa page header - mirrors
+    get_asset_stat_cards's shape. Used to be today-scoped only
+    (WHERE date(detected_at) = date('now', 'localtime')) - changed to
+    all-time per explicit request, since a single day's count wasn't
+    useful for spotting overall patterns (a slow week where most
+    detections happened yesterday would read as "0 events" on today's
+    view). The live table/Trends tab still have their own since/until
+    filters for anyone who does want a specific date range."""
     counts = conn.execute(
         """
         SELECT
@@ -370,7 +393,6 @@ def get_monitoring_stat_cards(conn):
             SUM(CASE WHEN classification = 'unauthorized' THEN 1 ELSE 0 END) AS unauthorized_count,
             SUM(CASE WHEN classification = 'unknown_tag' THEN 1 ELSE 0 END) AS unknown_count
         FROM rfid_events
-        WHERE date(detected_at) = date('now', 'localtime')
         """
     ).fetchone()
     return {

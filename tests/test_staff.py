@@ -137,45 +137,16 @@ def test_change_own_password_wrong_current_password(as_admin):
     assert resp.status_code == 401
 
 
-def test_change_rfid_pin_admin_only(as_tool_keeper):
-    client, csrf, _ = as_tool_keeper
-    resp = client.post(
-        "/api/v1/staff/change-rfid-pin",
-        json={"current_password": TEST_PASSWORD, "new_pin": "654321"},
-        headers={"X-CSRF-Token": csrf},
-    )
-    assert resp.status_code == 403
-
-
-def test_change_rfid_pin_success_for_admin(as_admin, conn, admin_id):
-    client, csrf, _ = as_admin
-    resp = client.post(
-        "/api/v1/staff/change-rfid-pin",
-        json={"current_password": TEST_PASSWORD, "new_pin": "654321"},
-        headers={"X-CSRF-Token": csrf},
-    )
-    assert resp.status_code == 200
-    pin_hash = conn.execute(
-        "SELECT rfid_pin_hash FROM staff WHERE id = ?", (admin_id,)
-    ).fetchone()["rfid_pin_hash"]
-    assert pin_hash is not None
-
-
-def test_change_rfid_pin_rejects_malformed_pin(as_admin):
-    client, csrf, _ = as_admin
-    resp = client.post(
-        "/api/v1/staff/change-rfid-pin",
-        json={"current_password": TEST_PASSWORD, "new_pin": "12"},
-        headers={"X-CSRF-Token": csrf},
-    )
-    assert resp.status_code == 400
-
-
 # # # BARCODE + PIN LOGIN (self-service, every role) ------------------------
+#
+# The admin-only "change-rfid-pin" tests that used to sit here were deleted
+# along with that whole route (routes/staff.py) - it served the now fully-
+# removed RFID+PIN login flow (routes/auth.py:login_rfid).
 
 
 def test_enable_barcode_pin_login_works_for_non_admin(as_tool_keeper, conn, tool_keeper_id):
-    """Unlike change-rfid-pin above, this is open to every role."""
+    """Open to every role, not admin-gated like login()/login_barcode_pin()'s
+    own role checks elsewhere."""
     client, csrf, _ = as_tool_keeper
     resp = client.post(
         "/api/v1/staff/barcode-pin/enable",

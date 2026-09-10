@@ -377,40 +377,12 @@ def change_password_submit():
     return jsonify(result)
 
 
-@staff_bp.route("/staff/change-rfid-pin", methods=["POST"])
-@roles_required("admin")
-@limiter.limit("10 per minute; 30 per hour")
-def change_rfid_pin_submit():
-    """POST - self-service RFID PIN change, admin-only ni; naga-confirm with the password kay mas strong secret na siya."""
-    data, error = get_json_or_error()
-    if error:
-        return error
-
-    current_password = data.get("current_password")
-    new_pin = data.get("new_pin")
-
-    if not current_password or not new_pin:
-        return jsonify({"error": "current_password and new_pin are required"}), 400
-
-    if not check_password_hash(g.staff["password_hash"], current_password):
-        return jsonify({"error": "Current password is incorrect"}), 401
-
-    error = validate_rfid_pin(new_pin)
-    if error:
-        return error
-
-    current_token = request.cookies.get("session_token")
-
-    conn = get_db_connection()
-    try:
-        result = staff_service.change_own_rfid_pin(conn, g.staff, new_pin, current_token)
-    finally:
-        conn.close()
-
-    return jsonify(result)
-
-
 # # # BARCODE + PIN LOGIN (self-service, any staff role) --------------------
+#
+# The old admin-only "change-rfid-pin" route that used to sit above this
+# section (for the now fully-removed RFID+PIN login flow) was deleted along
+# with it - see login_service.py's module docstring for the full story on
+# staff.rfid_pin_hash's naming.
 
 
 @staff_bp.route("/staff/barcode-pin/enable", methods=["POST"])
@@ -418,8 +390,8 @@ def change_rfid_pin_submit():
 @limiter.limit("10 per minute; 30 per hour")
 def enable_barcode_pin_login_submit():
     """POST - i-turn on ang barcode + PIN login para sa calling staff ug i-set
-    ang PIN one step ra - unlike sa change-rfid-pin sa taas, open ni sa tanan
-    role (tan-awa 0051_add_staff_barcode_pin_enabled.sql: general opt-in
+    ang PIN one step ra - open ni sa tanan role (tan-awa
+    0051_add_staff_barcode_pin_enabled.sql: general opt-in
     toggle ni, dili ang admin-only RFID+PIN flow nga gi-replace ni sa login)."""
     data, error = get_json_or_error()
     if error:

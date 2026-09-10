@@ -40,6 +40,7 @@ def get_daily_event_volume(conn, args):
         SELECT date(rfid_events.detected_at) AS day, rfid_events.classification, COUNT(*) AS event_count
         FROM rfid_events
         LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
         LEFT JOIN members ON members.id = rfid_events.member_id
         {where_sql}
         GROUP BY day, rfid_events.classification
@@ -63,6 +64,7 @@ def get_hourly_distribution(conn, args):
         SELECT strftime('%H', rfid_events.detected_at) AS hour, COUNT(*) AS event_count
         FROM rfid_events
         LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
         LEFT JOIN members ON members.id = rfid_events.member_id
         {where_sql}
         GROUP BY hour
@@ -92,6 +94,7 @@ def get_alarm_response_times(conn, args):
                (julianday(rfid_events.alarm_deactivated_at) - julianday(rfid_events.detected_at)) * 86400.0 AS response_seconds
         FROM rfid_events
         LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
         LEFT JOIN members ON members.id = rfid_events.member_id
         {where_sql}
         ORDER BY rfid_events.detected_at
@@ -134,6 +137,7 @@ def get_unknown_tag_rate_trend(conn, args):
                SUM(CASE WHEN rfid_events.classification = 'unknown_tag' THEN 1 ELSE 0 END) AS unknown_count
         FROM rfid_events
         LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
         LEFT JOIN members ON members.id = rfid_events.member_id
         {where_sql}
         GROUP BY day
@@ -167,6 +171,7 @@ def get_summary(conn, args):
         SELECT rfid_events.classification, COUNT(*) AS event_count
         FROM rfid_events
         LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
         LEFT JOIN members ON members.id = rfid_events.member_id
         {where_sql}
         GROUP BY rfid_events.classification

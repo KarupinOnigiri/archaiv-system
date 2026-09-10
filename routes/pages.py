@@ -2,7 +2,6 @@
 render lang ug template with initial context, ang actual table data kay
 gikan sa htmx partials sa laing routes files."""
 
-from datetime import date
 from flask import Blueprint, render_template, request, g, redirect, url_for
 from database import get_db_connection
 from services.auth_service import login_required, roles_required, feature_required, require_session
@@ -271,17 +270,15 @@ def monitoring_page():
     if classification not in ("", "authorized", "unauthorized", "unknown_tag"):
         classification = ""
 
-    # Defaults to today when the date range wasn't specified at all --
-    # distinct from an explicit "All time" click, which threads since=&until=
-    # (empty, but present) through so this doesn't re-default on refresh.
-    # See templates/monitoring.html's applyMonitoringDateFilter().
-    if "since" in request.args or "until" in request.args:
-        since = request.args.get("since", "")
-        until = request.args.get("until", "")
-    else:
-        today = date.today().isoformat()
-        since = today
-        until = today
+    # All time by default (blank since/until) - matches
+    # monitoring_service.get_monitoring_stat_cards' own all-time scope now,
+    # so the whole page opens on one consistent baseline instead of stat
+    # cards showing everything while the table underneath only shows today.
+    # Used to default to today specifically; templates/monitoring.html's
+    # syncMonitoringFilterUi()/applyMonitoringDateFilter() have their own
+    # matching update for what counts as "the default, not an active filter".
+    since = request.args.get("since", "")
+    until = request.args.get("until", "")
 
     q = request.args.get("q", "")
 

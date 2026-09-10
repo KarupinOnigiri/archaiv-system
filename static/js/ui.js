@@ -721,91 +721,11 @@ async function submitChangePassword(event) {
   return false;
 }
 
-// Change RFID PIN - mirrors resetChangePasswordForm/submitChangePassword
-// above exactly, just pointed at /api/v1/staff/change-rfid-pin and a
-// 6-digit PIN instead of a password. See that endpoint (routes/
-// staff.py) for why current *password* (not current PIN) is what
-// confirms this request.
-function resetChangeRfidPinForm() {
-  const form = document.getElementById('change-rfid-pin-form');
-  if (form) form.reset();
-  const errorEl = document.getElementById('change-rfid-pin-error');
-  if (errorEl) errorEl.classList.add('invisible');
-  const btn = document.getElementById('change-rfid-pin-submit-btn');
-  if (btn) { btn.disabled = false; btn.textContent = 'Update PIN'; }
-  ['crp-current-password', 'crp-new-pin', 'crp-confirm-pin'].forEach(resetPasswordToggleField);
-}
-
-async function submitChangeRfidPin(event) {
-  event.preventDefault();
-
-  const errorEl = document.getElementById('change-rfid-pin-error');
-  errorEl.classList.add('invisible');
-
-  const currentPassword = document.getElementById('crp-current-password').value;
-  const newPin = document.getElementById('crp-new-pin').value;
-  const confirmPin = document.getElementById('crp-confirm-pin').value;
-
-  if (!currentPassword || !newPin || !confirmPin) {
-    errorEl.textContent = 'Fill in all three fields.';
-    errorEl.classList.remove('invisible');
-    return false;
-  }
-  if (newPin !== confirmPin) {
-    errorEl.textContent = "New PIN and confirmation don't match.";
-    errorEl.classList.remove('invisible');
-    return false;
-  }
-  if (!/^\d{6}$/.test(newPin)) {
-    errorEl.textContent = 'New PIN must be exactly 6 digits.';
-    errorEl.classList.remove('invisible');
-    return false;
-  }
-
-  const btn = document.getElementById('change-rfid-pin-submit-btn');
-  btn.disabled = true;
-  btn.textContent = 'Updating...';
-
-  try {
-    const res = await fetch('/api/v1/staff/change-rfid-pin', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content,
-      },
-      body: JSON.stringify({ current_password: currentPassword, new_pin: newPin }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    // Same reasoning as submitChangePassword's identical check - 401
-    // here can mean "wrong current password" (expected form error) or
-    // "your session expired" (require_session), and only the second one
-    // should pop the session-timeout modal.
-    if (res.status === 401 && data.error !== 'Current password is incorrect') {
-      showSessionTimeoutModal();
-      return false;
-    }
-
-    if (!res.ok) {
-      errorEl.textContent = data.error || "Couldn't change PIN. Please try again.";
-      errorEl.classList.remove('invisible');
-      btn.disabled = false;
-      btn.textContent = 'Update PIN';
-      return false;
-    }
-
-    document.getElementById('change-rfid-pin-modal').close();
-    showToast('RFID PIN changed successfully', 'success');
-  } catch (err) {
-    errorEl.textContent = 'Network error - check your connection and try again.';
-    errorEl.classList.remove('invisible');
-    btn.disabled = false;
-    btn.textContent = 'Update PIN';
-  }
-
-  return false;
-}
+// The RFID-PIN-specific resetChangeRfidPinForm()/submitChangeRfidPin() that
+// used to sit here (posting to /api/v1/staff/change-rfid-pin) were deleted
+// along with that whole login route and its modal - see templates/base.html's
+// comment above the Barcode + PIN row. openBarcodePinModal/submitBarcodePinForm
+// below cover PIN-setting now.
 
 // Barcode + PIN login (self-service, every role) - one shared modal for
 // both first-time enable and a later change, since both endpoints do the

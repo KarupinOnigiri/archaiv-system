@@ -15,7 +15,8 @@
     <div class="form-control mb-2">
       <label class="label"><span class="label-text">Your password <span class="text-error">*</span></span></label>
       <input type="password" id="delete-backup-password" placeholder="Current password"
-             autocomplete="current-password" class="input input-bordered input-sm w-full">
+             autocomplete="current-password" class="input input-bordered input-sm w-full"
+             onkeydown="if (event.key === 'Enter') { event.preventDefault(); submitDeleteBackupForm('{{ filename }}'); }">
     </div>
 
     <div class="modal-action">

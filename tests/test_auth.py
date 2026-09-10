@@ -1,4 +1,4 @@
-"""Login (username/password + RFID/PIN), lockout, and session/CSRF behavior
+"""Login (username/password + barcode/PIN), lockout, and session/CSRF behavior
 -- routes/auth.py + services/login_service.py + services/auth_service.py."""
 
 from datetime import date, timedelta
@@ -12,31 +12,16 @@ def login(client, **payload):
     return client.post("/api/v1/login", json=payload)
 
 
-def login_rfid(client, **payload):
-    return client.post("/api/v1/login-rfid", json=payload)
-
-
 def login_barcode_pin(client, **payload):
     return client.post("/api/v1/login-barcode-pin", json=payload)
 
 
-def set_rfid_credentials(conn, staff_id, rfid_id, pin):
-    """create_staff() doesn't accept/persist rfid_id or rfid_pin (only
-    update_staff() and change_own_rfid_pin() do, per staff_service.py) --
-    set them directly for tests that need a card+PIN-enabled account."""
-    conn.execute(
-        "UPDATE staff SET rfid_id = ?, rfid_pin_hash = ? WHERE id = ?",
-        (rfid_id, generate_password_hash(pin), staff_id),
-    )
-    conn.commit()
-
-
 def set_barcode_pin_credentials(conn, staff_id, pin, enabled=1):
-    """Mirrors set_rfid_credentials, but for the all-roles barcode + PIN
-    opt-in (0051_add_staff_barcode_pin_enabled.sql) - shares the same
-    rfid_pin_hash column, just gated by barcode_pin_enabled instead of role.
-    The barcode itself already exists (create_member assigns one), so this
-    only needs to set the PIN hash and flip the flag on."""
+    """create_staff() doesn't accept/persist rfid_pin (only update_staff()
+    and the barcode-PIN self-service flow do, per staff_service.py) - set
+    it directly for tests that need a PIN-enabled account. The barcode
+    itself already exists (create_member assigns one), so this only needs
+    to set the PIN hash and flip barcode_pin_enabled on."""
     conn.execute(
         "UPDATE staff SET rfid_pin_hash = ?, barcode_pin_enabled = ? WHERE id = ?",
         (generate_password_hash(pin), enabled, staff_id),
@@ -312,55 +297,13 @@ def test_correct_password_resets_failed_attempt_counter(client, conn, department
     assert attempts == 0
 
 
-# # # RFID + PIN LOGIN (admin only) ----------------------------------------
-
-
-def test_rfid_login_succeeds_for_admin_with_correct_pin(client, conn, department_id):
-    staff_id = make_staff(conn, department_id, "admin", "rfidtest")
-    set_rfid_credentials(conn, staff_id, "RFID0001", "123456")
-
-    resp = login_rfid(client, rfid_id="RFID0001", pin="123456")
-    assert resp.status_code == 200
-    assert resp.get_json()["staff_id"] == staff_id
-
-
-def test_rfid_login_rejects_wrong_pin(client, conn, department_id):
-    staff_id = make_staff(conn, department_id, "admin", "rfidwrongpin")
-    set_rfid_credentials(conn, staff_id, "RFID0099", "123456")
-
-    resp = login_rfid(client, rfid_id="RFID0099", pin="654321")
-    assert resp.status_code == 401
-
-
-def test_rfid_login_rejects_unknown_card(client):
-    resp = login_rfid(client, rfid_id="NO-SUCH-CARD", pin="123456")
-    assert resp.status_code == 401
-
-
-def test_rfid_login_rejects_malformed_pin(client, conn, department_id):
-    staff_id = make_staff(conn, department_id, "admin", "rfidpintest")
-    set_rfid_credentials(conn, staff_id, "RFID0002", "123456")
-
-    resp = login_rfid(client, rfid_id="RFID0002", pin="12")  # too short
-    assert resp.status_code == 401
-
-
-def test_rfid_login_only_matches_admin_role(client, conn, department_id):
-    """find_admin_for_rfid_login filters WHERE staff.role = 'admin' - a
-    tool_keeper's card, even with the correct PIN, should never
-    authenticate through this endpoint."""
-    staff_id = make_staff(
-        conn, department_id, "tool_keeper", "rfid_tk_test",
-        assigned_start=date.today().isoformat(),
-        assigned_end=(date.today() + timedelta(days=30)).isoformat(),
-    )
-    set_rfid_credentials(conn, staff_id, "RFID0003", "123456")
-
-    resp = login_rfid(client, rfid_id="RFID0003", pin="123456")
-    assert resp.status_code == 401
-
-
 # # # BARCODE + PIN LOGIN (opt-in, every role) ------------------------------
+#
+# The admin-only "RFID + PIN LOGIN" test block that used to sit here was
+# deleted along with that whole login route (routes/auth.py:login_rfid) -
+# find_admin_for_rfid_login()'s admin-role filtering is still covered, just
+# via its one remaining caller: tests/test_monitoring.py's
+# test_deactivate_rejects_a_non_admin_staff_card.
 
 
 def test_barcode_pin_login_succeeds_when_enabled(client, conn, department_id):

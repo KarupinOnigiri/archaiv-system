@@ -16,6 +16,7 @@ Monitoring" to write a negative test against; every staff account can.
 """
 
 from services import monitoring_service
+from tests.conftest import TEST_PASSWORD
 
 LISTENER_KEY = "test-listener-key"
 
@@ -264,19 +265,23 @@ def test_authorized_event_captured_even_if_loan_is_later_returned(
 # # # ALARM DEACTIVATE (Master Key Card tap) -----------------------------------
 
 
-def test_deactivate_clears_active_alarms(client, conn, admin_id, monkeypatch):
+def test_deactivate_clears_active_alarms(client, conn, admin_id, asset_id, monkeypatch):
     monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
     enable_monitoring(conn)
     conn.execute("UPDATE staff SET rfid_id = 'ADMIN-CARD' WHERE id = ?", (admin_id,))
+    # unauthorized (registered asset, not borrowed) - not unknown_tag, which
+    # no longer activates the alarm at all (see monitoring_service.py's
+    # record_rfid_event) and so wouldn't have anything here to deactivate.
+    conn.execute("UPDATE assets SET rfid_id = 'ASSET-XYZ' WHERE id = ?", (asset_id,))
     conn.commit()
-    record_event(client, "UNKNOWN-XYZ")
+    record_event(client, "ASSET-XYZ")
 
     resp = deactivate(client, "ADMIN-CARD")
     assert resp.status_code == 200
     assert resp.get_json()["deactivated_count"] == 1
 
     row = conn.execute(
-        "SELECT alarm_deactivated_at, deactivated_by FROM rfid_events WHERE rfid_tag_scanned = 'UNKNOWN-XYZ'"
+        "SELECT alarm_deactivated_at, deactivated_by FROM rfid_events WHERE rfid_tag_scanned = 'ASSET-XYZ'"
     ).fetchone()
     assert row["alarm_deactivated_at"] is not None
     assert row["deactivated_by"] == admin_id
@@ -325,6 +330,103 @@ def test_authorized_detection_never_needs_deactivating(
     record_event(client, "TAG-OK")
     resp = deactivate(client, "ADMIN-CARD-3")
     assert resp.get_json()["deactivated_count"] == 0
+
+
+# # # ALARM SOFTWARE OVERRIDE (password re-confirmation fallback) -------------
+
+
+def _trigger_unauthorized_alarm(client, conn, asset_id, tag="OVERRIDE-TAG"):
+    conn.execute("UPDATE assets SET rfid_id = ? WHERE id = ?", (tag, asset_id))
+    conn.commit()
+    record_event(client, tag)
+
+
+def test_override_dismiss_clears_alarm_for_admin(as_admin, conn, asset_id, monkeypatch):
+    client, csrf, admin_id = as_admin
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    _trigger_unauthorized_alarm(client, conn, asset_id)
+
+    resp = client.post(
+        "/api/v1/monitoring/alarm/override-dismiss",
+        json={"password": TEST_PASSWORD},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["deactivated_count"] == 1
+    assert client.get("/api/v1/monitoring/alarm-status").get_json() == {"active": False}
+
+    row = conn.execute(
+        "SELECT deactivated_by FROM rfid_events WHERE rfid_tag_scanned = 'OVERRIDE-TAG'"
+    ).fetchone()
+    assert row["deactivated_by"] == admin_id
+
+    # Logged distinctly from a real Master Key Card tap.
+    action = conn.execute(
+        "SELECT action FROM audit_log WHERE target_table = 'rfid_events' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert action["action"] == "rfid_alarm_deactivated_override"
+
+
+def test_override_dismiss_works_for_in_charge_too(as_in_charge, conn, asset_id, monkeypatch):
+    client, csrf, _ = as_in_charge
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    _trigger_unauthorized_alarm(client, conn, asset_id, tag="OVERRIDE-TAG-2")
+
+    resp = client.post(
+        "/api/v1/monitoring/alarm/override-dismiss",
+        json={"password": TEST_PASSWORD},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["deactivated_count"] == 1
+
+
+def test_override_dismiss_rejects_tool_keeper(as_tool_keeper, conn, asset_id, monkeypatch):
+    """Deliberately narrower than the roles that can just VIEW Monitoring -
+    see routes/monitoring.py's _ALARM_OVERRIDE_ROLES."""
+    client, csrf, _ = as_tool_keeper
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    _trigger_unauthorized_alarm(client, conn, asset_id, tag="OVERRIDE-TAG-3")
+
+    resp = client.post(
+        "/api/v1/monitoring/alarm/override-dismiss",
+        json={"password": TEST_PASSWORD},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 403
+    # Still active - the rejected request must not have cleared anything.
+    assert client.get("/api/v1/monitoring/alarm-status").get_json()["active"] is True
+
+
+def test_override_dismiss_rejects_wrong_password(as_admin, conn, asset_id, monkeypatch):
+    client, csrf, _ = as_admin
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    _trigger_unauthorized_alarm(client, conn, asset_id, tag="OVERRIDE-TAG-4")
+
+    resp = client.post(
+        "/api/v1/monitoring/alarm/override-dismiss",
+        json={"password": "definitely-wrong"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 401
+    assert client.get("/api/v1/monitoring/alarm-status").get_json()["active"] is True
+
+
+def test_override_dismiss_requires_password_field(as_admin, conn, monkeypatch):
+    client, csrf, _ = as_admin
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+
+    resp = client.post(
+        "/api/v1/monitoring/alarm/override-dismiss",
+        json={},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert resp.status_code == 400
 
 
 # # # ALARM STATUS (public, detail scaled to who's asking) ---------------------
@@ -378,12 +480,14 @@ def test_alarm_status_authenticated_gets_full_detail(as_admin, conn, asset_id, m
     assert body["detected_at"]
 
 
-def test_alarm_status_reflects_deactivation(client, conn, admin_id, monkeypatch):
+def test_alarm_status_reflects_deactivation(client, conn, admin_id, asset_id, monkeypatch):
     monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
     enable_monitoring(conn)
     conn.execute("UPDATE staff SET rfid_id = 'ADMIN-CARD-4' WHERE id = ?", (admin_id,))
+    # unauthorized, not unknown_tag - see test_deactivate_clears_active_alarms.
+    conn.execute("UPDATE assets SET rfid_id = 'ASSET-CLEAR-ME' WHERE id = ?", (asset_id,))
     conn.commit()
-    record_event(client, "UNKNOWN-CLEAR-ME")
+    record_event(client, "ASSET-CLEAR-ME")
 
     assert client.get("/api/v1/monitoring/alarm-status").get_json()["active"] is True
     deactivate(client, "ADMIN-CARD-4")
@@ -473,6 +577,32 @@ def test_table_search_matches_asset_name(as_admin, conn, asset_id, monkeypatch):
     assert b"Impact Wrench" in resp.data
 
 
+def test_table_search_matches_raw_scanned_tag(as_admin, conn, asset_id, monkeypatch):
+    """q also matches rfid_events.rfid_tag_scanned directly, not just the
+    matched asset's own identifiers - useful for an unregistered/unknown_tag
+    event (nothing else to match against) or when someone's searching a
+    printed tag list rather than an asset name."""
+    client, csrf, _ = as_admin
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    record_event(client, "UNREGISTERED-TAG-XYZ")
+
+    resp = client.get("/api/v1/monitoring/table?q=UNREGISTERED-TAG-XYZ")
+    assert b"UNREGISTERED-TAG-XYZ" in resp.data
+
+
+def test_table_search_matches_category_name(as_admin, conn, category_id, asset_id, monkeypatch):
+    client, csrf, _ = as_admin
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    conn.execute("UPDATE assets SET rfid_id = 'TAG-CAT', category_id = ? WHERE id = ?", (category_id, asset_id))
+    conn.commit()
+    record_event(client, "TAG-CAT")
+
+    resp = client.get("/api/v1/monitoring/table?q=Power+Tools")
+    assert b"TAG-CAT" in resp.data
+
+
 def test_table_search_matches_borrower_name(as_admin, conn, member_id, asset_id, monkeypatch):
     client, csrf, _ = as_admin
     monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
@@ -516,7 +646,7 @@ def test_table_sort_by_asset_name_ascending(as_admin, conn, category_id, monkeyp
     assert body.index("Angle Grinder") < body.index("Zigzag Saw")
 
 
-# # # STAT CARDS (today-scoped, by classification) -----------------------------
+# # # STAT CARDS (all-time, by classification) -----------------------------
 
 
 def test_stat_cards_counts_by_classification(conn, asset_id):
@@ -532,6 +662,21 @@ def test_stat_cards_counts_by_classification(conn, asset_id):
     assert stats["stat_authorized"] == 0
 
 
+def test_stat_cards_include_events_from_previous_days(conn):
+    """All-time, not today-scoped (see get_monitoring_stat_cards' own
+    comment for why that changed) - an event detected a week ago should
+    still count here."""
+    conn.execute(
+        "INSERT INTO rfid_events (rfid_tag_scanned, classification, alarm_activated, detected_at)"
+        " VALUES ('OLD-TAG', 'unknown_tag', 0, datetime('now', '-7 days'))"
+    )
+    conn.commit()
+
+    stats = monitoring_service.get_monitoring_stat_cards(conn)
+    assert stats["stat_total"] == 1
+    assert stats["stat_unknown"] == 1
+
+
 # # # PAGE (routes/pages.py's monitoring_page) ---------------------------------
 
 
@@ -541,14 +686,17 @@ def test_monitoring_page_blocked_when_feature_disabled(as_admin):
     assert resp.status_code == 302  # feature_required's default: redirect to dashboard
 
 
-def test_monitoring_page_defaults_date_range_to_today(as_admin, conn):
-    from datetime import date
-
+def test_monitoring_page_defaults_date_range_to_all_time(as_admin, conn):
+    """Used to default to today specifically - changed to all time so the
+    page opens on one consistent baseline with get_monitoring_stat_cards'
+    own all-time scope (see that function's docstring)."""
     client, csrf, _ = as_admin
     enable_monitoring(conn)
     resp = client.get("/monitoring")
     assert resp.status_code == 200
-    assert date.today().isoformat().encode() in resp.data
+    body = resp.data.decode()
+    since_input = body.split('id="monitoring-since-filter"')[1].split(">")[0]
+    assert 'value=""' in since_input
 
 
 def test_monitoring_date_quick_filter_uses_shared_soft_tint_highlight(as_admin, conn):

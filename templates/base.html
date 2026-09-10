@@ -1401,29 +1401,12 @@
             </button>
           </div>
 
-          {% if False %}
-          <!-- Dormant, not deleted: RFID + PIN login (routes/auth.py:login_rfid,
-               admin-only) was the login-page flow barcode + PIN below replaced.
-               Its backend (routes, services, this row+modal) is kept intact in
-               case RFID + PIN gets reactivated later - just gated off here so
-               it doesn't show. -->
-          <div class="border-t border-base-200 my-3"></div>
-
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-semibold text-base-content">RFID PIN</p>
-              <p class="text-xs text-base-content/50 mt-0.5">Used with your RFID card to sign in.</p>
-            </div>
-            <button type="button"
-                    onclick="document.getElementById('my-account-modal').close(); document.getElementById('change-rfid-pin-modal').showModal()"
-                    class="btn btn-outline btn-sm">
-              Change PIN
-            </button>
-          </div>
-          {% endif %}
-
-          <!-- Barcode + PIN login - opt-in, all staff roles (not admin-only
-               like the dormant RFID + PIN section above). Off by default;
+          <!-- The RFID + PIN login row that used to sit here (with its own
+               change-rfid-pin-modal) was removed entirely, not just hidden -
+               its login route (routes/auth.py:login_rfid) is gone too now,
+               so there was nothing left to "reactivate later" anymore.
+               Barcode + PIN below is the one live quick-login method. -->
+          <!-- Barcode + PIN login - opt-in, all staff roles. Off by default;
                enabling sets a PIN in the same step. -->
           <div class="border-t border-base-200 my-3"></div>
 
@@ -1614,54 +1597,15 @@
         </form>
       </dialog>
 
-      {% if False %}
-      <!-- Dormant, not deleted - see the "RFID PIN" row above, gated off the
-           same way. Mirrors change-password above - confirms with current
-           password, not current PIN. -->
-      <dialog id="change-rfid-pin-modal" class="modal" onclose="resetChangeRfidPinForm()">
-        <div class="modal-box max-w-sm">
-          <div class="flex justify-between items-start">
-            <h3 class="font-bold text-lg mb-1">Change RFID PIN</h3>
-            <button type="button" class="btn btn-ghost btn-xs h-6 min-h-0 px-2 font-mono text-[10px] font-bold tracking-wider border border-base-300 rounded-md hover:bg-base-200 hover:border-base-content/40 active:scale-95 transition-all shrink-0"
-                    onclick="document.getElementById('change-rfid-pin-modal').close()"
-                    aria-label="Close (Esc)" data-tooltip="Close (Esc)">ESC</button>
-          </div>
-          <p class="text-xs text-base-content/50 mb-4">You'll stay signed in here; any other active sessions on this account will be signed out.</p>
+      <!-- The dormant "Change RFID PIN" modal that used to sit here (for the
+           now-fully-removed RFID+PIN login route) has been deleted along
+           with it - see the comment above the Barcode + PIN row for why. -->
 
-          <!-- Always in the DOM, invisible (not hidden) when empty --
-               reserves its layout space so the form below doesn't shift
-               when submitChangeRfidPin() fills it in. -->
-          <div id="change-rfid-pin-error" class="invisible alert alert-error text-sm mb-3 py-2"></div>
-
-          <form id="change-rfid-pin-form" onsubmit="return submitChangeRfidPin(event)">
-            <div class="space-y-2">
-              {{ password_toggle_field('crp-current-password', 'Current password', 'autocomplete="current-password"') }}
-              {{ password_toggle_field('crp-new-pin', 'New PIN (exactly 6 digits)', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
-              {{ password_toggle_field('crp-confirm-pin', 'Confirm new PIN', 'inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off"') }}
-            </div>
-
-            <div class="modal-action">
-              <button type="button"
-                      onclick="document.getElementById('change-rfid-pin-modal').close(); document.getElementById('my-account-modal').showModal()"
-                      class="btn btn-sm">
-                Back
-              </button>
-              <button type="submit" id="change-rfid-pin-submit-btn" class="btn btn-primary btn-sm">
-                Update PIN
-              </button>
-            </div>
-          </form>
-        </div>
-        <form method="dialog" class="modal-backdrop">
-          <button>close</button>
-        </form>
-      </dialog>
-      {% endif %}
-
-      <!-- Enable/change barcode + PIN - one shared modal, mirrors
-           change-rfid-pin-modal above. openBarcodePinModal(mode) swaps the
-           title/button text and submitBarcodePinForm() picks the endpoint;
-           the two flows are otherwise identical (both set rfid_pin_hash). -->
+      <!-- Enable/change barcode + PIN - the one PIN-setting modal left now
+           that RFID + PIN's own version is gone. openBarcodePinModal(mode)
+           swaps the title/button text and submitBarcodePinForm() picks the
+           endpoint; still writes staff.rfid_pin_hash under the hood (see
+           login_service.py's comment on that column's naming). -->
       <dialog id="barcode-pin-modal" class="modal" onclose="resetBarcodePinForm()">
         <div class="modal-box max-w-sm">
           <div class="flex justify-between items-start">
@@ -2206,6 +2150,10 @@
               {{ srow('Focus search', ['/']) }}
               {{ srow('Switch to Log tab', ['L']) }}
               {{ srow('Switch to Trends tab', ['T']) }}
+              {{ srow('Previous / next page', ['←', '→']) }}
+              {% if staff and staff.role in ["admin", "in_charge"] %}
+              {{ srow('Dismiss active alarm via password', ['D']) }}
+              {% endif %}
               {{ srow('Clear all filters', ['Esc']) }}
             {% endcall %}
             {% endif %}

@@ -111,6 +111,7 @@ function openBarcodePrefixesPasswordConfirm() {
       <p class="text-sm text-base-content/60 mt-1">Rewriting existing asset/member/staff codes can't be undone. Enter your password to continue.</p>
       <div id="barcode-prefixes-password-error" class="alert alert-error text-sm mt-3 py-2 invisible"></div>
       <input type="password" id="barcode-prefixes-password-input" placeholder="Current password" autocomplete="current-password"
+             onkeydown="if (event.key === 'Enter') { event.preventDefault(); confirmBarcodePrefixesPassword(); }"
              class="input input-bordered input-sm w-full mt-3">
       <div class="modal-action flex justify-end items-center gap-2 mt-5">
         <button type="button" class="btn btn-outline" onclick="document.getElementById('barcode-prefixes-password-modal').remove()">Cancel</button>

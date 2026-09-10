@@ -7,6 +7,7 @@ import hmac
 import os
 
 from flask import Blueprint, jsonify, g, request, render_template
+from werkzeug.security import check_password_hash
 
 from database import get_db_connection, get_json_or_error
 from services import monitoring_service, monitoring_stats_service, login_service
@@ -19,6 +20,12 @@ monitoring_bp = Blueprint("monitoring", __name__)
 
 # Roles that can see the Monitoring tab at all - same set as Activity Log.
 _VIEW_ROLES = ("admin", "in_charge", "tool_keeper")
+
+# Roles allowed to use the software alarm-dismiss override (password
+# re-confirmed) when the physical Master Key Card/HF-NFC reader isn't
+# available - deliberately narrower than _VIEW_ROLES. tool_keeper can see
+# the Monitoring tab but not silence a triggered alarm from a browser.
+_ALARM_OVERRIDE_ROLES = ("admin", "in_charge")
 
 
 def _listener_key_error():
@@ -85,13 +92,68 @@ def view_event_details_modal(id):
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_alarm_banner():
     """GET - gi-poll every few seconds sa Monitoring page (see monitoring.html's
-    hx-trigger). Delegates to monitoring_service.get_alarm_status()."""
+    hx-trigger). Delegates to monitoring_service.get_alarm_status(). Passes
+    can_override so only admin/in_charge see the "dismiss via password"
+    click affordance - tool_keeper still sees the banner, just not clickable."""
     conn = get_db_connection()
     try:
         status = monitoring_service.get_alarm_status(conn)
     finally:
         conn.close()
-    return render_template("monitoring/_alarm_banner.html", **status)
+    return render_template(
+        "monitoring/_alarm_banner.html", can_override=g.staff["role"] in _ALARM_OVERRIDE_ROLES, **status
+    )
+
+
+@monitoring_bp.route("/monitoring/alarm-override-modal")
+@roles_required(*_ALARM_OVERRIDE_ROLES)
+@feature_required("monitoring", redirect_to_dashboard=False)
+def view_alarm_override_modal():
+    """GET - password-confirmation modal shell for the alarm banner's
+    software-dismiss override. Role-gated same as the POST it submits to -
+    defense in depth on top of the banner only rendering the click
+    affordance for allowed roles in the first place."""
+    return render_template("monitoring/_alarm_override_modal.html")
+
+
+@monitoring_bp.route("/monitoring/alarm/override-dismiss", methods=["POST"])
+@roles_required(*_ALARM_OVERRIDE_ROLES)
+@feature_required("monitoring", redirect_to_dashboard=False)
+@limiter.limit("10 per minute; 30 per hour")
+def override_dismiss_alarm():
+    """POST - fallback alarm-dismiss path for when the physical Master Key
+    Card/HF-NFC reader isn't available (broken hardware, pyscard not
+    installed, etc.) - NOT the primary mechanism, see
+    monitoring_service.deactivate_active_alarms()'s docstring for why one
+    still exists deliberately. Requires re-confirming the acting staff
+    member's own password (same "prove this session hasn't just been left
+    open/hijacked" pattern as staff.py's change_password_submit and
+    backup deletion) so this can't be triggered by a bystander at an
+    already-unlocked screen. Logged distinctly (via="software_override")
+    from a real card tap so the audit trail always shows which path
+    actually cleared a given alarm."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    password = data.get("password")
+    if not password:
+        return jsonify({"error": "Enter your password to confirm this"}), 400
+
+    if not check_password_hash(g.staff["password_hash"], password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    conn = get_db_connection()
+    try:
+        result, error = monitoring_service.deactivate_active_alarms(
+            conn, g.staff["id"], via="software_override"
+        )
+    finally:
+        conn.close()
+
+    if error:
+        return error
+    return jsonify(result)
 
 
 @monitoring_bp.route("/monitoring/alarm-status")
@@ -145,6 +207,27 @@ def view_monitoring_stat_cards():
     finally:
         conn.close()
     return render_template("monitoring/_stat_cards.html", **stats)
+
+
+@monitoring_bp.route("/monitoring/stat-cards/counts")
+@roles_required(*_VIEW_ROLES)
+@feature_required("monitoring", redirect_to_dashboard=False)
+def view_monitoring_stat_counts():
+    """GET - numbers-only JSON version of the stat cards, for the 1s
+    auto-poll in monitoring.html. Deliberately NOT the HTML partial above:
+    swapping that partial's markup on every poll tick wipes and reapplies
+    the JS-driven highlight classes (ring-2/stat-card-active/etc.) on the
+    currently-selected card, and since those classes carry a CSS transition,
+    every swap visibly re-animates the glow even when nothing changed - the
+    exact flicker bug fixed for the table's own poll. This just hands back
+    the four numbers so the client can update each card's count text
+    in place, never touching the DOM nodes or their classes at all."""
+    conn = get_db_connection()
+    try:
+        stats = monitoring_service.get_monitoring_stat_cards(conn)
+    finally:
+        conn.close()
+    return jsonify(stats)
 
 
 # # # TRENDS (historical aggregation - not the live/today table above) -----

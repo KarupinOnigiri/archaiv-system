@@ -88,9 +88,22 @@
             <input type="text" name="rfid_id" value="{{ staff_member.rfid_id or '' }}" placeholder="Not assigned - scan or enter a card ID"
                    autocomplete="off"
                    class="input input-bordered w-full mt-1 bg-base-100">
+            <!-- The Master Key Card reader (pi_controller/master_key_reader.py)
+                 reports a tapped card's UID as bare hex with no separators
+                 (e.g. 064703AE) - the deactivation lookup does an exact string
+                 match against this field (login_service.find_admin_for_rfid_login),
+                 so a value entered WITH colons/dashes (06:47:03:AE) silently
+                 never matches a real tap. No normalization on either side yet,
+                 so this has to be entered bare to actually work. -->
+            <p class="text-xs text-base-content/40 mt-1">Enter the bare code, no colons/dashes (e.g. <span class="font-mono">064703AE</span>, not <span class="font-mono">06:47:03:AE</span>)</p>
           </div>
           <div>
-            <label class="text-xs font-semibold text-base-content/50 tracking-wide">RFID PIN</label>
+            <!-- Labeled "RFID PIN" until the actual RFID+PIN login route
+                 was removed as dead code (see templates/login.html's
+                 comment) - the underlying rfid_pin field/column is genuinely
+                 shared storage for Barcode+PIN quick login now, so "QUICK
+                 LOGIN PIN" describes what this field actually does today. -->
+            <label class="text-xs font-semibold text-base-content/50 tracking-wide">QUICK LOGIN PIN</label>
             <input type="text" name="rfid_pin" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6"
                    placeholder="{{ 'PIN is set - leave blank to keep it' if staff_member.rfid_pin_hash else 'No PIN set - exactly 6 digits' }}"
                    autocomplete="off"

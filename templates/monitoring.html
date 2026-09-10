@@ -56,8 +56,8 @@
           <div class="join-item flex items-center px-2.5 h-8 border border-base-300 bg-base-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-base-content/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           </div>
-          <input type="search" id="monitoring-search" name="q" placeholder="Search asset, barcode, or borrower... (/)"
-                 aria-label="Search by asset, asset barcode, borrower name, or borrower barcode"
+          <input type="search" id="monitoring-search" name="q" placeholder="Search tag, asset, category, barcode, or borrower... (/)"
+                 aria-label="Search by RFID tag, asset name, category, asset barcode, borrower name, or borrower barcode"
                  class="input input-bordered input-sm join-item w-full [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-cancel-button]:hidden"
                  value="{{ q }}"
                  hx-get="/api/v1/monitoring/table"
@@ -310,8 +310,9 @@ function setDateQuickBtnActive(btn, active) {
 // Sets since/until to a preset range and fires the change event so this
 // behaves exactly like picking the dates by hand. 'all' clears both --
 // same pattern as transactions.html's applyDateQuickFilter, extended with
-// 'all' since Monitoring defaults to today (routes/pages.py) rather
-// than showing everything by default.
+// 'all' since it's also Monitoring's own default range (routes/pages.py) -
+// unlike Transactions, clicking it has to actively clear back to that
+// default rather than just being one preset among several.
 function applyMonitoringDateFilter(which) {
   const since = document.getElementById('monitoring-since-filter');
   const until = document.getElementById('monitoring-until-filter');
@@ -342,11 +343,19 @@ function applyMonitoringDateFilter(which) {
   syncMonitoringFilterUi();
 }
 
-// Re-fetches the table with whatever filters/sort/page are currently in
-// effect - unlike changing a filter, a manual refresh shouldn't jump back
-// to page 1. Also nudges the stat cards and alarm banner so a manual
-// refresh catches up fully, not just the table.
-function refreshMonitoringTable() {
+// Re-fetches JUST the table with whatever filters/sort/page are currently
+// in effect - unlike changing a filter, a refresh shouldn't jump back to
+// page 1. Split out from refreshMonitoringTable() below (which also nudges
+// the stat cards) specifically so the table's own 1s auto-poll can call
+// this alone - the stat cards re-render on every 'monitoring-refreshed'
+// dispatch, and doing that every single second made the currently-
+// highlighted card's ring/shadow visibly flicker (transition-shadow
+// re-animating on every swap, even with the highlight class correctly
+// reapplied right after). Stat cards don't need sub-second freshness the
+// way the live event rows do, so they stay on the slower "user actually
+// did something" cadence instead - a filter change or the manual refresh
+// button below, same as before the 1s auto-poll existed.
+function refreshMonitoringTableOnly() {
   const table = document.querySelector('#monitoring-table-container table');
   const params = getMonitoringFilterParams();
   params.set('limit', (table && table.dataset.limit) || '{{ limit }}');
@@ -358,6 +367,13 @@ function refreshMonitoringTable() {
     swap: 'innerHTML',
     values: Object.fromEntries(params)
   });
+}
+
+// Manual-refresh-button version - also nudges the stat cards and alarm
+// banner so a deliberate refresh click catches up fully, not just the
+// table. NOT used by the 1s auto-poll (see refreshMonitoringTableOnly).
+function refreshMonitoringTable() {
+  refreshMonitoringTableOnly();
   document.body.dispatchEvent(new Event('monitoring-refreshed'));
 }
 
@@ -384,7 +400,7 @@ function clearAllMonitoringFilters() {
 
 // Keeps the stat cards' ring/border highlight in sync with the active
 // classification - same STAT_CARD_ACCENTS/data-* pattern as transactions.html
-// and assets.html. "Events Today" (data-classification="") is the default/
+// and assets.html. "Total Events" (data-classification="") is the default/
 // all-classifications view, so it's the one highlighted out of the box.
 var MONITORING_STAT_CARD_ACCENTS = {
   '': 'ring-primary/40 border-primary/40',
@@ -424,7 +440,7 @@ function syncMonitoringFilterUi() {
   document.getElementById('monitoring-date-clear-btn').disabled = !since && !until;
 
   // Highlights whichever quick-filter button matches the current range
-  // exactly (same approach as transactions.html) - Today is the implicit
+  // exactly (same approach as transactions.html) - All time is the implicit
   // default (routes/pages.py's monitoring_page), so it lights up on first
   // load without needing a click.
   const toIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -441,10 +457,10 @@ function syncMonitoringFilterUi() {
   let activeCount = 0;
   if (q) activeCount++;
   if (classification) activeCount++;
-  // The default today-range doesn't count as an "active" (clearable) filter --
-  // it's the implicit starting view, not something the staff member set.
-  const isDefaultTodayRange = singleDay && since === todayIso;
-  if ((since || until) && !isDefaultTodayRange) activeCount++;
+  // Blank since/until IS the default (all time) now, so unlike the old
+  // today-default, there's no special case needed here - any non-blank
+  // value on either field is genuinely a filter the staff member applied.
+  if (since || until) activeCount++;
 
   const clearBtn = document.getElementById('clear-filters-btn');
   clearBtn.classList.toggle('hidden', activeCount === 0);
@@ -460,12 +476,111 @@ function syncMonitoringFilterUi() {
 }
 
 window.pageAfterSwapHandler = function (evt) {
-  if (evt.target && evt.target.id === 'monitoring-table-container') {
+  // Both need this, not just the table - #monitoring-stat-cards swaps in
+  // fresh server HTML on every 'monitoring-refreshed' dispatch (including
+  // the table's own 1s auto-poll below), which has no idea which
+  // classification is currently selected. Without re-running this right
+  // after THAT swap too, the active card's ring/shadow highlight - applied
+  // by updateMonitoringStatCardUI() in JS, not part of that HTML - flashes
+  // off on every swap and doesn't come back until the *next* tick's direct
+  // 'monitoring-refreshed' listener call below fires (which runs BEFORE
+  // that tick's swap lands) - a highlighted card flickering on/off once a
+  // second instead of just staying lit.
+  if (evt.target && (evt.target.id === 'monitoring-table-container' || evt.target.id === 'monitoring-stat-cards')) {
     syncMonitoringFilterUi();
   }
 };
 
 document.body.addEventListener('monitoring-refreshed', syncMonitoringFilterUi);
+
+// Live auto-refresh so a real detection (from the Pi's RFID listener)
+// shows up without the staff member having to click refresh or leave/
+// return to the tab. Goes through refreshMonitoringTableOnly() itself
+// rather than a raw hx-trigger="every Ns" on the container - that
+// function already correctly reads the CURRENT page/sort/filters (via
+// the rendered table's data-limit/data-offset/data-sort-by/data-sort-dir
+// attributes, set by monitoring_service.py's row context) instead of the
+// stale initial-page-load values baked into the container's own hx-vals,
+// so pagination/sorting survive each poll instead of snapping back to
+// page 1. Deliberately the "...Only" variant, not refreshMonitoringTable()
+// - that one also nudges the stat cards via 'monitoring-refreshed', which
+// made the currently-highlighted stat card visibly flicker once a second
+// (its ring/shadow re-animating on every swap). 1s cadence - snappier
+// than the alarm banner's 3s above without going so fast it meaningfully
+// loads the Pi (see the effort that went into picking this number: a raw
+// "every 100ms" was considered and rejected - 4 Waitress worker threads +
+// SQLite + the RFID listener's own writes don't have the headroom for
+// 10 req/s per open tab). Only polls while the Log tab is actually
+// visible - no point hitting the DB every second while looking at Trends.
+setInterval(function () {
+  if (document.getElementById('monitoring-log-view').classList.contains('hidden')) return;
+  const container = document.getElementById('monitoring-table-container');
+  // Skip this tick entirely if a REAL user-triggered request (page-size
+  // change, sort click, filter change, search) is already in flight against
+  // this same container - htmx tags an element 'htmx-request' for the
+  // duration of any request targeting it. Without this guard, the two
+  // requests race and whichever response happens to land last wins the
+  // swap - if the poll's slightly-stale one arrives after the user's own,
+  // it silently snaps the table back, which read as "changing the page
+  // size just refreshes/resets the whole table" (that's this guard's fix).
+  if (container.classList.contains('htmx-request')) return;
+  // Also skip while focus is currently inside this container - the
+  // "Items per page" <select> (and the sort-header buttons) live inside
+  // the swapped HTML itself, not the outer filter row. Replacing the
+  // container's innerHTML destroys and recreates every node in it,
+  // including a <select> whose native dropdown is open - a browser can't
+  // keep that popup open across its own element being torn down and
+  // rebuilt, so it force-closes even though the swap itself has nothing
+  // to do with the dropdown. Pausing while focus is in here sidesteps the
+  // whole class of "the dropdown I just opened vanished" problem, not
+  // just the one case of actually changing the value (already handled by
+  // the htmx-request check above for the moment right after a change).
+  if (container.contains(document.activeElement)) return;
+  // Also skip while the search box has focus - it lives OUTSIDE this
+  // container (in the filter row above it), so it isn't caught by the
+  // contains() check above, but it has its own version of the same race:
+  // hx-trigger="keyup changed delay:400ms" means there's a 400ms window
+  // after each keystroke, before the search's own request even starts,
+  // where the container's htmx-request class isn't set yet. A poll tick
+  // landing in that window fires an unfiltered request and briefly flashes
+  // the table back to stale/wrong results right before the actual search
+  // result arrives and corrects it - distracting while actively typing,
+  // even though nothing is technically "wrong" a second later.
+  if (document.activeElement === document.getElementById('monitoring-search')) return;
+  refreshMonitoringTableOnly();
+}, 1000);
+
+// Same 1s live-update goal as the table poll above, but for the stat
+// cards' counts - deliberately NOT via re-rendering monitoring/_stat_cards.html
+// on a timer. That partial's cards carry JS-applied highlight classes
+// (ring-2/stat-card-active/etc., see updateMonitoringStatCardUI above) for
+// whichever classification is currently selected; swapping the whole
+// partial wipes and reapplies them every tick, and since those classes
+// have a CSS transition, that visibly re-animates the glow even when
+// nothing changed - the same flicker bug the table's own poll hit, just
+// for stat cards specifically. Fetching just the four numbers and writing
+// them into the existing <p id="stat-count-*"> elements' text never
+// touches those classes or the DOM nodes at all, so there's nothing to
+// flicker regardless of how often this runs.
+async function pollMonitoringStatCounts() {
+  try {
+    const res = await fetch('/api/v1/monitoring/stat-cards/counts');
+    if (!res.ok) return; // best-effort - a hiccup here shouldn't interrupt anyone
+    const counts = await res.json();
+    document.getElementById('stat-count-total').textContent = counts.stat_total;
+    document.getElementById('stat-count-authorized').textContent = counts.stat_authorized;
+    document.getElementById('stat-count-unauthorized').textContent = counts.stat_unauthorized;
+    document.getElementById('stat-count-unknown').textContent = counts.stat_unknown;
+  } catch (err) {
+    // Network hiccup - next tick tries again, nothing to surface here.
+  }
+}
+
+setInterval(function () {
+  if (document.getElementById('monitoring-log-view').classList.contains('hidden')) return;
+  pollMonitoringStatCounts();
+}, 1000);
+
 setTimeout(syncMonitoringFilterUi, 0);
 
 // "/" focuses search, same convention as Inventory/Members/Borrow & Return.
@@ -677,6 +792,37 @@ window.pageKeydownHandler = function (e) {
     if (isTypingTarget(e.target)) return;
     e.preventDefault();
     setMonitoringView('trends');
+    return;
+  }
+
+  // ArrowLeft / ArrowRight - previous / next page, same pattern as
+  // transactions.html's own shortcut: find the pagination button by its
+  // aria-label and click it (a no-op if disabled, e.g. already on page 1).
+  if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const label = e.key === 'ArrowRight' ? 'Next page' : 'Previous page';
+    const pageBtn = document.querySelector('#monitoring-table-container button[aria-label="' + label + '"]');
+    if (pageBtn && !pageBtn.disabled) {
+      e.preventDefault();
+      pageBtn.click();
+    }
+    return;
+  }
+
+  // D - dismiss the active alarm via the password-gated software override
+  // (see _alarm_banner.html's own comment on why this exists and isn't a
+  // plain one-click dismiss). Only does anything when there's actually an
+  // active alarm AND the current staff member is admin/in_charge - the
+  // banner only carries this hx-get at all when can_override is true
+  // (routes/monitoring.py's view_alarm_banner()), so a plain querySelector
+  // miss for anyone else/no active alarm is the correct silent no-op.
+  if (!e.altKey && (e.key === 'd' || e.key === 'D')) {
+    if (isTypingTarget(e.target) || isModalOpen()) return;
+    const dismissCard = document.querySelector('#alarm-banner [hx-get="/api/v1/monitoring/alarm-override-modal"]');
+    if (dismissCard) {
+      e.preventDefault();
+      dismissCard.click();
+    }
     return;
   }
 

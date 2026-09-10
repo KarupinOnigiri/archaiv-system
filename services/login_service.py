@@ -1,8 +1,16 @@
 """Login/session-establishment logic para sa routes/auth.py
-(username+password, RFID+PIN, logout). Matag function mo-dawat ug bukas
+(username+password, barcode+PIN, logout). Matag function mo-dawat ug bukas
 nga `conn` (gawas sa start_session), mobalik ug plain data - DILI Flask
 response - para full control sa routes/auth.py kung unsaon pagpakita ang
 error (JSON o redirect).
+
+staff.rfid_pin_hash's name is a leftover from when RFID+PIN was the
+quick-login method - that login route (routes/auth.py:login_rfid) has
+since been removed entirely in favor of barcode+PIN below, which reuses
+the same column rather than adding a new one. find_admin_for_rfid_login()
+also still reads staff.rfid_id, but that one stays genuinely relevant -
+it's how the Master Key Card deactivation flow (routes/monitoring.py)
+identifies which admin tapped their card, unrelated to login PINs.
 
 Convention: `(data, error)` - `error` None kung malampuson, o
 `(payload_dict, status)` tuple kung napakyas.
@@ -98,8 +106,12 @@ def find_staff_for_login(conn, username, barcode_id):
 
 
 def find_admin_for_rfid_login(conn, rfid_id):
-    """Pangitaon ang admin base sa rfid_id - para sa RFID+PIN login flow
-    nga karon wala pa gigamit (kept para sa posible nga umaabot).
+    """Pangitaon ang admin base sa rfid_id - dili na para sa RFID+PIN login
+    flow (gikuha na, gipulihan sa Barcode+PIN - see templates/login.html's
+    comment), kani nga function nabilin lang kay gigamit gihapon sa
+    routes/monitoring.py's deactivate_rfid_alarm(): i-identify kang
+    kinsang admin ang nag-tap sa Master Key Card sa tool room's HF/NFC
+    reader para ma-clear ang active alarm.
 
     Returns: sqlite3.Row o None."""
     # Some readers set to type scans as keyboard input only type the decimal
@@ -109,23 +121,6 @@ def find_admin_for_rfid_login(conn, rfid_id):
     return conn.execute(
         """
         SELECT staff.*, members.first_name, members.last_name, members.middle_name, members.suffix
-        FROM staff
-        JOIN members ON staff.member_id = members.id
-        WHERE (UPPER(staff.rfid_id) = UPPER(?) OR UPPER(staff.rfid_id) LIKE '%' || ?) AND staff.role = 'admin'
-        """,
-        (rfid_id, decimal_scan_hex_suffix(rfid_id)),
-    ).fetchone()
-
-
-def find_admin_for_rfid_lookup(conn, rfid_id):
-    """I-identify kang kinsang admin ang gi-tap nga card, una i-hangyo ang
-    PIN - pareho ka generic nga response sa login_rfid.
-
-    Returns: sqlite3.Row (limited columns) o None."""
-    return conn.execute(
-        """
-        SELECT staff.id, staff.is_active, staff.rfid_pin_hash, staff.photo_path,
-               members.first_name, members.last_name, members.middle_name, members.suffix
         FROM staff
         JOIN members ON staff.member_id = members.id
         WHERE (UPPER(staff.rfid_id) = UPPER(?) OR UPPER(staff.rfid_id) LIKE '%' || ?) AND staff.role = 'admin'
@@ -152,8 +147,7 @@ def find_staff_for_barcode_pin_login(conn, barcode_id):
 
 
 def find_staff_for_barcode_pin_lookup(conn, barcode_id):
-    """I-identify kang kinsang barcode ang gi-scan, una i-hangyo ang PIN -
-    mirrors find_admin_for_rfid_lookup.
+    """I-identify kang kinsang barcode ang gi-scan, una i-hangyo ang PIN.
 
     Returns: sqlite3.Row (limited columns) o None."""
     return conn.execute(

@@ -1,13 +1,23 @@
 <!-- Polled by monitoring.html (hx-trigger="every 3s") - this is the one
      place in the app that auto-refreshes on a timer, since it's the one
      place near-real-time actually matters (an active alarm shouldn't need
-     a manual refresh to notice). No deactivate button here on purpose: the
-     alarm only clears via the Admin's physical Master Key Card tap at the
-     tool room's HF/NFC reader, reported by the Pi to
-     /api/v1/rfid-events/deactivate - see routes/monitoring.py and
-     services/monitoring_service.py's deactivate_active_alarms(). -->
+     a manual refresh to notice). Primary/normal way to clear it is still
+     the Admin's physical Master Key Card tap at the tool room's HF/NFC
+     reader, reported by the Pi to /api/v1/rfid-events/deactivate - see
+     services/monitoring_service.py's deactivate_active_alarms(). The
+     card below is ALSO clickable for admin/in_charge (can_override, set
+     by routes/monitoring.py's view_alarm_banner()) as a password-gated
+     fallback for when that physical reader isn't available - see
+     monitoring/_alarm_override_modal.html - deliberately not a plain
+     one-click dismiss, and logged distinctly from a real tap either way. -->
 {% if active %}
-<div class="rounded-xl border-2 border-error bg-error/10 p-5 flex items-center gap-4 animate-pulse" role="alert">
+<div class="rounded-xl border-2 border-error bg-error/10 p-5 flex items-center gap-4 animate-pulse {% if can_override %}cursor-pointer hover:bg-error/15{% endif %}" role="alert"
+     {% if can_override %}
+     hx-get="/api/v1/monitoring/alarm-override-modal"
+     hx-target="#modal-container"
+     hx-swap="innerHTML"
+     data-tooltip="Click to dismiss via password (D) - fallback, normally clears via Master Key Card"
+     {% endif %}>
   <div class="w-12 h-12 rounded-full bg-error/20 flex items-center justify-center shrink-0">
     <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
   </div>
@@ -26,7 +36,11 @@
     </p>
   </div>
   <div class="text-xs text-base-content/50 text-right shrink-0">
+    {% if can_override %}
+    Clears with the Admin's<br>Master Key Card tap -<br>or click to dismiss
+    {% else %}
     Clears only with the<br>Admin's Master Key Card tap
+    {% endif %}
   </div>
 </div>
 {% else %}

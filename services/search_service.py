@@ -183,7 +183,6 @@ def _search_settings(query, staff, feature_flags):
 _ACCOUNT_ACTIONS = [
     {"label": "My Account", "onclick_js": "document.getElementById('my-account-modal').showModal()"},
     {"label": "Change Password", "onclick_js": "document.getElementById('change-password-modal').showModal()"},
-    {"label": "Change RFID PIN", "onclick_js": "document.getElementById('change-rfid-pin-modal').showModal()"},
     {"label": "Settings & Privacy", "onclick_js": "document.getElementById('settings-privacy-modal').showModal()"},
     {"label": "Display & Accessibility", "onclick_js": "document.getElementById('display-accessibility-modal').showModal()"},
     {"label": "Help", "onclick_js": "document.getElementById('help-support-modal').showModal()"},
