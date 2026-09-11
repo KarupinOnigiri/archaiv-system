@@ -12,13 +12,28 @@ from tests.test_monitoring import enable_monitoring
 EMPTY_ARGS = {}
 
 
-def insert_event(conn, classification, detected_at, alarm_activated=0, alarm_deactivated_at=None):
+def insert_event(
+    conn,
+    classification,
+    detected_at,
+    alarm_activated=0,
+    alarm_deactivated_at=None,
+    client_detected_at_ms=None,
+    server_processed_at_ms=None,
+    alarm_relay_activated_at_ms=None,
+):
     conn.execute(
         """
-        INSERT INTO rfid_events (rfid_tag_scanned, classification, alarm_activated, detected_at, alarm_deactivated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO rfid_events (
+            rfid_tag_scanned, classification, alarm_activated, detected_at, alarm_deactivated_at,
+            client_detected_at_ms, server_processed_at_ms, alarm_relay_activated_at_ms
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (f"TAG-{detected_at}", classification, alarm_activated, detected_at, alarm_deactivated_at),
+        (
+            f"TAG-{detected_at}", classification, alarm_activated, detected_at, alarm_deactivated_at,
+            client_detected_at_ms, server_processed_at_ms, alarm_relay_activated_at_ms,
+        ),
     )
     conn.commit()
 
@@ -217,3 +232,64 @@ def test_export_includes_monitoring_activity_section(as_admin, conn):
     resp = client.get("/api/v1/stats/export?sections=monitoring_activity&format=csv")
     assert resp.status_code == 200
     assert b"Total Events" in resp.data
+
+
+# # # RFID RESPONSE TIMING (migration 0061 - RFID ack / alarm activation ms) --
+
+
+def test_rfid_response_timing_computes_response_times(conn):
+    # Full trio: antenna saw it at T, app processed 150ms later, relay
+    # fired 400ms after the antenna (250ms after the app processed it).
+    insert_event(
+        conn, "unauthorized", "2026-01-01 08:00:00", alarm_activated=1,
+        client_detected_at_ms=1_700_000_000_000,
+        server_processed_at_ms=1_700_000_000_150,
+        alarm_relay_activated_at_ms=1_700_000_000_400,
+    )
+    result, error = monitoring_stats_service.get_rfid_response_timing(conn, EMPTY_ARGS)
+    assert error is None
+    assert len(result["events"]) == 1
+    event = result["events"][0]
+    assert event["ack_response_ms"] == 150
+    assert event["alarm_activation_ms"] == 400
+    assert result["ack_response"] == {"count": 1, "avg_ms": 150.0, "median_ms": 150.0, "min_ms": 150, "max_ms": 150}
+    assert result["alarm_activation"]["count"] == 1
+    assert result["alarm_activation"]["avg_ms"] == 400.0
+
+
+def test_rfid_response_timing_leaves_missing_pairs_as_none_not_zero(conn):
+    # Only client_detected_at_ms present (e.g. the Pi's follow-up call for
+    # alarm timing never landed) - both computed values should be None,
+    # not 0 or dropped from the list.
+    insert_event(conn, "authorized", "2026-01-01 08:00:00", client_detected_at_ms=1_700_000_000_000)
+    result, error = monitoring_stats_service.get_rfid_response_timing(conn, EMPTY_ARGS)
+    assert error is None
+    assert len(result["events"]) == 1
+    assert result["events"][0]["ack_response_ms"] is None
+    assert result["events"][0]["alarm_activation_ms"] is None
+    assert result["ack_response"]["count"] == 0
+    assert result["ack_response"]["avg_ms"] is None
+
+
+def test_rfid_response_timing_export_csv_route(as_admin, conn):
+    enable_monitoring(conn)
+    insert_event(
+        conn, "unauthorized", "2026-01-01 08:00:00", alarm_activated=1,
+        client_detected_at_ms=1_700_000_000_000,
+        server_processed_at_ms=1_700_000_000_150,
+        alarm_relay_activated_at_ms=1_700_000_000_400,
+    )
+    client, csrf, _ = as_admin
+    resp = client.get("/api/v1/monitoring/trends/rfid-response-timing.csv")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"].startswith("text/csv")
+    assert "attachment" in resp.headers["Content-Disposition"]
+    body = resp.data.decode("utf-8-sig")
+    assert "RFID Acknowledgment Response Time (ms)" in body
+    assert "150" in body
+    assert "400" in body
+
+
+def test_rfid_response_timing_export_blocked_for_tool_keeper_when_feature_disabled(as_tool_keeper, conn):
+    resp = as_tool_keeper[0].get("/api/v1/monitoring/trends/rfid-response-timing.csv")
+    assert resp.status_code == 403

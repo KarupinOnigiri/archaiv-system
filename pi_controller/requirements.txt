@@ -1,6 +1,11 @@
 python-dotenv==1.2.2
 requests==2.32.3
 gpiozero==2.0.1
+# If installing this fails building on a Pi (error mentioning SWIG /
+# "unknown type name '$function'"), see DEPLOYMENT.md Phase 5's note right
+# after the venv setup step -- a known SWIG-version incompatibility with
+# pyscard's own PyPI wrapper, not anything wrong with this requirements
+# file.
 pyscard==2.2.2
 
 # evdev wraps Linux's /dev/input/event* kernel interface -- there's no

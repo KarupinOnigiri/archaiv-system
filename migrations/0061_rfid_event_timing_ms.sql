@@ -1,0 +1,39 @@
+-- 0061_rfid_event_timing_ms.sql
+-- Millisecond-precision timing: RFID acknowledgment response time (with/
+-- without body obstruction) and alarm activation response time.
+-- rfid_events.detected_at (migration 0048) is a
+-- SQLite datetime('now') default - whole-second resolution only, and it's
+-- the single moment the row gets INSERTed, not two separate "antenna saw
+-- it" vs "software finished processing it" instants. Neither is precise
+-- or granular enough to measure gaps that are almost certainly well under
+-- a second.
+--
+-- These three columns capture epoch-millisecond instants at the three
+-- separate points that actually matter, all nullable/additive - existing
+-- rows, the existing detected_at column, and every other reader of this
+-- table are untouched:
+--   client_detected_at_ms      - pi_controller/rfid_listener.py's
+--                                 _handle_tag_detected(), captured the
+--                                 instant the antenna reports the tag,
+--                                 before the network hop to this app.
+--   server_processed_at_ms     - routes/monitoring.py's record_rfid_event
+--                                 POST handler, captured at request entry -
+--                                 paired with client_detected_at_ms this is
+--                                 the "RFID acknowledgment response time".
+--   alarm_relay_activated_at_ms - reported back by pi_controller via a
+--                                 follow-up call (POST
+--                                 /rfid-events/<id>/alarm-timing) right
+--                                 after gpio_relay.activate() actually
+--                                 energizes the relay - paired with
+--                                 client_detected_at_ms this is the "alarm
+--                                 activation response time". Only ever set
+--                                 when alarm_activated=1.
+--
+-- pi_controller and the Flask app run on the same Raspberry Pi (this
+-- deployment's design, see pi_controller/README.md), sharing one system
+-- clock - so client_detected_at_ms and server_processed_at_ms are directly
+-- comparable without any cross-device clock-sync error, as long as that
+-- one clock is itself correct (DEPLOYMENT.md's NTP step).
+ALTER TABLE rfid_events ADD COLUMN client_detected_at_ms INTEGER;
+ALTER TABLE rfid_events ADD COLUMN server_processed_at_ms INTEGER;
+ALTER TABLE rfid_events ADD COLUMN alarm_relay_activated_at_ms INTEGER;

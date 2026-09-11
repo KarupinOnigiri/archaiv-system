@@ -1703,6 +1703,25 @@ function dismissGlobalAlarmModal() {
   document.getElementById('global-alarm-modal')?.close();
 }
 
+// Sidebar "Monitoring" badge - updated from the same pollGlobalAlarm() poll
+// below rather than its own separate poll loop, so a NEW alarm shows up
+// here within 5s even while sitting on some other tab, not just after the
+// next full page load. Both spans are always in the DOM (base.html), just
+// hidden/shown here - see that markup's own comment for why. count 0/falsy
+// hides both; a real count shows it (capped at "9+" display, same as
+// Notifications/Feedback's badges) with the pulse CSS already on the class.
+function updateSidebarMonitoringBadge(count) {
+  const collapsed = document.getElementById('sidebar-monitoring-badge-collapsed');
+  const expanded = document.getElementById('sidebar-monitoring-badge-expanded');
+  if (!collapsed && !expanded) return; // role doesn't have the Monitoring link at all
+  const text = count > 9 ? '9+' : String(count || 0);
+  [collapsed, expanded].forEach(function (el) {
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('hidden', !count);
+  });
+}
+
 async function pollGlobalAlarm() {
   const modal = document.getElementById('global-alarm-modal');
   if (!modal) return;
@@ -1715,6 +1734,7 @@ async function pollGlobalAlarm() {
     if (data.active) {
       if (!globalAlarmWasActive) globalAlarmDismissedForThisEpisode = false; // new episode
       globalAlarmWasActive = true;
+      updateSidebarMonitoringBadge(data.active_count);
 
       const detailEl = document.getElementById('global-alarm-detail');
       if (detailEl) {
@@ -1735,6 +1755,7 @@ async function pollGlobalAlarm() {
     } else {
       globalAlarmWasActive = false;
       globalAlarmDismissedForThisEpisode = false;
+      updateSidebarMonitoringBadge(0);
       if (modal.open) modal.close();
     }
   } catch (err) {

@@ -46,6 +46,22 @@
     })();
   </script>
   <meta name="csrf-token" content="{{ csrf_token }}">
+  {% if not staff %}
+  <!-- login.html (and setup.html) extend this same base.html and get the
+       full sidebar/shell markup below along with everyone else - it's only
+       kept out of view for an anonymous request by the login page's own
+       full-viewport `fixed inset-0` background div painting over it, not by
+       this markup actually being absent. That covering relies on
+       output.css (an external, network-fetched stylesheet) finishing
+       before first paint - normally invisible, but a slow/uncached load
+       (a hard refresh, `Ctrl+Shift+R`, bypassing the cache entirely) can
+       widen that gap enough to actually see the sidebar/nav briefly before
+       the cover settles over it. Inline and this early in <head>, this
+       rule needs no network round-trip and applies before ANY external
+       resource can even start loading - same "read this early, before
+       <body>" reasoning as the theme-flash script right above. -->
+  <style>#sidebar{display:none!important}</style>
+  {% endif %}
   {# Same route->label mapping the sidebar uses for its header/active-item
      label (see the nav_items/ns block further down in <body>) - kept as
      its own small map here rather than hoisting that block up, since this
@@ -877,13 +893,25 @@
         {% endfor %}
 
         {% if staff and staff.role in ["admin", "in_charge", "tool_keeper"] and feature_flags.monitoring %}
-        <a href="/monitoring" data-tooltip="{{ tab_tooltip('Monitoring') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Monitoring'] }}" aria-label="Monitoring"
+        <a href="/monitoring" data-tooltip="{{ tab_tooltip('Monitoring') }}" data-tooltip-rail data-tooltip-show-expanded data-shortcut-key="{{ SIDEBAR_SHORTCUT_KEYS['Monitoring'] }}" aria-label="Monitoring{% if active_alarm_count %} - alarm active{% endif %}"
            class="sidebar-link flex items-center gap-3 px-3 rounded-lg text-sm font-medium
                   {% if request.path == '/monitoring' %}sidebar-link-active{% else %}sidebar-link-inactive hover:bg-base-200{% endif %}">
-          <span class="w-5 h-5 shrink-0 flex items-center justify-center">
+          <span class="relative w-5 h-5 shrink-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 000 7"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M5.5 5.5a9 9 0 000 13"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>
+            <!-- Red/error, not the app's usual primary-blue count badge (Notifications/
+                 Feedback) - this specifically means "active security alarm", not
+                 "you have unread items", so it gets its own more urgent color plus a
+                 pulse, matching how the alarm banner itself (monitoring/_alarm_banner.html)
+                 and the global alarm modal both already treat this state elsewhere.
+                 Always rendered (hidden via class, not a Jinja conditional block that
+                 would drop it from the DOM entirely) so static/js/ui.js's pollGlobalAlarm() - already
+                 polling every 5s site-wide for the global alarm modal - can toggle this
+                 live too, without needing its own separate poll loop or a page reload to
+                 catch a NEW alarm firing while sitting on some other tab. -->
+            <span id="sidebar-monitoring-badge-collapsed" class="sidebar-collapsed-badge absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-semibold rounded-full items-center justify-center leading-none bg-error text-error-content animate-pulse {% if not active_alarm_count %}hidden{% endif %}">{{ "9+" if active_alarm_count > 9 else active_alarm_count }}</span>
           </span>
           <span class="sidebar-label whitespace-nowrap overflow-hidden">Monitoring</span>
+          <span id="sidebar-monitoring-badge-expanded" class="sidebar-label ml-auto text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center shrink-0 bg-error text-error-content animate-pulse {% if not active_alarm_count %}hidden{% endif %}">{{ "9+" if active_alarm_count > 9 else active_alarm_count }}</span>
         </a>
         {% endif %}
 

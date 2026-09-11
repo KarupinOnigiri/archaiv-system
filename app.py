@@ -12,6 +12,7 @@ import logging
 import logging.handlers
 from flask import Flask, jsonify, render_template, request, g, redirect, url_for
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from routes.requests import requests_bp
 from routes.reservations import reservations_bp
 from routes.pages import pages_bp
@@ -46,6 +47,7 @@ from services.backup_service import run_scheduled_backup
 from services.archive_purge_service import run_scheduled_archive_purge
 from routes.dashboard import dashboard_bp
 from routes.monitoring import monitoring_bp
+from services.monitoring_service import get_alarm_status
 from routes.search import search_bp
 from datetime import datetime
 
@@ -83,6 +85,29 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 if os.environ.get("FLASK_DEBUG", "0"
 if not app.secret_key:
     raise RuntimeError(
         "SECRET_KEY is not set in .env - required even though sessions are DB-backed, since Flask itself needs it for flash messages and any future signed cookies."
+    )
+
+# Trust X-Forwarded-* headers from exactly this many reverse-proxy hops
+# (DEPLOYMENT.md's "HTTPS via Caddy" section - set TRUSTED_PROXY_HOPS=1
+# there) when set. Without this, every request Flask ever sees arrives
+# from Caddy's own loopback connection to Waitress (127.0.0.1) - not each
+# real client's actual address - collapsing every staff browser AND the
+# Pi's own RFID listener (pi_controller/rfid_listener.py's alarm-status
+# sync poll) into ONE shared identity for anything keyed by
+# request.remote_addr. That silently breaks extensions.py's rate limiter
+# (get_remote_address-keyed): login attempts, the alarm-status poll, etc.
+# all start sharing one counter instead of one each, tripping limits that
+# were sized per-client for traffic that's no longer actually per-client.
+#
+# Defaults to 0 (trust nothing) since the default/earlier deployment steps
+# (no Caddy, Waitress reachable directly on the LAN) have no reverse proxy
+# in front at all - trusting these headers unconditionally there would let
+# any LAN client forge its own X-Forwarded-For and bypass IP-based rate
+# limiting entirely, including on /login.
+TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
+if TRUSTED_PROXY_HOPS > 0:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_for=TRUSTED_PROXY_HOPS, x_proto=TRUSTED_PROXY_HOPS, x_host=TRUSTED_PROXY_HOPS
     )
 
 
@@ -146,6 +171,15 @@ def inject_csrf_token():
     )
     # Available in every template so base.html/pages can gate nav links and widgets on their own.
     feature_flags = get_feature_flags(conn)
+    # Sidebar "Monitoring" badge - active (unauthorized/unknown-tag) alarm
+    # count, same shape as open_feedback_count above. Same role gate as
+    # routes/monitoring.py's _VIEW_ROLES; also skipped entirely when the
+    # feature itself is off, matching how the sidebar link is gated too.
+    active_alarm_count = (
+        get_alarm_status(conn)["active_count"]
+        if staff_member and staff_member["role"] in ("admin", "in_charge", "tool_keeper") and feature_flags["monitoring"]
+        else 0
+    )
     conn.close()
 
     return {
@@ -161,6 +195,7 @@ def inject_csrf_token():
         "unread_notifications_count": unread_notifications_count,
         "pending_approvals_count": pending_approvals_count,
         "open_feedback_count": open_feedback_count,
+        "active_alarm_count": active_alarm_count,
         # For the "My Account" modal - comes from the linked member record, not the staff table.
         # barcode_id mismo (dili staff_code) - kay ang actual barcode nga
         # ginascan sa gawas naa sa members table, gikonekta sa staff via

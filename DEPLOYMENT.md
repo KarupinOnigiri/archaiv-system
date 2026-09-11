@@ -191,10 +191,16 @@ secure" warning (it's self-signed, not from a public CA) to click through;
 normal after that.
 
 Once staff are reaching the app through Caddy (`https://<that address>`)
-instead of hitting Waitress on `:5000` directly, set `COOKIE_SECURE=1` in
-`.env` and restart `toolroom.service` - login cookies need this flipped to
-match, or they'll silently fail to persist (see `.env.example`'s comment on
-that setting for why).
+instead of hitting Waitress on `:5000` directly, set **both**
+`COOKIE_SECURE=1` and `TRUSTED_PROXY_HOPS=1` in `.env` and restart
+`toolroom.service`. `COOKIE_SECURE=1` alone isn't enough here - login
+cookies need it to match HTTPS, but without `TRUSTED_PROXY_HOPS=1` too,
+Flask sees every single request (every staff browser, the Pi's own RFID
+listener) as coming from Caddy's own loopback connection instead of each
+real client's actual address, which silently breaks anything keyed by
+request address - most importantly the rate limiter, so login attempts
+from different people start sharing one counter instead of one each (see
+`.env.example`'s comments on both settings for the full why).
 
 ## 7. Firewall (optional but recommended)
 

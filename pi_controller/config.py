@@ -100,6 +100,20 @@ ALARM_RELAY_GPIO_PIN = _get_int("ALARM_RELAY_GPIO_PIN", 17)
 # LOW, not HIGH) - check your specific relay module's datasheet/silkscreen.
 ALARM_RELAY_ACTIVE_HIGH = _get_bool("ALARM_RELAY_ACTIVE_HIGH", True)
 
+# How often (seconds) this controller polls the web app's public
+# /api/v1/monitoring/alarm-status endpoint to keep the physical relay in
+# sync with whatever the app currently thinks the alarm state is - not just
+# on a Master Key Card tap. This is what makes the admin/in_charge password
+# override (routes/monitoring.py's override_dismiss_alarm(), the fallback
+# for when this reader itself is broken) actually silence the physical
+# lamp/buzzer too, instead of only clearing the database-side record while
+# the alarm keeps sounding. See gpio_relay.py's module docstring.
+#
+# That endpoint is itself rate-limited to 30/min (routes/monitoring.py) -
+# 3.0s keeps this loop at 20/min, leaving headroom under the same-IP bucket
+# rather than sitting right at the ceiling.
+ALARM_SYNC_POLL_SECONDS = _get_float("ALARM_SYNC_POLL_SECONDS", 3.0)
+
 # When true, GPIO/PC-SC/evdev calls are replaced with console-logged no-ops
 # so this can be developed/tested on a regular PC without any of the Pi
 # hardware attached. Defaults off - set explicitly for a dev machine.

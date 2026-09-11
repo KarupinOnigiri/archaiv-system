@@ -120,6 +120,99 @@ def get_alarm_response_times(conn, args):
     return {"events": [dict(r) for r in rows], **stats}, None
 
 
+def get_rfid_response_timing(conn, args, row_limit=500):
+    """Per-event millisecond timing (RFID acknowledgment response time;
+    alarm activation response time) -
+    distinct from get_alarm_response_times() above, which measures
+    something else entirely (seconds-to-minutes until a human taps the
+    Master Key Card to CLEAR an alarm, not milliseconds for the system to
+    ACTIVATE it). See migration 0061 for where these three raw columns
+    come from: client_detected_at_ms (the Pi's antenna, pi_controller/
+    rfid_listener.py), server_processed_at_ms (this app, routes/
+    monitoring.py's record endpoint), and alarm_relay_activated_at_ms (the
+    Pi's follow-up call after gpio_relay.activate() actually fires).
+
+    Both response times are computed here in Python (simple subtraction)
+    rather than in SQL, and only for rows that actually have both of the
+    relevant timestamps - an event from before this migration, or one
+    where the Pi's follow-up call never landed (network hiccup - see
+    api_client.report_alarm_relay_timing's docstring), just has a None for
+    that one computed value rather than a misleading 0 or being dropped
+    from the list entirely, since it may still have the OTHER timing value
+    valid.
+
+    Returns: tuple (list of per-event dicts, newest-first, capped at
+    row_limit unless row_limit is None; error)."""
+    where_sql, params, error = _since_until_where(conn, args)
+    if error:
+        return None, error
+    # SQLite's LIMIT takes -1 to mean "no limit" - row_limit=None (the
+    # export route's uncapped case) maps to that rather than omitting the
+    # clause, so this stays one query either way instead of two branches.
+    rows = conn.execute(
+        f"""
+        SELECT rfid_events.id, rfid_events.detected_at, rfid_events.rfid_tag_scanned,
+               rfid_events.classification, rfid_events.alarm_activated,
+               rfid_events.client_detected_at_ms, rfid_events.server_processed_at_ms,
+               rfid_events.alarm_relay_activated_at_ms
+        FROM rfid_events
+        LEFT JOIN assets ON assets.id = rfid_events.asset_id
+        LEFT JOIN categories ON categories.id = assets.category_id
+        LEFT JOIN members ON members.id = rfid_events.member_id
+        {where_sql}
+        ORDER BY rfid_events.detected_at DESC
+        LIMIT ?
+        """,
+        (*params, -1 if row_limit is None else row_limit),
+    ).fetchall()
+
+    events = []
+    for r in rows:
+        client_ms = r["client_detected_at_ms"]
+        ack_ms = (
+            r["server_processed_at_ms"] - client_ms
+            if client_ms is not None and r["server_processed_at_ms"] is not None
+            else None
+        )
+        alarm_ms = (
+            r["alarm_relay_activated_at_ms"] - client_ms
+            if client_ms is not None and r["alarm_relay_activated_at_ms"] is not None
+            else None
+        )
+        events.append(
+            {
+                "id": r["id"],
+                "detected_at": r["detected_at"],
+                "rfid_tag_scanned": r["rfid_tag_scanned"],
+                "classification": r["classification"],
+                "alarm_activated": bool(r["alarm_activated"]),
+                "ack_response_ms": ack_ms,
+                "alarm_activation_ms": alarm_ms,
+            }
+        )
+
+    def _stats(values):
+        values = sorted(v for v in values if v is not None)
+        n = len(values)
+        if n == 0:
+            return {"count": 0, "avg_ms": None, "median_ms": None, "min_ms": None, "max_ms": None}
+        mid = n // 2
+        median = values[mid] if n % 2 == 1 else (values[mid - 1] + values[mid]) / 2
+        return {
+            "count": n,
+            "avg_ms": round(sum(values) / n, 1),
+            "median_ms": round(median, 1),
+            "min_ms": values[0],
+            "max_ms": values[-1],
+        }
+
+    return {
+        "events": events,
+        "ack_response": _stats(e["ack_response_ms"] for e in events),
+        "alarm_activation": _stats(e["alarm_activation_ms"] for e in events),
+    }, None
+
+
 def get_unknown_tag_rate_trend(conn, args):
     """Adlaw-adlaw nga unknown_tag count / total count - ang false-positive
     proxy (tan-awa ang module docstring). Adlaw nga walay event gilaktawan,

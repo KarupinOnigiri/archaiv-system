@@ -5,7 +5,7 @@ control, as described in the thesis's Chapter 3 hardware setup. This is a
 **separate program from the Flask web app** in this repo - it runs as its
 own long-lived process (systemd service, typically), talks to the fixed
 UHF RFID Reader Antenna and the tool-room's HF/NFC Reader/Writer directly,
-and only communicates with the web app over two HTTP endpoints
+and only communicates with the web app over three HTTP endpoints
 (`routes/monitoring.py` in the main app):
 
 - `POST /api/v1/rfid-events` - report one de-duplicated tagged-tool
@@ -14,6 +14,11 @@ and only communicates with the web app over two HTTP endpoints
 - `POST /api/v1/rfid-events/deactivate` - report a Master Key Card tap.
   The app confirms the card belongs to an admin and clears the alarm state;
   only then does this controller de-energize the relay.
+- `GET /api/v1/monitoring/alarm-status` - polled every
+  `ALARM_SYNC_POLL_SECONDS` to keep the relay in sync with the app even
+  when the alarm was cleared some other way, e.g. an admin/in_charge using
+  the app's password-dismiss fallback instead of a real card tap (see
+  `rfid_listener.py`'s `_sync_alarm_relay()`).
 
 The web app is the single source of truth for classification and alarm
 state. This controller never decides authorized/unauthorized on its own --

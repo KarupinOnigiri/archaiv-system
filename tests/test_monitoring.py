@@ -262,6 +262,115 @@ def test_authorized_event_captured_even_if_loan_is_later_returned(
     assert row["member_id"] == member_id
 
 
+# # # EVENT TIMING (migration 0061) ------------------------------------------
+
+
+def test_record_event_stores_client_and_server_timing(client, conn, monkeypatch):
+    """client_detected_at_ms (from the Pi) and server_processed_at_ms (this
+    app, captured at request entry) both land on the row untouched - the
+    actual "RFID acknowledgment response time" is the caller's job to
+    compute from the two, this just proves both get through and aren't
+    mixed up with each other."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    resp = client.post(
+        "/api/v1/rfid-events",
+        json={"rfid_tag_scanned": "TAG-TIMING", "client_detected_at_ms": 1_700_000_000_123},
+        headers={"X-RFID-Listener-Key": LISTENER_KEY},
+    )
+    assert resp.status_code == 200, resp.get_json()
+    event_id = resp.get_json()["id"]
+
+    row = conn.execute(
+        "SELECT client_detected_at_ms, server_processed_at_ms FROM rfid_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    assert row["client_detected_at_ms"] == 1_700_000_000_123
+    # Not asserting an exact value - just that the server actually stamped
+    # something plausible (a real epoch-ms int) rather than leaving it NULL.
+    assert row["server_processed_at_ms"] is not None
+    assert row["server_processed_at_ms"] > 1_700_000_000_000
+
+
+def test_record_event_without_client_timing_leaves_it_null(client, conn, monkeypatch):
+    """Older listener builds (or a manual/test call) that don't send
+    client_detected_at_ms shouldn't break - it's optional, purely additive."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    resp = record_event(client, "TAG-NO-TIMING")
+    assert resp.status_code == 200, resp.get_json()
+    event_id = resp.get_json()["id"]
+
+    row = conn.execute(
+        "SELECT client_detected_at_ms, server_processed_at_ms FROM rfid_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    assert row["client_detected_at_ms"] is None
+    assert row["server_processed_at_ms"] is not None
+
+
+def test_alarm_timing_rejects_missing_key(client, conn, monkeypatch):
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    resp = client.post("/api/v1/rfid-events/1/alarm-timing", json={"alarm_relay_activated_at_ms": 123})
+    assert resp.status_code == 401
+
+
+def test_alarm_timing_rejects_missing_field(client, conn, monkeypatch):
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    resp = client.post(
+        "/api/v1/rfid-events/1/alarm-timing",
+        json={},
+        headers={"X-RFID-Listener-Key": LISTENER_KEY},
+    )
+    assert resp.status_code == 400
+
+
+def test_alarm_timing_updates_the_matching_alarm_event(client, conn, asset_id, monkeypatch):
+    """The realistic sequence: record an unauthorized (alarm-activated)
+    event, then the Pi's follow-up call reports when the relay actually
+    energized - separate calls, since the relay only fires after the app
+    already responded to the first one."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    conn.execute("UPDATE assets SET rfid_id = 'TAG-ALARM-TIMING' WHERE id = ?", (asset_id,))
+    conn.commit()
+    resp = record_event(client, "TAG-ALARM-TIMING")
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["alarm_activated"] is True
+    event_id = body["id"]
+
+    timing_resp = client.post(
+        f"/api/v1/rfid-events/{event_id}/alarm-timing",
+        json={"alarm_relay_activated_at_ms": 1_700_000_005_000},
+        headers={"X-RFID-Listener-Key": LISTENER_KEY},
+    )
+    assert timing_resp.status_code == 200
+    assert timing_resp.get_json() == {"updated": True}
+
+    row = conn.execute(
+        "SELECT alarm_relay_activated_at_ms FROM rfid_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    assert row["alarm_relay_activated_at_ms"] == 1_700_000_005_000
+
+
+def test_alarm_timing_is_a_no_op_for_a_non_alarm_event(client, conn, monkeypatch):
+    """Guards against stamping this onto the wrong kind of row - e.g. an
+    authorized (never alarmed) event, or a stale/duplicate follow-up for
+    an event that's since been cleared. Not treated as an error - see
+    monitoring_service.record_alarm_relay_timing()'s docstring."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    resp = record_event(client, "TAG-NEVER-ALARMED")  # unregistered tag -> unknown_tag, no alarm
+    event_id = resp.get_json()["id"]
+
+    timing_resp = client.post(
+        f"/api/v1/rfid-events/{event_id}/alarm-timing",
+        json={"alarm_relay_activated_at_ms": 1_700_000_005_000},
+        headers={"X-RFID-Listener-Key": LISTENER_KEY},
+    )
+    assert timing_resp.status_code == 200
+    assert timing_resp.get_json() == {"updated": False}
+
+
 # # # ALARM DEACTIVATE (Master Key Card tap) -----------------------------------
 
 
@@ -492,6 +601,28 @@ def test_alarm_status_reflects_deactivation(client, conn, admin_id, asset_id, mo
     assert client.get("/api/v1/monitoring/alarm-status").get_json()["active"] is True
     deactivate(client, "ADMIN-CARD-4")
     assert client.get("/api/v1/monitoring/alarm-status").get_json() == {"active": False}
+
+
+def test_alarm_status_reports_inactive_once_alarm_settings_disabled(client, conn, asset_id, monkeypatch):
+    """Alarm Settings (alarm_enabled) is a kill switch, separate from the
+    "monitoring" feature flag - see settings_service.get_alarm_enabled's
+    docstring. Flipping it off mid-alarm must silence the alarm everywhere
+    that reads get_alarm_status() (this endpoint, the banner, the sidebar
+    badge, the global popup modal, and the Pi controller's physical-relay
+    sync poll) immediately, not just block future detections."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    conn.execute("UPDATE assets SET rfid_id = 'ASSET-KILL-SWITCH' WHERE id = ?", (asset_id,))
+    conn.commit()
+    record_event(client, "ASSET-KILL-SWITCH")
+
+    assert client.get("/api/v1/monitoring/alarm-status").get_json()["active"] is True
+
+    conn.execute("UPDATE app_settings SET value = '0' WHERE key = 'alarm_enabled'")
+    conn.commit()
+
+    assert client.get("/api/v1/monitoring/alarm-status").get_json() == {"active": False}
+    assert monitoring_service.get_alarm_status(conn) == {"active": False, "active_count": 0, "event": None}
 
 
 # # # TABLE (search / classification / date / sort) ---------------------------

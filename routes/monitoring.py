@@ -3,10 +3,14 @@ sa duha ka machine-to-machine endpoints nga gi-call sa Raspberry Pi's RFID
 listener (dili part sa repo - see thesis Chapter 3 hardware description)
 direkta, walay staff browser session."""
 
+import csv
 import hmac
+import io
 import os
+import time
+from datetime import datetime
 
-from flask import Blueprint, jsonify, g, request, render_template
+from flask import Blueprint, jsonify, g, request, render_template, make_response
 from werkzeug.security import check_password_hash
 
 from database import get_db_connection, get_json_or_error
@@ -157,17 +161,29 @@ def override_dismiss_alarm():
 
 
 @monitoring_bp.route("/monitoring/alarm-status")
-@limiter.limit("30 per minute")
+@limiter.limit("90 per minute")
 def view_alarm_status():
     """GET - deliberately public (walay @login_required) kay ni sila ang
     ga-share ani nga endpoint: static/js/ui.js's global poll (logged-in
-    pages) ug templates/login.html's poll (wa pa naka-login). Detail level
+    pages), templates/login.html's poll (wa pa naka-login), AND the Pi's
+    RFID listener's alarm-relay sync loop (pi_controller/rfid_listener.py,
+    ALARM_SYNC_POLL_SECONDS - see its config.py comment). Detail level
     ma-scale depende kinsay ni-request via soft session check
     (require_session, pero gi-ignore ang error) - naay session, full detail;
     walay session, asset name/barcode ra (dili classification/tag/timestamp)
     para dili ma-leak ang incident details sa dili pa naka-log in.
     Feature-flagged pareho sa uban Monitoring endpoints - inactive dayon ang
-    report kung off."""
+    report kung off.
+
+    90/min, not the usual tighter limits elsewhere on this file - this one
+    is polled automatically and continuously by every open tab (every ~5s
+    each, per ui.js/login.html), not triggered by a single user action, so
+    its real per-client volume scales with how many tabs/devices one person
+    has open rather than with intent; a couple of tabs plus the Pi
+    controller's own steady ~20/min shouldn't be able to trip this by
+    accident (see TRUSTED_PROXY_HOPS in app.py/.env.example for why each
+    real client is tracked separately in the first place, once behind a
+    reverse proxy)."""
     if not is_feature_enabled("monitoring"):
         return jsonify({"active": False})
 
@@ -257,6 +273,9 @@ def view_monitoring_trends():
         unknown_tag_rate, error = monitoring_stats_service.get_unknown_tag_rate_trend(conn, request.args)
         if error:
             return error
+        rfid_response_timing, error = monitoring_stats_service.get_rfid_response_timing(conn, request.args)
+        if error:
+            return error
     finally:
         conn.close()
 
@@ -266,8 +285,53 @@ def view_monitoring_trends():
             "hourly_distribution": hourly_distribution,
             "alarm_response": alarm_response,
             "unknown_tag_rate": unknown_tag_rate,
+            "rfid_response_timing": rfid_response_timing,
         }
     )
+
+
+@monitoring_bp.route("/monitoring/trends/rfid-response-timing.csv")
+@roles_required(*_VIEW_ROLES)
+@feature_required("monitoring", redirect_to_dashboard=False)
+@limiter.limit("10 per minute")
+def export_rfid_response_timing():
+    """GET - raw per-event CSV for RFID response-time data (RFID
+    acknowledgment response time, alarm activation response time) - same
+    since/until/classification/q filters as the rest of Trends, but
+    uncapped (row_limit=None) unlike the in-page chart/table, which only
+    needs the most recent slice - an export should include everything in
+    the requested range, not just what's convenient to chart."""
+    conn = get_db_connection()
+    try:
+        result, error = monitoring_stats_service.get_rfid_response_timing(conn, request.args, row_limit=None)
+    finally:
+        conn.close()
+    if error:
+        return error
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "Event ID", "Detected At", "RFID Tag", "Classification", "Alarm Activated",
+            "RFID Acknowledgment Response Time (ms)", "Alarm Activation Response Time (ms)",
+        ]
+    )
+    for e in result["events"]:
+        writer.writerow(
+            [
+                e["id"], e["detected_at"], e["rfid_tag_scanned"], e["classification"],
+                "Yes" if e["alarm_activated"] else "No",
+                e["ack_response_ms"] if e["ack_response_ms"] is not None else "",
+                e["alarm_activation_ms"] if e["alarm_activation_ms"] is not None else "",
+            ]
+        )
+
+    response = make_response(buf.getvalue().encode("utf-8-sig"))  # BOM so Excel opens UTF-8 CSVs correctly
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    response.headers["Content-Disposition"] = f"attachment; filename=rfid_rfid_response_timing_{timestamp}.csv"
+    return response
 
 
 # # # MACHINE-TO-MACHINE (Raspberry Pi RFID listener, no staff session) -----
@@ -285,7 +349,17 @@ def record_rfid_event():
     ang RFID_LISTENER_KEY, wala unta'y throttle nga nag-guard sa write
     volume diri gawas sa app-wide 200/min default. 60/min comfortably
     covers real exit-gate bursts (multiple tagged items in one crossing)
-    without being loose enough to matter for abuse."""
+    without being loose enough to matter for abuse.
+
+    server_processed_at_ms (migration 0061) is
+    captured HERE, at request entry, before the key check/feature check/DB
+    work below - not inside monitoring_service.record_rfid_event() itself -
+    so the "RFID acknowledgment response time" this pairs with
+    client_detected_at_ms to produce reflects when the request actually
+    arrived, not when this function happened to finish its own unrelated
+    work first."""
+    server_processed_at_ms = int(time.time() * 1000)
+
     key_error = _listener_key_error()
     if key_error:
         return key_error
@@ -299,13 +373,51 @@ def record_rfid_event():
 
     conn = get_db_connection()
     try:
-        result, error = monitoring_service.record_rfid_event(conn, data.get("rfid_tag_scanned"))
+        result, error = monitoring_service.record_rfid_event(
+            conn,
+            data.get("rfid_tag_scanned"),
+            client_detected_at_ms=data.get("client_detected_at_ms"),
+            server_processed_at_ms=server_processed_at_ms,
+        )
     finally:
         conn.close()
 
     if error:
         return error
     return jsonify(result)
+
+
+@monitoring_bp.route("/rfid-events/<int:event_id>/alarm-timing", methods=["POST"])
+@limiter.limit("60 per minute")
+def record_alarm_relay_timing(event_id):
+    """POST - follow-up call from the Pi's listener reporting the instant
+    gpio_relay.activate() actually energized the relay for an alarm-
+    activated event (pi_controller/rfid_listener.py, right after that call
+    succeeds). Necessarily separate from record_rfid_event() above - the
+    relay only gets activated on the Pi AFTER this app has already
+    responded with alarm_activated=True, so there's no way to have this
+    timestamp at insert time. Same shared-secret M2M auth as the other two
+    listener-facing endpoints. See monitoring_service.record_alarm_relay_
+    timing() for why a not-found/no-op result isn't treated as an error."""
+    key_error = _listener_key_error()
+    if key_error:
+        return key_error
+
+    data, error = get_json_or_error()
+    if error:
+        return error
+
+    alarm_relay_activated_at_ms = data.get("alarm_relay_activated_at_ms")
+    if not isinstance(alarm_relay_activated_at_ms, int):
+        return jsonify({"error": "Missing/invalid required field: alarm_relay_activated_at_ms"}), 400
+
+    conn = get_db_connection()
+    try:
+        updated = monitoring_service.record_alarm_relay_timing(conn, event_id, alarm_relay_activated_at_ms)
+    finally:
+        conn.close()
+
+    return jsonify({"updated": updated})
 
 
 @monitoring_bp.route("/rfid-events/deactivate", methods=["POST"])

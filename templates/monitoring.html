@@ -260,6 +260,83 @@
         <div style="height: 200px"><canvas id="trend-unknown-rate-canvas"></canvas></div>
       </div>
     </div>
+
+    <!-- RFID acknowledgment response time and alarm activation response
+         time, millisecond precision (migration 0061). Distinct from the
+         "ALARMS CLEARED" KPIs above, which measure something else
+         entirely: seconds-to-minutes until a human taps the Master Key
+         Card to CLEAR an already-active alarm. These measure system/
+         hardware latency instead - how fast the software acknowledges a
+         detection, and how fast the physical relay fires. -->
+    <div class="flex items-center gap-2">
+      <h3 class="font-semibold text-sm">RFID Response Time</h3>
+      <span class="text-xs font-normal text-base-content/50">milliseconds - acknowledgment and alarm activation latency</span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-primary/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">AVG ACK TIME</p>
+          <p id="trend-ack-avg" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-primary/5 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-info/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEDIAN ACK TIME</p>
+          <p id="trend-ack-median" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-info/30 to-info/5 ring-1 ring-info/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-error/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">AVG ALARM ACTIVATION</p>
+          <p id="trend-alarm-avg" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-error/30 to-error/5 ring-1 ring-error/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        </div>
+      </div>
+      <div class="kpi-card relative overflow-hidden rounded-xl border border-panel p-5 flex items-start justify-between bg-gradient-to-br from-warning/10 via-base-100 to-base-100 transition-shadow hover:shadow-md">
+        <div>
+          <p class="text-xs font-semibold text-base-content/50 tracking-wide">MEDIAN ALARM ACTIVATION</p>
+          <p id="trend-alarm-median" class="text-2xl font-bold mt-1">-</p>
+        </div>
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-warning/30 to-warning/5 ring-1 ring-warning/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
+      <div class="widget-header flex items-center gap-2.5 mb-3">
+        <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+        </span>
+        <h3 class="font-semibold">Response Time per Event</h3>
+        <span class="text-xs font-normal text-base-content/50">most recent events in range, oldest to newest</span>
+      </div>
+      <div style="height: 240px"><canvas id="trend-rfid-response-canvas"></canvas></div>
+    </div>
+
+    <div class="bg-base-100 rounded-xl border border-panel p-5 h-full">
+      <div class="widget-header flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2.5">
+          <span class="w-8 h-8 rounded-full bg-gradient-to-br from-primary/25 to-primary/5 text-primary flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+          </span>
+          <h3 class="font-semibold">RFID Timing Log</h3>
+        </div>
+        <a id="trend-rfid-response-export-link" href="/api/v1/monitoring/trends/rfid-response-timing.csv" class="btn btn-ghost btn-xs btn-circle" data-tooltip="Export full range as CSV" aria-label="Export RFID timing log as CSV">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        </a>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">Raw per-event timestamps - the table below shows the most recent events in range; Export includes the full range.</p>
+      <div id="trend-rfid-response-table"></div>
+    </div>
   </div>
 </div>
 
@@ -644,9 +721,54 @@ function formatSeconds(s) {
   return Math.round(s / 60) + 'm ' + Math.round(s % 60) + 's';
 }
 
+// These response-time numbers are two to three orders of magnitude smaller
+// than the ALARMS CLEARED KPIs above (milliseconds, not seconds-to-minutes)
+// - its own formatter rather than reusing formatSeconds so a sub-second gap
+// doesn't get rounded away to "0s" and become meaningless.
+function formatMs(ms) {
+  if (ms === null || ms === undefined) return '-';
+  if (ms < 1000) return Math.round(ms) + 'ms';
+  return (ms / 1000).toFixed(2) + 's';
+}
+
+// detected_at arrives as a bare "YYYY-MM-DD HH:MM:SS" string - SQLite's
+// datetime('now', 'localtime') default (migration 0048), already wall-clock
+// local time with no timezone offset in it. Swapping the space for a "T"
+// gives a string a JS Date parses as LOCAL time (a date-time with no
+// offset is local per spec) rather than UTC - parsing the original
+// space-separated form directly is unreliable across browsers.
+function parseDbTimestamp(s) {
+  if (!s) return null;
+  const d = new Date(s.replace(' ', 'T'));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Full date + 12-hour time for the RFID Timing Log table - same "%b %d,
+// %Y" / "%I:%M %p" shapes as the Log tab's own DATE/TIME columns
+// (templates/monitoring/_table.html's format_date filter), just combined
+// into one string since this table has a single "Detected At" column.
+function formatDetectedAtFull(dbTimestamp) {
+  const d = parseDbTimestamp(dbTimestamp);
+  if (!d) return dbTimestamp || '-';
+  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+  return `${dateStr}, ${timeStr}`;
+}
+
+// Time-only, 12-hour, for the per-event chart's x-axis - the date rarely
+// adds anything there (most ranges are a single day of testing) and a
+// shorter label leaves more room before maxTicksLimit has to thin them out.
+function formatDetectedAtTime(dbTimestamp) {
+  const d = parseDbTimestamp(dbTimestamp);
+  if (!d) return dbTimestamp || '-';
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+}
+
 async function fetchMonitoringTrends() {
   const params = getMonitoringFilterParams();
   params.delete('q'); // trends aggregate over classification/date only, not free-text search
+  const exportLink = document.getElementById('trend-rfid-response-export-link');
+  if (exportLink) exportLink.href = '/api/v1/monitoring/trends/rfid-response-timing.csv?' + params.toString();
   try {
     const res = await fetch('/api/v1/monitoring/trends?' + params.toString());
     if (res.status === 401) { showSessionTimeoutModal(); return; }
@@ -656,6 +778,9 @@ async function fetchMonitoringTrends() {
     renderHourlyChart(data.hourly_distribution);
     renderUnknownRateChart(data.unknown_tag_rate);
     renderResponseKpis(data.alarm_response);
+    renderRfidResponseKpis(data.rfid_response_timing);
+    renderRfidResponseChart(data.rfid_response_timing.events);
+    renderRfidResponseTable(data.rfid_response_timing.events);
   } catch (err) {
     // Trends is a supplementary view - a network hiccup here shouldn't
     // block the Log tab, which has its own error handling.
@@ -667,6 +792,91 @@ function renderResponseKpis(response) {
   document.getElementById('trend-response-avg').textContent = formatSeconds(response.avg_seconds);
   document.getElementById('trend-response-median').textContent = formatSeconds(response.median_seconds);
   document.getElementById('trend-response-p90').textContent = formatSeconds(response.p90_seconds);
+}
+
+function renderRfidResponseKpis(timing) {
+  document.getElementById('trend-ack-avg').textContent = formatMs(timing.ack_response.avg_ms);
+  document.getElementById('trend-ack-median').textContent = formatMs(timing.ack_response.median_ms);
+  document.getElementById('trend-alarm-avg').textContent = formatMs(timing.alarm_activation.avg_ms);
+  document.getElementById('trend-alarm-median').textContent = formatMs(timing.alarm_activation.median_ms);
+}
+
+function renderRfidResponseChart(events) {
+  const canvasId = 'trend-rfid-response-canvas';
+  destroyMonitoringChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  // events arrives newest-first (get_rfid_response_timing's ORDER BY) -
+  // reversed here so the chart reads left-to-right as oldest-to-newest,
+  // same time direction as the other Trends charts above.
+  const chronological = [...events].reverse();
+  const textColor = monitoringThemeColor('--color-base-content');
+  const gridColor = monitoringThemeColor('--color-base-300');
+
+  MONITORING_TRENDS_CHARTS[canvasId] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: chronological.map((e) => formatDetectedAtTime(e.detected_at)),
+      datasets: [
+        {
+          label: 'RFID Acknowledgment (ms)',
+          data: chronological.map((e) => e.ack_response_ms),
+          borderColor: monitoringThemeColor('--color-primary'),
+          backgroundColor: monitoringThemeColor('--color-primary'),
+          spanGaps: true,
+          tension: 0.2,
+        },
+        {
+          label: 'Alarm Activation (ms)',
+          data: chronological.map((e) => e.alarm_activation_ms),
+          borderColor: monitoringThemeColor('--color-error'),
+          backgroundColor: monitoringThemeColor('--color-error'),
+          spanGaps: true,
+          tension: 0.2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: textColor } } },
+      scales: {
+        x: { ticks: { color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: textColor, callback: (v) => v + 'ms' }, grid: { color: gridColor } },
+      },
+    },
+  });
+}
+
+function renderRfidResponseTable(events) {
+  const el = document.getElementById('trend-rfid-response-table');
+  if (events.length === 0) {
+    el.innerHTML = '<p class="text-sm text-base-content/50 text-center py-6">No timed events in this range.</p>';
+    return;
+  }
+  const rows = events.slice(0, 25).map((e) => `
+    <tr class="border-t border-base-200">
+      <td class="py-1.5 text-sm whitespace-nowrap">${formatDetectedAtFull(e.detected_at)}</td>
+      <td class="py-1.5 text-sm font-mono">${e.rfid_tag_scanned}</td>
+      <td class="py-1.5 text-sm capitalize">${e.classification.replace('_', ' ')}</td>
+      <td class="py-1.5 text-sm">${formatMs(e.ack_response_ms)}</td>
+      <td class="py-1.5 text-sm">${e.alarm_activated ? formatMs(e.alarm_activation_ms) : '-'}</td>
+    </tr>
+  `).join('');
+  el.innerHTML = `
+    <div class="overflow-auto">
+      <table class="table table-sm w-full">
+        <thead><tr>
+          <th class="text-xs font-semibold text-base-content/50 py-1.5">Detected At</th>
+          <th class="text-xs font-semibold text-base-content/50 py-1.5">Tag</th>
+          <th class="text-xs font-semibold text-base-content/50 py-1.5">Classification</th>
+          <th class="text-xs font-semibold text-base-content/50 py-1.5">Ack Response</th>
+          <th class="text-xs font-semibold text-base-content/50 py-1.5">Alarm Activation</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${events.length > 25 ? `<p class="text-xs text-base-content/40 mt-2">Showing 25 most recent of ${events.length} - use Export for the full range.</p>` : ''}
+  `;
 }
 
 function renderDailyVolumeChart(rows) {

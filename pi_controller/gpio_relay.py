@@ -6,7 +6,9 @@ already has a clean pin-factory abstraction that makes DRY_RUN trivial.
 This module owns the alarm's physical ON/OFF state. It does NOT decide
 *when* to activate/deactivate - rfid_listener.py calls activate()/
 deactivate() based on what the web app's API told it (alarm_activated on a
-detection, a successful deactivate_alarm() call on a Master Key Card tap).
+detection, a successful deactivate_alarm() call on a Master Key Card tap,
+or the periodic alarm-status sync loop noticing the app-side state was
+cleared some other way, e.g. the admin/in_charge password override).
 
 Runs on a Windows PC too, for everything except the alarm relay itself --
 there's no GPIO header on a regular PC, hardware or software can't change
@@ -86,11 +88,12 @@ def activate():
 
 
 def deactivate():
-    """De-energizes the relay - alarm/warning lamp turns off. Called only
-    after the web app confirms a Master Key Card tap actually cleared an
-    active alarm (see rfid_listener.py) - never on a bare timeout or
-    software-only condition, matching the thesis's requirement that
-    deactivation needs physical presence at the site of the alert."""
+    """De-energizes the relay - alarm/warning lamp turns off. Called after
+    the web app confirms a Master Key Card tap actually cleared an active
+    alarm, and also from rfid_listener.py's periodic alarm-status sync loop
+    whenever it notices the app no longer considers an alarm active (e.g.
+    admin/in_charge cleared it via the software password-override fallback
+    instead of a card tap) - see rfid_listener.py for both call sites."""
     global _warned_unavailable
     relay = _get_relay()
     if relay == "dry-run":

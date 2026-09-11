@@ -28,11 +28,23 @@ def _no_ctx(error_payload, status):
 
 
 def get_alarm_status(conn):
-    """Ang usa ra ka row nga gina-poll sa alarm banner. 'Active' nagpasabot
-    nga ang pinakabag-o nga unauthorized detection wala pa ma-clear sa
-    Master Key Card tap - tuyo gyud nga walay software-only nga paagi
-    mo-off ani, deactivate_active_alarms() ra ang mag-usab, ang tinuod nga
-    HF/NFC deactivation event ra ang mag-tawag ani."""
+    """Ang usa ra ka row nga gina-poll sa alarm banner (ug sa global popup
+    modal, sidebar badge, ug sa Pi controller's physical-relay sync loop -
+    silang tanan niini na-source ra gikan ani nga function). 'Active'
+    nagpasabot nga ang pinakabag-o nga unauthorized detection wala pa
+    ma-clear sa Master Key Card tap - tuyo gyud nga walay software-only nga
+    paagi mo-off ani, deactivate_active_alarms() ra ang mag-usab, ang tinuod
+    nga HF/NFC deactivation event ra ang mag-tawag ani.
+
+    Exception: kung gi-off na ang alarm_enabled setting (System > Alarm
+    Settings - lahi ni sa "monitoring" feature flag, tan-awa
+    settings_service.get_alarm_enabled's docstring), report dayon nga
+    inactive bisan pa'g naa gihapon undeactivated nga rows - kay kill-switch
+    man ni siya, dapat mo-silence dayon sa bisan unsa nga na-trigger na, dili
+    lang mag-block sa mga bag-ong detection."""
+    if not get_alarm_enabled(conn):
+        return {"active": False, "active_count": 0, "event": None}
+
     active_event = conn.execute(
         """
         SELECT rfid_events.*, assets.asset_id AS asset_code, assets.name AS asset_name,
@@ -59,13 +71,26 @@ def get_alarm_status(conn):
 # # # RECORD (called by the Pi's RFID listener, via routes/monitoring.py) --
 
 
-def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
+def record_rfid_event(
+    conn, rfid_tag_scanned, staff_id=None, client_detected_at_ms=None, server_processed_at_ms=None
+):
     """I-classify ang usa ka de-duplicated nga detection event ug i-log.
 
     Classification rule: ang tag nga naa sa asset nga 'borrowed' karon
     authorized; ang tag nga naa sa asset apan laing status unauthorized;
     ang tag nga wala gyu'y match nga asset 'unknown_tag' - gilain gikan sa
-    unauthorized para dili sila magsagol sa confusion-matrix data."""
+    unauthorized para dili sila magsagol sa confusion-matrix data.
+
+    client_detected_at_ms/server_processed_at_ms (migration 0061) - both
+    optional, epoch-millisecond ints. client_detected_at_ms comes from the
+    Pi's own listener (pi_controller/rfid_listener.py, captured the instant
+    the antenna reports the tag - see api_client.record_detection());
+    server_processed_at_ms should be captured by the caller (routes/
+    monitoring.py) at request entry, not computed in here, so it reflects
+    when the request actually arrived rather than after this function's own
+    asset lookup/classification work runs. Both stay NULL for anything that
+    doesn't supply them (manual/test calls, older listener builds) - purely
+    additive, nothing else about this function's behavior changes."""
     rfid_tag_scanned = (rfid_tag_scanned or "").strip()
     if not rfid_tag_scanned:
         return None, _no_ctx({"error": "Missing required field: rfid_tag_scanned"}, 400)
@@ -110,10 +135,16 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
     try:
         cursor = conn.execute(
             """
-            INSERT INTO rfid_events (rfid_tag_scanned, asset_id, classification, alarm_activated, member_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO rfid_events (
+                rfid_tag_scanned, asset_id, classification, alarm_activated, member_id,
+                client_detected_at_ms, server_processed_at_ms
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (rfid_tag_scanned, asset_id, classification, int(alarm_activated), member_id),
+            (
+                rfid_tag_scanned, asset_id, classification, int(alarm_activated), member_id,
+                client_detected_at_ms, server_processed_at_ms,
+            ),
         )
         conn.commit()
     except sqlite3.Error as e:
@@ -140,6 +171,32 @@ def record_rfid_event(conn, rfid_tag_scanned, staff_id=None):
         "alarm_activated": alarm_activated,
         "asset_id": asset_id,
     }, None
+
+
+def record_alarm_relay_timing(conn, event_id, alarm_relay_activated_at_ms):
+    """Follow-up call from the Pi (routes/monitoring.py's
+    /rfid-events/<id>/alarm-timing) reporting the instant
+    gpio_relay.activate() actually energized the relay for this event -
+    necessarily a separate call from record_rfid_event() above, since the
+    relay only gets activated AFTER the app has already responded with
+    alarm_activated=True (see pi_controller/rfid_listener.py's
+    _handle_tag_detected -> gpio_relay.activate() -> this follow-up).
+    Paired with client_detected_at_ms, this is the "alarm activation
+    response time" measurement.
+
+    Only writes when the target row is a real, still-matching alarm event
+    (alarm_activated=1) - guards against a stale/duplicate follow-up (a
+    retried request, or one for an event a software override already
+    cleared and moved on from) silently stamping a timing value onto the
+    wrong row. Returns True if a row was actually updated, False otherwise
+    - the caller treats False as "nothing to do", not an error, since a
+    late/duplicate follow-up isn't itself a failure."""
+    cursor = conn.execute(
+        "UPDATE rfid_events SET alarm_relay_activated_at_ms = ? WHERE id = ? AND alarm_activated = 1",
+        (alarm_relay_activated_at_ms, event_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
 
 
 # # # DEACTIVATE (physical Master Key Card tap, reported by the Pi) --------
