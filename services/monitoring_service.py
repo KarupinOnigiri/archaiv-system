@@ -184,15 +184,23 @@ def record_alarm_relay_timing(conn, event_id, alarm_relay_activated_at_ms):
     Paired with client_detected_at_ms, this is the "alarm activation
     response time" measurement.
 
-    Only writes when the target row is a real, still-matching alarm event
-    (alarm_activated=1) - guards against a stale/duplicate follow-up (a
-    retried request, or one for an event a software override already
-    cleared and moved on from) silently stamping a timing value onto the
-    wrong row. Returns True if a row was actually updated, False otherwise
-    - the caller treats False as "nothing to do", not an error, since a
-    late/duplicate follow-up isn't itself a failure."""
+    Only writes when the target row is a real, STILL-ACTIVE alarm event
+    (alarm_activated=1 AND alarm_deactivated_at IS NULL) - guards against a
+    stale/duplicate follow-up (a retried request, or - the case the
+    alarm_activated=1 check alone does NOT catch, since
+    deactivate_active_alarms() never resets that flag back to 0 - one for
+    an event a real Master Key Card tap or the software override already
+    cleared in the meantime, e.g. a slow/delayed network round-trip from
+    the Pi landing after the alarm was already resolved) silently stamping
+    a timing value onto an event that's no longer the live alarm, which
+    would contaminate the "alarm activation response time" dataset with a
+    number for an incident that was already over. Returns True if a row
+    was actually updated, False otherwise - the caller treats False as
+    "nothing to do", not an error, since a late/duplicate follow-up isn't
+    itself a failure."""
     cursor = conn.execute(
-        "UPDATE rfid_events SET alarm_relay_activated_at_ms = ? WHERE id = ? AND alarm_activated = 1",
+        "UPDATE rfid_events SET alarm_relay_activated_at_ms = ? "
+        "WHERE id = ? AND alarm_activated = 1 AND alarm_deactivated_at IS NULL",
         (alarm_relay_activated_at_ms, event_id),
     )
     conn.commit()
@@ -212,7 +220,13 @@ def deactivate_active_alarms(conn, staff_id, via="master_key_card"):
     override (via="software_override" - see
     routes/monitoring.py's override_dismiss_alarm(), nagkinahanglan ug
     password re-confirmation, dili ni ang default/primary nga paagi,
-    fallback ra ni kung wala/nadaot ang physical HF/NFC reader).
+    fallback ra ni kung wala/nadaot ang physical HF/NFC reader) OR ang
+    admin nga ni-disable sa Alarm Settings mismo
+    (via="alarm_settings_disabled" - see services/staff_service.py's
+    update_alarm_settings(): kung naa'y active alarm nga wala pa na-clear
+    sa dili pa gi-disable, walay ni-himo ani kaniadto, mao nga kung
+    i-enable balik ang setting sa ulahi, mo-resurrect ug mo-alarm balik
+    ang daan/stale nga event bisan ug wala nay kalabutan sa presente).
 
     Walay "deactivate" button sa UI nga wala'y re-auth - ang tinuod nga
     security value sa Master Key Card kay physical presence requirement,
@@ -243,13 +257,22 @@ def deactivate_active_alarms(conn, staff_id, via="master_key_card"):
         logger.error(f"Failed to deactivate RFID alarm(s): {e}")
         return None, _no_ctx({"error": "Failed to deactivate alarm"}, 500)
 
-    via_label = "Master Key Card" if via == "master_key_card" else "admin software override (password re-confirmed)"
+    via_labels = {
+        "master_key_card": "Master Key Card",
+        "software_override": "admin software override (password re-confirmed)",
+        "alarm_settings_disabled": "Alarm Settings being turned off",
+    }
+    via_actions = {
+        "master_key_card": "rfid_alarm_deactivated",
+        "software_override": "rfid_alarm_deactivated_override",
+        "alarm_settings_disabled": "rfid_alarm_deactivated_settings_disabled",
+    }
     log_action(
         conn=conn,
         staff_id=staff_id,
-        action="rfid_alarm_deactivated" if via == "master_key_card" else "rfid_alarm_deactivated_override",
+        action=via_actions.get(via, "rfid_alarm_deactivated_override"),
         target_table="rfid_events",
-        details=f"Deactivated {len(active_ids)} active alarm event(s) via {via_label}",
+        details=f"Deactivated {len(active_ids)} active alarm event(s) via {via_labels.get(via, via)}",
     )
 
     return {"deactivated_count": len(active_ids)}, None

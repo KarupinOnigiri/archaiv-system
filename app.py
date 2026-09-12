@@ -46,7 +46,7 @@ from services.dashboard_service import get_dashboard_context
 from services.backup_service import run_scheduled_backup
 from services.archive_purge_service import run_scheduled_archive_purge
 from routes.dashboard import dashboard_bp
-from routes.monitoring import monitoring_bp
+from routes.monitoring import monitoring_bp, MONITORING_VIEW_ROLES
 from services.monitoring_service import get_alarm_status
 from routes.search import search_bp
 from datetime import datetime
@@ -172,12 +172,16 @@ def inject_csrf_token():
     # Available in every template so base.html/pages can gate nav links and widgets on their own.
     feature_flags = get_feature_flags(conn)
     # Sidebar "Monitoring" badge - active (unauthorized/unknown-tag) alarm
-    # count, same shape as open_feedback_count above. Same role gate as
-    # routes/monitoring.py's _VIEW_ROLES; also skipped entirely when the
-    # feature itself is off, matching how the sidebar link is gated too.
+    # count, same shape as open_feedback_count above. Imports the same role
+    # tuple routes/monitoring.py's own view routes are gated on (rather
+    # than a second hardcoded copy of it here) so the two can never drift -
+    # a role added/removed from MONITORING_VIEW_ROLES automatically keeps
+    # this badge in sync with who can actually open the page it's badging.
+    # Also skipped entirely when the feature itself is off, matching how
+    # the sidebar link is gated too.
     active_alarm_count = (
         get_alarm_status(conn)["active_count"]
-        if staff_member and staff_member["role"] in ("admin", "in_charge", "tool_keeper") and feature_flags["monitoring"]
+        if staff_member and staff_member["role"] in MONITORING_VIEW_ROLES and feature_flags["monitoring"]
         else 0
     )
     conn.close()

@@ -23,11 +23,11 @@ from extensions import limiter
 monitoring_bp = Blueprint("monitoring", __name__)
 
 # Roles that can see the Monitoring tab at all - same set as Activity Log.
-_VIEW_ROLES = ("admin", "in_charge", "tool_keeper")
+MONITORING_VIEW_ROLES = ("admin", "in_charge", "tool_keeper")
 
 # Roles allowed to use the software alarm-dismiss override (password
 # re-confirmed) when the physical Master Key Card/HF-NFC reader isn't
-# available - deliberately narrower than _VIEW_ROLES. tool_keeper can see
+# available - deliberately narrower than MONITORING_VIEW_ROLES. tool_keeper can see
 # the Monitoring tab but not silence a triggered alarm from a browser.
 _ALARM_OVERRIDE_ROLES = ("admin", "in_charge")
 
@@ -64,7 +64,7 @@ def get_monitoring_table_context(args):
 
 
 @monitoring_bp.route("/monitoring/table")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_monitoring_table():
     """GET - htmx partial sa Monitoring tab's live event table."""
@@ -75,7 +75,7 @@ def view_monitoring_table():
 
 
 @monitoring_bp.route("/monitoring/<int:id>/details-modal")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_event_details_modal(id):
     """GET - read-only details modal para sa usa ka detection event row,
@@ -92,7 +92,7 @@ def view_event_details_modal(id):
 
 
 @monitoring_bp.route("/monitoring/alarm-banner")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_alarm_banner():
     """GET - gi-poll every few seconds sa Monitoring page (see monitoring.html's
@@ -212,7 +212,7 @@ def view_alarm_status():
 
 
 @monitoring_bp.route("/monitoring/stat-cards")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_monitoring_stat_cards():
     """GET - htmx partial sa Monitoring tab's stat cards. Delegates to
@@ -226,7 +226,7 @@ def view_monitoring_stat_cards():
 
 
 @monitoring_bp.route("/monitoring/stat-cards/counts")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 def view_monitoring_stat_counts():
     """GET - numbers-only JSON version of the stat cards, for the 1s
@@ -250,7 +250,7 @@ def view_monitoring_stat_counts():
 
 
 @monitoring_bp.route("/monitoring/trends")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 @limiter.limit("20 per minute")
 def view_monitoring_trends():
@@ -291,7 +291,7 @@ def view_monitoring_trends():
 
 
 @monitoring_bp.route("/monitoring/trends/rfid-response-timing.csv")
-@roles_required(*_VIEW_ROLES)
+@roles_required(*MONITORING_VIEW_ROLES)
 @feature_required("monitoring", redirect_to_dashboard=False)
 @limiter.limit("10 per minute")
 def export_rfid_response_timing():
@@ -330,7 +330,7 @@ def export_rfid_response_timing():
     response = make_response(buf.getvalue().encode("utf-8-sig"))  # BOM so Excel opens UTF-8 CSVs correctly
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    response.headers["Content-Disposition"] = f"attachment; filename=rfid_rfid_response_timing_{timestamp}.csv"
+    response.headers["Content-Disposition"] = f"attachment; filename=rfid_response_timing_{timestamp}.csv"
     return response
 
 

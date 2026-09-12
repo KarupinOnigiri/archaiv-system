@@ -2309,7 +2309,14 @@ def update_alarm_settings(conn, data, acting_staff_id):
     sa "monitoring" feature flag, nga naga-gate sa tibuok tab/pipeline
     instead. Tan-awa services/monitoring_service.py's record_rfid_event kung
     unsa gyud ang gina-change ani (walay hunong ang logging/classifying
-    bisan asa)."""
+    bisan asa).
+
+    Kung gi-disable (enabled=False), i-clear usab dayon ang bisan unsa nga
+    active nga alarm karon (via monitoring_service.deactivate_active_alarms,
+    via="alarm_settings_disabled") - kung wala ni buhaton, usa ka stale nga
+    active alarm nga wala pa na-clear sa dili pa gi-disable mahimong
+    mo-resurrect ug mo-alarm balik (physical relay apil) kung i-enable balik
+    ang setting sa ulahi, bisan ug dugay na kining na-resolve sa tinuod."""
     enabled = bool(data.get("enabled"))
     conn.execute("UPDATE app_settings SET value = ? WHERE key = 'alarm_enabled'", ("1" if enabled else "0",))
     conn.commit()
@@ -2325,6 +2332,11 @@ def update_alarm_settings(conn, data, acting_staff_id):
             else "RFID exit-monitoring alarm turned off - detections are still logged, but won't raise the banner/active-alarm state"
         ),
     )
+
+    if not enabled:
+        from services.monitoring_service import deactivate_active_alarms
+
+        deactivate_active_alarms(conn, acting_staff_id, via="alarm_settings_disabled")
 
     return {"message": "Alarm settings updated", "enabled": enabled}, None
 

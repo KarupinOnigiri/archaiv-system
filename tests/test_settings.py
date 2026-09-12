@@ -112,6 +112,39 @@ def test_update_alarm_settings_success(as_admin, conn):
     assert value == "0"
 
 
+def test_disabling_alarm_settings_clears_an_active_alarm_so_it_cant_resurrect(as_admin, conn):
+    """Without this, an active-but-not-yet-cleared alarm at the moment
+    someone disables Alarm Settings would just sit there untouched - and
+    if the setting gets re-enabled later (possibly much later, once
+    whatever caused it is long since resolved), get_alarm_status() would
+    report it active again and the Pi's relay-sync loop would re-fire the
+    physical buzzer/lamp for an incident nobody intended to re-trigger.
+    Disabling the setting now clears it immediately instead, the same way
+    a real Master Key Card tap or the software override would."""
+    conn.execute(
+        "INSERT INTO rfid_events (rfid_tag_scanned, classification, alarm_activated) "
+        "VALUES ('TAG-RESURRECT', 'unauthorized', 1)"
+    )
+    conn.commit()
+
+    client, csrf, _ = as_admin
+    resp = update_alarm(client, csrf, enabled=False)
+    assert resp.status_code == 200
+
+    row = conn.execute(
+        "SELECT alarm_deactivated_at FROM rfid_events WHERE rfid_tag_scanned = 'TAG-RESURRECT'"
+    ).fetchone()
+    assert row["alarm_deactivated_at"] is not None
+
+    # Re-enabling afterward must not bring it back - the row is already
+    # cleared, not just hidden while the setting happens to be off.
+    resp = update_alarm(client, csrf, enabled=True)
+    assert resp.status_code == 200
+    from services.monitoring_service import get_alarm_status
+
+    assert get_alarm_status(conn)["active"] is False
+
+
 # # # THE GATE ITSELF: does disabling a feature actually block its blueprint? --
 
 

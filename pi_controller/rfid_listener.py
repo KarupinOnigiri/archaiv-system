@@ -85,10 +85,24 @@ def _handle_tag_detected(tag_id):
         # already told us to, so this timestamp doesn't exist until now.
         # Best-effort: a failed report here doesn't undo the alarm or need
         # a retry, it just means this one trial's activation-response-time
-        # data point is missing (see api_client's docstring).
+        # data point is missing (see api_client's docstring). Fired on its
+        # own daemon thread rather than awaited inline - this function runs
+        # on the same thread dual_reader.read_tags() calls back into for
+        # every tag, so blocking here on a network round-trip (up to
+        # api_client's own 5s timeout on a slow/flaky connection) would
+        # delay this thread getting back to reading the antenna, directly
+        # risking a missed/late read of the NEXT physical tag - exactly the
+        # detection-success-rate/response-time data this whole system
+        # exists to measure accurately.
         event_id = result.get("id")
         if event_id is not None:
-            api_client.report_alarm_relay_timing(event_id, int(time.time() * 1000))
+            timing_ms = int(time.time() * 1000)
+            threading.Thread(
+                target=api_client.report_alarm_relay_timing,
+                args=(event_id, timing_ms),
+                name="alarm-relay-timing-report",
+                daemon=True,
+            ).start()
     else:
         logger.info(f"Tag '{tag_id}' classified {classification} - no alarm action.")
 

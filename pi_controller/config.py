@@ -109,7 +109,7 @@ ALARM_RELAY_ACTIVE_HIGH = _get_bool("ALARM_RELAY_ACTIVE_HIGH", True)
 # lamp/buzzer too, instead of only clearing the database-side record while
 # the alarm keeps sounding. See gpio_relay.py's module docstring.
 #
-# That endpoint is itself rate-limited to 30/min (routes/monitoring.py) -
+# That endpoint is itself rate-limited to 90/min (routes/monitoring.py) -
 # 3.0s keeps this loop at 20/min, leaving headroom under the same-IP bucket
 # rather than sitting right at the ceiling.
 ALARM_SYNC_POLL_SECONDS = _get_float("ALARM_SYNC_POLL_SECONDS", 3.0)

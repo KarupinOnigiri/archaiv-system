@@ -156,6 +156,18 @@ def get_db_connection():
     if cached is not None and cached_path == DB_PATH:
         try:
             cached.execute("SELECT 1")
+            # Belt-and-suspenders against a previous request on this same
+            # thread having a bug that INSERTs/UPDATEs/DELETEs without a
+            # matching commit()/rollback() before returning. Before pooling,
+            # closing the connection silently discarded any such leftover
+            # transaction every time; now that the connection outlives a
+            # single request, one forgotten commit could otherwise bleed an
+            # uncommitted write (and the lock it holds) into the NEXT,
+            # unrelated request on this thread. A no-op when there's
+            # nothing pending, so this is free on the (overwhelmingly
+            # common) case where every request already commits/rollbacks
+            # correctly - it only ever matters as a safety net.
+            cached.rollback()
             return _PooledConnectionProxy(cached)
         except sqlite3.Error:
             # The real connection died underneath us (e.g. the process it

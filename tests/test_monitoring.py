@@ -371,6 +371,39 @@ def test_alarm_timing_is_a_no_op_for_a_non_alarm_event(client, conn, monkeypatch
     assert timing_resp.get_json() == {"updated": False}
 
 
+def test_alarm_timing_is_a_no_op_once_the_alarm_is_already_deactivated(client, conn, admin_id, asset_id, monkeypatch):
+    """The bug this guards against: deactivate_active_alarms() never resets
+    alarm_activated back to 0, it only sets alarm_deactivated_at - so a
+    late/delayed follow-up call from the Pi (a slow network round-trip)
+    landing AFTER a real Master Key Card tap already cleared the alarm
+    must not still match on alarm_activated=1 alone and overwrite timing
+    data for an incident that's already over."""
+    monkeypatch.setenv("RFID_LISTENER_KEY", LISTENER_KEY)
+    enable_monitoring(conn)
+    conn.execute("UPDATE staff SET rfid_id = 'ADMIN-CARD-TIMING' WHERE id = ?", (admin_id,))
+    conn.execute("UPDATE assets SET rfid_id = 'TAG-CLEARED-BEFORE-TIMING' WHERE id = ?", (asset_id,))
+    conn.commit()
+    resp = record_event(client, "TAG-CLEARED-BEFORE-TIMING")
+    event_id = resp.get_json()["id"]
+
+    # Cleared for real (Master Key Card tap) before the Pi's timing
+    # follow-up for this same event happens to arrive.
+    deactivate(client, "ADMIN-CARD-TIMING")
+
+    timing_resp = client.post(
+        f"/api/v1/rfid-events/{event_id}/alarm-timing",
+        json={"alarm_relay_activated_at_ms": 1_700_000_005_000},
+        headers={"X-RFID-Listener-Key": LISTENER_KEY},
+    )
+    assert timing_resp.status_code == 200
+    assert timing_resp.get_json() == {"updated": False}
+
+    row = conn.execute(
+        "SELECT alarm_relay_activated_at_ms FROM rfid_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    assert row["alarm_relay_activated_at_ms"] is None
+
+
 # # # ALARM DEACTIVATE (Master Key Card tap) -----------------------------------
 
 

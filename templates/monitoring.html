@@ -847,6 +847,21 @@ function renderRfidResponseChart(events) {
   });
 }
 
+// rfid_tag_scanned reaches this page from the public M2M detection endpoint
+// (routes/monitoring.py's /rfid-events, gated only by the shared
+// RFID_LISTENER_KEY, not a staff session) and is stored close to verbatim
+// (record_rfid_event only .strip()s it) - unlike everywhere else in this
+// app, which either uses .textContent for dynamic values or renders
+// through Jinja's own auto-escaping, this table builds raw HTML strings.
+// Anyone who can reach that M2M endpoint with the listener key could
+// otherwise plant an HTML/script payload as a "tag" and have it execute in
+// every admin/in_charge/tool_keeper's browser that opens this table.
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value);
+  return div.innerHTML;
+}
+
 function renderRfidResponseTable(events) {
   const el = document.getElementById('trend-rfid-response-table');
   if (events.length === 0) {
@@ -856,7 +871,7 @@ function renderRfidResponseTable(events) {
   const rows = events.slice(0, 25).map((e) => `
     <tr class="border-t border-base-200">
       <td class="py-1.5 text-sm whitespace-nowrap">${formatDetectedAtFull(e.detected_at)}</td>
-      <td class="py-1.5 text-sm font-mono">${e.rfid_tag_scanned}</td>
+      <td class="py-1.5 text-sm font-mono">${escapeHtml(e.rfid_tag_scanned)}</td>
       <td class="py-1.5 text-sm capitalize">${e.classification.replace('_', ' ')}</td>
       <td class="py-1.5 text-sm">${formatMs(e.ack_response_ms)}</td>
       <td class="py-1.5 text-sm">${e.alarm_activated ? formatMs(e.alarm_activation_ms) : '-'}</td>
