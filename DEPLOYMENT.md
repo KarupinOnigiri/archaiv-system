@@ -175,9 +175,18 @@ sudo apt-get update
 sudo apt-get install -y caddy
 ```
 
-Edit `deploy/Caddyfile`, replacing `<server-lan-ip-or-hostname>` with the
-actual address staff use to reach the app (an IP like `192.168.1.50`, or a
-hostname), then install it in place of Caddy's default config and restart:
+Edit `deploy/Caddyfile`, replacing `<server-lan-ip-or-hostname>` - **use the
+Pi's mDNS hostname (`hostname`.local, e.g. `toolroom-rpi.local`), not a raw
+LAN IP.** A raw IP silently breaks the moment the Pi's address changes for
+any reason (DHCP lease renewal, router reboot, or a mobile hotspot
+regenerating its whole subnet on restart) - Caddy keeps running, it's just
+bound to an address the Pi no longer has, so the app goes unreachable at
+the old address until someone finds the new one and edits this file by
+hand. The hostname form has no such failure mode - mDNS always resolves to
+whatever IP the Pi currently holds, so this only needs setting up once.
+`avahi-daemon` (the mDNS service this depends on) ships enabled by default
+on Raspberry Pi OS - see `deploy/Caddyfile`'s own comment for the check.
+Then install it in place of Caddy's default config and restart:
 
 ```bash
 sudo cp /opt/toolroom/deploy/Caddyfile /etc/caddy/Caddyfile

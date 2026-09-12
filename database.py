@@ -1,6 +1,7 @@
 from flask import request, jsonify
 import os
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +43,28 @@ else:
     import sqlite3
 
 
-def get_db_connection():
-    """Mag-open og bag-ong SQLite connection nga naa nay tanang Pi-tuned
-    PRAGMA na-apply na. Kani ra ang gina-gamit sa tibuok app, dili direct
-    sqlite3.
+def _open_new_connection():
+    """The real connection-opening logic, unconditionally creating a brand
+    new one - what get_db_connection() used to do unconditionally, before
+    pooling (below) was added. Still used directly for every call under
+    pytest, and as the thing the pool opens once per thread otherwise.
 
-    Returns: sqlite3.Connection nga row_factory=sqlite3.Row - close() sa
-    caller human gamiton."""
+    Returns: sqlite3.Connection nga row_factory=sqlite3.Row."""
     # Python-level wait for the connection lock, separate from PRAGMA busy_timeout below.
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
 
     if DB_ENCRYPTION_KEY:
         # Must run first - SQLCipher derives the cipher from this before anything else.
+        # This one line is the entire reason connection pooling exists below:
+        # SQLCipher's key derivation (PBKDF2, deliberately expensive to resist
+        # brute-forcing the key) measured ~365ms on this app's Pi 4 - paid
+        # again on EVERY new connection. A single page load opens more than
+        # one (the base.html context processor's own connection, plus the
+        # route's own), so opening a fresh connection per call/request was
+        # costing 700ms+ of pure connection setup on every navigation once
+        # DB_ENCRYPTION_KEY was turned on - unnoticeable before that, since a
+        # plain unencrypted SQLite connection is close to free to open.
         conn.execute(f"PRAGMA key = '{DB_ENCRYPTION_KEY}'")
 
     # These settings matter more on a Pi's slow SD card than on a dev machine.
@@ -70,6 +80,93 @@ def get_db_connection():
     # ~64MB cache per connection, sized for this app's Pi 4B 8GB target.
     conn.execute("PRAGMA cache_size = -65536")
     return conn
+
+
+# Thread-local, not a global dict - Waitress serves each request on one of a
+# fixed pool of worker threads (WAITRESS_THREADS), and a raw sqlite3.Connection
+# isn't safe to hand to two threads at once. Since only one request runs per
+# thread at a time, each thread owning and reusing exactly one connection is
+# both safe and exactly what avoids re-paying the SQLCipher cost above on
+# every request. Keyed by DB_PATH (not just "the" connection) so the rare
+# case of DB_PATH actually changing at runtime - which the test suite does
+# constantly via TOOLROOM_INSTANCE_DIR/monkeypatch, though pooling itself is
+# skipped entirely under pytest, see below - can never silently hand back a
+# connection open on the wrong file.
+_pool = threading.local()
+
+
+class _PooledConnectionProxy:
+    """Wraps a pooled, thread-owned connection so every one of this
+    codebase's existing `conn = get_db_connection(); try: ... finally:
+    conn.close()` call sites (there are hundreds) keeps working completely
+    unmodified - close() here just returns it to the pool instead of
+    actually closing the underlying connection, which is the entire point:
+    those call sites closing the real connection every time is exactly what
+    was forcing a fresh (expensive, see _open_new_connection) connection to
+    be opened on every single call. Everything else - execute, commit,
+    rollback, row_factory, the `with conn:` transaction protocol - passes
+    straight through to the real connection via attribute delegation."""
+
+    def __init__(self, real_conn):
+        object.__setattr__(self, "_real_conn", real_conn)
+
+    def close(self):
+        pass  # Intentionally not closing - see class docstring.
+
+    def __getattr__(self, name):
+        return getattr(self._real_conn, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._real_conn, name, value)
+
+    def __enter__(self):
+        return self._real_conn.__enter__()
+
+    def __exit__(self, *args):
+        return self._real_conn.__exit__(*args)
+
+
+def get_db_connection():
+    """The one function the whole app uses for a DB connection - never
+    sqlite3/sqlcipher3 directly.
+
+    Under pytest, always opens a genuinely fresh connection (pooling is
+    skipped entirely) - the test suite relies on being able to actually
+    close a connection and have the underlying file release cleanly
+    (TOOLROOM_INSTANCE_DIR points at a fresh temp dir per test; on Windows
+    especially, a file can't even be deleted while a connection to it is
+    still technically open, which a pooled "close() is a no-op" connection
+    would silently violate).
+
+    Outside pytest (the real app under Waitress), returns this thread's one
+    pooled connection - opening it fresh only the first time this thread
+    ever needs one (or if DB_PATH has changed since, which doesn't happen
+    in production but keeps the pool correct regardless). See
+    _PooledConnectionProxy for why every existing call site's own
+    conn.close() doesn't defeat this.
+
+    Returns: sqlite3.Connection (fresh, under pytest) or
+    _PooledConnectionProxy (reused, otherwise) - either way, callers keep
+    calling .close() when they're done exactly as before."""
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return _open_new_connection()
+
+    cached = getattr(_pool, "conn", None)
+    cached_path = getattr(_pool, "path", None)
+    if cached is not None and cached_path == DB_PATH:
+        try:
+            cached.execute("SELECT 1")
+            return _PooledConnectionProxy(cached)
+        except sqlite3.Error:
+            # The real connection died underneath us (e.g. the process it
+            # belonged to was somehow torn down) - fall through and open a
+            # replacement rather than handing back something broken.
+            pass
+
+    fresh = _open_new_connection()
+    _pool.conn = fresh
+    _pool.path = DB_PATH
+    return _PooledConnectionProxy(fresh)
 
 
 def _ensure_migrations_table(conn):

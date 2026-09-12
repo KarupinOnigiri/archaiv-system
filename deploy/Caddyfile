@@ -15,8 +15,8 @@
 #
 # Setup (see DEPLOYMENT.md's HTTPS section for the full walkthrough):
 #   1. Install Caddy: https://caddyserver.com/docs/install
-#   2. Replace <server-lan-ip-or-hostname> below with the address staff
-#      actually use to reach this app (e.g. 192.168.1.50, or a hostname).
+#   2. Replace <server-lan-ip-or-hostname> below - see the strong
+#      recommendation just below on which kind of value to use here.
 #   3. caddy run --config /opt/toolroom/deploy/Caddyfile
 #      (or install as a service -- see Caddy's own docs for your OS)
 #   4. Set COOKIE_SECURE=1 in .env once staff are reaching the app through
@@ -26,6 +26,24 @@
 # this -- admins see a one-time "not secure" warning to click through in the
 # browser (it's self-signed, not from a public CA), then it's normal after
 # that. No cert files to create or manage by hand.
+#
+# Use the Pi's mDNS hostname here (e.g. toolroom-rpi.local - `hostname`
+# on the Pi, then add .local), NOT a raw LAN IP, unless you've set up a
+# real DHCP reservation for the Pi on your router (and even then, the
+# hostname still works and needs zero maintenance). avahi-daemon (mDNS)
+# ships enabled by default on Raspberry Pi OS - `systemctl is-active
+# avahi-daemon` to confirm. The IP-based alternative silently breaks the
+# moment the Pi's IP changes for ANY reason (a DHCP lease renewal, a
+# router reboot, or - worst case - a mobile hotspot regenerating its
+# entire subnet on restart, which is a real, learned-the-hard-way failure
+# mode if this Pi ever runs off one instead of a proper router) - Caddy
+# keeps serving HTTPS fine at that point, it's just still bound to an
+# address the Pi no longer has, and every browser/bookmark pointed at the
+# old IP goes dead until someone notices, finds the new IP, and edits this
+# file by hand. The hostname form has no such failure mode: mDNS always
+# resolves to whatever IP the Pi currently holds, so this file (and the
+# Pi's self-signed cert, whose SAN is generated from whatever's on the
+# line below) never needs touching again after the one-time setup.
 
 <server-lan-ip-or-hostname> {
 	tls internal
