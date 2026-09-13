@@ -48,5 +48,13 @@
 <server-lan-ip-or-hostname> {
 	tls internal
 
+	# Compresses HTML/CSS/JS responses in transit - meaningful over a
+	# bandwidth-constrained link (a phone hotspot, a weak WiFi signal),
+	# since this app's static output.css/ui.js are large, highly
+	# compressible text files. Caddy doesn't enable this by default; it has
+	# to be requested explicitly. Purely a transport-layer optimization -
+	# doesn't touch app behavior, response content, or caching at all.
+	encode gzip zstd
+
 	reverse_proxy 127.0.0.1:5000
 }
