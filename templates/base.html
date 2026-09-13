@@ -2471,7 +2471,13 @@
   };
 </script>
 <script src="{{ url_for('static', filename='js/offline_queue.js') }}"></script>
-<script src="{{ asset_url('js/ui.js') }}"></script>
+<!-- ui.min.js is a build artifact, not the source - edit static/js/ui.js
+     itself, then regenerate this file (same input/output split as
+     input.css -> output.css above app.py). Rebuild with:
+       npx terser static/js/ui.js -c -m -o static/js/ui.min.js --source-map "url='ui.min.js.map'"
+     ui.min.js.map ships alongside it so browser devtools can still map
+     back to readable source/line numbers when debugging in production. -->
+<script src="{{ asset_url('js/ui.min.js') }}"></script>
 
 <!-- Made by Artcin/Karupin/artkaru -->
 </body>
