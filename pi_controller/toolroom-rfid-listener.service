@@ -7,7 +7,19 @@
 # Mirrors the main app's own toolroom.service (see wsgi.py's docstring) --
 # runs as a separate unit since it's a separate process.
 Description=Tool-room RFID/alarm headless controller
-After=network.target pcscd.service
+# After=toolroom.service (not Requires=/BindsTo=) is deliberately a soft
+# ordering hint, not a hard dependency: this process's own retry logic
+# (api_client.py, _sync_alarm_relay's poll loop) already tolerates the app
+# being briefly unreachable at any point during the process's lifetime, so
+# a failed/delayed toolroom.service shouldn't block this one from starting
+# at all - it would just keep retrying and connect once the app comes up,
+# same as it already does for a transient network hiccup later on. The
+# ordering only exists to close the ~10s window at boot where, without it,
+# systemd could start both units in either order and this one's very first
+# few sync-loop polls would hit "connection refused" before the app was
+# ready - harmless (self-recovers immediately, no missed alarm/detection
+# during a machine's own boot sequence), but pure log noise worth avoiding.
+After=network.target pcscd.service toolroom.service
 Wants=pcscd.service
 
 [Service]
