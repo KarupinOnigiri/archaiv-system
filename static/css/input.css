@@ -122,6 +122,49 @@
   --color-error-content: #380a09;
 }
 
+/* Archivo (weights 600/700/800, latin subset only - covers the wordmark
+   "Archaív" and any other Latin-alphabet text that might use it), the three
+   weights login.html/setup.html/base.html actually request - self-hosted
+   rather than pulled from Google Fonts at request time (these templates
+   used to each <link> it from fonts.googleapis.com), so the app has zero
+   runtime dependency on internet access: the Pi's own LAN has no path to
+   the public internet in the deployed setup, and a CDN font request there
+   would just hang/fail on every page load instead of falling back
+   invisibly. Files fetched once from Google Fonts' CSS2 API and committed
+   under static/fonts/ - see static/fonts/VENDORED.md for how to
+   re-fetch/update them.
+
+   No `unicode-range` restriction here (Google's own CSS2 response scopes
+   each file to one with `unicode-range: U+0000-00FF, ...`) - deliberately
+   dropped: Tailwind's minifier (lightningcss) mangles that exact range
+   into invalid `U+??`, silently breaking the whole @font-face rule and
+   making every weight fail to load (confirmed via document.fonts - status
+   "error" on the weight actually in use). Safe to drop entirely rather
+   than work around it: each of these files is the *only* face for its
+   weight now (no separate latin/latin-ext/vietnamese subsets vendored),
+   so there is nothing left for unicode-range to disambiguate between. */
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/archivo-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/archivo-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("../fonts/archivo-800.woff2") format("woff2");
+}
+
 /* Plain OS-native font stack app-wide, instead of Tailwind's default
    font-sans (which leads with "ui-sans-serif" and pulls in emoji-font
    fallbacks) - every theme/mode shares this, so it's set once on body
