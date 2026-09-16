@@ -1,0 +1,121 @@
+<title>Architecture Guide</title>
+<link rel="stylesheet" href="shared.css">
+<div class="layout">
+<nav class="toc">
+  <div class="brand">Archaív</div>
+  <div class="doctype">Architecture Guide</div>
+  <a href="#overview">System Overview</a>
+  <a href="#processes">Two-Process Architecture</a>
+  <a href="#backend">Backend Stack</a>
+  <a href="#frontend">Frontend Stack</a>
+  <a href="#hardware">Hardware-Software Interface</a>
+  <a href="#alarm-circuit">Alarm Circuit</a>
+  <a href="#security">Security</a>
+  <a href="#deployment">Deployment &amp; Network</a>
+  <a href="#timing">Response-Time Data Collection</a>
+  <a href="#schema">Database Overview</a>
+  <a href="#dataflow">Data Flow: Unauthorized Event</a>
+</nav>
+<main>
+  <div class="doctitle">Archaív &middot; Architecture Guide</div>
+  <h1>How the System Is Built</h1>
+  <p class="subtitle">A technical reference for anyone maintaining, extending, or auditing the system.</p>
+
+  <h2 id="overview">System Overview</h2>
+  <p>Archaív is composed of two independent, cooperating software processes running on the same Raspberry Pi:</p>
+  <ul>
+    <li><strong>The main web application</strong> - a Flask app that staff and members interact with through a browser, handling borrowing/returning, account management, reporting, and the alarm's software-side state.</li>
+    <li><strong>The Pi controller</strong> - a separate headless process that talks directly to the fixed UHF RFID Reader Antenna, the HF/NFC Reader/Writer, and the GPIO-driven alarm relay.</li>
+  </ul>
+  <p>The two processes communicate over a small set of authenticated HTTP endpoints protected by a shared secret key (<code>RFID_LISTENER_KEY</code>), so RFID/alarm hardware logic stays fully separated from the transaction-management logic, while the main app remains the single source of truth for classification and alarm state.</p>
+
+  <h2 id="processes">Two-Process Architecture</h2>
+  <table>
+    <tr><th></th><th>Main Application</th><th>Pi Controller</th></tr>
+    <tr><td>Runs where</td><td>Same Raspberry Pi</td><td>Same Raspberry Pi</td></tr>
+    <tr><td>Entry point</td><td><code>wsgi.py</code></td><td><code>python -m pi_controller.rfid_listener</code></td></tr>
+    <tr><td>Talks to</td><td>Staff browsers, the database</td><td>UHF antenna, HF/NFC reader, GPIO relay, and the main app (over HTTP)</td></tr>
+    <tr><td>systemd unit</td><td><code>toolroom.service</code></td><td><code>toolroom-rfid-listener.service</code></td></tr>
+  </table>
+
+  <h2 id="backend">Backend Stack</h2>
+  <p>Implemented primarily in Python 3, using Flask as the web framework and Jinja2 for server-side templating. In production the app is served through Waitress (a pure-Python WSGI server) rather than Flask's own dev server, for stability under continuous, unattended, multi-day operation.</p>
+  <p>Data is stored in SQLite with Write-Ahead Logging enabled, so reads aren't blocked while a write is in progress - relevant given the mix of frequent RFID-detection writes and simultaneous staff browser use. The database can optionally be encrypted at rest via SQLCipher (AES-256).</p>
+  <p>Because deriving the SQLCipher encryption key is comparatively expensive per connection, the app maintains a small pool of already-unlocked connections, one per active thread, instead of opening a fresh connection per request.</p>
+  <p>Scheduled/background tasks (automatic backups, expired-session cleanup, overdue-member sweeps, maintenance-due notifications) run inside the same application process via APScheduler.</p>
+
+  <h2 id="frontend">Frontend Stack</h2>
+  <p>The interface uses HTMX to update sections of a page directly from the server without a full reload, paired with vanilla JavaScript for interactive behavior (live-updating tables, keyboard shortcuts, modals) and Chart.js for the Reports and Monitoring Trends visualizations. Styling is Tailwind CSS. This combination was chosen for its low resource footprint on Raspberry Pi-class hardware, avoiding a full single-page-app framework's overhead while still feeling responsive.</p>
+
+  <h2 id="hardware">Hardware-Software Interface</h2>
+  <p>On the Pi controller side, several hardware interfaces work together:</p>
+  <ul>
+    <li>The <strong>gpiozero</strong> library (via its <code>lgpio</code> pin-factory backend) drives the GPIO-connected relay module that energizes the alarm.</li>
+    <li><strong>pyscard</strong> (PC/SC standard) communicates with the ACS ACR122U HF/NFC Reader/Writer for Master Key Card verification.</li>
+    <li>The fixed S4A UHF-202406 antenna communicates over Ethernet using its own RCP command protocol, rather than USB keyboard-emulation mode, which proved unreliable for continuous, unattended reading during development.</li>
+    <li>The Pi controller reports every detection and card tap to the main app over HTTP via the Python <code>requests</code> library; shared configuration (including the authentication key) is managed through <code>python-dotenv</code> environment files.</li>
+  </ul>
+
+  <h2 id="alarm-circuit">Alarm Circuit</h2>
+  <p>The alarm relay is wired to Raspberry Pi GPIO 18 (BCM numbering) through an intermediate <strong>2N2222 NPN transistor</strong> stage, rather than driving the relay module's trigger input directly:</p>
+  <ol>
+    <li>GPIO 18's 3.3V logic-level output switches the transistor.</li>
+    <li>The transistor supplies the 5V signal the relay module's trigger side actually requires.</li>
+    <li>The relay closes on its isolated, higher-current output side to switch the 12V Warning Lamp with Buzzer.</li>
+  </ol>
+  <p>This both steps the Pi's 3.3V signal up to the voltage the relay expects, and keeps the Pi's GPIO circuitry electrically isolated from the relay's own switching current.</p>
+  <div class="callout tip">
+    <strong>Verified on real hardware</strong>
+    Because the relay itself holds no state of its own, its behavior after a restart depends entirely on a background polling loop that reconciles it against the app's current alarm state. This was verified by triggering a live alarm, rebooting the Pi mid-alarm, and confirming the relay re-energized automatically on restart, then correctly cleared on a real Master Key Card tap.
+  </div>
+
+  <h2 id="security">Security</h2>
+  <p>Several layers protect the system independently of one another:</p>
+  <ul>
+    <li>Staff passwords are hashed, never stored in plaintext; every state-changing action is gated by role-based access control.</li>
+    <li>CSRF tokens are required on state-changing requests.</li>
+    <li>Machine-to-machine endpoints used by the Pi controller authenticate with a separate shared secret key (not a staff login) and are rate-limited.</li>
+    <li>The database can optionally be encrypted at rest via SQLCipher (AES-256); independently, file permissions on the database and config file are restricted to the app's own account.</li>
+    <li>Behind a reverse proxy, the deployment configures trusted proxy hops so the rate limiter and audit log attribute requests to the real client, not the proxy's own address.</li>
+    <li>RFID tag identifiers are escaped before rendering on the Monitoring page, preventing a crafted tag value from executing as script content.</li>
+    <li>Disabling the alarm feature in System Settings immediately clears any active alarm, rather than leaving it stuck and unreachable through normal deactivation.</li>
+  </ul>
+
+  <h2 id="deployment">Deployment &amp; Network</h2>
+  <p>The system's deployment and network infrastructure combines several elements:</p>
+  <ul>
+    <li>Both processes run as persistent Linux <strong>systemd services</strong>, starting on boot and restarting automatically on failure.</li>
+    <li>The web app sits behind <strong>Caddy</strong>, a reverse proxy that terminates HTTPS using a locally generated, self-signed certificate authority, so staff never see an unencrypted login page.</li>
+    <li>The Pi is reached via its <strong>mDNS hostname</strong> (resolved through <code>avahi</code>) rather than a fixed IP, so it stays reachable even if its network address changes.</li>
+    <li>Caddy compresses HTML/CSS/JS responses in transit (gzip/zstd), and the compiled CSS/JS are separately minified - both reducing data transferred to a staff member's browser.</li>
+    <li>The Pi controller's systemd service starts after the main app's - a soft ordering hint, not a hard dependency, closing a brief startup-race window.</li>
+  </ul>
+
+  <h2 id="timing">Response-Time Data Collection</h2>
+  <p>The system captures three millisecond-precision timestamps for every RFID detection event: the instant the antenna reports the tag, the instant the main app finishes processing it, and (for alarm-triggering events) the instant the relay is actually energized. A dedicated Monitoring Trends view presents this as summary statistics, a per-event time-series chart, a raw event log, and a CSV export.</p>
+
+  <h2 id="schema">Database Overview</h2>
+  <p>Key tables (SQLite, migrated incrementally via numbered <code>.sql</code> files in <code>migrations/</code>):</p>
+  <table>
+    <tr><th>Table</th><th>Holds</th></tr>
+    <tr><td><code>staff</code></td><td>Tool Keeper / In Charge / Admin accounts, credentials, roles.</td></tr>
+    <tr><td><code>members</code></td><td>Trainees/trainers eligible to borrow, including restriction status.</td></tr>
+    <tr><td><code>assets</code></td><td>Tools/equipment - identification, category, status, condition, RFID tag ID.</td></tr>
+    <tr><td><code>transactions</code></td><td>Borrow/return records linking a member to an asset.</td></tr>
+    <tr><td><code>rfid_events</code></td><td>Every RFID detection at the monitored exit, with classification and timestamps.</td></tr>
+    <tr><td><code>app_settings</code></td><td>System-wide configuration (feature flags, alarm behavior, ID prefixes).</td></tr>
+    <tr><td><code>schema_migrations</code></td><td>Tracks which migration files have already been applied.</td></tr>
+  </table>
+
+  <h2 id="dataflow">Data Flow: An Unauthorized Event, Start to Finish</h2>
+  <ol>
+    <li>A tagged tool passes the fixed UHF antenna at the monitored exit.</li>
+    <li>The Pi controller's background listener detects the tag and POSTs it to the main app's <code>/api/v1/rfid-events</code> endpoint (authenticated via the shared secret key).</li>
+    <li>The main app looks up the tag against <code>assets</code>. If the matching asset has no active borrowing record, the event is classified <strong>unauthorized</strong> and recorded in <code>rfid_events</code>.</li>
+    <li>The app's response tells the Pi controller to activate the alarm; the Pi controller calls <code>gpiozero</code> to energize the relay immediately.</li>
+    <li>A background polling loop on the Pi controller separately re-checks the app's alarm status every few seconds, so a software-side dismissal (or a reboot mid-alarm) still keeps the physical relay in sync with the app's actual state.</li>
+    <li>An Admin taps the Master Key Card at the HF/NFC reader; the Pi controller POSTs this to <code>/api/v1/rfid-events/deactivate</code>, the app clears the active alarm, and the Pi controller de-energizes the relay.</li>
+  </ol>
+</main>
+</div>
+<script src="shared.js"></script>

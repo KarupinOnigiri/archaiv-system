@@ -1,0 +1,353 @@
+<title>User Manual</title>
+<link rel="stylesheet" href="shared.css">
+<div class="layout">
+<nav class="toc">
+  <div class="brand">Archaív</div>
+  <div class="doctype">User Manual</div>
+  <a href="#intro">Introduction</a>
+  <a href="#roles">Staff Roles</a>
+  <a href="#login">Logging In</a>
+  <a href="#dashboard">The Dashboard</a>
+  <a href="#borrow">Borrowing a Tool</a>
+  <a href="#return">Returning a Tool</a>
+  <a href="#inventory">Managing Inventory</a>
+  <a href="#members">Managing Members</a>
+  <a href="#staffpage">Managing Staff</a>
+  <a href="#approvals">Approvals</a>
+  <a href="#reservations">Reservations</a>
+  <a href="#monitoring">RFID Monitoring &amp; Alarms</a>
+  <a href="#reports">Reports</a>
+  <a href="#barcodes">Printing Barcode Labels</a>
+  <a href="#settings">System Settings</a>
+  <a href="#auditlog">Activity Log</a>
+  <a href="#notifications">Notifications</a>
+  <a href="#feedback">Feedback</a>
+  <a href="#help">Help</a>
+  <a href="#accountmenu">Your Account Menu</a>
+  <a href="#accountmenu-myaccount" class="h2">My Account</a>
+  <a href="#accountmenu-settings" class="h2">Settings &amp; Privacy</a>
+  <a href="#accountmenu-display" class="h2">Display &amp; Accessibility</a>
+  <a href="#accountmenu-feedback" class="h2">Give Feedback</a>
+  <a href="#accountmenu-logout" class="h2">Logging Out</a>
+  <a href="#shortcuts">Keyboard Shortcuts</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+</nav>
+<main>
+  <div class="doctitle">Archaív &middot; User Manual</div>
+  <h1>Day-to-Day Guide for Tool Room Staff</h1>
+  <p class="subtitle">How to use the RFID &amp; barcode-enabled tool monitoring system - for Tool Keepers, In Charge staff, and Admins.</p>
+
+  <h2 id="intro">Introduction</h2>
+  <p>Archaív replaces the manual logbook process in the EIM tool room with an automated, session-based workflow: barcode scans record who borrowed or returned what, while a fixed RFID antenna at the exit independently watches for tagged tools leaving without an authorized transaction, triggering a physical alarm when it sees one.</p>
+
+  <h2 id="roles">Staff Roles</h2>
+  <p>The system has three staff roles, each with more access than the last:</p>
+  <table>
+    <tr><th>Role</th><th>Can do</th></tr>
+    <tr><td><strong>Tool Keeper</strong></td><td>Scan borrower/tool barcodes, process checkouts and returns, submit unrestriction requests for members.</td></tr>
+    <tr><td><strong>In Charge</strong></td><td>Everything a Tool Keeper can, plus view Reports, access System Settings, directly lift a member's restriction, and approve or deny Tool Keeper-submitted unrestriction requests.</td></tr>
+    <tr><td><strong>Admin</strong></td><td>Everything In Charge can, plus manage staff accounts, database backups, permanent deletion, feedback resolution, and initial system setup. Only Admins hold the Master Key Card used to clear alarms.</td></tr>
+  </table>
+
+  <h2 id="login">Logging In</h2>
+  <p>Open the app in a browser on the workstation and enter your username or barcode ID, then your password.</p>
+  <figure>
+    <img src="assets/01-login-username.png" alt="Username entry screen">
+    <figcaption>Step 1 - enter your username or barcode ID.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/02-login-password.png" alt="Password entry screen">
+    <figcaption>Step 2 - enter your password to finish signing in.</figcaption>
+  </figure>
+  <div class="callout tip">
+    <strong>Admin login at the workstation</strong>
+    Admins can also authenticate using the UHF RFID Reader/Writer together with a PIN, instead of typing a password. Any staff member can also opt in to a barcode + PIN login as a faster alternative to typing a password each time - enable it from your account menu.
+  </div>
+
+  <h2 id="dashboard">The Dashboard</h2>
+  <p>The Dashboard is the home screen after logging in - a snapshot of the tool room's current state and quick shortcuts to the most common actions.</p>
+  <figure>
+    <img src="assets/03-dashboard.png" alt="Dashboard">
+    <figcaption>Total assets, availability, active loans, overdue items, and quick-action buttons for Checkout, Return, Add Member, and Add Asset.</figcaption>
+  </figure>
+
+  <h2 id="borrow">Borrowing a Tool</h2>
+  <p>From the Dashboard or the <strong>Borrow &amp; Return</strong> page, click <strong>Checkout</strong>:</p>
+  <div class="step"><div class="num">1</div><div class="body"><h3>Scan or enter the member's barcode</h3><p>This identifies who's borrowing and confirms they're not currently restricted.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="body"><h3>Scan the requested tool(s)</h3><p>Each tool is added to the checkout session as it's scanned.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="body"><h3>Set the due date and confirm</h3><p>Once confirmed, the tools are recorded as borrowed and the checkout session closes.</p></div></div>
+  <figure>
+    <img src="assets/17-checkout-modal.png" alt="New Checkout dialog">
+    <figcaption>The New Checkout dialog - scan the member's barcode to begin.</figcaption>
+  </figure>
+
+  <h2 id="return">Returning a Tool</h2>
+  <p>From <strong>Borrow &amp; Return</strong>, click <strong>Return</strong>, then:</p>
+  <ol>
+    <li>Scan the returned tool's barcode together with the borrower's barcode - the system confirms a matching open loan exists.</li>
+    <li>Record the tool's condition (functional, damaged, or disposed).</li>
+    <li>Complete the return. The transaction is marked returned and the tool's status updates automatically.</li>
+  </ol>
+  <figure>
+    <img src="assets/31-return-modal.png" alt="Return dialog">
+    <figcaption>The Return dialog.</figcaption>
+  </figure>
+
+  <h2 id="inventory">Managing Inventory</h2>
+  <p>The <strong>Inventory</strong> page lists every asset with its category, quantity, status, condition, and barcode - searchable and filterable by category, condition, or status.</p>
+  <figure>
+    <img src="assets/04-assets.png" alt="Inventory Summary page">
+    <figcaption>Inventory Summary - total, available, borrowed, and items needing attention (maintenance/overdue).</figcaption>
+  </figure>
+  <p>Use <strong>Add New Item</strong> to register a new tool, or the row actions menu to edit or archive an existing one. Tags themselves are written separately with RFIDDemo.exe (see Provisioning RFID Tags in the Documentation) - once a tag is written, enter its ID into the asset's RFID Tag ID field here.</p>
+  <figure>
+    <img src="assets/30-add-asset-modal.png" alt="Add New Item dialog">
+    <figcaption>The Add New Item dialog.</figcaption>
+  </figure>
+  <div class="callout tip">
+    <strong>Two kinds of inventory items</strong>
+    Serialized assets (one row = one physical tool with its own barcode/RFID tag) are what most of this manual describes. The system also supports consumable stock items (e.g. "50x safety goggles") tracked by quantity instead of by individual unit, with a reorder threshold that flags low stock - useful for supplies that aren't individually tagged.
+  </div>
+  <p>Assets can also be scheduled for preventive maintenance, either by a fixed date or a usage-interval (e.g. every N checkouts). When an item comes due, it's automatically flagged on the Dashboard's "Maintenance Due" card and a notification is created.</p>
+
+  <h2 id="members">Managing Members</h2>
+  <p>The <strong>Members</strong> page tracks trainees and trainers eligible to borrow tools, including their current restriction status.</p>
+  <figure>
+    <img src="assets/05-members.png" alt="Members page">
+  </figure>
+  <p>A member's account is automatically restricted when a loan becomes overdue or a returned tool is logged as damaged. Lifting a restriction requires either a Tool Keeper's unrestriction request (approved by In Charge or Admin) or a direct lift by In Charge/Admin.</p>
+  <figure>
+    <img src="assets/29-add-member-modal.png" alt="Add Member dialog">
+    <figcaption>The Add Member dialog.</figcaption>
+  </figure>
+
+  <h2 id="staffpage">Managing Staff</h2>
+  <p>Admins manage staff accounts (creating, editing, deactivating, reactivating) from the <strong>Staff</strong> page.</p>
+  <figure>
+    <img src="assets/06-staff.png" alt="Staff page">
+  </figure>
+  <figure>
+    <img src="assets/32-add-staff-modal.png" alt="Add Staff dialog">
+    <figcaption>The Add Staff dialog.</figcaption>
+  </figure>
+
+  <h2 id="approvals">Approvals</h2>
+  <p>In Charge and Admin review two kinds of pending requests here: member unrestriction requests submitted by Tool Keepers, and admin-deactivation requests.</p>
+  <figure>
+    <img src="assets/12-requests.png" alt="Approvals page">
+  </figure>
+
+  <h2 id="reservations">Reservations</h2>
+  <p>Staff or members can reserve a tool ahead of time so it's held rather than checked out by someone else in the meantime.</p>
+  <figure>
+    <img src="assets/13-reservations.png" alt="Reservations page">
+  </figure>
+
+  <h2 id="monitoring">RFID Monitoring &amp; Alarms</h2>
+  <p>The fixed UHF RFID antenna at the tool room exit continuously watches for tagged tools. Every detection is classified automatically:</p>
+  <ul>
+    <li><strong>Authorized</strong> - the tool has an active borrowing record. No alarm.</li>
+    <li><strong>Unauthorized</strong> - the tool is tagged but has no active borrowing record. <strong>The alarm activates.</strong></li>
+    <li><strong>Unknown tag</strong> - the tag doesn't match any registered tool. Logged, but does not alarm.</li>
+  </ul>
+  <figure>
+    <img src="assets/08-monitoring.png" alt="Monitoring page">
+    <figcaption>The Monitoring page shows current alarm status and a searchable, filterable log of every detection event. A "Trends" tab shows response-time statistics and charts.</figcaption>
+  </figure>
+  <div class="callout warn">
+    <strong>Clearing an active alarm</strong>
+    The intended way to clear an alarm is an Admin tapping the physical Master Key Card at the HF/NFC reader in the tool room - this requires the Admin to be physically present at the site of the alert. If the reader itself is unavailable, an Admin or In Charge can dismiss it in software instead (System &gt; Alarm) as a fallback, which also silences the physical buzzer/lamp.
+  </div>
+
+  <h2 id="reports">Reports</h2>
+  <p>Transaction history, asset utilization, and overdue summaries, exportable for record-keeping.</p>
+  <figure>
+    <img src="assets/09-reports.png" alt="Reports page">
+  </figure>
+
+  <h2 id="barcodes">Printing Barcode Labels</h2>
+  <p>Generate and print CODE128 barcode labels for members and assets directly from the browser - no external label printer software needed.</p>
+  <figure>
+    <img src="assets/10-barcodes.png" alt="Barcode Labels page">
+  </figure>
+  <ol>
+    <li>Switch between the Inventory and Members tabs, then check the items you want labels for - search narrows the list first if there are many.</li>
+    <li>Click <strong>Generate Labels</strong> to open the Label preview dialog, which lays out a barcode card for each item you selected.</li>
+    <li>Pick a <strong>Label Size</strong> - Small, Regular, or Large - at the bottom of the dialog. This only changes the size printed on the PDF; the on-screen preview cards stay the same size no matter which one is selected.</li>
+    <li>Click <strong>Preview PDF</strong> to see the exact print layout (with cut guides) before saving, then <strong>Download PDF</strong>.</li>
+  </ol>
+  <figure>
+    <img src="assets/33-barcode-label-preview-modal.png" alt="Label preview dialog">
+    <figcaption>The Label preview dialog - one barcode card per selected item, with the Label Size picker along the bottom.</figcaption>
+  </figure>
+
+  <h2 id="settings">System Settings</h2>
+  <p>In Charge and Admin can configure system-wide options here - feature toggles (including the Monitoring/alarm feature itself), alarm behavior, ID-prefix formats, and more.</p>
+  <figure>
+    <img src="assets/11-system-settings.png" alt="System Settings page">
+  </figure>
+
+  <h2 id="auditlog">Activity Log</h2>
+  <p>A full audit trail of state-changing actions across the system - who did what, and when.</p>
+  <figure>
+    <img src="assets/14-audit-log.png" alt="Activity Log page">
+  </figure>
+
+  <h2 id="notifications">Notifications</h2>
+  <p>In-app alerts for things needing attention. Notifications are created automatically for:</p>
+  <ul>
+    <li>Upcoming or overdue loan due dates</li>
+    <li>Assets due (or nearly due) for preventive maintenance</li>
+    <li>New unrestriction requests, and their approval/denial</li>
+    <li>New admin-deactivation requests, and their approval/denial</li>
+    <li>Reservations that get cancelled</li>
+    <li>New feedback submissions, and staff responses to feedback you submitted</li>
+  </ul>
+  <figure>
+    <img src="assets/15-notifications.png" alt="Notifications page">
+  </figure>
+
+  <h2 id="feedback">Feedback</h2>
+  <p>Any staff member can report a bug, suggest an idea, or leave other feedback directly from inside the app - including attaching a screenshot. Admins review and resolve these from the Feedback page, and the submitter is notified once it's addressed.</p>
+  <figure>
+    <img src="assets/18-feedback.png" alt="Feedback page">
+  </figure>
+
+  <h2 id="help">Help</h2>
+  <p>A built-in Help page with guidance for using the system, reachable from the sidebar at any time.</p>
+  <figure>
+    <img src="assets/19-help.png" alt="Help page">
+  </figure>
+  <p>A separate, shorter Help dialog is also reachable from the account menu - a quick FAQ (checking out an item, unrestricting a member, resetting a password, filing feedback) plus buttons straight to the full Help page and the keyboard-shortcuts panel.</p>
+  <figure>
+    <img src="assets/23-help-support-modal.png" alt="Help dialog">
+    <figcaption>The Help dialog, reachable from anywhere via the account menu.</figcaption>
+  </figure>
+
+  <h2 id="accountmenu">Your Account Menu</h2>
+  <p>Click your name at the bottom of the sidebar to open the account menu, which holds every personal setting: My Account, Settings &amp; Privacy, Help, Keyboard Shortcuts, Display &amp; Accessibility, Give Feedback, and Log Out.</p>
+  <figure>
+    <img src="assets/20-account-menu.png" alt="Account menu">
+    <figcaption>The account menu, opened from the sidebar.</figcaption>
+  </figure>
+
+  <h3 id="accountmenu-myaccount">My Account</h3>
+  <p>Your profile card: role, barcode ID, type (trainee/trainer/staff), department, batch, account status, and when you last signed in. From here you can:</p>
+  <ul>
+    <li><strong>Change your profile photo</strong> - drag and drop, paste an image, or pick a file (JPG, PNG, or WebP, up to 5MB).</li>
+    <li><strong>Change your password</strong> - opens a dedicated dialog requiring your current password.</li>
+    <li><strong>Enable, disable, or change your Barcode + PIN login</strong> - a faster sign-in that scans your barcode, then asks for a short PIN instead of typing your full password each time.</li>
+  </ul>
+  <figure>
+    <img src="assets/21-my-account-modal.png" alt="My Account dialog">
+    <figcaption>The My Account dialog.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/28-change-password-modal.png" alt="Change Password dialog">
+    <figcaption>The Change Password dialog, reached from My Account.</figcaption>
+  </figure>
+
+  <h3 id="accountmenu-settings">Settings &amp; Privacy</h3>
+  <p>Controls which notifications you receive and how long toast pop-ups stay on screen:</p>
+  <ul>
+    <li>Due-soon reminders</li>
+    <li>Overdue alerts</li>
+    <li>Unrestriction request updates</li>
+    <li>Toast display duration (2-15 seconds, adjustable)</li>
+  </ul>
+  <figure>
+    <img src="assets/22-settings-privacy-modal.png" alt="Settings &amp; Privacy dialog">
+    <figcaption>The Settings &amp; Privacy dialog.</figcaption>
+  </figure>
+
+  <h3 id="accountmenu-display">Display &amp; Accessibility</h3>
+  <p>Controls the app's visual theme, separate from notification settings:</p>
+  <ul>
+    <li><strong>Theme mode</strong> - Mixed (follows your system setting), Light, or Dark.</li>
+    <li><strong>Notification style</strong> - Light, Dark, or Material Design toast styling.</li>
+  </ul>
+  <figure>
+    <img src="assets/25-display-accessibility-modal.png" alt="Display &amp; Accessibility dialog">
+    <figcaption>The Display &amp; Accessibility dialog.</figcaption>
+  </figure>
+
+  <h3 id="accountmenu-feedback">Give Feedback</h3>
+  <p>The same feedback form described earlier is also reachable directly from the account menu.</p>
+  <figure>
+    <img src="assets/26-give-feedback-modal.png" alt="Give Feedback dialog">
+    <figcaption>The Give Feedback dialog.</figcaption>
+  </figure>
+
+  <h3 id="accountmenu-logout">Logging Out</h3>
+  <p>Log Out asks for confirmation before ending your session, so an accidental click doesn't sign you out mid-task.</p>
+  <figure>
+    <img src="assets/27-logout-confirm-modal.png" alt="Log Out confirmation dialog">
+    <figcaption>The Log Out confirmation dialog.</figcaption>
+  </figure>
+
+  <h2 id="shortcuts">Keyboard Shortcuts</h2>
+  <p>Press <code>?</code> anywhere in the app to open the searchable keyboard-shortcuts panel. Shortcuts are disabled while typing in a text field, and while a dialog is open (Esc still works to close it). Every shortcut below is also filtered by your role and by which features are turned on for your deployment - you'll only ever see the ones that apply to you.</p>
+  <figure>
+    <img src="assets/24-keyboard-shortcuts-modal.png" alt="Keyboard Shortcuts panel">
+    <figcaption>The Keyboard Shortcuts panel - searchable, and grouped by page.</figcaption>
+  </figure>
+
+  <h3>Everywhere</h3>
+  <table>
+    <tr><th>Shortcut</th><th>Action</th></tr>
+    <tr><td><code>?</code></td><td>Open the keyboard-shortcuts panel</td></tr>
+    <tr><td><code>Esc</code></td><td>Close the open dialog</td></tr>
+    <tr><td><code>Ctrl+E</code></td><td>Collapse / expand the sidebar</td></tr>
+    <tr><td><code>Alt+Shift+&lt;letter&gt;</code></td><td>Jump straight to a sidebar page (D-Dashboard, I-Inventory, M-Members, B-Borrow &amp; Return, A-Approvals, R-Reports, K-Staff, O-Monitoring, V-Reservations, L-Activity Log, F-Feedback, Y-System)</td></tr>
+  </table>
+
+  <h3>Dashboard</h3>
+  <table>
+    <tr><th>Shortcut</th><th>Action</th></tr>
+    <tr><td><code>Alt+N</code></td><td>New checkout</td></tr>
+    <tr><td><code>Alt+R</code></td><td>Return items</td></tr>
+    <tr><td><code>Alt+M</code></td><td>Add member (Admin/In Charge)</td></tr>
+    <tr><td><code>Alt+A</code></td><td>Add asset (Admin/In Charge)</td></tr>
+  </table>
+
+  <h3>Inventory</h3>
+  <table>
+    <tr><th>Shortcut</th><th>Action</th></tr>
+    <tr><td><code>/</code></td><td>Focus the search box</td></tr>
+    <tr><td><code>Enter</code></td><td>Jump to an item by scanning/typing its barcode</td></tr>
+    <tr><td><code>`</code></td><td>Toggle showing archived items</td></tr>
+    <tr><td><code>1-4</code></td><td>Quick status filters</td></tr>
+    <tr><td><code>&larr; / &rarr;</code></td><td>Page through results</td></tr>
+    <tr><td><code>Alt+N / M / I / E</code></td><td>Add item / Manage categories / Import / Export</td></tr>
+    <tr><td><code>Esc</code></td><td>Clear filters</td></tr>
+    <tr><td><code>E / D / R</code></td><td>Edit / Delete / Restore (inside item details)</td></tr>
+    <tr><td><code>M / S / C</code></td><td>Maintenance / Adjust stock / Calibrate (inside item details)</td></tr>
+    <tr><td><code>V</code></td><td>Reserve this item</td></tr>
+  </table>
+
+  <h3>Members, Borrow &amp; Return, Approvals, Notifications, Reports</h3>
+  <p>Each follows the same pattern as Inventory: <code>/</code> to search, <code>1-4</code> for quick filters, arrow keys to page, <code>Alt+N</code> and similar to add, and <code>Esc</code> to clear filters or close. Members and Borrow &amp; Return also support row actions (E/D/R to edit, deactivate/delete, restrict/restore); Notifications adds <code>Alt+A</code> to mark all as read; Reports adds <code>Alt+C</code> to customize widgets and <code>Alt+E</code> to export.</p>
+
+  <h3>Staff, Monitoring, Reservations, System (role- and feature-gated)</h3>
+  <table>
+    <tr><th>Area</th><th>Notable shortcuts</th></tr>
+    <tr><td>Staff (Admin only)</td><td><code>/</code>, <code>Enter</code>, <code>`</code>, <code>1-4</code>, arrows, <code>Alt+N</code> to add; <code>E/L/P</code> to edit/lock/reset password; <code>D/U</code> to deactivate/reassign</td></tr>
+    <tr><td>Monitoring (if enabled)</td><td><code>/</code>, <code>L/T</code> to switch Log/Trends tabs, arrows, <code>D</code> to dismiss an active alarm (Admin/In Charge, password-confirmed)</td></tr>
+    <tr><td>Reservations (if enabled)</td><td><code>Alt+N/R</code>, <code>1-5</code> quick filters, <code>`</code> to show only your own reservations</td></tr>
+    <tr><td>System (Admin/In Charge)</td><td><code>1-9</code> to open a settings card's Manage dialog by number; <code>0</code> for Barcode Labels</td></tr>
+  </table>
+
+  <h3>Barcode Labels, Feedback &amp; Bug Reports, Activity Log</h3>
+  <p>Barcode Labels: <code>/</code> to search, <code>1</code>/<code>2</code> to switch tabs, <code>Alt+G</code> to generate, <code>Alt+B</code> to go back. Feedback &amp; Bug Reports: <code>1-3</code> to filter, arrows to page. Activity Log: arrows to page, <code>Esc</code> to clear filters.</p>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+  <table>
+    <tr><th>Issue</th><th>What to check</th></tr>
+    <tr><td>Can't reach the login page</td><td>Confirm your device is on the same network as the Pi, and try the mDNS hostname (e.g. <code>https://toolroom-rpi.local</code>) instead of a bookmarked IP - the IP can change, the hostname doesn't.</td></tr>
+    <tr><td>Alarm won't stop sounding</td><td>Tap the Master Key Card at the reader. If the reader is broken/unavailable, an Admin or In Charge can dismiss it from System &gt; Alarm instead.</td></tr>
+    <tr><td>Need to write a new RFID tag/card</td><td>This isn't done inside the app - use RFIDDemo.exe on the workstation, then enter that ID into the asset's or member's record.</td></tr>
+    <tr><td>A member can't check out a tool</td><td>Check whether their account is currently restricted (overdue loan or damaged return) - they'll need an unrestriction request approved, or an In Charge/Admin to lift it directly.</td></tr>
+  </table>
+</main>
+</div>
+<script src="shared.js"></script>

@@ -1,0 +1,173 @@
+<title>Quick Start Guide</title>
+<link rel="stylesheet" href="shared.css">
+<div class="layout">
+<nav class="toc">
+  <div class="brand">Archaív</div>
+  <div class="doctype">Quick Start Guide</div>
+  <a href="#prereqs">1. Prerequisites</a>
+  <a href="#get-code">2. Get the Code</a>
+  <a href="#env">3. Configure Environment</a>
+  <a href="#deps">4. Install Dependencies</a>
+  <a href="#firstrun">5. First Run &amp; Setup Wizard</a>
+  <a href="#https">6. Enable HTTPS (Caddy)</a>
+  <a href="#autostart">7. Auto-Start on Boot</a>
+  <a href="#picontroller">8. Pi Controller (RFID/Alarm)</a>
+  <a href="#verify">9. Verify Everything Works</a>
+  <a href="#next">10. Where to Go Next</a>
+</nav>
+<main>
+  <div class="doctitle">Archaív &middot; Quick Start Guide</div>
+  <h1>From a Fresh Raspberry Pi to a Running System</h1>
+  <p class="subtitle">A step-by-step walkthrough for getting the RFID &amp; barcode-enabled tool monitoring system running for the first time - no prior familiarity with the codebase required.</p>
+
+  <div class="callout tip">
+    <strong>Time estimate</strong>
+    About 30-45 minutes for the software setup, plus however long it takes to physically wire the RFID antenna, HF/NFC reader, and alarm relay to the Raspberry Pi.
+  </div>
+
+  <h2 id="prereqs">1. Prerequisites</h2>
+  <p>Have these ready before you start:</p>
+  <ul>
+    <li>A Raspberry Pi 4 B (or newer) running Raspberry Pi OS, with Python 3.11+ available.</li>
+    <li>A laptop or PC on the same local network as the Pi, for the staff-facing workstation.</li>
+    <li>SSH access to the Pi (or a keyboard/monitor attached to it for the first setup).</li>
+    <li>The hardware components: fixed UHF RFID Reader Antenna, HF/NFC Reader/Writer, 2-Channel Relay Module, 2N2222 transistor, 12V Warning Lamp with Buzzer, and a USB UHF RFID Reader/Writer + barcode scanner for the workstation.</li>
+  </ul>
+
+  <h2 id="get-code">2. Get the Code</h2>
+  <p>Copy the project onto the Pi, e.g. under <code>/home/admin/toolroom</code>:</p>
+  <pre><code>scp -r inventory_system-structured/ admin@&lt;pi-hostname-or-ip&gt;:/home/admin/toolroom</code></pre>
+  <p>Or, if the project is in a Git repository, clone it directly on the Pi instead.</p>
+
+  <h2 id="env">3. Configure Environment</h2>
+  <p>The application reads its configuration from a <code>.env</code> file in the project root. Copy the example and fill it in:</p>
+  <pre><code>cd /home/admin/toolroom
+cp .env.example .env</code></pre>
+  <p>At minimum, set:</p>
+  <table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>SECRET_KEY</code></td><td>Flask session-signing key - generate a long random string.</td></tr>
+    <tr><td><code>DB_ENCRYPTION_KEY</code></td><td>Optional. If set, the database is encrypted at rest with SQLCipher (AES-256).</td></tr>
+    <tr><td><code>RFID_LISTENER_KEY</code></td><td>Shared secret the Pi controller uses to authenticate to this app. Must match <code>pi_controller/.env</code>'s copy exactly.</td></tr>
+    <tr><td><code>COOKIE_SECURE</code></td><td>Set to <code>1</code> once HTTPS (via Caddy, step 6) is in place.</td></tr>
+  </table>
+  <div class="callout warn">
+    <strong>Don't skip <code>RFID_LISTENER_KEY</code></strong>
+    Without it, the machine-to-machine endpoints the Pi controller depends on stay disabled (the app fails closed by design), and RFID detection/alarm deactivation silently won't work.
+  </div>
+
+  <h2 id="deps">4. Install Dependencies</h2>
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Create a virtual environment for the main app</h3>
+      <pre><code>python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt</code></pre>
+      <p>If you set <code>DB_ENCRYPTION_KEY</code>, also install <code>requirements-encryption.txt</code>.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Create a separate virtual environment for the Pi controller</h3>
+      <pre><code>python3 -m venv .venv-pi-controller
+.venv-pi-controller/bin/pip install -r pi_controller/requirements.txt</code></pre>
+      <p>This is a deliberately separate process from the main app - it interfaces directly with the RFID hardware and GPIO.</p>
+    </div>
+  </div>
+
+  <h2 id="firstrun">5. First Run &amp; Setup Wizard</h2>
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Start the app once, manually</h3>
+      <pre><code>.venv/bin/python wsgi.py</code></pre>
+      <p>Database migrations run automatically on this first start - you'll see a series of <code>Applied migration: ...</code> log lines.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Open the app and finish setup</h3>
+      <p>From a browser on the same network, visit <code>http://&lt;pi-ip&gt;:5000</code>. On a true fresh install (no staff accounts at all yet), you're taken straight to the first-admin setup wizard - no login needed for this one-time case.</p>
+    </div>
+  </div>
+  <div class="callout tip">
+    <strong>If staff accounts already exist</strong>
+    The app auto-generates a one-time temporary admin account (<code>setup-admin</code>) on first boot and shows its credentials in a modal on the login page - shown once, then cleared. Log in with those to reach the same setup wizard and create your real Admin account.
+  </div>
+  <figure>
+    <img src="assets/01-login-username.png" alt="Login screen">
+    <figcaption>The sign-in screen staff see day to day, once setup is complete.</figcaption>
+  </figure>
+
+  <h2 id="https">6. Enable HTTPS (Caddy)</h2>
+  <p>Plain <code>http://</code> works for basic testing, but staff shouldn't be looking at an unencrypted login page in day-to-day use. Caddy handles this with zero certificate hassle:</p>
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Install Caddy</h3>
+      <p>Follow <a href="https://caddyserver.com/docs/install">Caddy's own install instructions</a> for Raspberry Pi OS (Debian-based).</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Point the Caddyfile at the Pi's mDNS hostname</h3>
+      <p>Edit <code>deploy/Caddyfile</code> and replace the placeholder with the Pi's own mDNS hostname (run <code>hostname</code> on the Pi, then append <code>.local</code>) - <strong>not</strong> a raw IP address, since that breaks the moment the Pi's network address changes.</p>
+      <pre><code>sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl restart caddy</code></pre>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h3>Flip <code>COOKIE_SECURE</code> on</h3>
+      <p>Set <code>COOKIE_SECURE=1</code> in <code>.env</code> now that traffic is encrypted, then restart the app.</p>
+    </div>
+  </div>
+
+  <h2 id="autostart">7. Auto-Start on Boot</h2>
+  <p>Install the app as a systemd service so it starts automatically on boot and restarts itself if it ever crashes:</p>
+  <pre><code>sudo cp deploy/toolroom.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now toolroom</code></pre>
+
+  <h2 id="picontroller">8. Pi Controller (RFID/Alarm)</h2>
+  <p>This is the separate headless process that actually talks to the RFID antenna, HF/NFC reader, and alarm relay.</p>
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h3>Configure <code>pi_controller/.env</code></h3>
+      <p>Set <code>RFID_LISTENER_KEY</code> to the <em>exact same value</em> as the main app's <code>.env</code>, and confirm <code>ALARM_RELAY_GPIO_PIN</code> matches your physical wiring (18, BCM numbering, in the reference build).</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h3>Install its systemd service</h3>
+      <pre><code>sudo cp pi_controller/toolroom-rfid-listener.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now toolroom-rfid-listener</code></pre>
+      <p>Its <code>After=</code> ordering is configured to start after the main app, closing a brief startup-race window - though its own retry logic tolerates the app being briefly unreachable regardless.</p>
+    </div>
+  </div>
+
+  <h2 id="verify">9. Verify Everything Works</h2>
+  <ul>
+    <li><strong>Reboot the Pi</strong> and confirm the login page loads over HTTPS without you touching anything.</li>
+    <li><strong>Log in</strong> with the Admin account you created and confirm the Dashboard loads.</li>
+    <li><strong>Scan a test tag</strong> at the monitored exit and confirm it shows up under Monitoring.</li>
+    <li><strong>Tap the Master Key Card</strong> on the HF/NFC reader and confirm the app registers it (even with no alarm active, this proves the reader is wired and talking to the Pi controller correctly).</li>
+  </ul>
+
+  <h2 id="next">10. Where to Go Next</h2>
+  <p>Once the system is running:</p>
+  <ul>
+    <li>Read the <strong>User Manual</strong> to learn the day-to-day workflows (borrowing, returning, monitoring, reports).</li>
+    <li>Read the <strong>Architecture Guide</strong> if you need to understand how the two processes, hardware, and security layers fit together.</li>
+    <li>Keep the <strong>Documentation</strong> handy as a reference for configuration options, roles/permissions, and troubleshooting.</li>
+  </ul>
+</main>
+</div>
+<script src="shared.js"></script>

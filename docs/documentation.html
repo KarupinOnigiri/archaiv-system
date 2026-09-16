@@ -1,0 +1,152 @@
+<title>Documentation</title>
+<link rel="stylesheet" href="shared.css">
+<div class="layout">
+<nav class="toc">
+  <div class="brand">Archaív</div>
+  <div class="doctype">Documentation</div>
+  <a href="#features">Feature Overview</a>
+  <a href="#roles">Roles &amp; Permissions</a>
+  <a href="#config-main">Configuration - Main App</a>
+  <a href="#config-pi">Configuration - Pi Controller</a>
+  <a href="#backups">Backups</a>
+  <a href="#tags">Provisioning RFID Tags</a>
+  <a href="#updating">Updating the App</a>
+  <a href="#logs">Where to Find Logs</a>
+  <a href="#tests">Running the Test Suite</a>
+  <a href="#appendix-account">Appendix: Account Menu Reference</a>
+  <a href="#appendix-shortcuts">Appendix: Keyboard Shortcuts</a>
+  <a href="#faq">FAQ</a>
+</nav>
+<main>
+  <div class="doctitle">Archaív &middot; Documentation</div>
+  <h1>Reference Documentation</h1>
+  <p class="subtitle">Configuration options, operational tasks, and answers to common questions. For workflows, see the User Manual; for how it's built, see the Architecture Guide.</p>
+
+  <h2 id="features">Feature Overview</h2>
+  <table>
+    <tr><th>Feature</th><th>What it does</th></tr>
+    <tr><td>Barcode borrow/return</td><td>Scan-based transaction entry for tool checkout and return.</td></tr>
+    <tr><td>RFID exit monitoring</td><td>Fixed UHF antenna at the exit auto-classifies tagged-tool events and triggers a physical alarm on unauthorized removal.</td></tr>
+    <tr><td>Member accountability</td><td>Auto-restriction on overdue loans or damaged returns, with an approval workflow to lift it.</td></tr>
+    <tr><td>Reservations</td><td>Hold a tool ahead of time.</td></tr>
+    <tr><td>Reports &amp; Monitoring Trends</td><td>Utilization, overdue summaries, and RFID/alarm response-time statistics and charts.</td></tr>
+    <tr><td>Barcode label printing</td><td>Generate and print CODE128 labels in-browser.</td></tr>
+    <tr><td>RFID tag/card provisioning</td><td>New tags/cards are written with RFIDDemo.exe, a free standalone tool on the workstation - not a feature inside the app itself.</td></tr>
+    <tr><td>Audit log</td><td>Full history of state-changing actions.</td></tr>
+    <tr><td>Automatic backups</td><td>The running app backs up the database every 30 minutes on its own.</td></tr>
+  </table>
+
+  <h2 id="roles">Roles &amp; Permissions</h2>
+  <table>
+    <tr><th>Capability</th><th>Tool Keeper</th><th>In Charge</th><th>Admin</th></tr>
+    <tr><td>Checkout / Return</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>Submit unrestriction request</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>Approve/deny unrestriction requests</td><td>&#8212;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>Directly lift a restriction</td><td>&#8212;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>View Reports</td><td>&#8212;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>Access System Settings</td><td>&#8212;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td>Manage staff accounts</td><td>&#8212;</td><td>&#8212;</td><td>&#10003;</td></tr>
+    <tr><td>Database backups / permanent deletion</td><td>&#8212;</td><td>&#8212;</td><td>&#10003;</td></tr>
+    <tr><td>Hold the Master Key Card</td><td>&#8212;</td><td>&#8212;</td><td>&#10003;</td></tr>
+  </table>
+
+  <h2 id="config-main">Configuration - Main App (<code>.env</code>)</h2>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Notes</th></tr>
+    <tr><td><code>SECRET_KEY</code></td><td><em>required</em></td><td>Flask session-signing key. App refuses to start without it.</td></tr>
+    <tr><td><code>FLASK_HOST</code></td><td><code>0.0.0.0</code></td><td>Use <code>0.0.0.0</code> so other devices on the LAN can reach it, not just the Pi itself.</td></tr>
+    <tr><td><code>FLASK_PORT</code></td><td><code>5000</code></td><td></td></tr>
+    <tr><td><code>FLASK_DEBUG</code></td><td><code>0</code></td><td>Never <code>1</code> on a real deployment - enables remote code execution via the debugger.</td></tr>
+    <tr><td><code>COOKIE_SECURE</code></td><td><code>0</code></td><td>Set to <code>1</code> only once behind HTTPS (Caddy). Getting this wrong silently breaks login.</td></tr>
+    <tr><td><code>TRUSTED_PROXY_HOPS</code></td><td><code>0</code></td><td>Set to <code>1</code> together with <code>COOKIE_SECURE=1</code> once Caddy is in front - otherwise every client collapses into one shared rate-limit identity.</td></tr>
+    <tr><td><code>RFID_LISTENER_KEY</code></td><td><em>unset</em></td><td>Required once Monitoring is turned on. Must match the Pi controller's copy exactly.</td></tr>
+    <tr><td><code>DB_ENCRYPTION_KEY</code></td><td><em>unset</em></td><td>Optional at-rest encryption (SQLCipher). See <code>SECURITY.md</code> before enabling - an existing plaintext database must be migrated with <code>tools/encrypt_existing_db.py</code> first.</td></tr>
+  </table>
+
+  <h2 id="config-pi">Configuration - Pi Controller (<code>pi_controller/.env</code>)</h2>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Notes</th></tr>
+    <tr><td><code>APP_BASE_URL</code></td><td><code>http://127.0.0.1:5000</code></td><td>Where the main app is reachable from.</td></tr>
+    <tr><td><code>RFID_LISTENER_KEY</code></td><td><em>required</em></td><td>Must match the main app's value exactly.</td></tr>
+    <tr><td><code>ALARM_RELAY_GPIO_PIN</code></td><td><code>17</code></td><td>Set to the BCM pin actually wired to the relay (18 in the reference build).</td></tr>
+    <tr><td><code>ALARM_RELAY_ACTIVE_HIGH</code></td><td><code>1</code></td><td>Set to <code>0</code> if your relay module is active-low.</td></tr>
+    <tr><td><code>ALARM_SYNC_POLL_SECONDS</code></td><td><code>3.0</code></td><td>How often the relay's physical state is reconciled against the app's alarm status.</td></tr>
+    <tr><td><code>DRY_RUN</code></td><td><code>0</code></td><td>Set to <code>1</code> to develop/test on a non-Pi machine - GPIO/PC-SC/reader calls become logged no-ops.</td></tr>
+    <tr><td><code>LOG_LEVEL</code></td><td><code>INFO</code></td><td></td></tr>
+  </table>
+
+  <h2 id="backups">Backups</h2>
+  <p>The running main app backs up the database automatically every 30 minutes via an internal scheduled job - no separate configuration needed. An Admin can also trigger a manual backup from System Settings.</p>
+  <p>An optional second, independent backup path exists as a systemd timer (<code>toolroom-backup.timer</code> / <code>.service</code>) for cases like writing to a mounted USB drive on a schedule, or wanting backups to continue even during a stretch where the main app is deliberately stopped. Most deployments don't need this on top of the built-in scheduler.</p>
+
+  <h2 id="tags">Provisioning RFID Tags</h2>
+  <p>Tag/card writing is not a feature inside the app. Instead, use <strong>RFIDDemo.exe</strong>, a free standalone program run directly on the workstation, together with the USB UHF RFID Reader/Writer:</p>
+  <ol>
+    <li>Open RFIDDemo.exe on the workstation and connect to the reader/writer.</li>
+    <li>Present the new tag/card and write its identification data using RFIDDemo's own interface.</li>
+    <li>Copy the tag/card's ID into the app - either by scanning it into the RFID Tag ID field on the asset's Add/Edit form, or the member's record.</li>
+  </ol>
+  <p>This keeps tag writing decoupled from the browser entirely, so it works the same regardless of HTTPS or browser support.</p>
+
+  <h2 id="updating">Updating the App</h2>
+  <ol>
+    <li>Pull/copy the updated source onto the Pi.</li>
+    <li>If any template added new Tailwind utility classes, rebuild <code>static/css/output.css</code>: <code>./tools/tailwindcss.exe -i static/css/input.css -o static/css/output.css --minify</code>.</li>
+    <li>If <code>static/js/ui.js</code> changed, regenerate the minified bundle with <code>terser</code> (see the comment above the script tag in <code>templates/base.html</code> for the exact command).</li>
+    <li>Restart the service: <code>sudo systemctl restart toolroom</code>. Database migrations in <code>migrations/</code> apply automatically on this restart - nothing else to run by hand.</li>
+  </ol>
+
+  <h2 id="logs">Where to Find Logs</h2>
+  <pre><code># Main application
+sudo journalctl -u toolroom -f
+
+# Pi controller (RFID/alarm)
+sudo journalctl -u toolroom-rfid-listener -f
+
+# Reverse proxy
+sudo journalctl -u caddy -f</code></pre>
+
+  <h2 id="tests">Running the Test Suite</h2>
+  <pre><code>.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q</code></pre>
+  <p>The suite covers authentication, transaction handling, RFID event classification and alarm logic, and the reporting/monitoring features.</p>
+
+  <h2 id="appendix-account">Appendix: Account Menu Reference</h2>
+  <p>Every staff member's account menu (click your name at the bottom of the sidebar) holds these dialogs - full detail and screenshots are in the User Manual:</p>
+  <table>
+    <tr><th>Menu item</th><th>What it controls</th></tr>
+    <tr><td>My Account</td><td>Profile photo, role/barcode/department info, Change Password, Barcode + PIN login</td></tr>
+    <tr><td>Settings &amp; Privacy</td><td>Which notifications you receive, toast display duration</td></tr>
+    <tr><td>Help</td><td>A quick FAQ dialog, plus links to the full Help page and keyboard shortcuts</td></tr>
+    <tr><td>Keyboard Shortcuts</td><td>The full searchable shortcut reference (see Appendix below)</td></tr>
+    <tr><td>Display &amp; Accessibility</td><td>Theme mode (Mixed/Light/Dark), notification/toast visual style</td></tr>
+    <tr><td>Give Feedback</td><td>Submit a bug/idea/other report, optionally with a screenshot</td></tr>
+    <tr><td>Log Out</td><td>Ends your session, with a confirmation step</td></tr>
+  </table>
+
+  <h2 id="appendix-shortcuts">Appendix: Keyboard Shortcuts</h2>
+  <p>Press <code>?</code> anywhere in the app to open the full searchable panel. Shortcuts are disabled while typing in a text field or while a dialog is open; every entry is also filtered by the viewer's role and by which features are enabled for the deployment.</p>
+  <table>
+    <tr><th>Page / Context</th><th>Representative shortcuts</th></tr>
+    <tr><td>Everywhere</td><td><code>?</code> open panel, <code>Esc</code> close dialog, <code>Ctrl+E</code> collapse/expand sidebar, <code>Alt+Shift+&lt;letter&gt;</code> jump to a sidebar page</td></tr>
+    <tr><td>Dashboard</td><td><code>Alt+N</code> new checkout, <code>Alt+R</code> return, <code>Alt+M</code> add member, <code>Alt+A</code> add asset</td></tr>
+    <tr><td>Inventory</td><td><code>/</code> search, <code>Enter</code> jump by barcode, <code>`</code> toggle archived, <code>1-4</code> filters, <code>Alt+N/M/I/E</code> add/categories/import/export</td></tr>
+    <tr><td>Members / Borrow &amp; Return</td><td><code>/</code> search, <code>1-4</code> filters, <code>T/Y</code> today/yesterday (Borrow &amp; Return), <code>Alt+N/R/E</code></td></tr>
+    <tr><td>Approvals / Notifications</td><td>arrows to page, <code>Alt+A</code> mark all read (Notifications)</td></tr>
+    <tr><td>Reports</td><td><code>Alt+C</code> customize widgets, <code>Alt+E</code> export</td></tr>
+    <tr><td>Staff (Admin)</td><td><code>E/L/P</code> edit/lock/reset password, <code>D/U</code> deactivate/reassign</td></tr>
+    <tr><td>Monitoring</td><td><code>L/T</code> switch Log/Trends tabs, <code>D</code> dismiss alarm (password-confirmed)</td></tr>
+    <tr><td>Reservations</td><td><code>Alt+N/R</code>, <code>1-5</code> filters, <code>`</code> only-mine toggle</td></tr>
+    <tr><td>System (Admin/In Charge)</td><td><code>1-9</code> open a settings card's Manage dialog, <code>0</code> Barcode Labels</td></tr>
+    <tr><td>Barcode Labels</td><td><code>1</code>/<code>2</code> switch tabs, <code>Alt+G</code> generate, <code>Alt+B</code> back</td></tr>
+    <tr><td>Feedback &amp; Bug Reports / Activity Log</td><td><code>1-3</code> filters (Feedback), arrows to page both</td></tr>
+  </table>
+
+  <h2 id="faq">FAQ</h2>
+  <p><strong>Does the system need internet access to work?</strong><br>No. Every asset the app needs (CSS, JS, fonts) is self-hosted, and the Pi is reached via mDNS on the local network - the whole system works with the router's internet uplink completely disconnected.</p>
+  <p><strong>What happens to the alarm if the Pi loses power mid-alarm?</strong><br>The relay itself holds no state. On restart, the Pi controller's polling loop reads the app's current alarm status within a few seconds and drives the relay to match - so an active, undismissed alarm correctly comes back on after a reboot, and a cleared one correctly stays off.</p>
+  <p><strong>Can the system tell if a tool is entering or leaving the room?</strong><br>No - it uses a single monitored RFID point, which reports detection only, not direction of travel. The alarm decision is based on the tool's transaction status at the time of detection, not movement direction.</p>
+  <p><strong>Why two separate <code>.env</code> files?</strong><br>The main app and the Pi controller are separate, independently-runnable processes - the Pi controller has its own config (hardware pins, reader settings) that the main app has no reason to know about, and vice versa.</p>
+</main>
+</div>
+<script src="shared.js"></script>
