@@ -69,14 +69,15 @@ not run the Tailwind build itself.
 
 ### Maintenance / one-off scripts
 
-`tools/encrypt_existing_db.py` (retroactively encrypts an existing plaintext
-database - see [SECURITY.md](SECURITY.md)) lives in `tools/`, alongside the
-Tailwind CLI, since it's a script you run by hand and never import.
+`tools/encrypt_existing_db.py` (retroactively encrypts an existing
+plaintext database - see [SECURITY.md](SECURITY.md)) resides in `tools/`,
+alongside the Tailwind CLI, as it is invoked manually and never imported
+by the application.
 
-`backup_db.py` stays at the repository root instead, even though you can
-also run it standalone - `services/backup_service.py` imports it directly
-(`import backup_db`) for the app's own scheduled backups, so it's a real
-runtime dependency, not just a script.
+`backup_db.py` remains at the repository root instead. Although it can
+also be run standalone, `services/backup_service.py` imports it directly
+(`import backup_db`) to perform the app's scheduled backups, making it a
+runtime dependency rather than a standalone script.
 
 `deploy/` holds the Pi provisioning script and systemd unit files - see
 [DEPLOYMENT.md](DEPLOYMENT.md).
