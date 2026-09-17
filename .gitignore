@@ -38,3 +38,7 @@ THESIS PAPER/
 # Local schema dump (CREATE TABLE snapshot for inspection) - not project
 # source, regenerated on demand.
 /schema_dump.sql
+
+# Local dev-server launch config directory - not project source, excluded
+# from version control.
+.claude/
