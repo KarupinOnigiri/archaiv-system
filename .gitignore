@@ -33,3 +33,7 @@ THESIS PAPER/
 # real project file, but harmless enough to just keep untracked if it recurs
 # rather than something worth chasing down and fixing at the source.
 /nul
+
+# Local schema dump (CREATE TABLE snapshot for inspection) - not project
+# source, regenerated on demand.
+/schema_dump.sql
