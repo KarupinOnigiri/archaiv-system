@@ -96,5 +96,4 @@ of the source tree.
 `export/` serves a different purpose: it is the application's default
 output directory for user-initiated asset exports, defined by
 `utils/exports.py`'s `default_export_dir()`. It is created automatically
-at runtime and excluded from version control - nothing written there
-should be committed.
+at runtime and excluded from version control.
