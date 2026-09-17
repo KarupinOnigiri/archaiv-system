@@ -1,159 +1,169 @@
 # Deploying pi_controller to the Raspberry Pi
 
-Step-by-step process for when the actual Raspberry Pi hardware is in hand.
-This assumes the web app itself is already set up per the main project's
-`DEPLOYMENT.md` - this guide only covers the separate `pi_controller`
-process (see this folder's `README.md` for what it is and why it's built
-the way it is).
+Step-by-step process for when the actual Raspberry Pi hardware is in
+hand. This assumes the web application itself is already set up per the
+main project's `DEPLOYMENT.md`; this guide covers only the separate
+`pi_controller` process (see this folder's `README.md` for what it is
+and why it is built the way it is).
 
 ## Phase 0 - Before touching the Pi
 
-1. Flash **Raspberry Pi OS Lite (64-bit)** to the SSD (per the thesis: no
-   desktop image - headless).
-2. Boot it once with a monitor+keyboard (or via the imager's SSH setup) just
-   to enable SSH and connect it to the network. Everything after this is
-   done remotely over SSH.
+1. Flash **Raspberry Pi OS Lite (64-bit)** to the SSD (per the thesis:
+   no desktop image, headless).
+2. Boot it once with a monitor and keyboard (or via the imager's SSH
+   setup) to enable SSH and connect it to the network. Everything after
+   this is done remotely over SSH.
 
 ## Phase 1 - Wire the hardware
 
 3. Connect to the Pi:
    - **UHF-202406 antenna** -> USB port (data) + external 12V/GND (power).
    - **ACR122U (HF/NFC)** -> another USB port.
-   - **2-channel relay module** -> GPIO pins (pick the pin, e.g. BCM 17 --
-     note it down for `.env`).
+   - **2-channel relay module** -> GPIO pins (select the pin, e.g. BCM
+     17, and note it for `.env`).
    - **12V warning lamp/buzzer** -> wired through the relay's output.
    - **SSD** -> USB or SATA, whichever the build uses.
-4. Power on, SSH in, confirm both USB readers enumerate:
+4. Power on, connect via SSH, and confirm both USB readers enumerate:
    ```bash
    lsusb
    ```
 
 ## Phase 2 - System packages
 
-5. Install what the readers need:
+5. Install the packages the readers require:
    ```bash
    sudo apt update
    sudo apt install -y git pcscd libpcsclite-dev python3-dev python3-venv
    sudo systemctl enable --now pcscd
    ```
-6. Add the pi user to the groups needed for GPIO/USB-HID access without root:
+6. Add the pi user to the groups needed for GPIO/USB-HID access without
+   root:
    ```bash
    sudo usermod -aG gpio,input,plugdev pi
    ```
-   Log out and back in (or reboot) for the group change to apply.
+   Log out and back in (or reboot) for the group change to take effect.
 
 ## Phase 3 - Get the code onto the Pi
 
-7. Clone the repo (or `git pull` if it's already there):
+7. Clone the repository (or run `git pull` if it is already present):
    ```bash
-   git clone <your-repo-url> ~/toolroom
+   git clone <repo-url> ~/toolroom
    cd ~/toolroom
    ```
-8. Set up the **web app's own** environment (separate venv, separate
-   `.env`) per the main project's `DEPLOYMENT.md`. Get the Flask app itself
-   running and confirmed reachable first - the listener depends on it.
+8. Set up the **web application's own** environment (separate venv,
+   separate `.env`) per the main project's `DEPLOYMENT.md`. The Flask
+   application should be running and confirmed reachable first, as the
+   listener depends on it.
 
 ## Phase 4 - Configure the UHF-202406's output mode
 
-9. Before final mounting, connect the UHF-202406 to a **Windows PC** and run
-   the manufacturer's RFIDDemo tool:
-   - Advanced Settings -> Basic -> **Output Mode = USB_HID** if the antenna
-     will sit near the Pi and run over USB (the common case - skip to step
-     10). If it needs to be mounted too far from the Pi for a USB run,
-     instead set **Output Mode = NET**, give it a static IP under Advanced
-     Settings -> Basic (NET parameters), and use that IP for
-     `NET_DEVICE_IP` in Phase 7 - `dual_reader.py` auto-detects which
+9. Before final mounting, connect the UHF-202406 to a **Windows PC** and
+   run the manufacturer's RFIDDemo tool:
+   - Advanced Settings -> Basic -> **Output Mode = USB_HID** if the
+     antenna will sit near the Pi and run over USB (the common case -
+     skip to step 10). If it needs to be mounted too far from the Pi for
+     a USB run, set **Output Mode = NET** instead, assign it a static IP
+     under Advanced Settings -> Basic (NET parameters), and use that IP
+     for `NET_DEVICE_IP` in Phase 7. `dual_reader.py` auto-detects which
      transport is actually connected, so the rest of this setup is
-     identical either way except for which `.env` fields get filled in.
-   - Set **Same ID interval** to something reasonable (e.g. 20 = 10s) as a
-     first line of de-duplication
-   - Confirm Regional Standard / Tx power for the final mounted position
-10. Move it to the Pi (USB) or its mounting point (Ethernet) and mount it at
-    the monitored exit.
+     identical either way, apart from which `.env` fields are filled in.
+   - Set **Same ID interval** to a reasonable value (e.g. 20 = 10s) as a
+     first line of de-duplication.
+   - Confirm Regional Standard / Tx power for the final mounted
+     position.
+10. Move it to the Pi (USB) or its mounting point (Ethernet) and mount
+    it at the monitored exit.
 
 ## Phase 5 - Set up the listener's own Python environment
 
-11. Create a **separate** venv just for the controller (don't mix into the
-    web app's venv - gpiozero/evdev/pyscard have nothing to do with the
-    Flask app):
+11. Create a **separate** venv for the controller (its dependencies
+    should not be mixed into the web application's venv, since
+    gpiozero/evdev/pyscard have nothing to do with the Flask app):
     ```bash
     cd ~/toolroom
     python3 -m venv .venv-pi-controller
     .venv-pi-controller/bin/pip install -r pi_controller/requirements.txt
     ```
 
-    **If this fails building `pyscard`** with something like
-    `error: unknown type name '$function'`: that's SWIG 4.2.0+ (whatever
-    `apt`/`pip` installs by default) generating code that's incompatible
-    with `pyscard`'s own bundled pre-generated wrapper - a real
-    version-compatibility bug between the two projects, not anything wrong
-    with this setup. Fix, inside the same venv:
+    **If this fails building `pyscard`** with an error such as `error:
+    unknown type name '$function'`: this is caused by SWIG 4.2.0+
+    (whichever version `apt`/`pip` installs by default) generating code
+    that is incompatible with `pyscard`'s own bundled pre-generated
+    wrapper - a version-compatibility issue between the two projects,
+    not a problem with this setup. Fix, inside the same venv:
     ```bash
     .venv-pi-controller/bin/pip install "swig<4.2"
     export PATH="$(pwd)/.venv-pi-controller/bin:$PATH"
     .venv-pi-controller/bin/pip install --no-build-isolation git+https://github.com/LudovicRousseau/pyscard.git
     ```
-    Pinning an older SWIG isn't enough on its own - PyPI's `pyscard`
-    package ships a wrapper already generated by (and stuck on) a newer,
-    incompatible SWIG. Installing from GitHub source instead forces it to
-    regenerate that wrapper fresh, against the older SWIG now on `PATH`.
-    `--no-build-isolation` matters too: pip's isolated build environment
-    wouldn't see the `swig` you just installed into this venv otherwise.
-    Also needs `libpcsclite-dev`/`winscard.h` - covered by Phase 2's
-    `pcscd libpcsclite-dev` already, but if this is a re-provision that
-    skipped Phase 2, install those first.
+    Pinning an older SWIG is not sufficient on its own, since PyPI's
+    `pyscard` package ships a wrapper already generated by, and locked
+    to, a newer, incompatible SWIG version. Installing from GitHub
+    source instead forces it to regenerate that wrapper against the
+    older SWIG now on `PATH`. `--no-build-isolation` is required as
+    well, since pip's isolated build environment would otherwise not see
+    the `swig` version just installed into this venv. This also requires
+    `libpcsclite-dev`/`winscard.h`, already covered by Phase 2's `pcscd
+    libpcsclite-dev`; if this is a re-provision that skipped Phase 2,
+    install those first.
 
 ## Phase 6 - Find the antenna's device name (USB) or confirm reachability (network)
 
-12. **USB transport:** with the UHF-202406 plugged in and in USB_HID mode:
+12. **USB transport:** with the UHF-202406 plugged in and in USB_HID
+    mode:
     ```bash
     cat /proc/bus/input/devices
     ```
-    Unplug/replug it and diff the output, or use `python -m evdev.evtest`,
-    to identify which entry is it. Note its `Name="..."` string.
+    Unplug and replug it and diff the output, or use `python -m
+    evdev.evtest`, to identify the correct entry. Note its `Name="..."`
+    string.
 
     **Network transport:** confirm the Pi can reach the antenna at the
     static IP/port set in Phase 4:
     ```bash
     nc -vz <NET_DEVICE_IP> <NET_DEVICE_PORT>
     ```
-    (or just skip ahead - Phase 7's `.env` values are all `net_tag_reader.py`
-    needs, and the listener itself will report clearly in its logs if it
-    can't connect.)
+    (This step can also be skipped - Phase 7's `.env` values are all
+    `net_tag_reader.py` needs, and the listener itself reports clearly
+    in its logs if it cannot connect.)
 
 ## Phase 7 - Configure the controller
 
-13. Generate a shared secret and put it in **both** `.env` files:
+13. Generate a shared secret and place it in **both** `.env` files:
     ```bash
     python3 -c "import secrets; print(secrets.token_hex(32))"
     ```
-    - Add it as `RFID_LISTENER_KEY=...` in the **main app's** `.env`
+    - Add it as `RFID_LISTENER_KEY=...` in the **main application's**
+      `.env`.
     - Add the exact same value as `RFID_LISTENER_KEY=...` in
-      `pi_controller/.env`
+      `pi_controller/.env`.
 14. Copy and fill in the controller's env file:
     ```bash
     cp pi_controller/.env.example pi_controller/.env
     nano pi_controller/.env
     ```
-    Fill in: `APP_BASE_URL` (probably `http://127.0.0.1:5000` if both run
-    on the same Pi), `RFID_LISTENER_KEY`, and either `HID_DEVICE_NAME` (from
-    Phase 6, USB) or `NET_DEVICE_IP`/`NET_DEVICE_PORT` (from Phase 4,
-    network) depending on which transport mode you set the antenna to --
-    leave the other one blank. Also `ALARM_RELAY_GPIO_PIN` (from Phase 1),
-    `ALARM_RELAY_ACTIVE_HIGH` (check the relay module's datasheet), leave
-    `DRY_RUN=0`.
-15. In the web app: **System -> Feature Access**, turn **Monitoring** on.
+    Fill in: `APP_BASE_URL` (typically `http://127.0.0.1:5000` if both
+    run on the same Pi), `RFID_LISTENER_KEY`, and either
+    `HID_DEVICE_NAME` (from Phase 6, USB) or
+    `NET_DEVICE_IP`/`NET_DEVICE_PORT` (from Phase 4, network), depending
+    on which transport mode the antenna was set to - the other field
+    should be left blank. Also set `ALARM_RELAY_GPIO_PIN` (from Phase
+    1) and `ALARM_RELAY_ACTIVE_HIGH` (check the relay module's
+    datasheet), and leave `DRY_RUN=0`.
+15. In the web application: **System -> Feature Access**, enable
+    **Monitoring**.
 
 ## Phase 8 - Run it manually first
 
-16. Test directly in the foreground before making it a service:
+16. Test directly in the foreground before installing it as a service:
     ```bash
     .venv-pi-controller/bin/python -m pi_controller.rfid_listener
     ```
-17. Tap a tag on the antenna -> check the terminal logs it -> check the web
-    app's Monitoring tab shows the event.
-18. Tap the Admin's card on the ACR122U while an alarm is active -> confirm
-    it logs a deactivation and the relay de-energizes (watch the lamp).
+17. Tap a tag on the antenna, confirm the terminal logs it, and confirm
+    the web application's Monitoring tab shows the event.
+18. Tap the Admin's card on the ACR122U while an alarm is active and
+    confirm that a deactivation is logged and the relay de-energizes
+    (observe the lamp).
 19. `Ctrl+C` to stop once confirmed working.
 
 ## Phase 9 - Install as a permanent service
@@ -169,7 +179,7 @@ the way it is).
     sudo systemctl daemon-reload
     sudo systemctl enable --now toolroom-rfid-listener
     ```
-22. Confirm it's alive and check logs anytime with:
+22. Confirm it is running and check logs at any time with:
     ```bash
     sudo systemctl status toolroom-rfid-listener
     journalctl -u toolroom-rfid-listener -f
@@ -179,11 +189,11 @@ the way it is).
 
 23. Run the thesis's Chapter 3 data-gathering protocol (Phase 1-5:
     calibration, instrumentation, controlled trials) now that the whole
-    pipeline - antenna -> listener -> app -> alarm -> Master Key Card
-    clear - is live end-to-end.
+    pipeline - antenna -> listener -> application -> alarm -> Master Key
+    Card clear - is live end-to-end.
 
 ## Before the hardware arrives
 
-Everything except Phases 0, 1, 4, 6, 9, and the hardware-dependent parts of
-8/10 can be exercised right now with `DRY_RUN=1` - see this folder's
+Everything except Phases 0, 1, 4, 6, 9, and the hardware-dependent parts
+of 8/10 can be exercised in advance with `DRY_RUN=1` - see this folder's
 `README.md`, section "Developing without the Pi hardware."

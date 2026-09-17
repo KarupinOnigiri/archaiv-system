@@ -1,18 +1,18 @@
 # Vendored third-party scripts
 
-These are hand-downloaded, not managed by a package manager/lockfile -
-there's no build pipeline in this project. Noted here so "why is this
-file here / how do I update it" has an answer.
+These files are downloaded manually and are not managed by a package
+manager or lockfile, as this project has no build pipeline. This
+document records their origin and update procedure.
 
 - **chart.min.js** - Chart.js v4.5.1 (https://www.chartjs.org), MIT
-  license. Version is in the file's own header comment. To update:
-  download the latest `dist/chart.umd.js` (minified) from
+  license. Version is recorded in the file's own header comment. To
+  update: download the latest `dist/chart.umd.js` (minified) from
   https://www.chartjs.org/docs/latest/getting-started/ and replace this
   file.
-- **htmx.min.js** - htmx (https://htmx.org), BSD 2-Clause license.
-  Version wasn't embedded in the minified build when this note was
-  written - check https://htmx.org/docs/#installing for the latest and
-  diff before replacing.
+- **htmx.min.js** - htmx (https://htmx.org), BSD 2-Clause license. The
+  version was not embedded in the minified build at the time this note
+  was written; check https://htmx.org/docs/#installing for the latest
+  release and diff before replacing.
 - **jsbarcode.min.js** - JsBarcode v3.11.6 (https://github.com/lindell/JsBarcode),
   MIT license. Renders the actual scannable barcodes on the Barcode Labels
   page (templates/barcodes.html) - CODE128, client-side, no server

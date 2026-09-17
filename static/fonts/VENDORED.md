@@ -1,25 +1,25 @@
 # Vendored fonts
 
-Hand-downloaded, not managed by a package manager/lockfile - there's no
-build pipeline in this project. Noted here so "why is this file here / how
-do I update it" has an answer. See static/js/VENDORED.md for the same note
-about vendored scripts.
+These files are downloaded manually and are not managed by a package
+manager or lockfile, as this project has no build pipeline. This
+document records their origin and update procedure; see
+static/js/VENDORED.md for the equivalent note on vendored scripts.
 
 - **archivo-600.woff2**, **archivo-700.woff2**, **archivo-800.woff2** -
   Archivo (https://fonts.google.com/specimen/Archivo), SIL Open Font
-  License 1.1, weights 600/700/800, Latin subset only (covers the sidebar
-  wordmark "Archaív" and any other Latin-alphabet text using it - see
-  static/css/input.css's `@font-face` rules for the exact `unicode-range`).
-  These three weights are the ones login.html/setup.html/base.html
-  actually request.
+  License 1.1, weights 600/700/800, Latin subset only (covers the
+  sidebar wordmark "Archaív" and any other Latin-alphabet text using it
+  - see static/css/input.css's `@font-face` rules for the exact
+  `unicode-range`). These are the three weights that
+  login.html/setup.html/base.html request.
 
-  Self-hosted rather than pulled from Google Fonts at request time (every
-  page that used the wordmark used to `<link>` it from
-  fonts.googleapis.com/fonts.gstatic.com individually), so the app has zero
-  runtime dependency on internet access - the Pi's own LAN has no path to
-  the public internet in the deployed setup, and a CDN font request there
-  would just hang/fail on every page load instead of falling back
-  invisibly to the next font in the stack.
+  Self-hosted rather than pulled from Google Fonts at request time
+  (every page that used the wordmark previously linked it from
+  fonts.googleapis.com/fonts.gstatic.com individually), so the
+  application has no runtime dependency on internet access. The Pi's
+  own LAN has no path to the public internet in the deployed setup, and
+  a CDN font request there would hang or fail on every page load
+  instead of falling back invisibly to the next font in the stack.
 
   To update: fetch `https://fonts.googleapis.com/css2?family=Archivo:wght@<weight>&display=swap`
   (one weight per request - combining weights in one request can make
