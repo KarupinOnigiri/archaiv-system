@@ -83,8 +83,12 @@ runtime dependency, not just a script.
 
 ### `docs/` vs `export/`
 
-`docs/` holds project documentation (architecture diagrams, etc.) -
-committed, not generated. `export/` is different: it's the app's own
-default save location for user-initiated asset exports
-(`utils/exports.py`'s `default_export_dir()`), recreated automatically at
-runtime, and gitignored - nothing that lands there should be committed.
+`docs/` contains the project's documentation (architecture diagrams,
+guides, etc.). It is committed to version control and maintained as part
+of the source tree.
+
+`export/` serves a different purpose: it is the application's default
+output directory for user-initiated asset exports, defined by
+`utils/exports.py`'s `default_export_dir()`. It is created automatically
+at runtime and excluded from version control - nothing written there
+should be committed.
